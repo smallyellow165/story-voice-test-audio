@@ -1,0 +1,29 @@
+[
+  {
+    "id": "baba-warm-narration",
+    "speaker": "Baba",
+    "duration": 22.118,
+    "category": "Narration",
+    "text": "A warm, grounded voice sample for calm story narration.",
+    "tags": ["warm", "grounded", "story"],
+    "audio": "audio/baba.wav"
+  },
+  {
+    "id": "mama-gentle-dialogue",
+    "speaker": "Mama",
+    "duration": 18.276,
+    "category": "Dialogue",
+    "text": "A gentle, reassuring voice sample for intimate dialogue.",
+    "tags": ["gentle", "reassuring", "close"],
+    "audio": "audio/mama.wav"
+  },
+  {
+    "id": "ruirui-bright-character",
+    "speaker": "Ruirui",
+    "duration": 19.039,
+    "category": "Character",
+    "text": "A bright, lively voice sample for expressive character moments.",
+    "tags": ["bright", "lively", "expressive"],
+    "audio": "audio/ruirui.wav"
+  }
+]
