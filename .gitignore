@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Local voice-test recordings; do not commit private audio.
+public/audio/**/*.wav
+public/audio/**/*.mp3
+public/audio/**/*.m4a
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
