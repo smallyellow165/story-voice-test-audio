@@ -4,9 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node --env-file-if-exists=.env server.mjs",
+    "dev:vite": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google-cloud/text-to-speech": "^7.0.0"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

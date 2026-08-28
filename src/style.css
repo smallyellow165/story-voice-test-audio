@@ -211,6 +211,52 @@ select { padding: 0 40px 0 14px; }
 .empty-state p { color: var(--muted); }
 .empty-state button { margin-top: 16px; padding: 9px 14px; border: 1px solid var(--ink); color: var(--ink); background: transparent; }
 
+.test-tts {
+  padding: 48px 20px 88px;
+  border-top: 1px solid var(--line);
+}
+
+.test-tts-heading { max-width: 620px; margin-bottom: 24px; }
+.test-tts-heading > p:last-child { margin: 12px 0 0; color: var(--muted); line-height: 1.55; }
+.test-tts-form { display: grid; gap: 14px; max-width: 760px; }
+.test-tts-form label > span {
+  display: block;
+  margin: 0 0 7px 2px;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--card);
+  line-height: 1.5;
+  outline: none;
+}
+
+textarea:focus { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.test-tts-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.test-tts-actions button {
+  min-height: 46px;
+  padding: 0 17px;
+  border: 1px solid var(--ink);
+  color: #fff;
+  background: var(--ink);
+}
+.test-tts-actions button:hover:not(:disabled), .test-tts-actions button:focus-visible { background: var(--accent); border-color: var(--accent); }
+.test-tts-actions button:disabled { cursor: wait; opacity: 0.65; }
+#test-tts-status { margin: 0; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.test-tts-result { max-width: 760px; margin-top: 20px; padding: 16px; border: 1px solid var(--line); background: var(--card); }
+.test-tts-result audio { width: 100%; }
+.test-tts-result p { margin: 10px 0 0; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
 footer {
   padding: 24px 20px;
   display: flex;
@@ -237,6 +283,7 @@ footer {
   .site-header { padding: 20px 38px; }
   .hero { padding: 96px 38px 104px; }
   .library { padding: 64px 38px 112px; }
+  .test-tts { padding: 64px 38px 112px; }
   .filters { grid-template-columns: minmax(280px, 2fr) repeat(3, minmax(140px, 1fr)); }
   .sample-card { grid-template-columns: 82px minmax(0, 1fr) 36px; gap: 24px; padding: 28px 0; align-items: center; }
   .sample-number { display: block; align-self: start; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.58rem; text-align: right; }
@@ -245,7 +292,7 @@ footer {
 }
 
 @media (min-width: 1280px) {
-  .hero, .library { padding-left: 0; padding-right: 0; }
+  .hero, .library, .test-tts { padding-left: 0; padding-right: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

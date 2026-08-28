@@ -53,6 +53,27 @@ app.innerHTML = `
 
       <div id="sample-list" class="sample-list" aria-live="polite"></div>
     </section>
+
+    <section class="test-tts" aria-labelledby="test-tts-title">
+      <div class="test-tts-heading">
+        <p class="section-label">Generator</p>
+        <h2 id="test-tts-title">Gemini TTS test</h2>
+        <p>Generate a local test file. Google credentials stay on the Node server.</p>
+      </div>
+      <form id="test-tts-form" class="test-tts-form">
+        <label class="test-tts-text"><span>Text</span><textarea id="test-tts-text" required rows="4">瑞瑞，你怎么又把玉米藏到被子里面啦？</textarea></label>
+        <label><span>Voice</span><input id="test-tts-voice" value="Achernar" autocomplete="off" /></label>
+        <label class="test-tts-style"><span>Style instructions</span><textarea id="test-tts-style" rows="3">像妈妈和三岁小朋友说话，温柔自然，稍微夸张一点。</textarea></label>
+        <div class="test-tts-actions">
+          <button id="test-tts-submit" type="submit">Generate audio</button>
+          <p id="test-tts-status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+      <div id="test-tts-result" class="test-tts-result" hidden>
+        <audio id="test-tts-player" controls preload="metadata"></audio>
+        <p id="test-tts-meta"></p>
+      </div>
+    </section>
   </main>
 
   <footer><span>Story Voice</span><span>Local audio reference library</span></footer>
@@ -64,6 +85,15 @@ const durationSelect = document.querySelector<HTMLSelectElement>('#duration-filt
 const categorySelect = document.querySelector<HTMLSelectElement>('#category-filter')!
 const sampleList = document.querySelector<HTMLDivElement>('#sample-list')!
 const resultCount = document.querySelector<HTMLParagraphElement>('#result-count')!
+const testTtsForm = document.querySelector<HTMLFormElement>('#test-tts-form')!
+const testTtsText = document.querySelector<HTMLTextAreaElement>('#test-tts-text')!
+const testTtsVoice = document.querySelector<HTMLInputElement>('#test-tts-voice')!
+const testTtsStyle = document.querySelector<HTMLTextAreaElement>('#test-tts-style')!
+const testTtsSubmit = document.querySelector<HTMLButtonElement>('#test-tts-submit')!
+const testTtsStatus = document.querySelector<HTMLParagraphElement>('#test-tts-status')!
+const testTtsResult = document.querySelector<HTMLDivElement>('#test-tts-result')!
+const testTtsPlayer = document.querySelector<HTMLAudioElement>('#test-tts-player')!
+const testTtsMeta = document.querySelector<HTMLParagraphElement>('#test-tts-meta')!
 
 let samples: AudioSample[] = []
 let activeAudio: HTMLAudioElement | null = null
@@ -197,4 +227,47 @@ searchInput.addEventListener('input', renderSamples)
 speakerSelect.addEventListener('change', renderSamples)
 durationSelect.addEventListener('change', renderSamples)
 categorySelect.addEventListener('change', renderSamples)
+
+testTtsForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  testTtsSubmit.disabled = true
+  testTtsSubmit.textContent = 'Generating…'
+  testTtsStatus.textContent = 'Requesting Google Cloud Gemini TTS…'
+  testTtsResult.hidden = true
+
+  try {
+    const response = await fetch('/api/test-tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: testTtsText.value,
+        voice: testTtsVoice.value,
+        style: testTtsStyle.value,
+      }),
+    })
+    const payload = await response.json() as {
+      url?: string
+      model?: string
+      languageCode?: string
+      voice?: string
+      error?: { code: string; message: string }
+    }
+
+    if (!response.ok || !payload.url) {
+      throw new Error(payload.error?.message ?? 'The server returned an invalid TTS response.')
+    }
+
+    testTtsPlayer.src = payload.url
+    testTtsPlayer.load()
+    testTtsMeta.textContent = `${payload.model} · ${payload.languageCode} · ${payload.voice}`
+    testTtsResult.hidden = false
+    testTtsStatus.textContent = 'Audio generated.'
+  } catch (error) {
+    testTtsStatus.textContent = error instanceof Error ? error.message : 'The TTS request failed.'
+  } finally {
+    testTtsSubmit.disabled = false
+    testTtsSubmit.textContent = 'Generate audio'
+  }
+})
+
 void loadSamples()
