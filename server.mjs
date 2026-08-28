@@ -8,7 +8,9 @@ import textToSpeech from '@google-cloud/text-to-speech'
 import { createServer as createViteServer } from 'vite'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
+const generatedDirectory = path.join(projectRoot, 'generated')
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
+const metadataFile = path.join(generatedDirectory, 'metadata.json')
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
@@ -25,6 +27,49 @@ const sendJson = (response, statusCode, payload) => {
     'Cache-Control': 'no-store',
   })
   response.end(JSON.stringify(payload))
+}
+
+const readMetadata = async () => {
+  try {
+    const contents = await readFile(metadataFile, 'utf8')
+    const records = JSON.parse(contents)
+    if (!Array.isArray(records)) throw new Error('Generated audio metadata must be a JSON array.')
+    return records
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+}
+
+const writeMetadata = async (records) => {
+  await mkdir(generatedDirectory, { recursive: true })
+  await writeFile(metadataFile, `${JSON.stringify(records, null, 2)}\n`, 'utf8')
+}
+
+let metadataWriteQueue = Promise.resolve()
+const appendMetadataRecord = (record) => {
+  const write = metadataWriteQueue.then(async () => {
+    const records = await readMetadata()
+    records.unshift(record)
+    await writeMetadata(records)
+    return record
+  })
+  metadataWriteQueue = write.catch(() => undefined)
+  return write
+}
+
+const localTimestamp = (date) => {
+  const offset = -date.getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const pad = (value) => String(Math.abs(value)).padStart(2, '0')
+  const offsetHours = pad(Math.trunc(offset / 60))
+  const offsetMinutes = pad(offset % 60)
+  const datePart = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+  const timePart = `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+  return {
+    idPrefix: `${datePart}-${timePart}`,
+    createdAt: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${offsetHours}:${offsetMinutes}`,
+  }
 }
 
 const readJsonBody = (request) => new Promise((resolve, reject) => {
@@ -164,8 +209,18 @@ const handleTestTts = async (request, response) => {
     if (!result.audioContent) throw new Error('Cloud Text-to-Speech returned an empty audio response.')
 
     await mkdir(generatedAudioDirectory, { recursive: true })
-    const filename = `gemini-tts-${Date.now()}-${crypto.randomUUID()}.mp3`
+    const timestamp = localTimestamp(new Date())
+    const id = `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
+    const filename = `${id}-${voice.toLowerCase()}.mp3`
     await writeFile(path.join(generatedAudioDirectory, filename), result.audioContent)
+
+    const record = await appendMetadataRecord({
+      id,
+      voice,
+      script: text,
+      audioFile: filename,
+      createdAt: timestamp.createdAt,
+    })
 
     sendJson(response, 201, {
       url: `/generated/test-audio/${filename}`,
@@ -174,6 +229,7 @@ const handleTestTts = async (request, response) => {
       languageCode: 'cmn-CN',
       voice,
       bytes: result.audioContent.length,
+      record,
     })
   } catch (error) {
     const publicError = toPublicError(error)
@@ -190,7 +246,7 @@ const handleTestTts = async (request, response) => {
 
 const serveGeneratedAudio = async (pathname, response) => {
   const filename = path.basename(pathname)
-  if (!/^gemini-tts-[a-z0-9-]+\.mp3$/i.test(filename)) {
+  if (!/^[a-z0-9-]+\.mp3$/i.test(filename)) {
     response.writeHead(404).end()
     return
   }
@@ -205,6 +261,20 @@ const serveGeneratedAudio = async (pathname, response) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/test-audio') {
+    if (request.method !== 'GET') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for /api/test-audio.' } })
+      return
+    }
+    try {
+      sendJson(response, 200, { records: await readMetadata() })
+    } catch (error) {
+      console.error('Generated audio metadata could not be read', { code: error?.code, message: error?.message })
+      sendJson(response, 500, { error: { code: 'METADATA_READ_FAILED', message: 'Generated audio metadata could not be read.' } })
+    }
+    return
+  }
 
   if (url.pathname === '/api/test-tts') {
     if (request.method !== 'POST') {

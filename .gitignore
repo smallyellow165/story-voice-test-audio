@@ -14,8 +14,8 @@ dist-ssr
 .env
 !.env.example
 
-# Locally generated Gemini TTS test output.
-generated/test-audio/
+# Locally generated Gemini TTS test output and metadata.
+generated/
 
 # Local voice-test recordings; do not commit private audio.
 public/audio/**/*.wav

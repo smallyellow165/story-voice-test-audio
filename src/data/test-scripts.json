@@ -1,0 +1,12 @@
+[
+  { "id": "xs-next", "label": "XS · 下一个", "duration": "<1s", "text": "下一个。" },
+  { "id": "xs-previous", "label": "XS · 上一个", "duration": "<1s", "text": "上一个。" },
+  { "id": "xs-stop", "label": "XS · 停一下", "duration": "~1s", "text": "停一下。" },
+  { "id": "xs-continue", "label": "XS · 继续讲", "duration": "1–2s", "text": "继续讲。" },
+  { "id": "s-come-here", "label": "S · 瑞瑞过来", "duration": "2–3s", "text": "瑞瑞，过来一下。" },
+  { "id": "s-go-outside", "label": "S · 去外面玩", "duration": "3–4s", "text": "我们去外面玩吧。" },
+  { "id": "s-story-intro", "label": "S · 玉米妈妈故事", "duration": "5–6s", "text": "妈妈今天给你讲一个玉米妈妈的故事。" },
+  { "id": "m-airplane", "label": "M · 玉米妈妈坐飞机", "duration": "8–10s", "text": "玉米妈妈今天坐飞机去了一个很远的地方，她一路上都特别开心。" },
+  { "id": "m-clouds-icecream", "label": "M · 云和冰淇淋", "duration": "12–15s", "text": "土豆瑞瑞坐上飞机以后一直看着窗外，看到好多白白的云，还问妈妈什么时候可以吃冰淇淋。" },
+  { "id": "l-airplane-dialogue", "label": "L · 飞机对话", "duration": "18–22s", "text": "今天玉米妈妈带着土豆瑞瑞一起坐飞机。飞机刚刚起飞，土豆瑞瑞就问：“妈妈，我们什么时候可以吃冰淇淋呀？”玉米妈妈听完笑了，说：“我们才刚刚飞起来呢！”" }
+]

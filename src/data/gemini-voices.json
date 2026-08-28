@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Achernar",
+    "gender": "Female",
+    "notes": "柔和、自然、干净，适合温柔叙述"
+  },
+  {
+    "name": "Charon",
+    "gender": "Male",
+    "notes": "成熟、稳重、低调，适合成人男声"
+  },
+  {
+    "name": "Kore",
+    "gender": "Female",
+    "notes": "清晰、坚定，适合比较直接的表达"
+  },
+  {
+    "name": "Leda",
+    "gender": "Female",
+    "notes": "偏年轻、轻盈，适合年轻或儿童感"
+  },
+  {
+    "name": "Zephyr",
+    "gender": "Female",
+    "notes": "明亮、轻快，适合活泼场景"
+  },
+  {
+    "name": "Puck",
+    "gender": "Male",
+    "notes": "活泼、轻快，适合有趣或年轻男声"
+  },
+  {
+    "name": "Pulcherrima",
+    "gender": "Female",
+    "notes": "偏低沉、成熟、厚一些，和偏明亮的女性声音更容易区分，适合 speaker differentiation 测试"
+  }
+]
