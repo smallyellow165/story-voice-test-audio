@@ -71,7 +71,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); box-shadow
 .result-count { margin: 0; align-self: center; color: var(--muted); font-size: 0.58rem; }
 
 .table-wrap { overflow-x: auto; border-top: 1px solid var(--ink); }
-table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: left; }
+table { width: 100%; min-width: 810px; border-collapse: collapse; text-align: left; }
 th { padding: 11px 10px; color: var(--muted); font-size: 0.55rem; font-weight: 400; }
 .sort-header { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; letter-spacing: inherit; text-transform: inherit; }
 .sort-header:hover, .sort-header:focus-visible { color: var(--ink); }
@@ -83,6 +83,7 @@ th:last-child, td:last-child { padding-right: 0; }
 .table-play:hover, .table-play:focus-visible { border-color: var(--accent); color: var(--accent); }
 .voice-cell { color: var(--accent); font-weight: 600; }
 .script-cell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duration-cell { white-space: nowrap; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.61rem; }
 .file-cell { max-width: 200px; overflow: hidden; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.61rem; text-overflow: ellipsis; white-space: nowrap; }
 .created-cell { white-space: nowrap; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.61rem; }
 .empty-cell { padding: 30px 0; color: var(--muted); text-align: center; }

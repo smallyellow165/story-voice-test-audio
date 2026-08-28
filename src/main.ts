@@ -7,10 +7,11 @@ type AudioRecord = {
   voice: string
   script: string
   audioFile: string
+  durationSeconds?: number
   createdAt: string
 }
 
-type SortColumn = 'voice' | 'script' | 'audioFile' | 'createdAt'
+type SortColumn = 'voice' | 'script' | 'audioFile' | 'durationSeconds' | 'createdAt'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 let records: AudioRecord[] = []
@@ -33,8 +34,12 @@ const escapeHtml = (value: string) => {
 const audioUrl = (audioFile: string) => `/generated/test-audio/${encodeURIComponent(audioFile)}`
 
 const sortRecords = (items: AudioRecord[]) => [...items].sort((left, right) => {
-  const leftValue = sortColumn === 'createdAt' ? new Date(left.createdAt).getTime() : left[sortColumn]
-  const rightValue = sortColumn === 'createdAt' ? new Date(right.createdAt).getTime() : right[sortColumn]
+  const leftValue = sortColumn === 'createdAt'
+    ? new Date(left.createdAt).getTime()
+    : sortColumn === 'durationSeconds' ? left.durationSeconds ?? Number.NEGATIVE_INFINITY : left[sortColumn]
+  const rightValue = sortColumn === 'createdAt'
+    ? new Date(right.createdAt).getTime()
+    : sortColumn === 'durationSeconds' ? right.durationSeconds ?? Number.NEGATIVE_INFINITY : right[sortColumn]
   const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
     ? leftValue - rightValue
     : String(leftValue).localeCompare(String(rightValue))
@@ -56,6 +61,9 @@ const formatCreatedAt = (value: string) => {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date)
 }
+
+const formatDuration = (durationSeconds: number | undefined) =>
+  Number.isFinite(durationSeconds) ? `${durationSeconds!.toFixed(2)}s` : '—'
 
 const stopPlayback = () => {
   activeAudio?.pause()
@@ -115,7 +123,7 @@ const renderLibraryRows = () => {
   count.textContent = `${sorted.length} ${sorted.length === 1 ? 'clip' : 'clips'}`
   updateSortHeaders()
   if (!sorted.length) {
-    body.innerHTML = '<tr><td class="empty-cell" colspan="5">No generated audio matches these filters.</td></tr>'
+    body.innerHTML = '<tr><td class="empty-cell" colspan="6">No generated audio matches these filters.</td></tr>'
     return
   }
 
@@ -124,6 +132,7 @@ const renderLibraryRows = () => {
       <td><button class="table-play" type="button" data-record-id="${escapeHtml(record.id)}">Play</button></td>
       <td class="voice-cell">${escapeHtml(record.voice)}</td>
       <td class="script-cell" title="${escapeHtml(record.script)}">${escapeHtml(record.script)}</td>
+      <td class="duration-cell">${escapeHtml(formatDuration(record.durationSeconds))}</td>
       <td class="file-cell" title="${escapeHtml(record.audioFile)}">${escapeHtml(record.audioFile)}</td>
       <td class="created-cell">${escapeHtml(formatCreatedAt(record.createdAt))}</td>
     </tr>
@@ -160,6 +169,7 @@ const renderLibrary = () => {
             <th>Play</th>
             <th><button class="sort-header" type="button" data-sort-column="voice">Voice<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th><button class="sort-header" type="button" data-sort-column="script">Script<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th><button class="sort-header" type="button" data-sort-column="durationSeconds">Duration<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th><button class="sort-header" type="button" data-sort-column="audioFile">File<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th><button class="sort-header" type="button" data-sort-column="createdAt">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
           </tr></thead>

@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import textToSpeech from '@google-cloud/text-to-speech'
 import { createServer as createViteServer } from 'vite'
+import { probeAudioDuration } from './server/audio-duration.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
@@ -15,6 +16,8 @@ const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
 const maxInputBytes = 8_000
+
+class AudioDurationError extends Error {}
 
 const vite = await createViteServer({
   server: { middlewareMode: true },
@@ -110,6 +113,14 @@ const toPublicError = (error) => {
   const message = String(error?.message ?? '')
   const details = String(error?.details ?? '')
   const context = `${message} ${details}`.toLowerCase()
+
+  if (error instanceof AudioDurationError) {
+    return {
+      statusCode: 500,
+      code: 'AUDIO_DURATION_PROBE_FAILED',
+      message: error.message,
+    }
+  }
 
   if (error?.code === 16 || /could not load the default credentials|application default credentials|unauthenticated/.test(context)) {
     return {
@@ -212,13 +223,21 @@ const handleTestTts = async (request, response) => {
     const timestamp = localTimestamp(new Date())
     const id = `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
     const filename = `${id}-${voice.toLowerCase()}.mp3`
-    await writeFile(path.join(generatedAudioDirectory, filename), result.audioContent)
+    const audioPath = path.join(generatedAudioDirectory, filename)
+    await writeFile(audioPath, result.audioContent)
+    let durationSeconds
+    try {
+      durationSeconds = await probeAudioDuration(audioPath)
+    } catch (error) {
+      throw new AudioDurationError(error.message, { cause: error })
+    }
 
     const record = await appendMetadataRecord({
       id,
       voice,
       script: text,
       audioFile: filename,
+      durationSeconds,
       createdAt: timestamp.createdAt,
     })
 
