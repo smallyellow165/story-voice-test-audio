@@ -73,6 +73,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); box-shadow
 .table-wrap { overflow-x: auto; border-top: 1px solid var(--ink); }
 table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: left; }
 th { padding: 11px 10px; color: var(--muted); font-size: 0.55rem; font-weight: 400; }
+.sort-header { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+.sort-header:hover, .sort-header:focus-visible { color: var(--ink); }
+.sort-indicator { color: var(--accent); }
 td { height: 51px; padding: 8px 10px; border-top: 1px solid var(--line); font-size: 0.84rem; vertical-align: middle; }
 th:first-child, td:first-child { padding-left: 0; }
 th:last-child, td:last-child { padding-right: 0; }

@@ -10,10 +10,14 @@ type AudioRecord = {
   createdAt: string
 }
 
+type SortColumn = 'voice' | 'script' | 'audioFile' | 'createdAt'
+
 const app = document.querySelector<HTMLDivElement>('#app')!
 let records: AudioRecord[] = []
 let activeAudio: HTMLAudioElement | null = null
 let activeButton: HTMLButtonElement | null = null
+let sortColumn: SortColumn = 'createdAt'
+let sortDirection: 'asc' | 'desc' = 'desc'
 
 const voiceOptionLabel = (voice: typeof geminiVoices[number]) => {
   const shortNotes = voice.notes.split('，').slice(0, 2).join('，')
@@ -27,6 +31,23 @@ const escapeHtml = (value: string) => {
 }
 
 const audioUrl = (audioFile: string) => `/generated/test-audio/${encodeURIComponent(audioFile)}`
+
+const sortRecords = (items: AudioRecord[]) => [...items].sort((left, right) => {
+  const leftValue = sortColumn === 'createdAt' ? new Date(left.createdAt).getTime() : left[sortColumn]
+  const rightValue = sortColumn === 'createdAt' ? new Date(right.createdAt).getTime() : right[sortColumn]
+  const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+    ? leftValue - rightValue
+    : String(leftValue).localeCompare(String(rightValue))
+  return sortDirection === 'asc' ? comparison : -comparison
+})
+
+const updateSortHeaders = () => {
+  document.querySelectorAll<HTMLButtonElement>('.sort-header').forEach((header) => {
+    const active = header.dataset.sortColumn === sortColumn
+    header.querySelector('.sort-indicator')!.textContent = active ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''
+    header.setAttribute('aria-pressed', String(active))
+  })
+}
 
 const formatCreatedAt = (value: string) => {
   const date = new Date(value)
@@ -89,14 +110,16 @@ const renderLibraryRows = () => {
     (!search || `${record.script} ${record.audioFile}`.toLocaleLowerCase().includes(search)) &&
     (voice === 'all' || record.voice === voice),
   )
+  const sorted = sortRecords(filtered)
 
-  count.textContent = `${filtered.length} ${filtered.length === 1 ? 'clip' : 'clips'}`
-  if (!filtered.length) {
+  count.textContent = `${sorted.length} ${sorted.length === 1 ? 'clip' : 'clips'}`
+  updateSortHeaders()
+  if (!sorted.length) {
     body.innerHTML = '<tr><td class="empty-cell" colspan="5">No generated audio matches these filters.</td></tr>'
     return
   }
 
-  body.innerHTML = filtered.map((record) => `
+  body.innerHTML = sorted.map((record) => `
     <tr>
       <td><button class="table-play" type="button" data-record-id="${escapeHtml(record.id)}">Play</button></td>
       <td class="voice-cell">${escapeHtml(record.voice)}</td>
@@ -133,7 +156,13 @@ const renderLibrary = () => {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Play</th><th>Voice</th><th>Script</th><th>File</th><th>Created</th></tr></thead>
+          <thead><tr>
+            <th>Play</th>
+            <th><button class="sort-header" type="button" data-sort-column="voice">Voice<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th><button class="sort-header" type="button" data-sort-column="script">Script<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th><button class="sort-header" type="button" data-sort-column="audioFile">File<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th><button class="sort-header" type="button" data-sort-column="createdAt">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          </tr></thead>
           <tbody id="library-table-body"></tbody>
         </table>
       </div>
@@ -146,6 +175,17 @@ const renderLibrary = () => {
   }
   document.querySelector<HTMLInputElement>('#search')!.addEventListener('input', renderLibraryRows)
   voiceFilter.addEventListener('change', renderLibraryRows)
+  document.querySelectorAll<HTMLButtonElement>('.sort-header').forEach((header) => {
+    header.addEventListener('click', () => {
+      const column = header.dataset.sortColumn as SortColumn
+      if (column === sortColumn) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'
+      else {
+        sortColumn = column
+        sortDirection = 'asc'
+      }
+      renderLibraryRows()
+    })
+  })
   renderLibraryRows()
 }
 
