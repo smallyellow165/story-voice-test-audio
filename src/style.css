@@ -160,6 +160,12 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-generated { margin: 5px 0 0; color: var(--muted); font-size: 0.66rem; overflow-wrap: anywhere; }
 .history-generated a { color: var(--ink); }
 .history-generated a:hover, .history-generated a:focus-visible { color: var(--accent); }
+.history-pose-result { margin-top: 8px; padding: 8px; border-left: 2px solid var(--accent); background: #f5f1e9; }
+.history-pose-result p { margin: 0; font-family: 'DM Mono', monospace; font-size: 0.62rem; }
+.history-pose-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.history-pose-actions a { color: var(--ink); font-size: 0.62rem; }
+.history-pose-actions a:hover, .history-pose-actions a:focus-visible { color: var(--accent); }
+.history-pose-actions button { min-height: 28px; padding: 0 8px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.54rem; }
 .history-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .actions-panel { padding: 0 14px; }
 .action-group { padding: 15px 0; border-bottom: 1px solid var(--line); }

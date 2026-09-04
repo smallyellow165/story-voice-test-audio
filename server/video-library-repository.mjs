@@ -32,10 +32,20 @@ const normalizeGeneratedClip = (value) => {
   if (!value || typeof value !== 'object') {
     throw new VideoLibraryStorageError('Generated clip metadata must be an object.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
   }
+  const poseResult = value.poseResult === undefined ? undefined : {
+    filename: requireString(value.poseResult?.filename, 'generatedClip.poseResult.filename'),
+    relativePath: requireString(value.poseResult?.relativePath, 'generatedClip.poseResult.relativePath'),
+    frameCount: requireNumber(value.poseResult?.frameCount, 'generatedClip.poseResult.frameCount'),
+    detectedPoseFrameCount: requireNumber(value.poseResult?.detectedPoseFrameCount, 'generatedClip.poseResult.detectedPoseFrameCount'),
+    durationMs: requireNumber(value.poseResult?.durationMs, 'generatedClip.poseResult.durationMs'),
+    processingDurationMs: requireNumber(value.poseResult?.processingDurationMs, 'generatedClip.poseResult.processingDurationMs'),
+    createdAt: requireString(value.poseResult?.createdAt, 'generatedClip.poseResult.createdAt'),
+  }
   return {
     filename: requireString(value.filename, 'generatedClip.filename'),
     relativePath: requireString(value.relativePath, 'generatedClip.relativePath'),
     createdAt: requireString(value.createdAt, 'generatedClip.createdAt'),
+    poseResult,
   }
 }
 
@@ -222,6 +232,20 @@ export const createVideoLibraryRepository = (storagePath) => {
     throw new VideoLibraryStorageError('Clip range was not found.', 'CLIP_RANGE_NOT_FOUND')
   })
 
+  const attachPoseResult = (clipRangeId, poseResult) => mutateVideoLibrary((library) => {
+    for (const video of library.videos) {
+      const clip = video.clips.find((item) => item.id === clipRangeId)
+      if (!clip) continue
+      if (!clip.generatedClip) {
+        throw new VideoLibraryStorageError('This clip range does not have a generated clip.', 'GENERATED_CLIP_NOT_FOUND')
+      }
+      clip.generatedClip = normalizeGeneratedClip({ ...clip.generatedClip, poseResult })
+      video.updatedAt = clip.generatedClip.poseResult.createdAt
+      return
+    }
+    throw new VideoLibraryStorageError('Clip range was not found.', 'CLIP_RANGE_NOT_FOUND')
+  })
+
   return {
     storagePath,
     loadVideoLibrary,
@@ -231,5 +255,6 @@ export const createVideoLibraryRepository = (storagePath) => {
     deleteClipRange,
     findClipRange,
     attachGeneratedClip,
+    attachPoseResult,
   }
 }

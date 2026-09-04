@@ -24,12 +24,21 @@
           "generatedClip": {
             "filename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.mp4",
             "relativePath": "clips/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.mp4",
-            "createdAt": "2026-09-04T06:58:24.027Z"
+            "createdAt": "2026-09-04T06:58:24.027Z",
+            "poseResult": {
+              "filename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.json",
+              "relativePath": "pose/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.json",
+              "frameCount": 195,
+              "detectedPoseFrameCount": 195,
+              "durationMs": 7566.6669999999995,
+              "processingDurationMs": 9699.60000000149,
+              "createdAt": "2026-09-04T09:19:53.236Z"
+            }
           }
         }
       ],
       "createdAt": "2026-09-04T06:57:34.719Z",
-      "updatedAt": "2026-09-04T06:58:24.027Z",
+      "updatedAt": "2026-09-04T09:19:53.236Z",
       "nextClipNumber": 2
     }
   ]

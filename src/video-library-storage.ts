@@ -9,7 +9,43 @@ export type ClipHistoryRecord = {
     filename: string
     relativePath: string
     createdAt: string
+    poseResult?: PoseResultMetadata
   }
+}
+
+export type PoseResultMetadata = {
+  filename: string
+  relativePath: string
+  frameCount: number
+  detectedPoseFrameCount: number
+  durationMs: number
+  processingDurationMs: number
+  createdAt: string
+}
+
+export type RawPoseResult = {
+  schemaVersion: 1
+  task: 'MediaPipe Pose Landmarker'
+  model: {
+    packageVersion: string
+    modelName: string
+    modelAssetPath: string
+    runningMode: 'VIDEO'
+    delegate: 'GPU' | 'CPU'
+    numPoses: number
+    minPoseDetectionConfidence: number
+    minPosePresenceConfidence: number
+    minTrackingConfidence: number
+  }
+  durationMs: number
+  processingDurationMs: number
+  frameCount: number
+  detectedPoseFrameCount: number
+  frames: Array<{
+    videoTimestampMs: number
+    landmarks: Array<Array<{ x: number; y: number; z: number; visibility?: number }>>
+    worldLandmarks: Array<Array<{ x: number; y: number; z: number; visibility?: number }>>
+  }>
 }
 
 export type VideoFileMetadata = {
@@ -49,6 +85,7 @@ export type VideoStorage = {
   addClip: (library: VideoLibrary, video: VideoRecord, clip: ClipHistoryRecord) => Promise<VideoLibrary>
   deleteClip: (library: VideoLibrary, video: VideoRecord, clipId: string) => Promise<VideoLibrary>
   generateClip: (clipRangeId: string) => Promise<VideoLibrary>
+  savePoseResult: (clipRangeId: string, poseData: RawPoseResult) => Promise<VideoLibrary>
 }
 
 export const videoLibraryStorageKey = 'story-voice.video-library.v1'
@@ -84,6 +121,25 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
   const start = Math.round(candidate.start! * 1000) / 1000
   const end = Math.round(candidate.end! * 1000) / 1000
   const generatedClip = candidate.generatedClip
+  const poseResult = generatedClip?.poseResult
+  const normalizedPoseResult = poseResult &&
+    typeof poseResult.filename === 'string' && poseResult.filename &&
+    typeof poseResult.relativePath === 'string' && poseResult.relativePath &&
+    Number.isFinite(poseResult.frameCount) &&
+    Number.isFinite(poseResult.detectedPoseFrameCount) &&
+    Number.isFinite(poseResult.durationMs) &&
+    Number.isFinite(poseResult.processingDurationMs) &&
+    typeof poseResult.createdAt === 'string' && poseResult.createdAt
+    ? {
+        filename: poseResult.filename,
+        relativePath: poseResult.relativePath,
+        frameCount: poseResult.frameCount,
+        detectedPoseFrameCount: poseResult.detectedPoseFrameCount,
+        durationMs: poseResult.durationMs,
+        processingDurationMs: poseResult.processingDurationMs,
+        createdAt: poseResult.createdAt,
+      }
+    : undefined
   const normalizedGeneratedClip = generatedClip &&
     typeof generatedClip.filename === 'string' && generatedClip.filename &&
     typeof generatedClip.relativePath === 'string' && generatedClip.relativePath &&
@@ -92,6 +148,7 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
         filename: generatedClip.filename,
         relativePath: generatedClip.relativePath,
         createdAt: generatedClip.createdAt,
+        poseResult: normalizedPoseResult,
       }
     : undefined
   return {
@@ -228,6 +285,9 @@ const localVideoStorage: VideoStorage = {
   generateClip: async () => {
     throw new Error('Server clip generation is only available in Video V2.')
   },
+  savePoseResult: async () => {
+    throw new Error('Pose analysis is only available for generated clips in Video V2.')
+  },
 }
 
 const serverVideoStorage: VideoStorage = {
@@ -257,6 +317,10 @@ const serverVideoStorage: VideoStorage = {
   generateClip: (clipRangeId) => requestServerVideoLibrary('/api/video-v2/clip/generate', {
     method: 'POST',
     body: JSON.stringify({ clipRangeId }),
+  }),
+  savePoseResult: (clipRangeId, poseData) => requestServerVideoLibrary('/api/video-v2/clip/pose', {
+    method: 'POST',
+    body: JSON.stringify({ clipRangeId, poseData }),
   }),
 }
 

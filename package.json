@@ -7,11 +7,13 @@
     "dev": "node --env-file-if-exists=.env server.mjs",
     "dev:vite": "node --env-file-if-exists=.env server.mjs",
     "build": "tsc && vite build",
+    "test": "node --test",
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
+    "@mediapipe/tasks-vision": "1.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-resizable-panels": "4.12.3"

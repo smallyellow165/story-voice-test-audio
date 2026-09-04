@@ -3,6 +3,7 @@ import geminiVoices from './data/gemini-voices.json'
 import testScripts from './data/test-scripts.json'
 import { mountVideoV2, unmountVideoV2 } from './video-v2-panels'
 import { buildFfmpegClipCommand, formatFfmpegTime, quoteShellArgument } from './video-clip.mjs'
+import { analyzePoseVideo } from './pose-video-analyzer'
 import {
   createVideoStorage,
   createId,
@@ -52,6 +53,7 @@ let activeButton: HTMLButtonElement | null = null
 let sortColumn: SortColumn = 'createdAt'
 let sortDirection: 'asc' | 'desc' = 'desc'
 let activeVideoObjectUrl: string | null = null
+let activePoseAnalysisController: AbortController | null = null
 
 const voiceOptionLabel = (voice: typeof geminiVoices[number]) => {
   const shortNotes = voice.notes.split('，').slice(0, 2).join('，')
@@ -383,6 +385,8 @@ const moveVideoToolsIntoV2 = () => {
 }
 
 const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
+  activePoseAnalysisController?.abort()
+  activePoseAnalysisController = null
   stopPlayback()
   cleanupVideoObjectUrl()
   const videoStorage = createVideoStorage(layoutMode === 'video-v2' ? 'server' : 'local')
@@ -557,6 +561,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let currentServerAsset: ServerVideoAsset | null = null
   let viewedVideoId = ''
   let serverLibrary: ServerVideoLibrary = { source: [], clips: [] }
+  const analyzingPoseClipIds = new Set<string>()
   if (layoutMode === 'video') {
     try {
       sourceUrlInput.value = localStorage.getItem(recentVideoSourceUrlKey) ?? ''
@@ -706,12 +711,22 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
             <a href="${escapeHtml(serverVideoUrl(record.generatedClip.relativePath))}" target="_blank" rel="noopener" title="${escapeHtml(record.generatedClip.filename)}">${escapeHtml(record.generatedClip.filename)}</a>
           </p>
         ` : ''}
+        ${record.generatedClip?.poseResult ? `
+          <div class="history-pose-result">
+            <p>Pose: ${record.generatedClip.poseResult.frameCount.toLocaleString()} frames / ${record.generatedClip.poseResult.detectedPoseFrameCount.toLocaleString()} detected</p>
+            <div class="history-pose-actions">
+              <a href="${escapeHtml(serverVideoUrl(record.generatedClip.poseResult.relativePath))}" target="_blank" rel="noopener">Open Pose JSON</a>
+              <button type="button" data-history-action="copy-pose-path" data-history-id="${escapeHtml(record.id)}">Copy Pose Path</button>
+            </div>
+          </div>
+        ` : ''}
         <div class="history-actions">
           <button type="button" data-history-action="go-start" data-history-id="${escapeHtml(record.id)}">Go Start</button>
           <button type="button" data-history-action="go-end" data-history-id="${escapeHtml(record.id)}">Go End</button>
           <button type="button" data-history-action="use-range" data-history-id="${escapeHtml(record.id)}">Use Range</button>
           ${layoutMode === 'video-v2' && record.generatedClip ? `
             <button type="button" data-history-action="copy-full-path" data-history-id="${escapeHtml(record.id)}">Copy Full Path</button>
+            <button type="button" data-history-action="analyze-pose" data-history-id="${escapeHtml(record.id)}"${analyzingPoseClipIds.has(record.id) ? ' disabled' : ''}>${analyzingPoseClipIds.has(record.id) ? 'Analyzing Pose…' : record.generatedClip.poseResult ? 'Re-analyze Pose' : 'Analyze Pose'}</button>
           ` : ''}
           ${layoutMode === 'video-v2' && currentServerAsset?.category === 'source' ? `
             <button type="button" data-history-action="generate" data-history-id="${escapeHtml(record.id)}">${record.generatedClip ? 'Regenerate Clip' : 'Generate Clip'}</button>
@@ -786,6 +801,15 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     const payload = await response.json() as { fullPath?: unknown; error?: { message?: string } }
     if (!response.ok || typeof payload.fullPath !== 'string' || !payload.fullPath) {
       throw new Error(payload.error?.message ?? 'The server could not resolve this generated clip path.')
+    }
+    return payload.fullPath
+  }
+
+  const requestPoseResultFullPath = async (clipRangeId: string) => {
+    const response = await fetch(`/api/video-v2/clip/${encodeURIComponent(clipRangeId)}/pose/path`, { cache: 'no-store' })
+    const payload = await response.json() as { fullPath?: unknown; error?: { message?: string } }
+    if (!response.ok || typeof payload.fullPath !== 'string' || !payload.fullPath) {
+      throw new Error(payload.error?.message ?? 'The server could not resolve this pose result path.')
     }
     return payload.fullPath
   }
@@ -1216,6 +1240,69 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       return
     }
 
+    if (action === 'copy-pose-path') {
+      const originalText = button.textContent
+      button.disabled = true
+      button.textContent = 'Copying…'
+      try {
+        const fullPath = await requestPoseResultFullPath(record.id)
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API is unavailable in this browser.')
+        await navigator.clipboard.writeText(fullPath)
+        button.textContent = 'Copied'
+        historyStatus.textContent = 'Pose result path copied.'
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.disabled = false
+            button.textContent = originalText
+          }
+        }, 1_200)
+      } catch (error) {
+        button.disabled = false
+        button.textContent = originalText
+        historyStatus.textContent = error instanceof Error
+          ? `Could not copy pose path. ${error.message}`
+          : 'Could not copy pose path.'
+      }
+      return
+    }
+
+    if (action === 'analyze-pose') {
+      if (!record.generatedClip || analyzingPoseClipIds.has(record.id)) return
+      analyzingPoseClipIds.add(record.id)
+      const previousPoseResult = record.generatedClip.poseResult
+      const controller = new AbortController()
+      activePoseAnalysisController?.abort()
+      activePoseAnalysisController = controller
+      button.disabled = true
+      button.textContent = 'Analyzing Pose…'
+      historyStatus.textContent = 'Loading MediaPipe Pose Landmarker…'
+      try {
+        const poseData = await analyzePoseVideo(serverVideoUrl(record.generatedClip.relativePath), {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            historyStatus.textContent = `Analyzing pose: ${(progress.videoTimestampMs / 1000).toFixed(1)}s / ${(progress.durationMs / 1000).toFixed(1)}s · ${progress.frameCount} frames · ${progress.detectedPoseFrameCount} detected`
+          },
+        })
+        historyStatus.textContent = 'Saving pose landmark JSON…'
+        applyStoredLibrary(await videoStorage.savePoseResult(record.id, poseData))
+        historyStatus.textContent = `Pose analysis complete: ${poseData.frameCount} frames / ${poseData.detectedPoseFrameCount} detected.`
+      } catch (error) {
+        await restoreServerLibrary()
+        historyStatus.textContent = error instanceof DOMException && error.name === 'AbortError'
+          ? 'Pose analysis cancelled.'
+          : error instanceof Error
+            ? `Pose analysis failed. ${error.message}`
+            : 'Pose analysis failed.'
+        if (previousPoseResult) historyStatus.textContent += ' The previous pose result was kept.'
+      } finally {
+        analyzingPoseClipIds.delete(record.id)
+        if (activePoseAnalysisController === controller) activePoseAnalysisController = null
+        renderClipHistory()
+        renderVideoLibrary()
+      }
+      return
+    }
+
     if (action === 'generate') {
       button.disabled = true
       button.textContent = record.generatedClip ? 'Regenerating…' : 'Generating…'
@@ -1287,6 +1374,8 @@ const loadRecords = async () => {
 }
 
 const renderRoute = async () => {
+  activePoseAnalysisController?.abort()
+  activePoseAnalysisController = null
   unmountVideoV2()
   if (window.location.hash === '#/video-v2') {
     await renderVideo('video-v2')
@@ -1303,5 +1392,8 @@ const renderRoute = async () => {
 }
 
 window.addEventListener('hashchange', () => void renderRoute())
-window.addEventListener('beforeunload', cleanupVideoObjectUrl)
+window.addEventListener('beforeunload', () => {
+  activePoseAnalysisController?.abort()
+  cleanupVideoObjectUrl()
+})
 void renderRoute()

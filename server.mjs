@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite'
 import { probeAudioDuration } from './server/audio-duration.mjs'
 import { generateClip, resolveGeneratedClipFullPath } from './server/video-clip-generator.mjs'
 import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
+import { resolvePoseResultFullPath, savePoseResult } from './server/pose-result-store.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
@@ -18,10 +19,12 @@ const videoLibraryFile = path.join(projectRoot, 'data', 'video-library.json')
 const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
 const sourceVideoDirectory = path.join(testVideoDirectory, 'source')
 const clipVideoDirectory = path.join(testVideoDirectory, 'clips')
+const poseDirectory = path.join(testVideoDirectory, 'pose')
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
 const maxVideoLibraryRequestBytes = 1024 * 1024
+const maxPoseResultRequestBytes = 64 * 1024 * 1024
 const maxInputBytes = 8_000
 
 const videoLibraryRepository = createVideoLibraryRepository(videoLibraryFile)
@@ -327,6 +330,11 @@ const sendVideoLibraryError = (response, error) => {
     SOURCE_VIDEO_UNAVAILABLE: 400,
     INVALID_GENERATED_CLIP_PATH: 400,
     CLIP_GENERATION_IN_PROGRESS: 409,
+    INVALID_POSE_RESULT: 400,
+    INVALID_POSE_RESULT_PATH: 400,
+    POSE_RESULT_NOT_FOUND: 404,
+    POSE_RESULT_FILE_NOT_FOUND: 404,
+    POSE_RESULT_IN_PROGRESS: 409,
     FFMPEG_FAILED: 422,
     FFMPEG_UNAVAILABLE: 500,
     FFMPEG_OUTPUT_MISSING: 500,
@@ -400,6 +408,27 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/video-v2/clip/pose') {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST for /api/video-v2/clip/pose.' } })
+      return
+    }
+    try {
+      const body = await readJsonBody(request, maxPoseResultRequestBytes)
+      const result = await savePoseResult({
+        clipRangeId: body?.clipRangeId,
+        poseData: body?.poseData,
+        repository: videoLibraryRepository,
+        clipVideoDirectory,
+        poseDirectory,
+      })
+      sendJson(response, 200, { ...result.library, poseResult: result.poseResult })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
   const clipPathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/path$/)
   if (clipPathMatch) {
     if (request.method !== 'GET') {
@@ -418,6 +447,27 @@ const server = createServer(async (request, response) => {
         repository: videoLibraryRepository,
         clipVideoDirectory,
       })
+      sendJson(response, 200, { fullPath })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  const posePathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/pose\/path$/)
+  if (posePathMatch) {
+    if (request.method !== 'GET') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for a pose result path.' } })
+      return
+    }
+    try {
+      let clipRangeId
+      try {
+        clipRangeId = decodeURIComponent(posePathMatch[1])
+      } catch {
+        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
+      }
+      const fullPath = await resolvePoseResultFullPath({ clipRangeId, repository: videoLibraryRepository, poseDirectory })
       sendJson(response, 200, { fullPath })
     } catch (error) {
       sendVideoLibraryError(response, error)
