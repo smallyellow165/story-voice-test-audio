@@ -110,6 +110,9 @@ export const serverVideoIdentity = (relativePath: string) => {
 export const serverVideoUrl = (relativePath: string) =>
   `/test-videos/${relativePath.split('/').map(encodeURIComponent).join('/')}`
 
+export const isSourceVideoRecord = (record: VideoRecord) =>
+  record.type !== 'server' || record.server?.relativePath.startsWith('source/') === true
+
 export const createId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export const detectSourceSite = (sourceUrl: string): NonNullable<VideoRecord['source']>['site'] => {
@@ -229,7 +232,10 @@ export const loadVideoLibrary = (): VideoLibrary => {
   try {
     const value = JSON.parse(localStorage.getItem(videoLibraryStorageKey) ?? '{}') as Partial<VideoLibrary>
     const records = Array.isArray(value.videos)
-      ? value.videos.map(normalizeVideoRecord).filter((record): record is VideoRecord => Boolean(record))
+      ? value.videos
+          .map(normalizeVideoRecord)
+          .filter((record): record is VideoRecord => Boolean(record))
+          .filter(isSourceVideoRecord)
       : []
     const videos = new Map<string, VideoRecord>()
     for (const record of records) {
@@ -246,7 +252,10 @@ export const loadVideoLibrary = (): VideoLibrary => {
 
 export const saveVideoLibrary = (library: VideoLibrary) => {
   try {
-    localStorage.setItem(videoLibraryStorageKey, JSON.stringify(library))
+    localStorage.setItem(videoLibraryStorageKey, JSON.stringify({
+      ...library,
+      videos: library.videos.filter(isSourceVideoRecord),
+    }))
     return true
   } catch {
     return false
@@ -277,7 +286,7 @@ const normalizeVideoLibrary = (value: unknown): VideoLibrary => {
   const normalized = candidate.videos.map(normalizeVideoRecord)
   if (normalized.some((record) => !record)) throw new Error('Video library contains an invalid video record.')
   const videos = new Map<string, VideoRecord>()
-  for (const record of normalized as VideoRecord[]) {
+  for (const record of (normalized as VideoRecord[]).filter(isSourceVideoRecord)) {
     videos.set(record.id, mergeVideoRecord(videos.get(record.id), record))
   }
   return { version: 1, videos: [...videos.values()] }

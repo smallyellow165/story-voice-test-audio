@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,7 @@ import { generateClip, resolveGeneratedClipFullPath } from './server/video-clip-
 import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
 import { resolvePoseResultFullPath, savePoseResult } from './server/pose-result-store.mjs'
 import { buildLlmPoseResult, resolveLlmPoseResultFullPath } from './server/pose-llm-compressor.mjs'
+import { SourceVideoDownloadError, downloadSourceVideo, normalizeSourceVideoUrl } from './server/source-video-downloader.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
@@ -343,9 +344,18 @@ const sendVideoLibraryError = (response, error) => {
     FFMPEG_FAILED: 422,
     FFMPEG_UNAVAILABLE: 500,
     FFMPEG_OUTPUT_MISSING: 500,
+    INVALID_SOURCE_URL: 400,
+    YT_DLP_NOT_FOUND: 500,
+    YT_DLP_FAILED: 422,
+    YT_DLP_TIMEOUT: 504,
+    YT_DLP_OUTPUT_NOT_FOUND: 500,
+    INVALID_DOWNLOADED_VIDEO_PATH: 500,
+    UNSUPPORTED_DOWNLOADED_VIDEO: 422,
+    DOWNLOADED_VIDEO_NOT_FOUND: 500,
+    DOWNLOADED_VIDEO_NOT_LISTED: 500,
   }
   const statusCode = error?.statusCode ?? statusByCode[error?.code] ?? 500
-  const code = error instanceof VideoLibraryStorageError
+  const code = error instanceof VideoLibraryStorageError || error instanceof SourceVideoDownloadError
     ? error.code
     : error?.statusCode ? 'INVALID_REQUEST' : 'VIDEO_LIBRARY_STORAGE_ERROR'
   console.error('Video library request failed', { code, message: error?.message })
@@ -354,8 +364,79 @@ const sendVideoLibraryError = (response, error) => {
 
 const readVideoLibraryRequest = async (request) => readJsonBody(request, maxVideoLibraryRequestBytes)
 
+const sourceSiteFromUrl = (sourceUrl) => {
+  const hostname = new URL(sourceUrl).hostname.toLowerCase().replace(/^www\./, '')
+  if (hostname === 'youtu.be' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) return 'youtube'
+  if (hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com')) return 'bilibili'
+  return 'other'
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/video-v2/source/download') {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST for source video downloads.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      const sourceUrl = normalizeSourceVideoUrl(body?.sourceUrl)
+      const storedLibrary = await videoLibraryRepository.loadVideoLibrary()
+      const existingRecord = storedLibrary.videos.find((video) => video.source?.url === sourceUrl)
+      const scannedBeforeDownload = await readTestVideoLibrary()
+      const existingAsset = existingRecord?.server?.relativePath
+        ? scannedBeforeDownload.source.find((item) => item.relativePath === existingRecord.server.relativePath)
+        : undefined
+      if (existingAsset) {
+        sendJson(response, 200, {
+          downloaded: {
+            sourceUrl,
+            filename: existingAsset.name,
+            relativePath: existingAsset.relativePath,
+            alreadyExists: true,
+          },
+          asset: existingAsset,
+          library: storedLibrary,
+        })
+        return
+      }
+
+      const downloaded = await downloadSourceVideo({ sourceUrl, sourceVideoDirectory })
+      const scannedAfterDownload = await readTestVideoLibrary()
+      const asset = scannedAfterDownload.source.find((item) => item.relativePath === downloaded.relativePath)
+      if (!asset) {
+        throw new SourceVideoDownloadError(
+          'The video was downloaded, but it was not found during the source library refresh.',
+          'DOWNLOADED_VIDEO_NOT_LISTED',
+        )
+      }
+      const downloadedStat = await stat(path.join(sourceVideoDirectory, downloaded.filename))
+      const now = new Date().toISOString()
+      const recordForPath = storedLibrary.videos.find((video) => video.server?.relativePath === downloaded.relativePath)
+      const updatedLibrary = await videoLibraryRepository.upsertVideo(recordForPath ? {
+        ...recordForPath,
+        file: { name: downloaded.filename, size: downloadedStat.size, lastModified: downloadedStat.mtimeMs },
+        server: { relativePath: downloaded.relativePath, url: asset.url },
+        source: { url: sourceUrl, site: sourceSiteFromUrl(sourceUrl) },
+        updatedAt: now,
+      } : {
+        id: `server:${downloaded.filename}`,
+        type: 'server',
+        file: { name: downloaded.filename, size: downloadedStat.size, lastModified: downloadedStat.mtimeMs },
+        server: { relativePath: downloaded.relativePath, url: asset.url },
+        source: { url: sourceUrl, site: sourceSiteFromUrl(sourceUrl) },
+        clips: [],
+        createdAt: now,
+        updatedAt: now,
+        nextClipNumber: 1,
+      })
+      sendJson(response, 200, { downloaded, asset, library: updatedLibrary })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
 
   if (url.pathname === '/api/video-v2/library') {
     try {

@@ -141,6 +141,8 @@ th:last-child, td:last-child { padding-right: 0; }
 .pose-replay-controls button { min-height: 30px; padding: 0 9px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.56rem; }
 .current-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .current-section > h3, .clip-history-heading h3 { margin: 0 0 11px; font-size: 0.78rem; font-weight: 600; }
+.command-debug > summary { cursor: pointer; font-size: 0.78rem; font-weight: 600; }
+.command-debug-content { margin-top: 11px; }
 .video-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 0; }
 .video-metadata div { min-width: 0; }
 .video-metadata .wide { grid-column: 1 / -1; }
@@ -179,6 +181,7 @@ th:last-child, td:last-child { padding-right: 0; }
 .action-group:last-child { border-bottom: 0; }
 .action-group h2 { margin-bottom: 12px; }
 .download-command textarea { min-height: 84px; margin-top: 9px; font-family: 'DM Mono', monospace; font-size: 0.65rem; }
+.download-command > button { margin-top: 9px; }
 .stacked-actions { display: grid; gap: 7px; margin-top: 9px; }
 .seek-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 12px 0; }
 .video-file-field { display: block; margin-top: 12px; }

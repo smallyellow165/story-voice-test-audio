@@ -6,12 +6,16 @@
       "type": "server",
       "file": {
         "name": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
-        "size": 0,
-        "lastModified": 0
+        "size": 28004355,
+        "lastModified": 1788452336196.9614
       },
       "server": {
         "relativePath": "source/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
         "url": "/test-videos/source/%E5%B0%91%E5%84%BF%E6%96%AF%E5%B7%B4%E8%BE%BE30%E5%A4%A9%E6%89%93%E5%8D%A1day8%E9%9D%92%E8%9B%99%E8%B7%B3%20%5BBV1QK4y1b7zW%5D.mp4"
+      },
+      "source": {
+        "url": "https://www.bilibili.com/video/BV1QK4y1b7zW",
+        "site": "bilibili"
       },
       "clips": [
         {
@@ -45,7 +49,7 @@
         }
       ],
       "createdAt": "2026-09-04T06:57:34.719Z",
-      "updatedAt": "2026-09-04T10:22:51.321Z",
+      "updatedAt": "2026-09-04T10:54:20.681Z",
       "nextClipNumber": 2
     }
   ]

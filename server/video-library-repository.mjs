@@ -116,6 +116,9 @@ const normalizeVideoRecord = (value) => {
   }
 }
 
+const isSourceVideoRecord = (record) =>
+  record.type !== 'server' || record.server.relativePath.startsWith('source/')
+
 const normalizeStore = (value) => {
   if (!value || typeof value !== 'object' || value.version !== 1 ||
     !Array.isArray(value.videos)) {
@@ -126,7 +129,9 @@ const normalizeStore = (value) => {
   }
   return {
     version: 1,
-    videos: value.videos.map(normalizeVideoRecord),
+    // Older builds could register a file from clips/ as a top-level video.
+    // Ignore those wrapper records; generated clips remain nested on their source record.
+    videos: value.videos.map(normalizeVideoRecord).filter(isSourceVideoRecord),
   }
 }
 
@@ -187,11 +192,17 @@ export const createVideoLibraryRepository = (storagePath) => {
     if (!Array.isArray(videos)) {
       throw new VideoLibraryStorageError('videos must be an array.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
     }
-    library.videos = videos.map(normalizeVideoRecord)
+    library.videos = videos.map(normalizeVideoRecord).filter(isSourceVideoRecord)
   })
 
   const upsertVideo = (video) => mutateVideoLibrary((library) => {
     const normalized = normalizeVideoRecord(video)
+    if (!isSourceVideoRecord(normalized)) {
+      throw new VideoLibraryStorageError(
+        'Only source videos can be stored as top-level Video Library records.',
+        'INVALID_VIDEO_LIBRARY_SCHEMA',
+      )
+    }
     const existingIndex = library.videos.findIndex((record) => record.id === normalized.id)
     if (existingIndex >= 0) library.videos[existingIndex] = normalized
     else library.videos.unshift(normalized)
