@@ -1,4 +1,36 @@
 {
   "version": 1,
-  "videos": []
+  "videos": [
+    {
+      "id": "server:少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
+      "type": "server",
+      "file": {
+        "name": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
+        "size": 0,
+        "lastModified": 0
+      },
+      "server": {
+        "relativePath": "source/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
+        "url": "/test-videos/source/%E5%B0%91%E5%84%BF%E6%96%AF%E5%B7%B4%E8%BE%BE30%E5%A4%A9%E6%89%93%E5%8D%A1day8%E9%9D%92%E8%9B%99%E8%B7%B3%20%5BBV1QK4y1b7zW%5D.mp4"
+      },
+      "clips": [
+        {
+          "id": "46669881-8ce1-41bc-854d-54d874617e75",
+          "start": 9.581,
+          "end": 17.125,
+          "duration": 7.5440000000000005,
+          "createdAt": "2026-09-04T06:58:06.978Z",
+          "outputFilename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.mp4",
+          "generatedClip": {
+            "filename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.mp4",
+            "relativePath": "clips/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.mp4",
+            "createdAt": "2026-09-04T06:58:24.027Z"
+          }
+        }
+      ],
+      "createdAt": "2026-09-04T06:57:34.719Z",
+      "updatedAt": "2026-09-04T06:58:24.027Z",
+      "nextClipNumber": 2
+    }
+  ]
 }
