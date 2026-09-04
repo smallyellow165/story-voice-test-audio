@@ -2,6 +2,53 @@
   "version": 1,
   "videos": [
     {
+      "id": "server:少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1].mp4",
+      "type": "server",
+      "file": {
+        "name": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1].mp4",
+        "size": 0,
+        "lastModified": 0
+      },
+      "server": {
+        "relativePath": "source/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1].mp4",
+        "url": "/test-videos/source/%E5%B0%91%E5%84%BF%E6%96%AF%E5%B7%B4%E8%BE%BE30%E5%A4%A9%E6%89%93%E5%8D%A1%E6%8C%91%E6%88%98%E5%B0%8F%E5%8B%87%E5%A3%ABNova%E6%89%93%E5%8D%A1day4%E5%B7%A6%E8%85%BF%E5%8D%95%E8%85%BF%E8%B7%B3%20%5BBV1VT4y137A1%5D.mp4"
+      },
+      "clips": [
+        {
+          "id": "4166f617-1fd8-46bb-8e1d-980fd2ce789f",
+          "start": 9.587,
+          "end": 19.423,
+          "duration": 9.835999999999999,
+          "createdAt": "2026-09-04T16:02:11.132Z",
+          "outputFilename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.mp4",
+          "generatedClip": {
+            "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.mp4",
+            "relativePath": "clips/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.mp4",
+            "createdAt": "2026-09-04T16:02:31.448Z",
+            "poseResult": {
+              "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.json",
+              "relativePath": "pose/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.json",
+              "frameCount": 267,
+              "detectedPoseFrameCount": 267,
+              "durationMs": 9866.667,
+              "processingDurationMs": 11737.600000000093,
+              "createdAt": "2026-09-04T16:02:54.331Z",
+              "llmResult": {
+                "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.llm.json",
+                "relativePath": "pose/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.llm.json",
+                "frameCount": 90,
+                "sizeBytes": 86193,
+                "createdAt": "2026-09-04T16:52:12.180Z"
+              }
+            }
+          }
+        }
+      ],
+      "createdAt": "2026-09-04T16:01:18.300Z",
+      "updatedAt": "2026-09-04T16:52:12.180Z",
+      "nextClipNumber": 2
+    },
+    {
       "id": "server:少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW].mp4",
       "type": "server",
       "file": {
@@ -40,16 +87,16 @@
               "llmResult": {
                 "filename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.llm.json",
                 "relativePath": "pose/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.llm.json",
-                "frameCount": 68,
-                "sizeBytes": 33328,
-                "createdAt": "2026-09-04T10:22:51.321Z"
+                "frameCount": 67,
+                "sizeBytes": 64271,
+                "createdAt": "2026-09-04T16:51:44.115Z"
               }
             }
           }
         }
       ],
       "createdAt": "2026-09-04T06:57:34.719Z",
-      "updatedAt": "2026-09-04T10:54:20.681Z",
+      "updatedAt": "2026-09-04T16:51:44.115Z",
       "nextClipNumber": 2
     }
   ]

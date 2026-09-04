@@ -184,14 +184,56 @@ test('compresses world landmarks by video time with fixed official joint names a
   assert.equal(compressed.compression.targetFps, 10)
   assert.equal(compressed.compression.maxDistanceMs, 75)
   assert.equal(compressed.compression.coordinateSpace, 'world')
+  assert.equal(compressed.compression.globalCoordinateSpace, 'normalized-image')
+  assert.equal(compressed.schemaVersion, 2)
   assert.equal(Object.keys(compressed.frames[0].j).length, 12)
   assert.deepEqual(Object.keys(compressed.frames[0].j), [
     'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist',
     'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle',
   ])
   assert.deepEqual(compressed.frames[0].j.left_shoulder, [0.11, 0.21, 0.01, 0.9])
+  assert.deepEqual(Object.keys(compressed.frames[0].g), ['pelvis', 'shoulderCenter', 'bodyCenter', 'bodyBox'])
+  assert.equal(typeof compressed.frames[1].f.pelvisVy, 'number')
   assert.equal('landmarks' in compressed.frames[0], false)
   assert.equal('worldLandmarks' in compressed.frames[0], false)
+})
+
+test('anchors 10 FPS sampling to the first source timestamp and reports upstream gaps', () => {
+  const continuous = compressPoseForLlm({
+    schemaVersion: 1,
+    task: 'MediaPipe Pose Landmarker',
+    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 333 },
+    frames: [frame(33), frame(66), frame(100), frame(133), frame(166), frame(200), frame(233), frame(266), frame(300), frame(333)],
+  })
+  assert.deepEqual(continuous.frames.map((item) => item.t), [33, 133, 233, 333])
+
+  const gapped = compressPoseForLlm({
+    schemaVersion: 1,
+    task: 'MediaPipe Pose Landmarker',
+    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 1200 },
+    frames: [frame(33), frame(1000), frame(1033), frame(1100), frame(1200)],
+  })
+  assert.equal(gapped.sampling.maxSourceFrameGapMs, 967)
+  assert.deepEqual(gapped.frames.slice(0, 2).map((item) => item.t), [33, 1000])
+})
+
+test('emits null derived values when required landmarks have low visibility', () => {
+  const lowVisibilityFrame = frame(0)
+  lowVisibilityFrame.landmarks[0][23].visibility = 0.1
+  lowVisibilityFrame.worldLandmarks[0][25].visibility = 0.1
+  const compressed = compressPoseForLlm({
+    schemaVersion: 1,
+    task: 'MediaPipe Pose Landmarker',
+    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 0 },
+    frames: [lowVisibilityFrame],
+  })
+
+  assert.equal(compressed.frames[0].g.pelvis, null)
+  assert.equal(compressed.frames[0].f.leftKneeAngleDeg, null)
+  assert.equal(compressed.frames[0].f.kneeAngleDiffDeg, null)
+  assert.equal(compressed.frames[0].f.pelvisVy, null)
+  assert.equal(JSON.stringify(compressed).includes('NaN'), false)
+  assert.equal(JSON.stringify(compressed).includes('Infinity'), false)
 })
 
 test('persists and resolves one atomic LLM Pose artifact per raw Pose result', async (context) => {

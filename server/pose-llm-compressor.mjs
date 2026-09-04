@@ -10,6 +10,9 @@ const targetIntervalMs = 100
 const maxDistanceMs = 75
 const xyzPrecision = 3
 const visibilityPrecision = 2
+const imagePrecision = 4
+const featurePrecision = 3
+const featureVisibilityThreshold = 0.5
 
 export const poseLlmJoints = [
   ['left_shoulder', 11],
@@ -56,6 +59,108 @@ const nearestFrame = (frames, targetTimestampMs) => {
     : after
 }
 
+const validLandmark = (landmark, dimensions = ['x', 'y', 'z']) => landmark &&
+  dimensions.every((dimension) => Number.isFinite(landmark[dimension])) &&
+  Number.isFinite(landmark.visibility)
+
+const reliableLandmark = (landmark, dimensions = ['x', 'y', 'z']) =>
+  validLandmark(landmark, dimensions) && landmark.visibility >= featureVisibilityThreshold
+
+const midpoint2d = (left, right) => reliableLandmark(left, ['x', 'y']) && reliableLandmark(right, ['x', 'y'])
+  ? [(left.x + right.x) / 2, (left.y + right.y) / 2]
+  : null
+
+const angle3dDeg = (first, vertex, third) => {
+  if (![first, vertex, third].every((landmark) => reliableLandmark(landmark))) return null
+  const a = [first.x - vertex.x, first.y - vertex.y, first.z - vertex.z]
+  const b = [third.x - vertex.x, third.y - vertex.y, third.z - vertex.z]
+  const magnitudeA = Math.hypot(...a)
+  const magnitudeB = Math.hypot(...b)
+  if (magnitudeA === 0 || magnitudeB === 0) return null
+  const cosine = Math.max(-1, Math.min(1, a.reduce((sum, value, index) => sum + value * b[index], 0) / (magnitudeA * magnitudeB)))
+  return Math.acos(cosine) * 180 / Math.PI
+}
+
+const tiltDeg = (left, right) => reliableLandmark(left) && reliableLandmark(right)
+  ? Math.atan2(right.y - left.y, Math.abs(right.x - left.x)) * 180 / Math.PI
+  : null
+
+const roundedOrNull = (value, precision = featurePrecision) => Number.isFinite(value) ? roundTo(value, precision) : null
+
+const buildGlobalFeatures = (imagePose) => {
+  const pelvis = midpoint2d(imagePose[23], imagePose[24])
+  const shoulderCenter = midpoint2d(imagePose[11], imagePose[12])
+  const bodyCenter = pelvis && shoulderCenter
+    ? [(pelvis[0] + shoulderCenter[0]) / 2, (pelvis[1] + shoulderCenter[1]) / 2]
+    : null
+  const reliableBodyLandmarks = imagePose.slice(11).filter((landmark) => reliableLandmark(landmark, ['x', 'y']))
+  const bodyBox = reliableBodyLandmarks.length ? (() => {
+    const xs = reliableBodyLandmarks.map((landmark) => landmark.x)
+    const ys = reliableBodyLandmarks.map((landmark) => landmark.y)
+    const minX = Math.min(...xs)
+    const minY = Math.min(...ys)
+    const maxX = Math.max(...xs)
+    const maxY = Math.max(...ys)
+    return [minX, minY, maxX, maxY, maxX - minX, maxY - minY]
+  })() : null
+  const roundTuple = (tuple) => tuple?.map((value) => roundTo(value, imagePrecision)) ?? null
+  return {
+    pelvis: roundTuple(pelvis),
+    shoulderCenter: roundTuple(shoulderCenter),
+    bodyCenter: roundTuple(bodyCenter),
+    bodyBox: roundTuple(bodyBox),
+  }
+}
+
+const buildStaticFeatures = (worldPose) => {
+  const pelvisY = reliableLandmark(worldPose[23]) && reliableLandmark(worldPose[24])
+    ? (worldPose[23].y + worldPose[24].y) / 2
+    : null
+  const leftKneeAngleDeg = angle3dDeg(worldPose[23], worldPose[25], worldPose[27])
+  const rightKneeAngleDeg = angle3dDeg(worldPose[24], worldPose[26], worldPose[28])
+  // MediaPipe y increases downward. Larger values therefore mean a foot is higher/closer to the pelvis.
+  const leftFootRelativeHeight = pelvisY === null || !reliableLandmark(worldPose[27]) ? null : pelvisY - worldPose[27].y
+  const rightFootRelativeHeight = pelvisY === null || !reliableLandmark(worldPose[28]) ? null : pelvisY - worldPose[28].y
+  return {
+    leftKneeAngleDeg: roundedOrNull(leftKneeAngleDeg),
+    rightKneeAngleDeg: roundedOrNull(rightKneeAngleDeg),
+    kneeAngleDiffDeg: roundedOrNull(leftKneeAngleDeg === null || rightKneeAngleDeg === null ? null : leftKneeAngleDeg - rightKneeAngleDeg),
+    leftFootRelativeHeight: roundedOrNull(leftFootRelativeHeight),
+    rightFootRelativeHeight: roundedOrNull(rightFootRelativeHeight),
+    ankleHeightDiff: roundedOrNull(leftFootRelativeHeight === null || rightFootRelativeHeight === null ? null : leftFootRelativeHeight - rightFootRelativeHeight),
+    shoulderTiltDeg: roundedOrNull(tiltDeg(worldPose[11], worldPose[12])),
+    hipTiltDeg: roundedOrNull(tiltDeg(worldPose[23], worldPose[24])),
+  }
+}
+
+const addTemporalFeatures = (frames) => {
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index]
+    const previous = frames[index - 1]
+    const deltaSeconds = previous ? (frame.t - previous.t) / 1000 : null
+    const velocity = (key) => {
+      const currentY = frame.g[key]?.[1]
+      const previousY = previous?.g[key]?.[1]
+      return deltaSeconds && Number.isFinite(currentY) && Number.isFinite(previousY)
+        ? (currentY - previousY) / deltaSeconds
+        : null
+    }
+    const pelvisVy = velocity('pelvis')
+    const shoulderVy = velocity('shoulderCenter')
+    const bodyCenterVy = velocity('bodyCenter')
+    const previousDeltaSeconds = index >= 2 ? (previous.t - frames[index - 2].t) / 1000 : null
+    const acceleration = (currentVelocity, previousVelocity) => deltaSeconds && previousDeltaSeconds &&
+      Number.isFinite(currentVelocity) && Number.isFinite(previousVelocity)
+      ? (currentVelocity - previousVelocity) / deltaSeconds
+      : null
+    frame.f.pelvisVy = roundedOrNull(pelvisVy)
+    frame.f.shoulderVy = roundedOrNull(shoulderVy)
+    frame.f.bodyCenterVy = roundedOrNull(bodyCenterVy)
+    frame.f.pelvisAy = roundedOrNull(acceleration(pelvisVy, previous?.f.pelvisVy))
+    frame.f.bodyCenterAy = roundedOrNull(acceleration(bodyCenterVy, previous?.f.bodyCenterVy))
+  }
+}
+
 const validateRawPose = (value) => {
   if (!value || typeof value !== 'object' || value.schemaVersion !== 1 ||
     value.task !== 'MediaPipe Pose Landmarker' || !value.source || typeof value.source !== 'object' ||
@@ -66,16 +171,17 @@ const validateRawPose = (value) => {
   let previousTimestamp = -1
   for (const [frameIndex, frame] of value.frames.entries()) {
     const timestamp = requireFiniteNumber(frame?.videoTimestampMs, `frames[${frameIndex}].videoTimestampMs`)
-    if (timestamp < 0 || timestamp <= previousTimestamp || !Array.isArray(frame.worldLandmarks)) {
-      throw new VideoLibraryStorageError('Raw Pose timestamps or world landmarks are invalid.', 'INVALID_POSE_RESULT')
+    if (timestamp < 0 || timestamp <= previousTimestamp || !Array.isArray(frame.worldLandmarks) || !Array.isArray(frame.landmarks)) {
+      throw new VideoLibraryStorageError('Raw Pose timestamps or landmarks are invalid.', 'INVALID_POSE_RESULT')
     }
     previousTimestamp = timestamp
-    if (frame.worldLandmarks.length > 1) {
+    if (frame.worldLandmarks.length > 1 || frame.landmarks.length > 1 || frame.worldLandmarks.length !== frame.landmarks.length) {
       throw new VideoLibraryStorageError('LLM Pose compression expects at most one pose per frame.', 'INVALID_POSE_RESULT')
     }
     if (frame.worldLandmarks.length === 1 &&
-      (!Array.isArray(frame.worldLandmarks[0]) || frame.worldLandmarks[0].length !== 33)) {
-      throw new VideoLibraryStorageError(`frames[${frameIndex}] must contain 33 world landmarks.`, 'INVALID_POSE_RESULT')
+      (!Array.isArray(frame.worldLandmarks[0]) || frame.worldLandmarks[0].length !== 33 ||
+        !Array.isArray(frame.landmarks[0]) || frame.landmarks[0].length !== 33)) {
+      throw new VideoLibraryStorageError(`frames[${frameIndex}] must contain 33 image and world landmarks.`, 'INVALID_POSE_RESULT')
     }
   }
   return { durationMs, frames: value.frames }
@@ -86,20 +192,28 @@ export const compressPoseForLlm = (rawPose) => {
   const frames = []
   let previousRawTimestamp = null
   let previousCompressedTimestamp = -1
+  const firstSourceTimestampMs = rawFrames[0].videoTimestampMs
+  const lastSourceTimestampMs = rawFrames.at(-1).videoTimestampMs
 
-  for (let targetTimestampMs = 0; targetTimestampMs <= durationMs; targetTimestampMs += targetIntervalMs) {
+  let targetTimestampMs = firstSourceTimestampMs
+  while (targetTimestampMs <= lastSourceTimestampMs) {
     const rawFrame = nearestFrame(rawFrames, targetTimestampMs)
     if (Math.abs(rawFrame.videoTimestampMs - targetTimestampMs) > maxDistanceMs ||
-      rawFrame.videoTimestampMs === previousRawTimestamp || rawFrame.worldLandmarks.length === 0) continue
+      rawFrame.videoTimestampMs === previousRawTimestamp || rawFrame.worldLandmarks.length === 0) {
+      targetTimestampMs += targetIntervalMs
+      continue
+    }
 
     const pose = rawFrame.worldLandmarks[0]
     const timestamp = Math.round(rawFrame.videoTimestampMs)
-    if (timestamp <= previousCompressedTimestamp) continue
+    if (timestamp <= previousCompressedTimestamp) {
+      targetTimestampMs += targetIntervalMs
+      continue
+    }
     const joints = {}
     for (const [name, index] of poseLlmJoints) {
       const landmark = pose[index]
-      if (!landmark || !Number.isFinite(landmark.x) || !Number.isFinite(landmark.y) ||
-        !Number.isFinite(landmark.z) || !Number.isFinite(landmark.visibility)) {
+      if (!validLandmark(landmark)) {
         throw new VideoLibraryStorageError(`World landmark ${index} is invalid.`, 'INVALID_POSE_RESULT')
       }
       joints[name] = [
@@ -109,16 +223,26 @@ export const compressPoseForLlm = (rawPose) => {
         roundTo(landmark.visibility, visibilityPrecision),
       ]
     }
-    frames.push({ t: timestamp, j: joints })
+    frames.push({
+      t: timestamp,
+      j: joints,
+      g: buildGlobalFeatures(rawFrame.landmarks[0]),
+      f: buildStaticFeatures(pose),
+    })
     previousRawTimestamp = rawFrame.videoTimestampMs
     previousCompressedTimestamp = timestamp
+    // Re-anchor after each selected source frame so a late frame following a source gap
+    // cannot be followed immediately by another frame from the old target grid.
+    targetTimestampMs = rawFrame.videoTimestampMs + targetIntervalMs
   }
 
   if (!frames.length) {
     throw new VideoLibraryStorageError('Raw Pose JSON did not contain compressible detected frames.', 'INVALID_POSE_RESULT')
   }
+  addTemporalFeatures(frames)
+  const sourceFrameDeltas = rawFrames.slice(1).map((frame, index) => frame.videoTimestampMs - rawFrames[index].videoTimestampMs)
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     type: 'pose-llm',
     source: {
       clipRangeId: String(rawPose.source.clipRangeId ?? ''),
@@ -130,8 +254,29 @@ export const compressPoseForLlm = (rawPose) => {
       maxDistanceMs,
       xyzPrecision,
       visibilityPrecision,
+      imagePrecision,
+      featurePrecision,
+      featureVisibilityThreshold,
       jointCount: poseLlmJoints.length,
       coordinateSpace: 'world',
+      globalCoordinateSpace: 'normalized-image',
+      imageYAxis: 'down',
+      footRelativeHeight: 'pelvisY - ankleY; larger values mean the foot is higher',
+      tiltDegrees: 'positive values mean the right-side landmark is lower than the left-side landmark',
+      velocityUnits: 'normalized-image-units-per-second; positive y velocity is downward',
+      accelerationUnits: 'normalized-image-units-per-second-squared; positive y acceleration is downward',
+      globalTupleFormats: {
+        pelvis: '[x,y]',
+        shoulderCenter: '[x,y]',
+        bodyCenter: '[x,y]',
+        bodyBox: '[minX,minY,maxX,maxY,width,height]',
+      },
+    },
+    sampling: {
+      firstSourceTimestampMs: roundTo(firstSourceTimestampMs, 3),
+      lastSourceTimestampMs: roundTo(lastSourceTimestampMs, 3),
+      maxSourceFrameGapMs: roundTo(sourceFrameDeltas.length ? Math.max(...sourceFrameDeltas) : 0, 3),
+      expectedFrameCountAtTargetFps: Math.floor((lastSourceTimestampMs - firstSourceTimestampMs) / targetIntervalMs) + 1,
     },
     frameCount: frames.length,
     frames,
