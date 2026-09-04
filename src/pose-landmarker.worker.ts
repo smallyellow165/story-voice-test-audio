@@ -44,7 +44,7 @@ const initialize = async (config: PoseConfig) => {
   self.postMessage({ type: 'READY', delegate: actualDelegate })
 }
 
-const detect = (bitmap: ImageBitmap, videoTimestampMs: number) => {
+const detect = (bitmap: ImageBitmap, requestId: number, videoTimestampMs: number) => {
   if (!poseLandmarker) throw new Error('Pose Landmarker is not initialized.')
   let result: PoseLandmarkerResult
   try {
@@ -54,6 +54,7 @@ const detect = (bitmap: ImageBitmap, videoTimestampMs: number) => {
   }
   self.postMessage({
     type: 'RESULT',
+    requestId,
     videoTimestampMs,
     landmarks: result.landmarks,
     worldLandmarks: result.worldLandmarks,
@@ -63,7 +64,7 @@ const detect = (bitmap: ImageBitmap, videoTimestampMs: number) => {
 self.onmessage = async (event: MessageEvent) => {
   try {
     if (event.data.type === 'INIT') await initialize(event.data.config)
-    else if (event.data.type === 'DETECT') detect(event.data.bitmap, event.data.videoTimestampMs)
+    else if (event.data.type === 'DETECT') detect(event.data.bitmap, event.data.requestId, event.data.videoTimestampMs)
     else if (event.data.type === 'CLOSE') {
       poseLandmarker?.close()
       poseLandmarker = null
@@ -71,6 +72,10 @@ self.onmessage = async (event: MessageEvent) => {
     }
   } catch (error) {
     event.data.bitmap?.close?.()
-    self.postMessage({ type: 'ERROR', message: error instanceof Error ? error.message : String(error) })
+    self.postMessage({
+      type: 'ERROR',
+      requestId: event.data.requestId,
+      message: error instanceof Error ? error.message : String(error),
+    })
   }
 }

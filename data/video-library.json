@@ -28,24 +28,17 @@
             "poseResult": {
               "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.json",
               "relativePath": "pose/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.json",
-              "frameCount": 267,
-              "detectedPoseFrameCount": 267,
+              "frameCount": 296,
+              "detectedPoseFrameCount": 296,
               "durationMs": 9866.667,
-              "processingDurationMs": 11737.600000000093,
-              "createdAt": "2026-09-04T16:02:54.331Z",
-              "llmResult": {
-                "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.llm.json",
-                "relativePath": "pose/少儿斯巴达30天打卡挑战小勇士Nova打卡day4左腿单腿跳 [BV1VT4y137A1]-clip-01.pose.llm.json",
-                "frameCount": 90,
-                "sizeBytes": 86193,
-                "createdAt": "2026-09-04T16:52:12.180Z"
-              }
+              "processingDurationMs": 44544.700000000186,
+              "createdAt": "2026-09-04T17:42:40.745Z"
             }
           }
         }
       ],
       "createdAt": "2026-09-04T16:01:18.300Z",
-      "updatedAt": "2026-09-04T16:52:12.180Z",
+      "updatedAt": "2026-09-04T17:42:40.745Z",
       "nextClipNumber": 2
     },
     {
