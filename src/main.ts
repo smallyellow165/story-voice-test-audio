@@ -710,6 +710,9 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
           <button type="button" data-history-action="go-start" data-history-id="${escapeHtml(record.id)}">Go Start</button>
           <button type="button" data-history-action="go-end" data-history-id="${escapeHtml(record.id)}">Go End</button>
           <button type="button" data-history-action="use-range" data-history-id="${escapeHtml(record.id)}">Use Range</button>
+          ${layoutMode === 'video-v2' && record.generatedClip ? `
+            <button type="button" data-history-action="copy-full-path" data-history-id="${escapeHtml(record.id)}">Copy Full Path</button>
+          ` : ''}
           ${layoutMode === 'video-v2' && currentServerAsset?.category === 'source' ? `
             <button type="button" data-history-action="generate" data-history-id="${escapeHtml(record.id)}">${record.generatedClip ? 'Regenerate Clip' : 'Generate Clip'}</button>
           ` : ''}
@@ -776,6 +779,15 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       fallbackTarget.select()
       status.textContent = 'Copy is unavailable here. The command is selected for manual copy.'
     }
+  }
+
+  const requestGeneratedClipFullPath = async (clipRangeId: string) => {
+    const response = await fetch(`/api/video-v2/clip/${encodeURIComponent(clipRangeId)}/path`, { cache: 'no-store' })
+    const payload = await response.json() as { fullPath?: unknown; error?: { message?: string } }
+    if (!response.ok || typeof payload.fullPath !== 'string' || !payload.fullPath) {
+      throw new Error(payload.error?.message ?? 'The server could not resolve this generated clip path.')
+    }
+    return payload.fullPath
   }
 
   const updateAttachSourceButton = () => {
@@ -1177,6 +1189,32 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     const record = currentVideoRecord?.clips.find((item) => item.id === button.dataset.historyId)
     if (!record) return
     const action = button.dataset.historyAction
+
+    if (action === 'copy-full-path') {
+      const originalText = button.textContent
+      button.disabled = true
+      button.textContent = 'Copying…'
+      try {
+        const fullPath = await requestGeneratedClipFullPath(record.id)
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API is unavailable in this browser.')
+        await navigator.clipboard.writeText(fullPath)
+        button.textContent = 'Copied'
+        historyStatus.textContent = 'Full path copied.'
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.disabled = false
+            button.textContent = originalText
+          }
+        }, 1_200)
+      } catch (error) {
+        button.disabled = false
+        button.textContent = originalText
+        historyStatus.textContent = error instanceof Error
+          ? `Could not copy full path. ${error.message}`
+          : 'Could not copy full path.'
+      }
+      return
+    }
 
     if (action === 'generate') {
       button.disabled = true

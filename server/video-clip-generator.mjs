@@ -1,4 +1,4 @@
-import { access, mkdir, rename, stat, unlink } from 'node:fs/promises'
+import { access, mkdir, realpath, rename, stat, unlink } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
@@ -56,6 +56,36 @@ const outputFilenameFor = (video, clip) => {
   const baseName = extensionIndex > 0 ? video.file.name.slice(0, extensionIndex) : video.file.name
   const sequence = Math.max(1, video.nextClipNumber ?? 1)
   return `${baseName}-clip-${String(sequence).padStart(3, '0')}.mp4`
+}
+
+export const resolveGeneratedClipFullPath = async ({ clipRangeId, repository, clipVideoDirectory }) => {
+  if (typeof clipRangeId !== 'string' || !clipRangeId) {
+    throw new VideoLibraryStorageError('clipRangeId is required.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
+  }
+  const { clip } = await repository.findClipRange(clipRangeId)
+  if (!clip.generatedClip) {
+    throw new VideoLibraryStorageError('This clip range does not have a generated clip.', 'GENERATED_CLIP_NOT_FOUND')
+  }
+
+  const clipsRoot = path.resolve(clipVideoDirectory)
+  const testVideosRoot = path.dirname(clipsRoot)
+  const fullPath = path.resolve(testVideosRoot, clip.generatedClip.relativePath)
+  if (!fullPath.startsWith(`${clipsRoot}${path.sep}`)) {
+    throw new VideoLibraryStorageError('Generated clip path must remain within the clips directory.', 'INVALID_GENERATED_CLIP_PATH')
+  }
+
+  try {
+    const [realClipsRoot, resolvedPath] = await Promise.all([realpath(clipsRoot), realpath(fullPath)])
+    if (!resolvedPath.startsWith(`${realClipsRoot}${path.sep}`)) {
+      throw new VideoLibraryStorageError('Generated clip path must remain within the clips directory.', 'INVALID_GENERATED_CLIP_PATH')
+    }
+    const outputStat = await stat(resolvedPath)
+    if (!outputStat.isFile()) throw new Error('not a file')
+    return resolvedPath
+  } catch (error) {
+    if (error instanceof VideoLibraryStorageError) throw error
+    throw new VideoLibraryStorageError(`Generated clip file does not exist: ${clip.generatedClip.relativePath}`, 'GENERATED_CLIP_FILE_NOT_FOUND')
+  }
 }
 
 export const generateClip = async ({ clipRangeId, repository, sourceVideoDirectory, clipVideoDirectory }) => {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import textToSpeech from '@google-cloud/text-to-speech'
 import { createServer as createViteServer } from 'vite'
 import { probeAudioDuration } from './server/audio-duration.mjs'
-import { generateClip } from './server/video-clip-generator.mjs'
+import { generateClip, resolveGeneratedClipFullPath } from './server/video-clip-generator.mjs'
 import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
@@ -321,8 +321,11 @@ const sendVideoLibraryError = (response, error) => {
     INVALID_VIDEO_LIBRARY_SCHEMA: 400,
     VIDEO_NOT_FOUND: 404,
     CLIP_RANGE_NOT_FOUND: 404,
+    GENERATED_CLIP_NOT_FOUND: 404,
+    GENERATED_CLIP_FILE_NOT_FOUND: 404,
     SOURCE_VIDEO_NOT_FOUND: 404,
     SOURCE_VIDEO_UNAVAILABLE: 400,
+    INVALID_GENERATED_CLIP_PATH: 400,
     CLIP_GENERATION_IN_PROGRESS: 409,
     FFMPEG_FAILED: 422,
     FFMPEG_UNAVAILABLE: 500,
@@ -391,6 +394,31 @@ const server = createServer(async (request, response) => {
         generatedClip: result.generatedClip,
         ffmpegArgs: result.ffmpegArgs,
       })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  const clipPathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/path$/)
+  if (clipPathMatch) {
+    if (request.method !== 'GET') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for a generated clip path.' } })
+      return
+    }
+    try {
+      let clipRangeId
+      try {
+        clipRangeId = decodeURIComponent(clipPathMatch[1])
+      } catch {
+        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
+      }
+      const fullPath = await resolveGeneratedClipFullPath({
+        clipRangeId,
+        repository: videoLibraryRepository,
+        clipVideoDirectory,
+      })
+      sendJson(response, 200, { fullPath })
     } catch (error) {
       sendVideoLibraryError(response, error)
     }
