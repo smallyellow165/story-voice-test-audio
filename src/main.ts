@@ -3,6 +3,14 @@ import geminiVoices from './data/gemini-voices.json'
 import testScripts from './data/test-scripts.json'
 import { mountVideoV2, unmountVideoV2 } from './video-v2-panels'
 import { buildFfmpegClipCommand, formatFfmpegTime } from './video-clip.mjs'
+import {
+  createBatchInputRow,
+  findExistingSourceVideo,
+  processBatchDatasetRows,
+  validateBatchInputRows,
+  type BatchInputRow,
+  type BatchRowStatus,
+} from './batch-dataset-input'
 import { analyzePoseVideo } from './pose-video-analyzer'
 import { createPoseReplay, loadPoseReplayData, type PoseReplaySession } from './pose-replay'
 import {
@@ -403,8 +411,46 @@ const moveVideoToolsIntoV2 = () => {
   videoActions.querySelector('.stacked-actions')?.remove()
   videoInfo.classList.add('video-v2-video-info')
 
+  const libraryTabs = document.createElement('div')
+  libraryTabs.className = 'video-v2-library-tabs'
+  libraryTabs.setAttribute('role', 'tablist')
+  libraryTabs.innerHTML = `
+    <button id="video-library-tab" type="button" role="tab" aria-selected="true" aria-controls="video-library-tab-panel">Video Library</button>
+    <button id="batch-input-tab" type="button" role="tab" aria-selected="false" aria-controls="batch-input-tab-panel">Batch Input</button>
+  `
+  const libraryTabPanel = document.createElement('section')
+  libraryTabPanel.id = 'video-library-tab-panel'
+  libraryTabPanel.className = 'video-v2-library-tab-panel'
+  libraryTabPanel.setAttribute('role', 'tabpanel')
+  libraryTabPanel.setAttribute('aria-labelledby', 'video-library-tab')
+  libraryTabPanel.append(libraryHeading, libraryList, libraryActions)
+  const batchTabPanel = document.createElement('section')
+  batchTabPanel.id = 'batch-input-tab-panel'
+  batchTabPanel.className = 'video-v2-library-tab-panel batch-input-panel'
+  batchTabPanel.setAttribute('role', 'tabpanel')
+  batchTabPanel.setAttribute('aria-labelledby', 'batch-input-tab')
+  batchTabPanel.hidden = true
+  batchTabPanel.innerHTML = `
+    <div class="batch-input-heading">
+      <h2>Batch Dataset Input</h2>
+      <p>Label confirmed clips, then run the existing Clip → Pose → LLM pipeline.</p>
+    </div>
+    <div class="batch-table-wrap">
+      <table class="batch-input-table">
+        <thead><tr><th>Label</th><th>Start</th><th>End</th><th>URL</th><th>Action</th></tr></thead>
+        <tbody id="batch-input-rows"></tbody>
+      </table>
+    </div>
+    <div class="batch-input-actions">
+      <button id="batch-add-row" type="button">+ Add Row</button>
+      <button id="batch-validate" type="button">Validate</button>
+      <button id="batch-process" type="button">Import &amp; Process</button>
+    </div>
+    <p id="batch-summary" class="section-status" role="status" aria-live="polite"></p>
+  `
+
   workspace.replaceChildren(currentTitle, videoStage, poseReplayControls, playheadSection, clipRange, clipHistory)
-  leftSlot.append(libraryHeading, libraryList, libraryActions)
+  leftSlot.append(libraryTabs, libraryTabPanel, batchTabPanel)
   centerSlot.append(currentHeading, emptyState, workspace)
   rightSlot.append(ffmpegCommand, downloadCommand, videoActions, videoInfo)
 }
@@ -626,6 +672,11 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const copyStatus = document.querySelector<HTMLParagraphElement>('#copy-status')!
   const historyList = document.querySelector<HTMLDivElement>('#history-list')!
   const historyStatus = document.querySelector<HTMLParagraphElement>('#history-status')!
+  const batchRowsBody = document.querySelector<HTMLTableSectionElement>('#batch-input-rows')
+  const batchSummary = document.querySelector<HTMLParagraphElement>('#batch-summary')
+  const batchAddRowButton = document.querySelector<HTMLButtonElement>('#batch-add-row')
+  const batchValidateButton = document.querySelector<HTMLButtonElement>('#batch-validate')
+  const batchProcessButton = document.querySelector<HTMLButtonElement>('#batch-process')
   let selectedFilename = ''
   let currentVideoRecord: VideoUiRecord | null = null
   let currentServerAsset: ServerVideoAsset | null = null
@@ -637,6 +688,11 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let poseReplaySession: PoseReplaySession | null = null
   let poseReplayController: AbortController | null = null
   let replayingClipId = ''
+  let nextBatchRowId = 1
+  let batchProcessing = false
+  const batchRows: BatchInputRow[] = layoutMode === 'video-v2'
+    ? [createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`)]
+    : []
 
   const cleanupPoseReplay = () => {
     poseReplayController?.abort()
@@ -654,6 +710,79 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     } catch {
       sourceUrlInput.value = ''
     }
+  }
+
+  const renderBatchRows = () => {
+    if (!batchRowsBody) return
+    batchRowsBody.innerHTML = batchRows.map((row) => `
+      <tr class="${row.error ? 'is-invalid' : ''}" data-batch-row-id="${escapeHtml(row.id)}">
+        <td><input aria-label="Label" data-batch-field="label" value="${escapeHtml(row.label)}"${batchProcessing ? ' disabled' : ''}></td>
+        <td><input aria-label="Start seconds" data-batch-field="start" inputmode="decimal" value="${escapeHtml(row.start)}"${batchProcessing ? ' disabled' : ''}></td>
+        <td><input aria-label="End seconds" data-batch-field="end" inputmode="decimal" value="${escapeHtml(row.end)}"${batchProcessing ? ' disabled' : ''}></td>
+        <td><input aria-label="Source URL" data-batch-field="url" value="${escapeHtml(row.url)}" title="${escapeHtml(row.url)}"${batchProcessing ? ' disabled' : ''}></td>
+        <td><div class="batch-row-action"><span class="batch-row-status status-${row.status.toLowerCase()}">${escapeHtml(row.status)}</span><button type="button" data-batch-delete="${escapeHtml(row.id)}"${batchProcessing ? ' disabled' : ''}>Delete</button></div></td>
+      </tr>
+      ${row.error ? `<tr class="batch-row-error"><td colspan="5">${escapeHtml(row.error)}</td></tr>` : ''}
+    `).join('')
+    if (batchAddRowButton) batchAddRowButton.disabled = batchProcessing
+    if (batchValidateButton) batchValidateButton.disabled = batchProcessing
+    if (batchProcessButton) batchProcessButton.disabled = batchProcessing || !batchRows.length
+  }
+
+  const validateBatchRows = () => {
+    const result = validateBatchInputRows(batchRows)
+    batchRows.forEach((row) => {
+      row.error = result.errorsByRowId.get(row.id) ?? ''
+      if (row.status === 'Error') row.status = 'Pending'
+    })
+    if (batchSummary) {
+      batchSummary.textContent = `${result.total} clip${result.total === 1 ? '' : 's'} · ${result.uniqueSourceCount} unique source video${result.uniqueSourceCount === 1 ? '' : 's'} · ${result.validCount} valid · ${result.invalidCount} invalid`
+    }
+    renderBatchRows()
+    return result
+  }
+
+  if (layoutMode === 'video-v2' && batchRowsBody) {
+    const libraryTab = document.querySelector<HTMLButtonElement>('#video-library-tab')!
+    const batchTab = document.querySelector<HTMLButtonElement>('#batch-input-tab')!
+    const libraryPanel = document.querySelector<HTMLElement>('#video-library-tab-panel')!
+    const batchPanel = document.querySelector<HTMLElement>('#batch-input-tab-panel')!
+    const activateTab = (showBatch: boolean) => {
+      libraryTab.setAttribute('aria-selected', String(!showBatch))
+      batchTab.setAttribute('aria-selected', String(showBatch))
+      libraryPanel.hidden = showBatch
+      batchPanel.hidden = !showBatch
+    }
+    libraryTab.addEventListener('click', () => activateTab(false))
+    batchTab.addEventListener('click', () => activateTab(true))
+    batchAddRowButton?.addEventListener('click', () => {
+      batchRows.push(createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`, batchRows.at(-1)))
+      renderBatchRows()
+      batchRowsBody.querySelector<HTMLInputElement>('tr:last-of-type input[data-batch-field="start"]')?.focus()
+    })
+    batchRowsBody.addEventListener('input', (event) => {
+      const input = (event.target as HTMLElement).closest<HTMLInputElement>('[data-batch-field]')
+      const tableRow = input?.closest<HTMLTableRowElement>('[data-batch-row-id]')
+      const row = batchRows.find((item) => item.id === tableRow?.dataset.batchRowId)
+      const field = input?.dataset.batchField as 'label' | 'start' | 'end' | 'url' | undefined
+      if (!input || !row || !field || batchProcessing) return
+      row[field] = input.value
+      row.error = ''
+      row.status = 'Pending'
+      if (batchSummary) batchSummary.textContent = ''
+      tableRow?.classList.remove('is-invalid')
+      tableRow?.nextElementSibling?.classList.contains('batch-row-error') && tableRow.nextElementSibling.remove()
+    })
+    batchRowsBody.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-batch-delete]')
+      if (!button || batchProcessing) return
+      const index = batchRows.findIndex((row) => row.id === button.dataset.batchDelete)
+      if (index >= 0) batchRows.splice(index, 1)
+      renderBatchRows()
+      if (batchSummary) batchSummary.textContent = ''
+    })
+    batchValidateButton?.addEventListener('click', validateBatchRows)
+    renderBatchRows()
   }
 
   const getCurrentRange = () => {
@@ -1011,6 +1140,62 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     return payload.fullPath
   }
 
+  const requestSourceDownload = async (sourceUrl: string) => {
+    const response = await fetch('/api/video-v2/source/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceUrl }),
+    })
+    const payload = await response.json() as {
+      downloaded?: { sourceUrl?: string; filename?: string; relativePath?: string; alreadyExists?: boolean }
+      library?: VideoLibrary
+      error?: { message?: string }
+    }
+    if (!response.ok || !payload.downloaded?.relativePath || !payload.downloaded.filename || !payload.downloaded.sourceUrl) {
+      throw new Error(payload.error?.message ?? 'The server returned an invalid download response.')
+    }
+    return {
+      downloaded: {
+        sourceUrl: payload.downloaded.sourceUrl,
+        filename: payload.downloaded.filename,
+        relativePath: payload.downloaded.relativePath,
+        alreadyExists: payload.downloaded.alreadyExists === true,
+      },
+      library: payload.library ?? await videoStorage.loadLibrary(),
+    }
+  }
+
+  const createClipRecord = async (
+    videoId: string,
+    input: Pick<ClipRecord, 'startMs' | 'endMs' | 'label'>,
+  ) => {
+    const beforeIds = new Set(videoLibrary.clips.map((clip) => clip.clipId))
+    const library = await videoStorage.addClip(videoId, input)
+    const clip = library.clips.find((item) => item.videoId === videoId && !beforeIds.has(item.clipId))
+    if (!clip) throw new Error('The Clip was created, but its new identity was not returned.')
+    applyStoredLibrary(library)
+    return clip
+  }
+
+  const analyzeAndSavePose = async (
+    videoId: string,
+    clipId: string,
+    clipRelativePath: string,
+    onProgress?: (frameCount: number, videoTimestampMs: number, durationMs: number) => void,
+    signal?: AbortSignal,
+  ) => {
+    const beforeIds = new Set(videoLibrary.poseRuns.map((run) => run.poseRunId))
+    const poseData = await analyzePoseVideo(serverVideoUrl(clipRelativePath), {
+      signal,
+      onProgress: (progress) => onProgress?.(progress.frameCount, progress.videoTimestampMs, progress.durationMs),
+    })
+    const library = await videoStorage.savePoseResult(videoId, clipId, poseData)
+    const poseRun = library.poseRuns.find((run) => run.clipId === clipId && !beforeIds.has(run.poseRunId))
+    if (!poseRun) throw new Error('Pose analysis completed, but its new Pose Run was not returned.')
+    applyStoredLibrary(library)
+    return { poseData, poseRun }
+  }
+
   const updateAttachSourceButton = () => {
     attachSourceButton.disabled = !currentVideoRecord || !sourceUrlInput.value.trim()
   }
@@ -1081,6 +1266,78 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     }
   }
 
+  batchProcessButton?.addEventListener('click', async () => {
+    if (batchProcessing) return
+    const validation = validateBatchRows()
+    if (!validation.validRows.length || validation.invalidCount > 0) {
+      if (batchSummary) batchSummary.textContent += ' · Fix invalid rows before processing.'
+      return
+    }
+
+    batchRows.forEach((row) => {
+      row.status = 'Pending'
+      row.error = ''
+    })
+    batchProcessing = true
+    renderBatchRows()
+    const total = validation.validRows.length
+    let settled = 0
+    if (batchSummary) batchSummary.textContent = `Processing 0 / ${total}`
+
+    try {
+      const result = await processBatchDatasetRows<VideoRecord, ClipRecord, PoseRun>(validation.validRows, {
+        resolveSource: async (sourceUrl) => {
+          const existing = findExistingSourceVideo(videoLibrary.videos, sourceUrl)
+          if (existing) return existing
+          const downloaded = await requestSourceDownload(sourceUrl)
+          applyStoredLibrary(downloaded.library)
+          const source = videoLibrary.videos.find((videoRecord) =>
+            videoRecord.sourceUrl === downloaded.downloaded.sourceUrl ||
+            videoRecord.relativePath === downloaded.downloaded.relativePath)
+          if (!source) throw new Error('The downloaded Source Video was not found in Video Library metadata.')
+          return source
+        },
+        createClip: (source, row) => createClipRecord(source.videoId, {
+          startMs: Math.round(row.startSeconds * 1000),
+          endMs: Math.round(row.endSeconds * 1000),
+          label: row.label,
+        }),
+        generateClip: async (source, clip) => {
+          const library = await videoStorage.generateClip(source.videoId, clip.clipId)
+          applyStoredLibrary(library)
+          const generatedClip = videoLibrary.clips.find((item) => item.clipId === clip.clipId && item.videoId === source.videoId)
+          if (!generatedClip?.relativePath) throw new Error('FFmpeg completed without a generated Clip artifact.')
+          return generatedClip
+        },
+        analyzePose: async (source, clip) => {
+          if (!clip.relativePath) throw new Error('Generated Clip path is missing.')
+          return (await analyzeAndSavePose(source.videoId, clip.clipId, clip.relativePath)).poseRun
+        },
+        buildLlmPose: async (source, clip, poseRun) => {
+          applyStoredLibrary(await videoStorage.buildLlmPoseResult(source.videoId, clip.clipId, poseRun.poseRunId))
+        },
+      }, (rowId, status: BatchRowStatus, error = '') => {
+        const row = batchRows.find((item) => item.id === rowId)
+        if (!row) return
+        const wasSettled = row.status === 'Done' || row.status === 'Error'
+        row.status = status
+        row.error = error
+        if (!wasSettled && (status === 'Done' || status === 'Error')) settled += 1
+        if (batchSummary) batchSummary.textContent = `Processing ${settled} / ${total}`
+        renderBatchRows()
+      })
+      if (batchSummary) batchSummary.textContent = `Complete · ${result.completed} done · ${result.failed} error${result.failed === 1 ? '' : 's'}`
+    } catch (error) {
+      if (batchSummary) batchSummary.textContent = error instanceof Error
+        ? `Batch processing stopped unexpectedly. ${error.message}`
+        : 'Batch processing stopped unexpectedly.'
+    } finally {
+      batchProcessing = false
+      renderBatchRows()
+      await refreshServerLibrary()
+    }
+  })
+
   downloadVideoButton.addEventListener('click', async () => {
     if (sourceDownloadInProgress) return
     const sourceUrl = sourceUrlInput.value.trim()
@@ -1102,20 +1359,10 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     downloadVideoButton.textContent = 'Downloading…'
     downloadCommandStatus.textContent = 'Downloading source video with yt-dlp…'
     try {
-      const response = await fetch('/api/video-v2/source/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceUrl }),
-      })
-      const payload = await response.json() as {
-        downloaded?: { sourceUrl?: string; filename?: string; relativePath?: string }
-        error?: { message?: string }
-      }
-      if (!response.ok || !payload.downloaded?.relativePath || !payload.downloaded.filename || !payload.downloaded.sourceUrl) {
-        throw new Error(payload.error?.message ?? 'The server returned an invalid download response.')
-      }
+      const payload = await requestSourceDownload(sourceUrl)
+      applyStoredLibrary(payload.library)
       if (!await refreshServerLibrary()) throw new Error('The video downloaded, but the Video Library could not be refreshed.')
-      const asset = serverLibrary.source.find((item) => item.relativePath === payload.downloaded?.relativePath)
+      const asset = serverLibrary.source.find((item) => item.relativePath === payload.downloaded.relativePath)
       if (!asset) throw new Error('The video downloaded, but it was not found in the refreshed Video Library.')
       await openServerAsset(asset, payload.downloaded.sourceUrl)
       downloadCommandStatus.textContent = `Downloaded: ${payload.downloaded.filename}`
@@ -1352,11 +1599,11 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
     if (layoutMode === 'video-v2') {
       try {
-        applyStoredLibrary(await videoStorage.addClip(currentVideoRecord.videoId, {
+        await createClipRecord(currentVideoRecord.videoId, {
           startMs: normalizedStart * 1000,
           endMs: normalizedEnd * 1000,
           label: null,
-        }))
+        })
         historyStatus.textContent = 'Range added.'
       } catch (error) {
         await restoreServerLibrary()
@@ -1562,15 +1809,15 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       button.textContent = 'Analyzing Pose…'
       historyStatus.textContent = 'Loading MediaPipe Pose Landmarker…'
       try {
-        const poseData = await analyzePoseVideo(serverVideoUrl(record.generatedClip.relativePath), {
-          signal: controller.signal,
-          onProgress: (progress) => {
-            historyStatus.textContent = `Analyzing pose: ${(progress.videoTimestampMs / 1000).toFixed(1)}s / ${(progress.durationMs / 1000).toFixed(1)}s · ${progress.frameCount} frames · ${progress.detectedPoseFrameCount} detected`
+        const { poseData } = await analyzeAndSavePose(
+          record.videoId,
+          record.clipId,
+          record.generatedClip.relativePath,
+          (frameCount, videoTimestampMs, durationMs) => {
+            historyStatus.textContent = `Analyzing pose: ${(videoTimestampMs / 1000).toFixed(1)}s / ${(durationMs / 1000).toFixed(1)}s · ${frameCount} frames`
           },
-        })
-        historyStatus.textContent = 'Saving pose landmark JSON…'
-        const storedLibrary = await videoStorage.savePoseResult(record.videoId, record.clipId, poseData)
-        applyStoredLibrary(storedLibrary)
+          controller.signal,
+        )
         historyStatus.textContent = `Pose analysis complete: ${poseData.frameCount} frames / ${poseData.detectedPoseFrameCount} detected.`
       } catch (error) {
         await restoreServerLibrary()

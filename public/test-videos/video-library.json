@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "createdAt": "2026-09-04T00:00:00.000Z",
-  "updatedAt": "2026-09-04T18:53:24.373Z",
+  "updatedAt": "2026-09-04T22:52:17.464Z",
   "videos": [
     {
       "videoId": "video-001",
@@ -24,6 +24,17 @@
       "lastModified": 1788547419659.968,
       "createdAt": "2026-09-04T18:43:45.434Z",
       "updatedAt": "2026-09-04T18:43:45.447Z"
+    },
+    {
+      "videoId": "video-003",
+      "filename": "斯巴达30天打卡day16企鹅跳 [BV1RK411W7sj].mp4",
+      "relativePath": "video-003/source.mp4",
+      "sourceUrl": "https://www.bilibili.com/video/BV1RK411W7sj/?spm_id_from=333.337.search-card.all.click&vd_source=271309e7d45fb57e6d9a770747046cd7",
+      "sourceSite": "bilibili",
+      "size": 28131197,
+      "lastModified": 1788562308022.7769,
+      "createdAt": "2026-09-04T22:51:50.847Z",
+      "updatedAt": "2026-09-04T22:51:50.847Z"
     }
   ],
   "clips": [
@@ -48,6 +59,17 @@
       "relativePath": "video-002/clips/video-002_clip-002.mp4",
       "createdAt": "2026-09-04T18:46:39.293Z",
       "updatedAt": "2026-09-04T18:46:44.093Z"
+    },
+    {
+      "clipId": "video-003_clip-001",
+      "videoId": "video-003",
+      "startMs": 10000,
+      "endMs": 15000,
+      "durationMs": 5000,
+      "label": "企鹅跳",
+      "relativePath": "video-003/clips/video-003_clip-001.mp4",
+      "createdAt": "2026-09-04T22:51:50.853Z",
+      "updatedAt": "2026-09-04T22:51:51.929Z"
     }
   ],
   "poseRuns": [
@@ -96,6 +118,29 @@
       "detectedPoseFrameCount": 152,
       "processingDurationMs": 23238.599999999627,
       "createdAt": "2026-09-04T18:52:23.808Z"
+    },
+    {
+      "poseRunId": "video-003_clip-001_pose-001",
+      "videoId": "video-003",
+      "clipId": "video-003_clip-001",
+      "relativePath": "video-003/pose/video-003_clip-001_pose-001.json",
+      "model": {
+        "name": "Pose Landmarker Lite (float16)",
+        "packageVersion": "1.0.1",
+        "modelAssetPath": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        "delegate": "GPU",
+        "runningMode": "VIDEO",
+        "numPoses": 1,
+        "minPoseDetectionConfidence": 0.5,
+        "minPosePresenceConfidence": 0.5,
+        "minTrackingConfidence": 0.5
+      },
+      "samplingFps": 30,
+      "durationMs": 5000,
+      "frameCount": 150,
+      "detectedPoseFrameCount": 150,
+      "processingDurationMs": 25455.400000002235,
+      "createdAt": "2026-09-04T22:52:17.421Z"
     }
   ],
   "llmPoseRuns": [
@@ -122,18 +167,33 @@
       "frameCount": 51,
       "sizeBytes": 49341,
       "createdAt": "2026-09-04T18:53:24.371Z"
+    },
+    {
+      "llmPoseRunId": "video-003_clip-001_pose-001_llm-001",
+      "videoId": "video-003",
+      "clipId": "video-003_clip-001",
+      "poseRunId": "video-003_clip-001_pose-001",
+      "relativePath": "video-003/llm-pose/video-003_clip-001_pose-001_llm-001.json",
+      "schemaVersion": 2,
+      "targetFps": 10,
+      "frameCount": 50,
+      "sizeBytes": 48347,
+      "createdAt": "2026-09-04T22:52:17.463Z"
     }
   ],
   "nextIds": {
-    "video": 3,
+    "video": 4,
     "clips": {
-      "video-002": 3
+      "video-002": 3,
+      "video-003": 2
     },
     "poseRuns": {
-      "video-002_clip-001": 3
+      "video-002_clip-001": 3,
+      "video-003_clip-001": 2
     },
     "llmPoseRuns": {
-      "video-002_clip-001_pose-002": 3
+      "video-002_clip-001_pose-002": 3,
+      "video-003_clip-001_pose-001": 2
     }
   }
 }
