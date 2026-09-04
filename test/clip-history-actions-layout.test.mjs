@@ -7,9 +7,10 @@ const [styles, panels] = await Promise.all([
   readFile(new URL('../src/video-v2-panels.tsx', import.meta.url), 'utf8'),
 ])
 
-test('history action rows reserve horizontal space and never wrap', () => {
-  assert.match(styles, /\.history-run-table \{ min-width: 800px;/)
-  assert.match(styles, /\.history-pose-run-table th:nth-child\(6\) \{ width: 52%; \}/)
+test('history action rows use content-driven widths and never wrap', () => {
+  assert.match(styles, /\.history-run-table \{ min-width: 0; table-layout: auto; \}/)
+  assert.match(styles, /\.history-run-table th:not\(:last-child\), \.history-run-table td:not\(:last-child\) \{ width: 1%; white-space: nowrap; \}/)
+  assert.doesNotMatch(styles, /\.history-pose-run-table th:nth-child\(6\) \{ width: 52%; \}/)
   assert.match(styles, /\.history-row-actions \{ display: flex; width: max-content; flex-wrap: nowrap;/)
   assert.match(styles, /\.history-run-table td:last-child \{ overflow: visible; white-space: nowrap; \}/)
 })

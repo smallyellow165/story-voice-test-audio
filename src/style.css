@@ -164,19 +164,8 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--line); }
 .history-table { width: 100%; min-width: 650px; border-collapse: collapse; table-layout: fixed; font-family: 'DM Mono', monospace; font-size: 0.57rem; }
 .history-clip-table { min-width: 780px; }
-.history-run-table { min-width: 800px; }
-.history-pose-run-table th:nth-child(1) { width: 12%; }
-.history-pose-run-table th:nth-child(2) { width: 10%; }
-.history-pose-run-table th:nth-child(3) { width: 6%; }
-.history-pose-run-table th:nth-child(4) { width: 12%; }
-.history-pose-run-table th:nth-child(5) { width: 8%; }
-.history-pose-run-table th:nth-child(6) { width: 52%; }
-.history-llm-run-table th:nth-child(1), .history-llm-run-table th:nth-child(2) { width: 12%; }
-.history-llm-run-table th:nth-child(3) { width: 8%; }
-.history-llm-run-table th:nth-child(4) { width: 6%; }
-.history-llm-run-table th:nth-child(5) { width: 10%; }
-.history-llm-run-table th:nth-child(6) { width: 11%; }
-.history-llm-run-table th:nth-child(7) { width: 41%; }
+.history-run-table { min-width: 0; table-layout: auto; }
+.history-run-table th:not(:last-child), .history-run-table td:not(:last-child) { width: 1%; white-space: nowrap; }
 .history-table th, .history-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); overflow: hidden; text-align: left; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap; }
 .history-table th { color: var(--muted); background: #f8f5ef; font-size: 0.51rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
 .history-table tbody tr:last-child td { border-bottom: 0; }
