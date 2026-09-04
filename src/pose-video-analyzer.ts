@@ -235,6 +235,7 @@ export const analyzePoseVideo = async (
         minPosePresenceConfidence: poseAnalysisConfig.minPosePresenceConfidence,
         minTrackingConfidence: poseAnalysisConfig.minTrackingConfidence,
       },
+      samplingFps: poseAnalysisConfig.samplingFps,
       durationMs,
       processingDurationMs: performance.now() - processingStartedAt,
       frameCount: frames.length,

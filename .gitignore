@@ -22,8 +22,9 @@ public/audio/**/*.wav
 public/audio/**/*.mp3
 public/audio/**/*.m4a
 
-# Local video-test files; do not commit downloaded or clipped videos.
-public/test-videos/
+# Local video-test artifacts stay untracked; the empty logical manifest is versioned.
+public/test-videos/*
+!public/test-videos/video-library.json
 
 # Editor directories and files
 .vscode/*

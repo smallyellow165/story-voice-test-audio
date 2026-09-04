@@ -105,6 +105,6 @@ export const downloadSourceVideo = async ({
   return {
     sourceUrl: normalizedUrl,
     filename: relativeToSource,
-    relativePath: `source/${relativeToSource}`,
+    fullPath,
   }
 }

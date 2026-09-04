@@ -59,7 +59,7 @@ test('returns the final source-relative identity and supports an existing stable
   assert.deepEqual(first, {
     sourceUrl: 'https://www.bilibili.com/video/BV123',
     filename,
-    relativePath: `source/${filename}`,
+    fullPath,
   })
   assert.deepEqual(repeated, first)
 })

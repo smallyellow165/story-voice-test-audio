@@ -1,145 +1,108 @@
-import { access, mkdir, realpath, rename, stat, unlink } from 'node:fs/promises'
+import { access, lstat, mkdir, realpath, rename, stat, unlink } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { buildFfmpegClipArgs } from '../src/video-clip.mjs'
 import { VideoLibraryStorageError } from './video-library-repository.mjs'
 
-const inFlightClipRanges = new Set()
+const inFlightClips = new Set()
 
 const runFfmpeg = (args) => new Promise((resolve, reject) => {
   const process = spawn('ffmpeg', args, { shell: false, stdio: ['ignore', 'ignore', 'pipe'] })
   let stderr = ''
   process.stderr.setEncoding('utf8')
-  process.stderr.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-12_000)
-  })
-  process.on('error', (error) => {
-    if (error?.code === 'ENOENT') {
-      reject(new VideoLibraryStorageError('ffmpeg executable is unavailable on the server.', 'FFMPEG_UNAVAILABLE'))
-      return
-    }
-    reject(error)
-  })
-  process.on('close', (code) => {
-    if (code === 0) resolve()
-    else reject(new VideoLibraryStorageError(
-      `ffmpeg failed with exit code ${code}.${stderr.trim() ? ` ${stderr.trim()}` : ''}`,
-      'FFMPEG_FAILED',
-    ))
-  })
+  process.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-12_000) })
+  process.on('error', (error) => reject(error?.code === 'ENOENT'
+    ? new VideoLibraryStorageError('ffmpeg executable is unavailable on the server.', 'FFMPEG_UNAVAILABLE')
+    : error))
+  process.on('close', (code) => code === 0 ? resolve() : reject(new VideoLibraryStorageError(
+    `ffmpeg failed with exit code ${code}.${stderr.trim() ? ` ${stderr.trim()}` : ''}`,
+    'FFMPEG_FAILED',
+  )))
 })
 
-const resolveSourcePath = async (video, sourceVideoDirectory) => {
-  if (video.type !== 'server' || !video.server?.relativePath?.startsWith('source/')) {
-    throw new VideoLibraryStorageError('Clip generation requires a server source video.', 'SOURCE_VIDEO_UNAVAILABLE')
+const resolveLibraryPath = (testVideoDirectory, relativePath, expectedDirectory) => {
+  const root = path.resolve(testVideoDirectory)
+  const expectedRoot = path.resolve(root, expectedDirectory)
+  const fullPath = path.resolve(root, relativePath)
+  if (!fullPath.startsWith(`${expectedRoot}${path.sep}`)) {
+    throw new VideoLibraryStorageError('Artifact path is outside its source directory.', 'INVALID_ARTIFACT_PATH')
   }
-  const sourceRoot = path.resolve(sourceVideoDirectory)
-  const sourcePath = path.resolve(path.dirname(sourceRoot), video.server.relativePath)
-  if (!sourcePath.startsWith(`${sourceRoot}${path.sep}`)) {
-    throw new VideoLibraryStorageError('Source video path is outside the source directory.', 'SOURCE_VIDEO_UNAVAILABLE')
-  }
+  return { expectedRoot, fullPath }
+}
+
+export const resolveGeneratedClipFullPath = async ({ videoId, clipId, repository, testVideoDirectory }) => {
+  const { clip } = await repository.findClip(videoId, clipId)
+  if (!clip.relativePath) throw new VideoLibraryStorageError('Clip artifact does not exist.', 'CLIP_ARTIFACT_NOT_FOUND')
+  const { expectedRoot, fullPath } = resolveLibraryPath(testVideoDirectory, clip.relativePath, `${videoId}/clips`)
   try {
-    await access(sourcePath, constants.R_OK)
+    const [realRoot, realFile] = await Promise.all([realpath(expectedRoot), realpath(fullPath)])
+    if (!realFile.startsWith(`${realRoot}${path.sep}`)) throw new Error('path escape')
+    const fileStat = await stat(realFile)
+    if (!fileStat.isFile()) throw new Error('not a file')
+    return realFile
   } catch {
-    throw new VideoLibraryStorageError(`Source video does not exist: ${video.server.relativePath}`, 'SOURCE_VIDEO_NOT_FOUND')
-  }
-  return sourcePath
-}
-
-const outputFilenameFor = (video, clip) => {
-  if (clip.generatedClip?.filename) return path.basename(clip.generatedClip.filename)
-  if (typeof clip.outputFilename === 'string' && clip.outputFilename.toLowerCase().endsWith('.mp4')) {
-    return path.basename(clip.outputFilename)
-  }
-  const extensionIndex = video.file.name.lastIndexOf('.')
-  const baseName = extensionIndex > 0 ? video.file.name.slice(0, extensionIndex) : video.file.name
-  const sequence = Math.max(1, video.nextClipNumber ?? 1)
-  return `${baseName}-clip-${String(sequence).padStart(3, '0')}.mp4`
-}
-
-export const resolveGeneratedClipFullPath = async ({ clipRangeId, repository, clipVideoDirectory }) => {
-  if (typeof clipRangeId !== 'string' || !clipRangeId) {
-    throw new VideoLibraryStorageError('clipRangeId is required.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
-  }
-  const { clip } = await repository.findClipRange(clipRangeId)
-  if (!clip.generatedClip) {
-    throw new VideoLibraryStorageError('This clip range does not have a generated clip.', 'GENERATED_CLIP_NOT_FOUND')
-  }
-
-  const clipsRoot = path.resolve(clipVideoDirectory)
-  const testVideosRoot = path.dirname(clipsRoot)
-  const fullPath = path.resolve(testVideosRoot, clip.generatedClip.relativePath)
-  if (!fullPath.startsWith(`${clipsRoot}${path.sep}`)) {
-    throw new VideoLibraryStorageError('Generated clip path must remain within the clips directory.', 'INVALID_GENERATED_CLIP_PATH')
-  }
-
-  try {
-    const [realClipsRoot, resolvedPath] = await Promise.all([realpath(clipsRoot), realpath(fullPath)])
-    if (!resolvedPath.startsWith(`${realClipsRoot}${path.sep}`)) {
-      throw new VideoLibraryStorageError('Generated clip path must remain within the clips directory.', 'INVALID_GENERATED_CLIP_PATH')
-    }
-    const outputStat = await stat(resolvedPath)
-    if (!outputStat.isFile()) throw new Error('not a file')
-    return resolvedPath
-  } catch (error) {
-    if (error instanceof VideoLibraryStorageError) throw error
-    throw new VideoLibraryStorageError(`Generated clip file does not exist: ${clip.generatedClip.relativePath}`, 'GENERATED_CLIP_FILE_NOT_FOUND')
+    throw new VideoLibraryStorageError(`Clip artifact does not exist: ${clip.relativePath}`, 'CLIP_ARTIFACT_NOT_FOUND')
   }
 }
 
-export const generateClip = async ({ clipRangeId, repository, sourceVideoDirectory, clipVideoDirectory }) => {
-  if (typeof clipRangeId !== 'string' || !clipRangeId) {
-    throw new VideoLibraryStorageError('clipRangeId is required.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
+export const generateClip = async ({ videoId, clipId, repository, testVideoDirectory, run = runFfmpeg }) => {
+  const actionKey = `${videoId}:${clipId}`
+  if (inFlightClips.has(actionKey)) {
+    throw new VideoLibraryStorageError('This clip is already being generated.', 'CLIP_GENERATION_IN_PROGRESS')
   }
-  if (inFlightClipRanges.has(clipRangeId)) {
-    throw new VideoLibraryStorageError('This clip range is already being generated.', 'CLIP_GENERATION_IN_PROGRESS')
-  }
-  inFlightClipRanges.add(clipRangeId)
+  inFlightClips.add(actionKey)
   let temporaryPath = ''
-  let generatedOutputPath = ''
-  let removeGeneratedOutputOnFailure = false
+  let backupPath = ''
+  let outputPath = ''
   try {
-    const { video, clip } = await repository.findClipRange(clipRangeId)
-    const sourcePath = await resolveSourcePath(video, sourceVideoDirectory)
-    await mkdir(clipVideoDirectory, { recursive: true })
-    const filename = outputFilenameFor(video, clip)
-    const outputPath = path.join(clipVideoDirectory, filename)
-    temporaryPath = path.join(
-      clipVideoDirectory,
-      `.${filename}.${globalThis.crypto.randomUUID()}.tmp.mp4`,
-    )
-    const duration = clip.end - clip.start
+    const { video, clip } = await repository.findClip(videoId, clipId)
+    const source = resolveLibraryPath(testVideoDirectory, video.relativePath, videoId)
+    try {
+      await access(source.fullPath, constants.R_OK)
+    } catch {
+      throw new VideoLibraryStorageError(`Source video does not exist: ${video.relativePath}`, 'SOURCE_VIDEO_NOT_FOUND')
+    }
+
+    const clipsDirectory = path.join(testVideoDirectory, videoId, 'clips')
+    await mkdir(clipsDirectory, { recursive: true })
+    const filename = `${clipId}.mp4`
+    outputPath = path.join(clipsDirectory, filename)
+    temporaryPath = path.join(clipsDirectory, `.${filename}.${globalThis.crypto.randomUUID()}.tmp.mp4`)
     const args = buildFfmpegClipArgs({
-      start: clip.start,
-      duration,
-      inputPath: sourcePath,
+      start: clip.startMs / 1000,
+      duration: clip.durationMs / 1000,
+      inputPath: source.fullPath,
       outputPath: temporaryPath,
     })
-    await runFfmpeg(args)
+    await run(args)
     const outputStat = await stat(temporaryPath)
     if (!outputStat.isFile() || outputStat.size === 0) {
       throw new VideoLibraryStorageError('ffmpeg did not create a usable clip file.', 'FFMPEG_OUTPUT_MISSING')
     }
+    try {
+      const existing = await lstat(outputPath)
+      if (existing.isDirectory()) throw new Error('output is a directory')
+      backupPath = path.join(clipsDirectory, `.${filename}.${globalThis.crypto.randomUUID()}.backup`)
+      await rename(outputPath, backupPath)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
     await rename(temporaryPath, outputPath)
     temporaryPath = ''
-    generatedOutputPath = outputPath
-    removeGeneratedOutputOnFailure = !clip.generatedClip
-    const generatedClip = {
-      filename,
-      relativePath: `clips/${filename}`,
-      createdAt: new Date().toISOString(),
+    const relativePath = `${videoId}/clips/${filename}`
+    try {
+      const { library, result: storedClip } = await repository.attachClipArtifact(videoId, clipId, relativePath)
+      if (backupPath) await unlink(backupPath).catch(() => undefined)
+      backupPath = ''
+      return { library, clip: storedClip, ffmpegArgs: args.slice(0, -1).concat(outputPath) }
+    } catch (error) {
+      await unlink(outputPath).catch(() => undefined)
+      if (backupPath) await rename(backupPath, outputPath).catch(() => undefined)
+      throw error
     }
-    const library = await repository.attachGeneratedClip(clipRangeId, generatedClip)
-    removeGeneratedOutputOnFailure = false
-    return { library, generatedClip, ffmpegArgs: args.slice(0, -1).concat(outputPath) }
-  } catch (error) {
-    if (temporaryPath) await unlink(temporaryPath).catch(() => undefined)
-    if (removeGeneratedOutputOnFailure && generatedOutputPath) {
-      await unlink(generatedOutputPath).catch(() => undefined)
-    }
-    throw error
   } finally {
-    inFlightClipRanges.delete(clipRangeId)
+    if (temporaryPath) await unlink(temporaryPath).catch(() => undefined)
+    inFlightClips.delete(actionKey)
   }
 }

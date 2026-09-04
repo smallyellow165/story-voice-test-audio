@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { createVideoLibraryRepository } from '../server/video-library-repository.mjs'
-import { resolvePoseResultFullPath, savePoseResult } from '../server/pose-result-store.mjs'
+
 import { buildLlmPoseResult, compressPoseForLlm, resolveLlmPoseResultFullPath } from '../server/pose-llm-compressor.mjs'
+import { resolvePoseResultFullPath, savePoseResult } from '../server/pose-result-store.mjs'
+import { generateClip } from '../server/video-clip-generator.mjs'
+import { deleteClipCascade, deletePoseRunCascade, deleteVideoCascade } from '../server/video-library-artifacts.mjs'
+import { createVideoLibraryRepository } from '../server/video-library-repository.mjs'
 
 const landmark = (seed) => ({ x: seed, y: seed + 0.1, z: seed - 0.1, visibility: 0.9, presence: 0.8 })
 const pose = (seed) => Array.from({ length: 33 }, (_, index) => landmark(seed + index / 100))
@@ -15,7 +18,7 @@ const frame = (videoTimestampMs, detected = true) => ({
   worldLandmarks: detected ? [pose(videoTimestampMs / 2000)] : [],
 })
 
-const poseData = (frames) => ({
+const poseData = (frames, durationMs = 100) => ({
   schemaVersion: 1,
   task: 'MediaPipe Pose Landmarker',
   model: {
@@ -29,155 +32,220 @@ const poseData = (frames) => ({
     minPosePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
   },
-  durationMs: 100,
+  samplingFps: 30,
+  durationMs,
   processingDurationMs: 25,
   frameCount: frames.length,
   detectedPoseFrameCount: frames.filter((item) => item.landmarks.length > 0).length,
   frames,
 })
 
-const setup = async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'story-voice-pose-'))
-  const testVideos = path.join(root, 'public', 'test-videos')
-  const clips = path.join(testVideos, 'clips')
-  const poseDirectory = path.join(testVideos, 'pose')
-  const storagePath = path.join(root, 'data', 'video-library.json')
-  await mkdir(clips, { recursive: true })
-  await writeFile(path.join(clips, 'sample-clip.mp4'), 'not-a-real-video')
-  const repository = createVideoLibraryRepository(storagePath)
-  await repository.replaceVideos([{
-    id: 'server:sample.mp4',
-    type: 'server',
-    file: { name: 'sample.mp4', size: 1, lastModified: 1 },
-    server: { relativePath: 'source/sample.mp4', url: '/test-videos/source/sample.mp4' },
-    clips: [{
-      id: 'clip-1',
-      start: 0,
-      end: 0.1,
-      duration: 0.1,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      generatedClip: {
-        filename: 'sample-clip.mp4',
-        relativePath: 'clips/sample-clip.mp4',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-    }],
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    nextClipNumber: 2,
-  }])
-  return { root, clips, poseDirectory, repository }
+const setup = async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'story-voice-pose-v3-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const testVideoDirectory = path.join(root, 'public', 'test-videos')
+  const repository = createVideoLibraryRepository(path.join(testVideoDirectory, 'video-library.json'))
+  const video = (await repository.createVideo({ filename: 'original-name.mp4', sourceUrl: 'https://example.test/video' })).result
+  const sourcePath = path.join(testVideoDirectory, video.relativePath)
+  await mkdir(path.dirname(sourcePath), { recursive: true })
+  await writeFile(sourcePath, 'not-a-real-video')
+  const createGeneratedClip = async (startMs, endMs) => {
+    const clip = (await repository.createClip(video.videoId, { startMs, endMs, label: null })).result
+    await generateClip({
+      videoId: video.videoId,
+      clipId: clip.clipId,
+      repository,
+      testVideoDirectory,
+      run: async (args) => writeFile(args.at(-1), 'generated-clip'),
+    })
+    return (await repository.findClip(video.videoId, clip.clipId)).clip
+  }
+  return { root, testVideoDirectory, repository, video, createGeneratedClip }
 }
 
-test('saves, resolves, and re-analyzes one pose artifact per generated clip', async (context) => {
-  const fixture = await setup()
-  context.after(() => rm(fixture.root, { recursive: true, force: true }))
-
-  const first = await savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(0), frame(42, false), frame(83)]),
+test('appends Pose and LLM Pose Runs with canonical paths and ancestry in each artifact', async (context) => {
+  const fixture = await setup(context)
+  const clip = await fixture.createGeneratedClip(0, 100)
+  const firstPose = await savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseData: poseData([frame(0), frame(50, false), frame(100)]),
     repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  assert.equal(first.poseResult.filename, 'sample-clip.pose.json')
-  assert.equal(first.poseResult.frameCount, 3)
-  assert.equal(first.poseResult.detectedPoseFrameCount, 2)
-
-  const fullPath = await resolvePoseResultFullPath({
-    clipRangeId: 'clip-1',
+  const secondPose = await savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseData: poseData([frame(0), frame(40), frame(100)]),
     repository: fixture.repository,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  const artifact = JSON.parse(await readFile(fullPath, 'utf8'))
-  assert.deepEqual(artifact.frames.map((item) => item.videoTimestampMs), [0, 42, 83])
-  assert.equal(artifact.frames[0].landmarks[0].length, 33)
-  assert.equal(artifact.frames[0].worldLandmarks[0].length, 33)
-  assert.equal(artifact.source.generatedClipRelativePath, 'clips/sample-clip.mp4')
 
-  const second = await savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(1), frame(51)]),
+  assert.equal(firstPose.poseRun.poseRunId, 'video-001_clip-001_pose-001')
+  assert.equal(secondPose.poseRun.poseRunId, 'video-001_clip-001_pose-002')
+  assert.equal(firstPose.poseRun.relativePath, 'video-001/pose/video-001_clip-001_pose-001.json')
+  assert.equal(secondPose.poseRun.relativePath, 'video-001/pose/video-001_clip-001_pose-002.json')
+  const rawPath = await resolvePoseResultFullPath({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
     repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  assert.equal(second.poseResult.filename, first.poseResult.filename)
-  assert.equal(second.poseResult.frameCount, 2)
-  const replaced = JSON.parse(await readFile(fullPath, 'utf8'))
-  assert.deepEqual(replaced.frames.map((item) => item.videoTimestampMs), [1, 51])
+  const rawArtifact = JSON.parse(await readFile(rawPath, 'utf8'))
+  assert.deepEqual(
+    { videoId: rawArtifact.source.videoId, clipId: rawArtifact.source.clipId, poseRunId: rawArtifact.source.poseRunId },
+    { videoId: fixture.video.videoId, clipId: clip.clipId, poseRunId: firstPose.poseRun.poseRunId },
+  )
+  assert.equal(rawArtifact.source.sourceVideoFilename, 'original-name.mp4')
+  assert.deepEqual(rawArtifact.frames.map((item) => item.videoTimestampMs), [0, 50, 100])
+  assert.equal(rawArtifact.frames[0].landmarks[0].length, 33)
+  assert.equal(rawArtifact.frames[0].worldLandmarks[0].length, 33)
+
+  const firstLlm = await buildLlmPoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  const secondLlm = await buildLlmPoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  assert.equal(firstLlm.llmPoseRun.llmPoseRunId, 'video-001_clip-001_pose-001_llm-001')
+  assert.equal(secondLlm.llmPoseRun.llmPoseRunId, 'video-001_clip-001_pose-001_llm-002')
+  assert.equal(firstLlm.llmPoseRun.relativePath, 'video-001/llm-pose/video-001_clip-001_pose-001_llm-001.json')
+  await access(path.join(fixture.testVideoDirectory, secondPose.poseRun.relativePath))
+
+  const llmPath = await resolveLlmPoseResultFullPath({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    llmPoseRunId: secondLlm.llmPoseRun.llmPoseRunId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  const llmArtifact = JSON.parse(await readFile(llmPath, 'utf8'))
+  assert.deepEqual(llmArtifact.source, {
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    llmPoseRunId: secondLlm.llmPoseRun.llmPoseRunId,
+    durationMs: 100,
+  })
+  const library = await fixture.repository.loadVideoLibrary()
+  assert.equal(library.poseRuns.length, 2)
+  assert.equal(library.llmPoseRuns.length, 2)
 })
 
-test('rejects non-increasing timestamps without replacing a successful artifact', async (context) => {
-  const fixture = await setup()
-  context.after(() => rm(fixture.root, { recursive: true, force: true }))
-  await savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(0), frame(50)]),
+test('invalid analysis and metadata failure preserve completed history and clean orphan artifacts', async (context) => {
+  const fixture = await setup(context)
+  const clip = await fixture.createGeneratedClip(0, 100)
+  const first = await savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseData: poseData([frame(0), frame(50), frame(100)]),
     repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  const fullPath = await resolvePoseResultFullPath({
-    clipRangeId: 'clip-1',
-    repository: fixture.repository,
-    poseDirectory: fixture.poseDirectory,
-  })
-  const before = await readFile(fullPath, 'utf8')
-  await assert.rejects(() => savePoseResult({
-    clipRangeId: 'clip-1',
+  await assert.rejects(savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
     poseData: poseData([frame(50), frame(50)]),
     repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   }), { code: 'INVALID_POSE_RESULT' })
-  assert.equal(await readFile(fullPath, 'utf8'), before)
+  assert.equal((await fixture.repository.loadVideoLibrary()).poseRuns.length, 1)
+  await access(path.join(fixture.testVideoDirectory, first.poseRun.relativePath))
+
+  const failingRepository = {
+    findClip: (...args) => fixture.repository.findClip(...args),
+    allocatePoseRunId: (...args) => fixture.repository.allocatePoseRunId(...args),
+    createPoseRun: async () => { throw new Error('simulated metadata failure') },
+  }
+  await assert.rejects(savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: clip.clipId,
+    poseData: poseData([frame(0), frame(40), frame(100)]),
+    repository: failingRepository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  }), /simulated metadata failure/)
+  await assert.rejects(access(path.join(fixture.testVideoDirectory, 'video-001/pose/video-001_clip-001_pose-002.json')), { code: 'ENOENT' })
+  assert.equal((await fixture.repository.loadVideoLibrary()).poseRuns.length, 1)
 })
 
-test('restores the previous artifact when metadata persistence fails', async (context) => {
-  const fixture = await setup()
-  context.after(() => rm(fixture.root, { recursive: true, force: true }))
-  await savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(0), frame(40)]),
+test('cascade deletion removes child metadata and artifacts without touching siblings', async (context) => {
+  const fixture = await setup(context)
+  const firstClip = await fixture.createGeneratedClip(0, 100)
+  const secondClip = await fixture.createGeneratedClip(100, 200)
+  const firstPose = await savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: firstClip.clipId,
+    poseData: poseData([frame(0), frame(50), frame(100)]),
     repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  const fullPath = await resolvePoseResultFullPath({
-    clipRangeId: 'clip-1',
+  const secondPose = await savePoseResult({
+    videoId: fixture.video.videoId,
+    clipId: firstClip.clipId,
+    poseData: poseData([frame(0), frame(40), frame(100)]),
     repository: fixture.repository,
-    poseDirectory: fixture.poseDirectory,
+    testVideoDirectory: fixture.testVideoDirectory,
   })
-  const before = await readFile(fullPath, 'utf8')
-  const failingRepository = {
-    findClipRange: (...args) => fixture.repository.findClipRange(...args),
-    attachPoseResult: async () => { throw new Error('simulated metadata failure') },
-  }
-  await assert.rejects(() => savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(1), frame(60), frame(90)]),
-    repository: failingRepository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
-  }), /simulated metadata failure/)
-  assert.equal(await readFile(fullPath, 'utf8'), before)
+  const llm = await buildLlmPoseResult({
+    videoId: fixture.video.videoId,
+    clipId: firstClip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+
+  await deletePoseRunCascade({
+    videoId: fixture.video.videoId,
+    clipId: firstClip.clipId,
+    poseRunId: firstPose.poseRun.poseRunId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  let library = await fixture.repository.loadVideoLibrary()
+  assert.deepEqual(library.poseRuns.map((item) => item.poseRunId), [secondPose.poseRun.poseRunId])
+  assert.equal(library.llmPoseRuns.length, 0)
+  await assert.rejects(access(path.join(fixture.testVideoDirectory, firstPose.poseRun.relativePath)), { code: 'ENOENT' })
+  await assert.rejects(access(path.join(fixture.testVideoDirectory, llm.llmPoseRun.relativePath)), { code: 'ENOENT' })
+  await access(path.join(fixture.testVideoDirectory, secondPose.poseRun.relativePath))
+
+  await deleteClipCascade({
+    videoId: fixture.video.videoId,
+    clipId: firstClip.clipId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  library = await fixture.repository.loadVideoLibrary()
+  assert.deepEqual(library.clips.map((item) => item.clipId), [secondClip.clipId])
+  assert.equal(library.poseRuns.length, 0)
+  await access(path.join(fixture.testVideoDirectory, secondClip.relativePath))
+
+  await deleteVideoCascade({
+    videoId: fixture.video.videoId,
+    repository: fixture.repository,
+    testVideoDirectory: fixture.testVideoDirectory,
+  })
+  library = await fixture.repository.loadVideoLibrary()
+  assert.equal(library.videos.length, 0)
+  assert.equal(library.clips.length, 0)
+  await assert.rejects(access(path.join(fixture.testVideoDirectory, fixture.video.videoId)), { code: 'ENOENT' })
 })
 
 test('compresses world landmarks by video time with fixed official joint names and precision', () => {
   const rawPose = {
     schemaVersion: 1,
     task: 'MediaPipe Pose Landmarker',
-    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 500 },
-    frames: [
-      frame(0),
-      frame(33),
-      frame(100),
-      frame(200, false),
-      frame(300),
-      frame(400),
-      frame(500),
-    ],
+    source: { videoId: 'video-001', clipId: 'video-001_clip-001', poseRunId: 'video-001_clip-001_pose-001', durationMs: 500 },
+    frames: [frame(0), frame(33), frame(100), frame(200, false), frame(300), frame(400), frame(500)],
   }
   const compressed = compressPoseForLlm(rawPose)
   assert.deepEqual(compressed.frames.map((item) => item.t), [0, 100, 300, 400, 500])
@@ -199,10 +267,11 @@ test('compresses world landmarks by video time with fixed official joint names a
 })
 
 test('anchors 10 FPS sampling to the first source timestamp and reports upstream gaps', () => {
+  const source = { videoId: 'video-001', clipId: 'video-001_clip-001', poseRunId: 'video-001_clip-001_pose-001' }
   const continuous = compressPoseForLlm({
     schemaVersion: 1,
     task: 'MediaPipe Pose Landmarker',
-    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 333 },
+    source: { ...source, durationMs: 333 },
     frames: [frame(33), frame(66), frame(100), frame(133), frame(166), frame(200), frame(233), frame(266), frame(300), frame(333)],
   })
   assert.deepEqual(continuous.frames.map((item) => item.t), [33, 133, 233, 333])
@@ -210,7 +279,7 @@ test('anchors 10 FPS sampling to the first source timestamp and reports upstream
   const gapped = compressPoseForLlm({
     schemaVersion: 1,
     task: 'MediaPipe Pose Landmarker',
-    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 1200 },
+    source: { ...source, durationMs: 1200 },
     frames: [frame(33), frame(1000), frame(1033), frame(1100), frame(1200)],
   })
   assert.equal(gapped.sampling.maxSourceFrameGapMs, 967)
@@ -224,7 +293,7 @@ test('emits null derived values when required landmarks have low visibility', ()
   const compressed = compressPoseForLlm({
     schemaVersion: 1,
     task: 'MediaPipe Pose Landmarker',
-    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 0 },
+    source: { videoId: 'video-001', clipId: 'video-001_clip-001', poseRunId: 'video-001_clip-001_pose-001', durationMs: 0 },
     frames: [lowVisibilityFrame],
   })
 
@@ -234,41 +303,4 @@ test('emits null derived values when required landmarks have low visibility', ()
   assert.equal(compressed.frames[0].f.pelvisVy, null)
   assert.equal(JSON.stringify(compressed).includes('NaN'), false)
   assert.equal(JSON.stringify(compressed).includes('Infinity'), false)
-})
-
-test('persists and resolves one atomic LLM Pose artifact per raw Pose result', async (context) => {
-  const fixture = await setup()
-  context.after(() => rm(fixture.root, { recursive: true, force: true }))
-  await savePoseResult({
-    clipRangeId: 'clip-1',
-    poseData: poseData([frame(0), frame(50), frame(100)]),
-    repository: fixture.repository,
-    clipVideoDirectory: fixture.clips,
-    poseDirectory: fixture.poseDirectory,
-  })
-  const first = await buildLlmPoseResult({
-    clipRangeId: 'clip-1',
-    repository: fixture.repository,
-    poseDirectory: fixture.poseDirectory,
-  })
-  assert.equal(first.llmResult.filename, 'sample-clip.pose.llm.json')
-  assert.equal(first.llmResult.frameCount, 2)
-  const fullPath = await resolveLlmPoseResultFullPath({
-    clipRangeId: 'clip-1',
-    repository: fixture.repository,
-    poseDirectory: fixture.poseDirectory,
-  })
-  const before = await readFile(fullPath, 'utf8')
-  assert.equal(Buffer.byteLength(before), first.llmResult.sizeBytes)
-
-  const failingRepository = {
-    findClipRange: (...args) => fixture.repository.findClipRange(...args),
-    attachLlmPoseResult: async () => { throw new Error('simulated LLM metadata failure') },
-  }
-  await assert.rejects(() => buildLlmPoseResult({
-    clipRangeId: 'clip-1',
-    repository: failingRepository,
-    poseDirectory: fixture.poseDirectory,
-  }), /simulated LLM metadata failure/)
-  assert.equal(await readFile(fullPath, 'utf8'), before)
 })

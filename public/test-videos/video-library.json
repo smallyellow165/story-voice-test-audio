@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 3,
+  "createdAt": "2026-09-04T00:00:00.000Z",
+  "updatedAt": "2026-09-04T18:53:24.373Z",
+  "videos": [
+    {
+      "videoId": "video-001",
+      "filename": "幼儿斯巴达30天打卡挑战4岁半nova打卡day3仰卧举腿 [BV1xz411z76J].mp4",
+      "relativePath": "video-001/source.mp4",
+      "sourceUrl": "https://www.bilibili.com/video/BV1xz411z76J?spm_id_from=333.788.recommend_more_video.-1&trackid=web_related_0.router-related-2589621-ftmm5.1788546949527.65&vd_source=271309e7d45fb57e6d9a770747046cd7",
+      "sourceSite": "bilibili",
+      "size": 28034501,
+      "lastModified": 1788547073439.076,
+      "createdAt": "2026-09-04T18:38:19.165Z",
+      "updatedAt": "2026-09-04T18:38:19.180Z"
+    },
+    {
+      "videoId": "video-002",
+      "filename": "少儿斯巴达30天打卡挑战day10高抬腿high  knees [BV1s54y1D7tH].mp4",
+      "relativePath": "video-002/source.mp4",
+      "sourceUrl": "https://www.bilibili.com/video/BV1s54y1D7tH/?spm_id_from=333.1387.search.video_card.click&vd_source=271309e7d45fb57e6d9a770747046cd7",
+      "sourceSite": "bilibili",
+      "size": 28003335,
+      "lastModified": 1788547419659.968,
+      "createdAt": "2026-09-04T18:43:45.434Z",
+      "updatedAt": "2026-09-04T18:43:45.447Z"
+    }
+  ],
+  "clips": [
+    {
+      "clipId": "video-002_clip-001",
+      "videoId": "video-002",
+      "startMs": 9660,
+      "endMs": 14716,
+      "durationMs": 5056,
+      "label": null,
+      "relativePath": "video-002/clips/video-002_clip-001.mp4",
+      "createdAt": "2026-09-04T18:45:59.038Z",
+      "updatedAt": "2026-09-04T18:46:19.083Z"
+    },
+    {
+      "clipId": "video-002_clip-002",
+      "videoId": "video-002",
+      "startMs": 21638,
+      "endMs": 27187,
+      "durationMs": 5549,
+      "label": null,
+      "relativePath": "video-002/clips/video-002_clip-002.mp4",
+      "createdAt": "2026-09-04T18:46:39.293Z",
+      "updatedAt": "2026-09-04T18:46:44.093Z"
+    }
+  ],
+  "poseRuns": [
+    {
+      "poseRunId": "video-002_clip-001_pose-001",
+      "videoId": "video-002",
+      "clipId": "video-002_clip-001",
+      "relativePath": "video-002/pose/video-002_clip-001_pose-001.json",
+      "model": {
+        "name": "Pose Landmarker Lite (float16)",
+        "packageVersion": "1.0.1",
+        "modelAssetPath": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        "delegate": "GPU",
+        "runningMode": "VIDEO",
+        "numPoses": 1,
+        "minPoseDetectionConfidence": 0.5,
+        "minPosePresenceConfidence": 0.5,
+        "minTrackingConfidence": 0.5
+      },
+      "samplingFps": 30,
+      "durationMs": 5066.6669999999995,
+      "frameCount": 152,
+      "detectedPoseFrameCount": 152,
+      "processingDurationMs": 24415.700000001118,
+      "createdAt": "2026-09-04T18:51:17.806Z"
+    },
+    {
+      "poseRunId": "video-002_clip-001_pose-002",
+      "videoId": "video-002",
+      "clipId": "video-002_clip-001",
+      "relativePath": "video-002/pose/video-002_clip-001_pose-002.json",
+      "model": {
+        "name": "Pose Landmarker Lite (float16)",
+        "packageVersion": "1.0.1",
+        "modelAssetPath": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        "delegate": "GPU",
+        "runningMode": "VIDEO",
+        "numPoses": 1,
+        "minPoseDetectionConfidence": 0.5,
+        "minPosePresenceConfidence": 0.5,
+        "minTrackingConfidence": 0.5
+      },
+      "samplingFps": 30,
+      "durationMs": 5066.6669999999995,
+      "frameCount": 152,
+      "detectedPoseFrameCount": 152,
+      "processingDurationMs": 23238.599999999627,
+      "createdAt": "2026-09-04T18:52:23.808Z"
+    }
+  ],
+  "llmPoseRuns": [
+    {
+      "llmPoseRunId": "video-002_clip-001_pose-002_llm-001",
+      "videoId": "video-002",
+      "clipId": "video-002_clip-001",
+      "poseRunId": "video-002_clip-001_pose-002",
+      "relativePath": "video-002/llm-pose/video-002_clip-001_pose-002_llm-001.json",
+      "schemaVersion": 2,
+      "targetFps": 10,
+      "frameCount": 51,
+      "sizeBytes": 49341,
+      "createdAt": "2026-09-04T18:53:21.453Z"
+    },
+    {
+      "llmPoseRunId": "video-002_clip-001_pose-002_llm-002",
+      "videoId": "video-002",
+      "clipId": "video-002_clip-001",
+      "poseRunId": "video-002_clip-001_pose-002",
+      "relativePath": "video-002/llm-pose/video-002_clip-001_pose-002_llm-002.json",
+      "schemaVersion": 2,
+      "targetFps": 10,
+      "frameCount": 51,
+      "sizeBytes": 49341,
+      "createdAt": "2026-09-04T18:53:24.371Z"
+    }
+  ],
+  "nextIds": {
+    "video": 3,
+    "clips": {
+      "video-002": 3
+    },
+    "poseRuns": {
+      "video-002_clip-001": 3
+    },
+    "llmPoseRuns": {
+      "video-002_clip-001_pose-002": 3
+    }
+  }
+}

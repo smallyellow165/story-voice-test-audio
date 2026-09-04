@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { access, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -12,16 +12,19 @@ import { VideoLibraryStorageError, createVideoLibraryRepository } from './server
 import { resolvePoseResultFullPath, savePoseResult } from './server/pose-result-store.mjs'
 import { buildLlmPoseResult, resolveLlmPoseResultFullPath } from './server/pose-llm-compressor.mjs'
 import { SourceVideoDownloadError, downloadSourceVideo, normalizeSourceVideoUrl } from './server/source-video-downloader.mjs'
+import {
+  deleteClipCascade,
+  deleteLlmPoseRunArtifact,
+  deletePoseRunCascade,
+  deleteVideoCascade,
+} from './server/video-library-artifacts.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
-const videoLibraryFile = path.join(projectRoot, 'data', 'video-library.json')
 const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
-const sourceVideoDirectory = path.join(testVideoDirectory, 'source')
-const clipVideoDirectory = path.join(testVideoDirectory, 'clips')
-const poseDirectory = path.join(testVideoDirectory, 'pose')
+const videoLibraryFile = path.join(testVideoDirectory, 'video-library.json')
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
@@ -46,33 +49,29 @@ const sendJson = (response, statusCode, payload) => {
   response.end(JSON.stringify(payload))
 }
 
-const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.mkv'])
 const previewExtensions = new Set(['.mp4', '.webm', '.mov'])
 
-const readVideoDirectory = async (directory, relativePrefix, category) => {
-  const entries = await readdir(directory, { withFileTypes: true })
-  return entries
-    .filter((entry) => entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase()))
-    .map((entry) => ({
-      name: entry.name,
-      relativePath: relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name,
-      url: `/test-videos/${relativePrefix ? `${relativePrefix}/` : ''}${encodeURIComponent(entry.name)}`,
-      category,
-      previewSupported: previewExtensions.has(path.extname(entry.name).toLowerCase()),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name))
-}
-
 const readTestVideoLibrary = async () => {
-  await Promise.all([
-    mkdir(sourceVideoDirectory, { recursive: true }),
-    mkdir(clipVideoDirectory, { recursive: true }),
-  ])
-  const [source, clips] = await Promise.all([
-    readVideoDirectory(sourceVideoDirectory, 'source', 'source'),
-    readVideoDirectory(clipVideoDirectory, 'clips', 'clip'),
-  ])
-  return { source, clips }
+  const library = await videoLibraryRepository.loadVideoLibrary()
+  return {
+    source: library.videos.map((video) => ({
+      videoId: video.videoId,
+      name: video.filename,
+      relativePath: video.relativePath,
+      url: `/test-videos/${video.relativePath.split('/').map(encodeURIComponent).join('/')}`,
+      category: 'source',
+      previewSupported: previewExtensions.has(path.extname(video.relativePath).toLowerCase()),
+    })),
+    clips: library.clips.filter((clip) => clip.relativePath).map((clip) => ({
+      videoId: clip.videoId,
+      clipId: clip.clipId,
+      name: path.basename(clip.relativePath),
+      relativePath: clip.relativePath,
+      url: `/test-videos/${clip.relativePath.split('/').map(encodeURIComponent).join('/')}`,
+      category: 'clip',
+      previewSupported: true,
+    })),
+  }
 }
 
 const readMetadata = async () => {
@@ -324,10 +323,10 @@ const serveGeneratedAudio = async (pathname, response) => {
 const sendVideoLibraryError = (response, error) => {
   const statusByCode = {
     INVALID_VIDEO_LIBRARY_SCHEMA: 400,
+    UNSUPPORTED_VIDEO_LIBRARY_SCHEMA: 400,
     VIDEO_NOT_FOUND: 404,
-    CLIP_RANGE_NOT_FOUND: 404,
-    GENERATED_CLIP_NOT_FOUND: 404,
-    GENERATED_CLIP_FILE_NOT_FOUND: 404,
+    CLIP_NOT_FOUND: 404,
+    CLIP_ARTIFACT_NOT_FOUND: 404,
     SOURCE_VIDEO_NOT_FOUND: 404,
     SOURCE_VIDEO_UNAVAILABLE: 400,
     INVALID_GENERATED_CLIP_PATH: 400,
@@ -335,10 +334,14 @@ const sendVideoLibraryError = (response, error) => {
     INVALID_POSE_RESULT: 400,
     INVALID_POSE_RESULT_PATH: 400,
     POSE_RESULT_NOT_FOUND: 404,
+    POSE_RUN_NOT_FOUND: 404,
+    POSE_RUN_ID_CONFLICT: 409,
     POSE_RESULT_FILE_NOT_FOUND: 404,
     POSE_RESULT_IN_PROGRESS: 409,
     INVALID_LLM_POSE_RESULT_PATH: 400,
     LLM_POSE_RESULT_NOT_FOUND: 404,
+    LLM_POSE_RUN_NOT_FOUND: 404,
+    LLM_POSE_RUN_ID_CONFLICT: 409,
     LLM_POSE_RESULT_FILE_NOT_FOUND: 404,
     LLM_POSE_RESULT_IN_PROGRESS: 409,
     FFMPEG_FAILED: 422,
@@ -383,55 +386,59 @@ const server = createServer(async (request, response) => {
       const body = await readVideoLibraryRequest(request)
       const sourceUrl = normalizeSourceVideoUrl(body?.sourceUrl)
       const storedLibrary = await videoLibraryRepository.loadVideoLibrary()
-      const existingRecord = storedLibrary.videos.find((video) => video.source?.url === sourceUrl)
-      const scannedBeforeDownload = await readTestVideoLibrary()
-      const existingAsset = existingRecord?.server?.relativePath
-        ? scannedBeforeDownload.source.find((item) => item.relativePath === existingRecord.server.relativePath)
-        : undefined
-      if (existingAsset) {
+      const existingVideo = storedLibrary.videos.find((video) => video.sourceUrl === sourceUrl)
+      if (existingVideo) {
+        await access(path.join(testVideoDirectory, existingVideo.relativePath), constants.R_OK)
+        const asset = (await readTestVideoLibrary()).source.find((item) => item.videoId === existingVideo.videoId)
         sendJson(response, 200, {
           downloaded: {
             sourceUrl,
-            filename: existingAsset.name,
-            relativePath: existingAsset.relativePath,
+            filename: existingVideo.filename,
+            relativePath: existingVideo.relativePath,
             alreadyExists: true,
           },
-          asset: existingAsset,
+          asset,
           library: storedLibrary,
         })
         return
       }
 
-      const downloaded = await downloadSourceVideo({ sourceUrl, sourceVideoDirectory })
-      const scannedAfterDownload = await readTestVideoLibrary()
-      const asset = scannedAfterDownload.source.find((item) => item.relativePath === downloaded.relativePath)
-      if (!asset) {
-        throw new SourceVideoDownloadError(
-          'The video was downloaded, but it was not found during the source library refresh.',
-          'DOWNLOADED_VIDEO_NOT_LISTED',
-        )
+      await mkdir(testVideoDirectory, { recursive: true })
+      const stagingDirectory = await mkdtemp(path.join(testVideoDirectory, '.download-'))
+      let createdVideoId = ''
+      try {
+        const downloaded = await downloadSourceVideo({ sourceUrl, sourceVideoDirectory: stagingDirectory })
+        const downloadedStat = await stat(downloaded.fullPath)
+        const { library, result: createdVideo } = await videoLibraryRepository.createVideo({
+          filename: downloaded.filename,
+          sourceUrl,
+          sourceSite: sourceSiteFromUrl(sourceUrl),
+          size: downloadedStat.size,
+          lastModified: downloadedStat.mtimeMs,
+        })
+        createdVideoId = createdVideo.videoId
+        const finalPath = path.join(testVideoDirectory, createdVideo.relativePath)
+        await mkdir(path.dirname(finalPath), { recursive: true })
+        await rename(downloaded.fullPath, finalPath)
+        const asset = {
+          videoId: createdVideo.videoId,
+          name: createdVideo.filename,
+          relativePath: createdVideo.relativePath,
+          url: `/test-videos/${createdVideo.relativePath.split('/').map(encodeURIComponent).join('/')}`,
+          category: 'source',
+          previewSupported: previewExtensions.has(path.extname(createdVideo.relativePath).toLowerCase()),
+        }
+        sendJson(response, 200, {
+          downloaded: { sourceUrl, filename: createdVideo.filename, relativePath: createdVideo.relativePath },
+          asset,
+          library,
+        })
+      } catch (error) {
+        if (createdVideoId) await videoLibraryRepository.deleteVideo(createdVideoId).catch(() => undefined)
+        throw error
+      } finally {
+        await rm(stagingDirectory, { recursive: true, force: true })
       }
-      const downloadedStat = await stat(path.join(sourceVideoDirectory, downloaded.filename))
-      const now = new Date().toISOString()
-      const recordForPath = storedLibrary.videos.find((video) => video.server?.relativePath === downloaded.relativePath)
-      const updatedLibrary = await videoLibraryRepository.upsertVideo(recordForPath ? {
-        ...recordForPath,
-        file: { name: downloaded.filename, size: downloadedStat.size, lastModified: downloadedStat.mtimeMs },
-        server: { relativePath: downloaded.relativePath, url: asset.url },
-        source: { url: sourceUrl, site: sourceSiteFromUrl(sourceUrl) },
-        updatedAt: now,
-      } : {
-        id: `server:${downloaded.filename}`,
-        type: 'server',
-        file: { name: downloaded.filename, size: downloadedStat.size, lastModified: downloadedStat.mtimeMs },
-        server: { relativePath: downloaded.relativePath, url: asset.url },
-        source: { url: sourceUrl, site: sourceSiteFromUrl(sourceUrl) },
-        clips: [],
-        createdAt: now,
-        updatedAt: now,
-        nextClipNumber: 1,
-      })
-      sendJson(response, 200, { downloaded, asset, library: updatedLibrary })
     } catch (error) {
       sendVideoLibraryError(response, error)
     }
@@ -446,7 +453,7 @@ const server = createServer(async (request, response) => {
       }
       if (request.method === 'PUT') {
         const body = await readVideoLibraryRequest(request)
-        sendJson(response, 200, await videoLibraryRepository.replaceVideos(body?.videos))
+        sendJson(response, 200, await videoLibraryRepository.replaceLibrary(body))
         return
       }
       sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or PUT for /api/video-v2/library.' } })
@@ -457,13 +464,20 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/api/video-v2/video') {
-    if (request.method !== 'PUT') {
-      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use PUT for /api/video-v2/video.' } })
+    if (request.method !== 'PATCH' && request.method !== 'DELETE') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use PATCH or DELETE for /api/video-v2/video.' } })
       return
     }
     try {
       const body = await readVideoLibraryRequest(request)
-      sendJson(response, 200, await videoLibraryRepository.upsertVideo(body?.video))
+      const library = request.method === 'PATCH'
+        ? (await videoLibraryRepository.updateVideo(body?.videoId, body?.patch)).library
+        : await deleteVideoCascade({
+            videoId: body?.videoId,
+            repository: videoLibraryRepository,
+            testVideoDirectory,
+          })
+      sendJson(response, 200, library)
     } catch (error) {
       sendVideoLibraryError(response, error)
     }
@@ -478,14 +492,14 @@ const server = createServer(async (request, response) => {
     try {
       const body = await readVideoLibraryRequest(request)
       const result = await generateClip({
-        clipRangeId: body?.clipRangeId,
+        videoId: body?.videoId,
+        clipId: body?.clipId,
         repository: videoLibraryRepository,
-        sourceVideoDirectory,
-        clipVideoDirectory,
+        testVideoDirectory,
       })
       sendJson(response, 200, {
         ...result.library,
-        generatedClip: result.generatedClip,
+        generatedClip: result.clip,
         ffmpegArgs: result.ffmpegArgs,
       })
     } catch (error) {
@@ -502,13 +516,13 @@ const server = createServer(async (request, response) => {
     try {
       const body = await readJsonBody(request, maxPoseResultRequestBytes)
       const result = await savePoseResult({
-        clipRangeId: body?.clipRangeId,
+        videoId: body?.videoId,
+        clipId: body?.clipId,
         poseData: body?.poseData,
         repository: videoLibraryRepository,
-        clipVideoDirectory,
-        poseDirectory,
+        testVideoDirectory,
       })
-      sendJson(response, 200, { ...result.library, poseResult: result.poseResult })
+      sendJson(response, 200, { ...result.library, poseRun: result.poseRun })
     } catch (error) {
       sendVideoLibraryError(response, error)
     }
@@ -523,34 +537,72 @@ const server = createServer(async (request, response) => {
     try {
       const body = await readVideoLibraryRequest(request)
       const result = await buildLlmPoseResult({
-        clipRangeId: body?.clipRangeId,
+        videoId: body?.videoId,
+        clipId: body?.clipId,
+        poseRunId: body?.poseRunId,
         repository: videoLibraryRepository,
-        poseDirectory,
+        testVideoDirectory,
       })
-      sendJson(response, 200, { ...result.library, llmResult: result.llmResult })
+      sendJson(response, 200, { ...result.library, llmPoseRun: result.llmPoseRun })
     } catch (error) {
       sendVideoLibraryError(response, error)
     }
     return
   }
 
-  const clipPathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/path$/)
+  if (url.pathname === '/api/video-v2/pose-run') {
+    if (request.method !== 'DELETE') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use DELETE for /api/video-v2/pose-run.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      sendJson(response, 200, await deletePoseRunCascade({
+        videoId: body?.videoId,
+        clipId: body?.clipId,
+        poseRunId: body?.poseRunId,
+        repository: videoLibraryRepository,
+        testVideoDirectory,
+      }))
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/video-v2/llm-pose-run') {
+    if (request.method !== 'DELETE') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use DELETE for /api/video-v2/llm-pose-run.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      sendJson(response, 200, await deleteLlmPoseRunArtifact({
+        videoId: body?.videoId,
+        clipId: body?.clipId,
+        poseRunId: body?.poseRunId,
+        llmPoseRunId: body?.llmPoseRunId,
+        repository: videoLibraryRepository,
+        testVideoDirectory,
+      }))
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  const clipPathMatch = url.pathname.match(/^\/api\/video-v2\/videos\/([^/]+)\/clips\/([^/]+)\/path$/)
   if (clipPathMatch) {
     if (request.method !== 'GET') {
       sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for a generated clip path.' } })
       return
     }
     try {
-      let clipRangeId
-      try {
-        clipRangeId = decodeURIComponent(clipPathMatch[1])
-      } catch {
-        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
-      }
       const fullPath = await resolveGeneratedClipFullPath({
-        clipRangeId,
+        videoId: decodeURIComponent(clipPathMatch[1]),
+        clipId: decodeURIComponent(clipPathMatch[2]),
         repository: videoLibraryRepository,
-        clipVideoDirectory,
+        testVideoDirectory,
       })
       sendJson(response, 200, { fullPath })
     } catch (error) {
@@ -559,20 +611,20 @@ const server = createServer(async (request, response) => {
     return
   }
 
-  const posePathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/pose\/path$/)
+  const posePathMatch = url.pathname.match(/^\/api\/video-v2\/videos\/([^/]+)\/clips\/([^/]+)\/pose-runs\/([^/]+)\/path$/)
   if (posePathMatch) {
     if (request.method !== 'GET') {
       sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for a pose result path.' } })
       return
     }
     try {
-      let clipRangeId
-      try {
-        clipRangeId = decodeURIComponent(posePathMatch[1])
-      } catch {
-        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
-      }
-      const fullPath = await resolvePoseResultFullPath({ clipRangeId, repository: videoLibraryRepository, poseDirectory })
+      const fullPath = await resolvePoseResultFullPath({
+        videoId: decodeURIComponent(posePathMatch[1]),
+        clipId: decodeURIComponent(posePathMatch[2]),
+        poseRunId: decodeURIComponent(posePathMatch[3]),
+        repository: videoLibraryRepository,
+        testVideoDirectory,
+      })
       sendJson(response, 200, { fullPath })
     } catch (error) {
       sendVideoLibraryError(response, error)
@@ -580,20 +632,21 @@ const server = createServer(async (request, response) => {
     return
   }
 
-  const llmPosePathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/pose\/llm\/path$/)
+  const llmPosePathMatch = url.pathname.match(/^\/api\/video-v2\/videos\/([^/]+)\/clips\/([^/]+)\/pose-runs\/([^/]+)\/llm-runs\/([^/]+)\/path$/)
   if (llmPosePathMatch) {
     if (request.method !== 'GET') {
       sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for an LLM Pose result path.' } })
       return
     }
     try {
-      let clipRangeId
-      try {
-        clipRangeId = decodeURIComponent(llmPosePathMatch[1])
-      } catch {
-        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
-      }
-      const fullPath = await resolveLlmPoseResultFullPath({ clipRangeId, repository: videoLibraryRepository, poseDirectory })
+      const fullPath = await resolveLlmPoseResultFullPath({
+        videoId: decodeURIComponent(llmPosePathMatch[1]),
+        clipId: decodeURIComponent(llmPosePathMatch[2]),
+        poseRunId: decodeURIComponent(llmPosePathMatch[3]),
+        llmPoseRunId: decodeURIComponent(llmPosePathMatch[4]),
+        repository: videoLibraryRepository,
+        testVideoDirectory,
+      })
       sendJson(response, 200, { fullPath })
     } catch (error) {
       sendVideoLibraryError(response, error)
@@ -602,20 +655,29 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/api/video-v2/clip') {
-    if (request.method !== 'POST' && request.method !== 'DELETE') {
-      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST or DELETE for /api/video-v2/clip.' } })
+    if (request.method !== 'POST' && request.method !== 'PATCH' && request.method !== 'DELETE') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST, PATCH, or DELETE for /api/video-v2/clip.' } })
       return
     }
     try {
       const body = await readVideoLibraryRequest(request)
-      const library = request.method === 'POST'
-        ? await videoLibraryRepository.addClipRange(
-          body?.videoId,
-          body?.clip,
-          body?.nextClipNumber,
-          body?.updatedAt,
-        )
-        : await videoLibraryRepository.deleteClipRange(body?.videoId, body?.clipId, body?.updatedAt)
+      let library
+      if (request.method === 'POST') {
+        library = (await videoLibraryRepository.createClip(body?.videoId, {
+            startMs: body?.startMs,
+            endMs: body?.endMs,
+            label: body?.label,
+          })).library
+      } else if (request.method === 'PATCH') {
+        library = (await videoLibraryRepository.updateClipLabel(body?.videoId, body?.clipId, body?.label)).library
+      } else {
+        library = await deleteClipCascade({
+          videoId: body?.videoId,
+          clipId: body?.clipId,
+          repository: videoLibraryRepository,
+          testVideoDirectory,
+        })
+      }
       sendJson(response, 200, library)
     } catch (error) {
       sendVideoLibraryError(response, error)

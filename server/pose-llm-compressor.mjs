@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import path from 'node:path'
 import { VideoLibraryStorageError } from './video-library-repository.mjs'
@@ -245,8 +245,9 @@ export const compressPoseForLlm = (rawPose) => {
     schemaVersion: 2,
     type: 'pose-llm',
     source: {
-      clipRangeId: String(rawPose.source.clipRangeId ?? ''),
-      generatedClipFilename: String(rawPose.source.generatedClipFilename ?? ''),
+      videoId: String(rawPose.source.videoId ?? ''),
+      clipId: String(rawPose.source.clipId ?? ''),
+      poseRunId: String(rawPose.source.poseRunId ?? ''),
       durationMs: Math.round(durationMs),
     },
     compression: {
@@ -283,115 +284,99 @@ export const compressPoseForLlm = (rawPose) => {
   }
 }
 
-const llmFilenameFor = (poseFilename) => poseFilename.endsWith('.pose.json')
-  ? `${poseFilename.slice(0, -'.pose.json'.length)}.pose.llm.json`
-  : `${path.parse(path.basename(poseFilename)).name}.llm.json`
-
-const resolveOutputPath = (poseDirectory, filename) => {
-  const root = path.resolve(poseDirectory)
-  const outputPath = path.resolve(root, path.basename(filename))
+const resolveOutputPath = (testVideoDirectory, videoId, relativePath) => {
+  const root = path.resolve(testVideoDirectory, videoId, 'llm-pose')
+  const outputPath = path.resolve(testVideoDirectory, relativePath)
   if (!outputPath.startsWith(`${root}${path.sep}`)) {
-    throw new VideoLibraryStorageError('LLM Pose result path must remain within the pose directory.', 'INVALID_LLM_POSE_RESULT_PATH')
+    throw new VideoLibraryStorageError('LLM Pose artifact escaped its directory.', 'INVALID_LLM_POSE_RESULT_PATH')
   }
-  return outputPath
+  return { root, outputPath }
 }
 
-export const buildLlmPoseResult = async ({ clipRangeId, repository, poseDirectory }) => {
-  if (typeof clipRangeId !== 'string' || !clipRangeId) {
-    throw new VideoLibraryStorageError('clipRangeId is required.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
-  }
-  if (inFlightCompressions.has(clipRangeId)) {
+export const buildLlmPoseResult = async ({ videoId, clipId, poseRunId, repository, testVideoDirectory }) => {
+  const actionKey = `${videoId}:${clipId}:${poseRunId}`
+  if (inFlightCompressions.has(actionKey)) {
     throw new VideoLibraryStorageError('This LLM Pose result is already being built.', 'LLM_POSE_RESULT_IN_PROGRESS')
   }
-  inFlightCompressions.add(clipRangeId)
+  inFlightCompressions.add(actionKey)
 
   let temporaryPath = ''
-  let backupPath = ''
   let outputPath = ''
   try {
-    const { clip } = await repository.findClipRange(clipRangeId)
-    if (!clip.generatedClip?.poseResult) {
-      throw new VideoLibraryStorageError('This generated clip does not have a raw Pose result.', 'POSE_RESULT_NOT_FOUND')
-    }
-    const rawPath = await resolvePoseResultFullPath({ clipRangeId, repository, poseDirectory })
+    await repository.findPoseRun(videoId, clipId, poseRunId)
+    const rawPath = await resolvePoseResultFullPath({ videoId, clipId, poseRunId, repository, testVideoDirectory })
     const rawPose = JSON.parse(await readFile(rawPath, 'utf8'))
-    const artifact = compressPoseForLlm(rawPose)
-    const filename = llmFilenameFor(clip.generatedClip.poseResult.filename)
-    const relativePath = `pose/${filename}`
-    await mkdir(poseDirectory, { recursive: true })
-    const resolvedPoseDirectory = await realpath(poseDirectory)
-    outputPath = resolveOutputPath(resolvedPoseDirectory, filename)
+    const llmPoseRunId = await repository.allocateLlmPoseRunId(videoId, clipId, poseRunId)
+    const compressed = compressPoseForLlm(rawPose)
+    const artifact = {
+      ...compressed,
+      source: {
+        videoId,
+        clipId,
+        poseRunId,
+        llmPoseRunId,
+        durationMs: compressed.source.durationMs,
+      },
+    }
+    const filename = `${llmPoseRunId}.json`
+    const relativePath = `${videoId}/llm-pose/${filename}`
+    const llmPoseDirectory = path.join(testVideoDirectory, videoId, 'llm-pose')
+    await mkdir(llmPoseDirectory, { recursive: true })
+    const resolvedDirectory = await realpath(llmPoseDirectory)
+    outputPath = resolveOutputPath(testVideoDirectory, videoId, relativePath).outputPath
+    if (path.dirname(outputPath) !== resolvedDirectory) {
+      throw new VideoLibraryStorageError('LLM Pose directory could not be resolved safely.', 'INVALID_LLM_POSE_RESULT_PATH')
+    }
     const serialized = `${JSON.stringify(artifact)}\n`
     const createdAt = new Date().toISOString()
-    const llmResult = {
-      filename,
+    const llmPoseRun = {
+      llmPoseRunId,
       relativePath,
+      schemaVersion: artifact.schemaVersion,
+      targetFps: artifact.compression.targetFps,
       frameCount: artifact.frameCount,
       sizeBytes: Buffer.byteLength(serialized),
       createdAt,
     }
 
-    temporaryPath = path.join(resolvedPoseDirectory, `.${filename}.${globalThis.crypto.randomUUID()}.tmp`)
+    temporaryPath = path.join(resolvedDirectory, `.${filename}.${globalThis.crypto.randomUUID()}.tmp`)
     await writeFile(temporaryPath, serialized, { encoding: 'utf8', flag: 'wx' })
-    try {
-      const existing = await lstat(outputPath)
-      if (existing.isDirectory()) throw new Error('output is a directory')
-      backupPath = path.join(resolvedPoseDirectory, `.${filename}.${globalThis.crypto.randomUUID()}.backup`)
-      await rename(outputPath, backupPath)
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
-
     await rename(temporaryPath, outputPath)
     temporaryPath = ''
     try {
-      const library = await repository.attachLlmPoseResult(clipRangeId, llmResult)
-      if (backupPath) {
-        await unlink(backupPath).catch(() => undefined)
-        backupPath = ''
-      }
-      return { library, llmResult, artifact, fullPath: outputPath }
+      const { library, result: storedRun } = await repository.createLlmPoseRun(videoId, clipId, poseRunId, llmPoseRun)
+      return { library, llmPoseRun: storedRun, artifact, fullPath: outputPath }
     } catch (error) {
       await unlink(outputPath).catch(() => undefined)
-      if (backupPath) {
-        try {
-          await rename(backupPath, outputPath)
-          backupPath = ''
-        } catch {
-          // Keep the backup if restoration itself fails.
-        }
-      }
       throw error
     }
   } finally {
     if (temporaryPath) await unlink(temporaryPath).catch(() => undefined)
-    inFlightCompressions.delete(clipRangeId)
+    inFlightCompressions.delete(actionKey)
   }
 }
 
-export const resolveLlmPoseResultFullPath = async ({ clipRangeId, repository, poseDirectory }) => {
-  const { clip } = await repository.findClipRange(clipRangeId)
-  const llmResult = clip.generatedClip?.poseResult?.llmResult
-  if (!llmResult) {
-    throw new VideoLibraryStorageError('This raw Pose result does not have an LLM Pose result.', 'LLM_POSE_RESULT_NOT_FOUND')
-  }
-  const fullPath = resolveOutputPath(poseDirectory, llmResult.filename)
+export const resolveLlmPoseResultFullPath = async ({
+  videoId,
+  clipId,
+  poseRunId,
+  llmPoseRunId,
+  repository,
+  testVideoDirectory,
+}) => {
+  const { library } = await repository.findPoseRun(videoId, clipId, poseRunId)
+  const llmPoseRun = library.llmPoseRuns.find((item) => item.llmPoseRunId === llmPoseRunId &&
+    item.poseRunId === poseRunId && item.clipId === clipId && item.videoId === videoId)
+  if (!llmPoseRun) throw new VideoLibraryStorageError('LLM Pose Run was not found.', 'LLM_POSE_RUN_NOT_FOUND')
+  const { root, outputPath } = resolveOutputPath(testVideoDirectory, videoId, llmPoseRun.relativePath)
   try {
-    const [root, resolvedPath] = await Promise.all([realpath(poseDirectory), realpath(fullPath)])
-    if (!resolvedPath.startsWith(`${root}${path.sep}`)) {
-      throw new VideoLibraryStorageError('LLM Pose result path must remain within the pose directory.', 'INVALID_LLM_POSE_RESULT_PATH')
-    }
+    const [realRoot, resolvedPath] = await Promise.all([realpath(root), realpath(outputPath)])
+    if (!resolvedPath.startsWith(`${realRoot}${path.sep}`)) throw new Error('path escape')
     const resultStat = await stat(resolvedPath)
-    if (!resultStat.isFile()) {
-      throw new VideoLibraryStorageError('LLM Pose result file does not exist.', 'LLM_POSE_RESULT_FILE_NOT_FOUND')
-    }
+    if (!resultStat.isFile()) throw new Error('not a file')
     await access(resolvedPath, constants.R_OK)
     return resolvedPath
-  } catch (error) {
-    if (error instanceof VideoLibraryStorageError) throw error
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR' || error?.code === 'EACCES') {
-      throw new VideoLibraryStorageError('LLM Pose result file does not exist.', 'LLM_POSE_RESULT_FILE_NOT_FOUND')
-    }
-    throw error
+  } catch {
+    throw new VideoLibraryStorageError('LLM Pose Run artifact does not exist.', 'LLM_POSE_RESULT_FILE_NOT_FOUND')
   }
 }

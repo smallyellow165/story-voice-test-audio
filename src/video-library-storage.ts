@@ -1,32 +1,60 @@
-export type ClipHistoryRecord = {
-  id: string
-  start: number
-  end: number
-  duration: number
-  createdAt: string
-  outputFilename?: string
-  generatedClip?: {
-    filename: string
-    relativePath: string
-    createdAt: string
-    poseResult?: PoseResultMetadata
-  }
-}
-
-export type PoseResultMetadata = {
+export type VideoRecord = {
+  videoId: string
   filename: string
   relativePath: string
+  sourceUrl?: string
+  sourceSite?: 'youtube' | 'bilibili' | 'other'
+  size: number
+  lastModified: number
+  durationMs?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ClipRecord = {
+  clipId: string
+  videoId: string
+  startMs: number
+  endMs: number
+  durationMs: number
+  label: string | null
+  relativePath?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type PoseRun = {
+  poseRunId: string
+  videoId: string
+  clipId: string
+  relativePath: string
+  model: {
+    name: string
+    packageVersion: string
+    modelAssetPath: string
+    delegate: 'GPU' | 'CPU'
+    runningMode: 'VIDEO'
+    numPoses: number
+    minPoseDetectionConfidence: number
+    minPosePresenceConfidence: number
+    minTrackingConfidence: number
+  }
+  samplingFps: number
+  durationMs: number
   frameCount: number
   detectedPoseFrameCount: number
-  durationMs: number
   processingDurationMs: number
   createdAt: string
-  llmResult?: LlmPoseResultMetadata
 }
 
-export type LlmPoseResultMetadata = {
-  filename: string
+export type LlmPoseRun = {
+  llmPoseRunId: string
+  videoId: string
+  clipId: string
+  poseRunId: string
   relativePath: string
+  schemaVersion: number
+  targetFps: number
   frameCount: number
   sizeBytes: number
   createdAt: string
@@ -46,6 +74,7 @@ export type RawPoseResult = {
     minPosePresenceConfidence: number
     minTrackingConfidence: number
   }
+  samplingFps: number
   durationMs: number
   processingDurationMs: number
   frameCount: number
@@ -57,242 +86,93 @@ export type RawPoseResult = {
   }>
 }
 
-export type VideoFileMetadata = {
-  name: string
-  size: number
-  lastModified: number
-}
-
-export type VideoRecord = {
-  id: string
-  type: 'local' | 'server'
-  file: VideoFileMetadata
-  server?: {
-    relativePath: string
-    url: string
-  }
-  source?: {
-    url: string
-    site: 'youtube' | 'bilibili' | 'other'
-  }
-  clips: ClipHistoryRecord[]
+export type VideoLibrary = {
+  schemaVersion: 3
   createdAt: string
   updatedAt: string
-  nextClipNumber?: number
-}
-
-export type VideoLibrary = {
-  version: 1
   videos: VideoRecord[]
+  clips: ClipRecord[]
+  poseRuns: PoseRun[]
+  llmPoseRuns: LlmPoseRun[]
+  nextIds: {
+    video: number
+    clips: Record<string, number>
+    poseRuns: Record<string, number>
+    llmPoseRuns: Record<string, number>
+  }
 }
 
 export type VideoStorage = {
   kind: 'local' | 'server'
   loadLibrary: () => Promise<VideoLibrary>
   saveLibrary: (library: VideoLibrary) => Promise<VideoLibrary>
-  saveVideo: (library: VideoLibrary, video: VideoRecord) => Promise<VideoLibrary>
-  addClip: (library: VideoLibrary, video: VideoRecord, clip: ClipHistoryRecord) => Promise<VideoLibrary>
-  deleteClip: (library: VideoLibrary, video: VideoRecord, clipId: string) => Promise<VideoLibrary>
-  generateClip: (clipRangeId: string) => Promise<VideoLibrary>
-  savePoseResult: (clipRangeId: string, poseData: RawPoseResult) => Promise<VideoLibrary>
-  buildLlmPoseResult: (clipRangeId: string) => Promise<VideoLibrary>
+  updateVideo: (videoId: string, patch: Partial<VideoRecord>) => Promise<VideoLibrary>
+  deleteVideo: (videoId: string) => Promise<VideoLibrary>
+  addClip: (videoId: string, input: Pick<ClipRecord, 'startMs' | 'endMs' | 'label'>) => Promise<VideoLibrary>
+  updateClipLabel: (videoId: string, clipId: string, label: string | null) => Promise<VideoLibrary>
+  deleteClip: (videoId: string, clipId: string) => Promise<VideoLibrary>
+  generateClip: (videoId: string, clipId: string) => Promise<VideoLibrary>
+  savePoseResult: (videoId: string, clipId: string, poseData: RawPoseResult) => Promise<VideoLibrary>
+  buildLlmPoseResult: (videoId: string, clipId: string, poseRunId: string) => Promise<VideoLibrary>
+  deletePoseRun: (videoId: string, clipId: string, poseRunId: string) => Promise<VideoLibrary>
+  deleteLlmPoseRun: (videoId: string, clipId: string, poseRunId: string, llmPoseRunId: string) => Promise<VideoLibrary>
 }
 
-export const videoLibraryStorageKey = 'story-voice.video-library.v1'
-
-export const videoIdentity = (file: VideoFileMetadata) => JSON.stringify([file.name, file.size, file.lastModified])
-
-export const serverVideoIdentity = (relativePath: string) => {
-  const filename = relativePath.split('/').at(-1) ?? relativePath
-  return `server:${filename}`
-}
+export const videoLibraryStorageKey = 'story-voice.video-library.v3'
 
 export const serverVideoUrl = (relativePath: string) =>
   `/test-videos/${relativePath.split('/').map(encodeURIComponent).join('/')}`
 
-export const isSourceVideoRecord = (record: VideoRecord) =>
-  record.type !== 'server' || record.server?.relativePath.startsWith('source/') === true
-
-export const createId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-
-export const detectSourceSite = (sourceUrl: string): NonNullable<VideoRecord['source']>['site'] => {
+export const detectSourceSite = (sourceUrl: string): VideoRecord['sourceSite'] => {
   try {
     const hostname = new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, '')
     if (hostname === 'youtu.be' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) return 'youtube'
     if (hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com')) return 'bilibili'
   } catch {
-    // yt-dlp accepts more than standard HTTP URLs, so unclassified values remain usable.
+    // Keep nonstandard yt-dlp inputs classified as other.
   }
   return 'other'
 }
 
-const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<ClipHistoryRecord>
-  if (!Number.isFinite(candidate.start) || !Number.isFinite(candidate.end) ||
-    candidate.start! < 0 || candidate.end! <= candidate.start! || typeof candidate.createdAt !== 'string') return null
-  const start = Math.round(candidate.start! * 1000) / 1000
-  const end = Math.round(candidate.end! * 1000) / 1000
-  const generatedClip = candidate.generatedClip
-  const poseResult = generatedClip?.poseResult
-  const llmResult = poseResult?.llmResult
-  const normalizedLlmResult = llmResult &&
-    typeof llmResult.filename === 'string' && llmResult.filename &&
-    typeof llmResult.relativePath === 'string' && llmResult.relativePath &&
-    Number.isFinite(llmResult.frameCount) &&
-    Number.isFinite(llmResult.sizeBytes) &&
-    typeof llmResult.createdAt === 'string' && llmResult.createdAt
-    ? {
-        filename: llmResult.filename,
-        relativePath: llmResult.relativePath,
-        frameCount: llmResult.frameCount,
-        sizeBytes: llmResult.sizeBytes,
-        createdAt: llmResult.createdAt,
-      }
-    : undefined
-  const normalizedPoseResult = poseResult &&
-    typeof poseResult.filename === 'string' && poseResult.filename &&
-    typeof poseResult.relativePath === 'string' && poseResult.relativePath &&
-    Number.isFinite(poseResult.frameCount) &&
-    Number.isFinite(poseResult.detectedPoseFrameCount) &&
-    Number.isFinite(poseResult.durationMs) &&
-    Number.isFinite(poseResult.processingDurationMs) &&
-    typeof poseResult.createdAt === 'string' && poseResult.createdAt
-    ? {
-        filename: poseResult.filename,
-        relativePath: poseResult.relativePath,
-        frameCount: poseResult.frameCount,
-        detectedPoseFrameCount: poseResult.detectedPoseFrameCount,
-        durationMs: poseResult.durationMs,
-        processingDurationMs: poseResult.processingDurationMs,
-        createdAt: poseResult.createdAt,
-        llmResult: normalizedLlmResult,
-      }
-    : undefined
-  const normalizedGeneratedClip = generatedClip &&
-    typeof generatedClip.filename === 'string' && generatedClip.filename &&
-    typeof generatedClip.relativePath === 'string' && generatedClip.relativePath &&
-    typeof generatedClip.createdAt === 'string' && generatedClip.createdAt
-    ? {
-        filename: generatedClip.filename,
-        relativePath: generatedClip.relativePath,
-        createdAt: generatedClip.createdAt,
-        poseResult: normalizedPoseResult,
-      }
-    : undefined
+export const clipsForVideo = (library: VideoLibrary, videoId: string) =>
+  library.clips.filter((clip) => clip.videoId === videoId)
+
+export const poseRunsForClip = (library: VideoLibrary, clipId: string) =>
+  library.poseRuns.filter((run) => run.clipId === clipId)
+
+export const llmPoseRunsForPose = (library: VideoLibrary, poseRunId: string) =>
+  library.llmPoseRuns.filter((run) => run.poseRunId === poseRunId)
+
+export const latestByCreatedAt = <T extends { createdAt: string }>(values: readonly T[]) =>
+  values.reduce<T | undefined>((latest, value) =>
+    !latest || Date.parse(value.createdAt) >= Date.parse(latest.createdAt) ? value : latest, undefined)
+
+const emptyLibrary = (): VideoLibrary => {
+  const timestamp = new Date().toISOString()
   return {
-    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : createId(),
-    start,
-    end,
-    duration: end - start,
-    createdAt: candidate.createdAt,
-    outputFilename: typeof candidate.outputFilename === 'string' ? candidate.outputFilename : undefined,
-    generatedClip: normalizedGeneratedClip,
+    schemaVersion: 3,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    videos: [],
+    clips: [],
+    poseRuns: [],
+    llmPoseRuns: [],
+    nextIds: { video: 1, clips: {}, poseRuns: {}, llmPoseRuns: {} },
   }
 }
 
-const mergeClips = (existing: ClipHistoryRecord[], incoming: ClipHistoryRecord[]) => {
-  const merged = new Map(existing.map((clip) => [`${clip.start}:${clip.end}`, clip]))
-  for (const clip of incoming) {
-    const key = `${clip.start}:${clip.end}`
-    if (!merged.has(key)) merged.set(key, clip)
+const normalizeLibrary = (value: unknown): VideoLibrary => {
+  const candidate = value as Partial<VideoLibrary>
+  if (!candidate || candidate.schemaVersion !== 3 || !Array.isArray(candidate.videos) ||
+    !Array.isArray(candidate.clips) || !Array.isArray(candidate.poseRuns) || !Array.isArray(candidate.llmPoseRuns) ||
+    !candidate.nextIds || typeof candidate.nextIds !== 'object' ||
+    typeof candidate.createdAt !== 'string' || typeof candidate.updatedAt !== 'string') {
+    throw new Error('Unsupported Video Library schema. Expected schemaVersion 3.')
   }
-  return [...merged.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+  return candidate as VideoLibrary
 }
 
-export const normalizeVideoRecord = (value: unknown): VideoRecord | null => {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<VideoRecord>
-  const file = candidate.file
-  if (!file || typeof file.name !== 'string' || !Number.isFinite(file.size) || !Number.isFinite(file.lastModified) ||
-    !Array.isArray(candidate.clips)) return null
-  const now = new Date().toISOString()
-  const sourceUrl = typeof candidate.source?.url === 'string' ? candidate.source.url.trim() : ''
-  const type = candidate.type === 'server' && typeof candidate.server?.relativePath === 'string' ? 'server' : 'local'
-  const clips = mergeClips([], candidate.clips.map(normalizeClip).filter((clip): clip is ClipHistoryRecord => Boolean(clip)))
-  return {
-    id: type === 'server' ? serverVideoIdentity(candidate.server!.relativePath) : videoIdentity(file),
-    type,
-    file: { name: file.name, size: file.size, lastModified: file.lastModified },
-    server: type === 'server' ? {
-      relativePath: candidate.server!.relativePath,
-      url: typeof candidate.server!.url === 'string' ? candidate.server!.url : serverVideoUrl(candidate.server!.relativePath),
-    } : undefined,
-    source: sourceUrl ? { url: sourceUrl, site: detectSourceSite(sourceUrl) } : undefined,
-    clips,
-    createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : now,
-    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : now,
-    nextClipNumber: Number.isInteger(candidate.nextClipNumber) && candidate.nextClipNumber! > 0
-      ? candidate.nextClipNumber
-      : clips.length + 1,
-  }
-}
-
-export const loadVideoLibrary = (): VideoLibrary => {
-  try {
-    const value = JSON.parse(localStorage.getItem(videoLibraryStorageKey) ?? '{}') as Partial<VideoLibrary>
-    const records = Array.isArray(value.videos)
-      ? value.videos
-          .map(normalizeVideoRecord)
-          .filter((record): record is VideoRecord => Boolean(record))
-          .filter(isSourceVideoRecord)
-      : []
-    const videos = new Map<string, VideoRecord>()
-    for (const record of records) {
-      videos.set(record.id, mergeVideoRecord(videos.get(record.id), record))
-    }
-    return {
-      version: 1,
-      videos: [...videos.values()],
-    }
-  } catch {
-    return { version: 1, videos: [] }
-  }
-}
-
-export const saveVideoLibrary = (library: VideoLibrary) => {
-  try {
-    localStorage.setItem(videoLibraryStorageKey, JSON.stringify({
-      ...library,
-      videos: library.videos.filter(isSourceVideoRecord),
-    }))
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function mergeVideoRecord(existing: VideoRecord | undefined, incoming: VideoRecord): VideoRecord {
-  if (!existing) return incoming
-  const existingUpdated = Date.parse(existing.updatedAt) || 0
-  const incomingUpdated = Date.parse(incoming.updatedAt) || 0
-  return {
-    ...existing,
-    server: incoming.server ?? existing.server,
-    source: incoming.source ?? existing.source,
-    clips: mergeClips(existing.clips, incoming.clips),
-    createdAt: Date.parse(existing.createdAt) <= Date.parse(incoming.createdAt) ? existing.createdAt : incoming.createdAt,
-    updatedAt: existingUpdated >= incomingUpdated ? existing.updatedAt : incoming.updatedAt,
-    nextClipNumber: Math.max(existing.nextClipNumber ?? existing.clips.length + 1, incoming.nextClipNumber ?? incoming.clips.length + 1),
-  }
-}
-
-const normalizeVideoLibrary = (value: unknown): VideoLibrary => {
-  if (!value || typeof value !== 'object') throw new Error('Video library response must be an object.')
-  const candidate = value as { version?: unknown; videos?: unknown }
-  if (candidate.version !== 1 || !Array.isArray(candidate.videos)) {
-    throw new Error('Video library response must contain version 1 and a videos array.')
-  }
-  const normalized = candidate.videos.map(normalizeVideoRecord)
-  if (normalized.some((record) => !record)) throw new Error('Video library contains an invalid video record.')
-  const videos = new Map<string, VideoRecord>()
-  for (const record of (normalized as VideoRecord[]).filter(isSourceVideoRecord)) {
-    videos.set(record.id, mergeVideoRecord(videos.get(record.id), record))
-  }
-  return { version: 1, videos: [...videos.values()] }
-}
-
-const requestServerVideoLibrary = async (path: string, init?: RequestInit) => {
+const requestLibrary = async (path: string, init?: RequestInit) => {
   const response = await fetch(path, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
@@ -300,71 +180,89 @@ const requestServerVideoLibrary = async (path: string, init?: RequestInit) => {
   const value = await response.json() as unknown
   if (!response.ok) {
     const error = value as { error?: { message?: string } }
-    throw new Error(error.error?.message ?? 'Server video library request failed.')
+    throw new Error(error.error?.message ?? 'Video Library request failed.')
   }
-  return normalizeVideoLibrary(value)
+  return normalizeLibrary(value)
 }
 
-const saveLocalLibrary = async (library: VideoLibrary) => {
-  if (!saveVideoLibrary(library)) throw new Error('Could not save the video library in this browser.')
-  return library
+const unsupportedLocalAction = async (): Promise<VideoLibrary> => {
+  throw new Error('This operation requires the server-backed Video Library.')
 }
 
-const localVideoStorage: VideoStorage = {
+const localStorageAdapter: VideoStorage = {
   kind: 'local',
-  loadLibrary: async () => loadVideoLibrary(),
-  saveLibrary: saveLocalLibrary,
-  saveVideo: saveLocalLibrary,
-  addClip: saveLocalLibrary,
-  deleteClip: saveLocalLibrary,
-  generateClip: async () => {
-    throw new Error('Server clip generation is only available in Video V2.')
+  loadLibrary: async () => {
+    try {
+      const value = localStorage.getItem(videoLibraryStorageKey)
+      return value ? normalizeLibrary(JSON.parse(value)) : emptyLibrary()
+    } catch {
+      return emptyLibrary()
+    }
   },
-  savePoseResult: async () => {
-    throw new Error('Pose analysis is only available for generated clips in Video V2.')
+  saveLibrary: async (library) => {
+    const normalized = normalizeLibrary(library)
+    localStorage.setItem(videoLibraryStorageKey, JSON.stringify(normalized))
+    return normalized
   },
-  buildLlmPoseResult: async () => {
-    throw new Error('LLM Pose compression is only available in Video V2.')
-  },
+  updateVideo: unsupportedLocalAction,
+  deleteVideo: unsupportedLocalAction,
+  addClip: unsupportedLocalAction,
+  updateClipLabel: unsupportedLocalAction,
+  deleteClip: unsupportedLocalAction,
+  generateClip: unsupportedLocalAction,
+  savePoseResult: unsupportedLocalAction,
+  buildLlmPoseResult: unsupportedLocalAction,
+  deletePoseRun: unsupportedLocalAction,
+  deleteLlmPoseRun: unsupportedLocalAction,
 }
 
-const serverVideoStorage: VideoStorage = {
+const serverStorage: VideoStorage = {
   kind: 'server',
-  loadLibrary: () => requestServerVideoLibrary('/api/video-v2/library'),
-  saveLibrary: (library) => requestServerVideoLibrary('/api/video-v2/library', {
+  loadLibrary: () => requestLibrary('/api/video-v2/library'),
+  saveLibrary: (library) => requestLibrary('/api/video-v2/library', {
     method: 'PUT',
-    body: JSON.stringify({ videos: library.videos }),
+    body: JSON.stringify(library),
   }),
-  saveVideo: (_library, video) => requestServerVideoLibrary('/api/video-v2/video', {
-    method: 'PUT',
-    body: JSON.stringify({ video }),
+  updateVideo: (videoId, patch) => requestLibrary('/api/video-v2/video', {
+    method: 'PATCH',
+    body: JSON.stringify({ videoId, patch }),
   }),
-  addClip: (_library, video, clip) => requestServerVideoLibrary('/api/video-v2/clip', {
-    method: 'POST',
-    body: JSON.stringify({
-      videoId: video.id,
-      clip,
-      nextClipNumber: video.nextClipNumber,
-      updatedAt: video.updatedAt,
-    }),
-  }),
-  deleteClip: (_library, video, clipId) => requestServerVideoLibrary('/api/video-v2/clip', {
+  deleteVideo: (videoId) => requestLibrary('/api/video-v2/video', {
     method: 'DELETE',
-    body: JSON.stringify({ videoId: video.id, clipId, updatedAt: video.updatedAt }),
+    body: JSON.stringify({ videoId }),
   }),
-  generateClip: (clipRangeId) => requestServerVideoLibrary('/api/video-v2/clip/generate', {
+  addClip: (videoId, input) => requestLibrary('/api/video-v2/clip', {
     method: 'POST',
-    body: JSON.stringify({ clipRangeId }),
+    body: JSON.stringify({ videoId, ...input }),
   }),
-  savePoseResult: (clipRangeId, poseData) => requestServerVideoLibrary('/api/video-v2/clip/pose', {
-    method: 'POST',
-    body: JSON.stringify({ clipRangeId, poseData }),
+  updateClipLabel: (videoId, clipId, label) => requestLibrary('/api/video-v2/clip', {
+    method: 'PATCH',
+    body: JSON.stringify({ videoId, clipId, label }),
   }),
-  buildLlmPoseResult: (clipRangeId) => requestServerVideoLibrary('/api/video-v2/clip/pose/compress', {
+  deleteClip: (videoId, clipId) => requestLibrary('/api/video-v2/clip', {
+    method: 'DELETE',
+    body: JSON.stringify({ videoId, clipId }),
+  }),
+  generateClip: (videoId, clipId) => requestLibrary('/api/video-v2/clip/generate', {
     method: 'POST',
-    body: JSON.stringify({ clipRangeId }),
+    body: JSON.stringify({ videoId, clipId }),
+  }),
+  savePoseResult: (videoId, clipId, poseData) => requestLibrary('/api/video-v2/clip/pose', {
+    method: 'POST',
+    body: JSON.stringify({ videoId, clipId, poseData }),
+  }),
+  buildLlmPoseResult: (videoId, clipId, poseRunId) => requestLibrary('/api/video-v2/clip/pose/compress', {
+    method: 'POST',
+    body: JSON.stringify({ videoId, clipId, poseRunId }),
+  }),
+  deletePoseRun: (videoId, clipId, poseRunId) => requestLibrary('/api/video-v2/pose-run', {
+    method: 'DELETE',
+    body: JSON.stringify({ videoId, clipId, poseRunId }),
+  }),
+  deleteLlmPoseRun: (videoId, clipId, poseRunId, llmPoseRunId) => requestLibrary('/api/video-v2/llm-pose-run', {
+    method: 'DELETE',
+    body: JSON.stringify({ videoId, clipId, poseRunId, llmPoseRunId }),
   }),
 }
 
-export const createVideoStorage = (kind: VideoStorage['kind']) =>
-  kind === 'server' ? serverVideoStorage : localVideoStorage
+export const createVideoStorage = (kind: VideoStorage['kind']) => kind === 'server' ? serverStorage : localStorageAdapter
