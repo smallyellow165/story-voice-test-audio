@@ -164,12 +164,23 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--line); }
 .history-table { width: 100%; min-width: 650px; border-collapse: collapse; table-layout: fixed; font-family: 'DM Mono', monospace; font-size: 0.57rem; }
 .history-clip-table { min-width: 780px; }
+.history-run-table { min-width: 800px; }
+.history-pose-run-table th:nth-child(1) { width: 12%; }
+.history-pose-run-table th:nth-child(2) { width: 10%; }
+.history-pose-run-table th:nth-child(3) { width: 6%; }
+.history-pose-run-table th:nth-child(4) { width: 12%; }
+.history-pose-run-table th:nth-child(5) { width: 8%; }
+.history-pose-run-table th:nth-child(6) { width: 52%; }
+.history-llm-run-table th:nth-child(1), .history-llm-run-table th:nth-child(2) { width: 12%; }
+.history-llm-run-table th:nth-child(3) { width: 8%; }
+.history-llm-run-table th:nth-child(4) { width: 6%; }
+.history-llm-run-table th:nth-child(5) { width: 10%; }
+.history-llm-run-table th:nth-child(6) { width: 11%; }
+.history-llm-run-table th:nth-child(7) { width: 41%; }
 .history-table th, .history-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); overflow: hidden; text-align: left; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap; }
 .history-table th { color: var(--muted); background: #f8f5ef; font-size: 0.51rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
 .history-table tbody tr:last-child td { border-bottom: 0; }
 .history-detail-row > td { padding: 0 6px 8px; background: var(--card); white-space: normal; }
-.history-table tbody tr.is-selected { background: #f5f1e9; }
-.history-table tbody tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .history-table code { font-size: inherit; }
 .history-table a { color: var(--ink); text-decoration: underline; }
 .history-table a:hover, .history-table a:focus-visible { color: var(--accent); }
@@ -184,10 +195,10 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-muted { color: var(--muted); }
 .history-table-label { display: flex; min-width: 140px; align-items: center; gap: 4px; }
 .history-table-label input { width: 100%; min-width: 0; height: 25px; padding: 0 5px; font-family: inherit; font-size: inherit; }
-.history-table button, .history-table-heading button { min-height: 24px; padding: 2px 5px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.51rem; line-height: 1; }
-.history-select-button { min-width: 37px; }
-.history-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.history-row-actions a { padding: 3px 0; }
+.history-table button, .history-table-heading button { min-height: 22px; padding: 2px 4px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.49rem; line-height: 1; white-space: nowrap; }
+.history-run-table td:last-child { overflow: visible; white-space: nowrap; }
+.history-row-actions { display: flex; width: max-content; flex-wrap: nowrap; align-items: center; gap: 3px; white-space: nowrap; }
+.history-row-actions a { padding: 2px 0; white-space: nowrap; }
 .history-row-actions .danger-action, .history-actions .danger-action { color: #9b2f24; border-color: #9b2f24; }
 .history-run-section, .history-clip-actions { margin-top: 9px; }
 .history-table-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 5px; }
@@ -232,6 +243,7 @@ th:last-child, td:last-child { padding-right: 0; }
 .video-v2-more-menu a:hover, .video-v2-more-menu a:focus-visible { color: var(--accent); background: #f5f1e9; outline: none; }
 .video-v2-more-menu a[aria-current="page"] { color: var(--muted); }
 .video-v2-page .workspace-panel-heading { background: var(--card); }
+.video-v2-page .video-library-summary h4 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .video-v2-page .action-group { padding: 14px; }
 .video-v2-page .video-library-item-actions button, .video-v2-page .history-actions button, .video-v2-page .action-group button, .video-v2-page .seek-controls button, .video-v2-range-actions button {
   min-height: 34px; padding: 0 10px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.56rem;

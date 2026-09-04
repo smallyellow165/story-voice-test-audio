@@ -60,19 +60,19 @@ const MoreActionsMenu = () => {
 
 export const VideoV2Panels = () => (
   <Group className="video-v2-panel-group" orientation="horizontal">
-    <Panel id="video-v2-left" className="video-v2-panel-scroll" defaultSize="25%" minSize="15%">
+    <Panel id="video-v2-left" className="video-v2-panel-scroll" defaultSize="22%" minSize="15%">
       <section className="video-v2-panel" aria-label="Left panel">
         <div id="video-v2-left-slot" className="video-v2-panel-slot" />
       </section>
     </Panel>
     <Separator id="video-v2-left-separator" className="video-v2-separator" />
-    <Panel id="video-v2-center" className="video-v2-panel-scroll" defaultSize="35%" minSize="20%">
+    <Panel id="video-v2-center" className="video-v2-panel-scroll" defaultSize="58%" minSize="35%">
       <section className="video-v2-panel" aria-label="Center panel">
         <div id="video-v2-center-slot" className="video-v2-panel-slot" />
       </section>
     </Panel>
     <Separator id="video-v2-right-separator" className="video-v2-separator" />
-    <Panel id="video-v2-right" className="video-v2-panel-scroll" defaultSize="40%" minSize="20%">
+    <Panel id="video-v2-right" className="video-v2-panel-scroll" defaultSize="20%" minSize="15%">
       <section className="video-v2-panel" aria-label="Right panel">
         <MoreActionsMenu />
         <div id="video-v2-right-slot" className="video-v2-panel-slot video-v2-right-slot" />
