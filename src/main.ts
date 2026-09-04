@@ -2,16 +2,17 @@ import './style.css'
 import geminiVoices from './data/gemini-voices.json'
 import testScripts from './data/test-scripts.json'
 import { mountVideoV2, unmountVideoV2 } from './video-v2-panels'
+import { buildFfmpegClipCommand, formatFfmpegTime, quoteShellArgument } from './video-clip.mjs'
 import {
+  createVideoStorage,
   createId,
   detectSourceSite,
-  loadVideoLibrary,
   mergeVideoRecord,
-  migrateLegacyClipHistory,
   normalizeVideoRecord,
-  saveVideoLibrary,
   serverVideoIdentity,
+  serverVideoUrl,
   videoIdentity,
+  type VideoLibrary,
   type VideoRecord,
 } from './video-library-storage'
 
@@ -30,7 +31,7 @@ type ServerVideoAsset = {
   name: string
   relativePath: string
   url: string
-  category: 'source' | 'clip' | 'legacy-root'
+  category: 'source' | 'clip'
   previewSupported: boolean
 }
 
@@ -303,19 +304,7 @@ const renderGenerate = () => {
   })
 }
 
-const formatVideoTime = (seconds: number) => {
-  if (!Number.isFinite(seconds) || seconds < 0) return '00:00:00.000'
-  const totalMilliseconds = Math.round(seconds * 1000)
-  const hours = Math.floor(totalMilliseconds / 3_600_000)
-  const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000)
-  const wholeSeconds = Math.floor((totalMilliseconds % 60_000) / 1000)
-  const milliseconds = totalMilliseconds % 1000
-  return [hours, minutes, wholeSeconds]
-    .map((value) => String(value).padStart(2, '0'))
-    .join(':') + `.${String(milliseconds).padStart(3, '0')}`
-}
-
-const quoteShellArgument = (value: string) => `"${value.replace(/[\\"$`]/g, '\\$&')}"`
+const formatVideoTime = formatFfmpegTime
 
 const clipOutputFilename = (filename: string) => {
   const extensionIndex = filename.lastIndexOf('.')
@@ -323,11 +312,88 @@ const clipOutputFilename = (filename: string) => {
   return `${filename.slice(0, extensionIndex)}-clip.mp4`
 }
 
-const renderVideo = () => {
+const moveVideoToolsIntoV2 = () => {
+  const libraryHeading = document.querySelector<HTMLElement>('.library-panel > .workspace-panel-heading')!
+  const libraryList = document.querySelector<HTMLElement>('#video-library-list')!
+  const currentHeading = document.querySelector<HTMLElement>('.current-panel > .workspace-panel-heading')!
+  const emptyState = document.querySelector<HTMLElement>('#video-empty-state')!
+  const workspace = document.querySelector<HTMLElement>('#video-workspace')!
+  const currentTitle = document.querySelector<HTMLElement>('.current-video-title-row')!
+  const video = document.querySelector<HTMLVideoElement>('#video-player')!
+  const videoInfo = document.querySelector<HTMLElement>('#video-info-title')!.closest<HTMLElement>('.current-section')!
+  const clipRange = document.querySelector<HTMLElement>('#clip-range-title')!.closest<HTMLElement>('.current-section')!
+  const ffmpegCommand = document.querySelector<HTMLElement>('#ffmpeg-command-title')!.closest<HTMLElement>('.current-section')!
+  const clipHistory = document.querySelector<HTMLElement>('#clip-history-title')!.closest<HTMLElement>('.current-section')!
+  const downloadCommand = document.querySelector<HTMLElement>('#download-command-title')!.closest<HTMLElement>('.action-group')!
+  const libraryActions = document.querySelector<HTMLElement>('#library-actions-title')!.closest<HTMLElement>('.action-group')!
+  const videoActions = document.querySelector<HTMLElement>('#video-actions-title')!.closest<HTMLElement>('.action-group')!
+  const seekControls = document.querySelector<HTMLElement>('.seek-controls')!
+  const setStart = document.querySelector<HTMLButtonElement>('#set-start')!
+  const setEnd = document.querySelector<HTMLButtonElement>('#set-end')!
+  const addHistory = document.querySelector<HTMLButtonElement>('#add-history')!
+  const copyCommand = document.querySelector<HTMLButtonElement>('#copy-command')!
+  const rangeFields = clipRange.querySelector<HTMLElement>('.clip-range')!
+  const clipSummary = clipRange.querySelector<HTMLElement>('.clip-summary')!
+  const rangeStatus = clipRange.querySelector<HTMLElement>('#range-status')!
+  const durationValue = clipRange.querySelector<HTMLElement>('#clip-duration')!
+
+  app.innerHTML = `
+    <main class="video-v2-main">
+      <section class="video-v2-page" aria-label="Video V2 tools">
+        <div id="video-v2-root"></div>
+      </section>
+    </main>
+  `
+  mountVideoV2(document.querySelector<HTMLDivElement>('#video-v2-root')!)
+
+  const leftSlot = document.querySelector<HTMLElement>('#video-v2-left-slot')!
+  const centerSlot = document.querySelector<HTMLElement>('#video-v2-center-slot')!
+  const rightSlot = document.querySelector<HTMLElement>('#video-v2-right-slot')!
+
+  const playheadSection = document.createElement('section')
+  playheadSection.className = 'current-section video-v2-playhead-section'
+  playheadSection.append(seekControls)
+
+  clipRange.classList.add('video-v2-clip-range-section')
+  rangeFields.classList.add('video-v2-clip-range-fields')
+  rangeFields.querySelectorAll<HTMLElement>('label > span').forEach((label, index) => {
+    label.textContent = index === 0 ? 'Start' : 'End'
+  })
+  const compactDuration = document.createElement('p')
+  compactDuration.className = 'video-v2-clip-duration'
+  durationValue.textContent = '0.000s'
+  compactDuration.append('Duration ', durationValue)
+  rangeFields.append(compactDuration)
+  clipSummary.remove()
+
+  const rangeActions = document.createElement('div')
+  rangeActions.className = 'video-v2-range-actions'
+  rangeActions.append(setStart, setEnd, addHistory)
+  clipRange.append(rangeActions, rangeStatus)
+
+  ffmpegCommand.append(copyCommand)
+  videoActions.querySelector('h2')!.textContent = 'Source / Local Video'
+  videoActions.querySelector('.stacked-actions')?.remove()
+  videoInfo.classList.add('video-v2-video-info')
+
+  workspace.replaceChildren(currentTitle, video, playheadSection, clipRange, clipHistory)
+  leftSlot.append(libraryHeading, libraryList, libraryActions)
+  centerSlot.append(currentHeading, emptyState, workspace)
+  rightSlot.append(ffmpegCommand, downloadCommand, videoActions, videoInfo)
+}
+
+const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   stopPlayback()
   cleanupVideoObjectUrl()
-  const videoLibrary = loadVideoLibrary()
-  if (migrateLegacyClipHistory(videoLibrary)) saveVideoLibrary(videoLibrary)
+  const videoStorage = createVideoStorage(layoutMode === 'video-v2' ? 'server' : 'local')
+  let videoLibrary: VideoLibrary
+  let videoLibraryLoadError = ''
+  try {
+    videoLibrary = await videoStorage.loadLibrary()
+  } catch (error) {
+    videoLibrary = { version: 1 as const, videos: [] }
+    videoLibraryLoadError = error instanceof Error ? error.message : 'Video library could not be loaded.'
+  }
   layout(`
     <section class="tool-page video-page" aria-labelledby="page-title">
       <div class="page-heading">
@@ -450,6 +516,8 @@ const renderVideo = () => {
     </section>
   `, 'video')
 
+  if (layoutMode === 'video-v2') moveVideoToolsIntoV2()
+
   const sourceUrlInput = document.querySelector<HTMLInputElement>('#source-url')!
   const downloadCommandOutput = document.querySelector<HTMLTextAreaElement>('#download-command-output')!
   const generateDownloadButton = document.querySelector<HTMLButtonElement>('#generate-download-command')!
@@ -489,10 +557,12 @@ const renderVideo = () => {
   let currentServerAsset: ServerVideoAsset | null = null
   let viewedVideoId = ''
   let serverLibrary: ServerVideoLibrary = { source: [], clips: [] }
-  try {
-    sourceUrlInput.value = localStorage.getItem(recentVideoSourceUrlKey) ?? ''
-  } catch {
-    sourceUrlInput.value = ''
+  if (layoutMode === 'video') {
+    try {
+      sourceUrlInput.value = localStorage.getItem(recentVideoSourceUrlKey) ?? ''
+    } catch {
+      sourceUrlInput.value = ''
+    }
   }
 
   const getCurrentRange = () => {
@@ -519,7 +589,7 @@ const renderVideo = () => {
   const updateCurrentVideoDetails = () => {
     if (!currentVideoRecord) return
     const kind = currentServerAsset
-      ? currentServerAsset.category === 'source' ? 'Server source' : currentServerAsset.category === 'clip' ? 'Server clip' : 'Legacy server video'
+      ? currentServerAsset.category === 'source' ? 'Server source' : 'Server clip'
       : 'Local upload'
     currentVideoName.textContent = currentVideoRecord.file.name
     currentVideoKind.textContent = kind
@@ -568,7 +638,7 @@ const renderVideo = () => {
           <div class="video-library-summary">
             <div>
               <h4 title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</h4>
-              <p>${asset.category === 'legacy-root' ? 'Legacy root video' : asset.category === 'clip' ? 'Generated clip' : 'Source video'}${asset.previewSupported ? '' : ' · Preview unsupported'}</p>
+              <p>${asset.category === 'clip' ? 'Generated clip' : 'Source video'}${asset.previewSupported ? '' : ' · Preview unsupported'}</p>
               ${recordSummary(record)}
             </div>
             <div class="video-library-item-actions">
@@ -630,21 +700,59 @@ const renderVideo = () => {
         <p class="history-index">#${index + 1}</p>
         <p class="history-range">${formatVideoTime(record.start)} <span aria-hidden="true">→</span> ${formatVideoTime(record.end)}</p>
         <p class="history-duration">Duration: ${formatVideoTime(record.duration)}</p>
+        ${record.generatedClip ? `
+          <p class="history-generated">
+            Generated:
+            <a href="${escapeHtml(serverVideoUrl(record.generatedClip.relativePath))}" target="_blank" rel="noopener" title="${escapeHtml(record.generatedClip.filename)}">${escapeHtml(record.generatedClip.filename)}</a>
+          </p>
+        ` : ''}
         <div class="history-actions">
           <button type="button" data-history-action="go-start" data-history-id="${escapeHtml(record.id)}">Go Start</button>
           <button type="button" data-history-action="go-end" data-history-id="${escapeHtml(record.id)}">Go End</button>
           <button type="button" data-history-action="use-range" data-history-id="${escapeHtml(record.id)}">Use Range</button>
+          ${layoutMode === 'video-v2' && currentServerAsset?.category === 'source' ? `
+            <button type="button" data-history-action="generate" data-history-id="${escapeHtml(record.id)}">${record.generatedClip ? 'Regenerate Clip' : 'Generate Clip'}</button>
+          ` : ''}
           <button type="button" data-history-action="delete" data-history-id="${escapeHtml(record.id)}">Delete</button>
         </div>
       </article>
     `).join('')
   }
 
-  const persistLibrary = (successMessage: string, failureMessage: string) => {
-    const saved = saveVideoLibrary(videoLibrary)
-    libraryStatus.textContent = saved ? successMessage : failureMessage
-    renderVideoLibrary()
-    return saved
+  const applyStoredLibrary = (storedLibrary: VideoLibrary) => {
+    const currentVideoId = currentVideoRecord?.id
+    videoLibrary = storedLibrary
+    if (currentVideoId) {
+      currentVideoRecord = videoLibrary.videos.find((record) => record.id === currentVideoId) ?? currentVideoRecord
+    }
+  }
+
+  const restoreServerLibrary = async () => {
+    if (videoStorage.kind !== 'server') return
+    try {
+      applyStoredLibrary(await videoStorage.loadLibrary())
+    } catch {
+      // Keep the original server error visible; there is no client-side fallback.
+    }
+  }
+
+  const persistLibrary = async (
+    successMessage: string,
+    failureMessage: string,
+    save: () => Promise<VideoLibrary> = () => videoStorage.saveLibrary(videoLibrary),
+  ) => {
+    try {
+      applyStoredLibrary(await save())
+      videoLibraryLoadError = ''
+      libraryStatus.textContent = successMessage
+      renderVideoLibrary()
+      return true
+    } catch (error) {
+      await restoreServerLibrary()
+      libraryStatus.textContent = error instanceof Error ? `${failureMessage} ${error.message}` : failureMessage
+      renderVideoLibrary()
+      return false
+    }
   }
 
   const associateSourceWithRecord = (record: VideoRecord) => {
@@ -674,7 +782,7 @@ const renderVideo = () => {
     attachSourceButton.disabled = !currentVideoRecord || !sourceUrlInput.value.trim()
   }
 
-  const openServerAsset = (asset: ServerVideoAsset) => {
+  const openServerAsset = async (asset: ServerVideoAsset) => {
     cleanupVideoObjectUrl()
     const identity = serverVideoIdentity(asset.relativePath)
     currentVideoRecord = videoLibrary.videos.find((record) => record.id === identity) ?? null
@@ -712,7 +820,12 @@ const renderVideo = () => {
     workspace.hidden = false
     setVideoActionsEnabled(true)
     updateCurrentVideoDetails()
-    persistLibrary('Server video opened.', 'Video opened, but its metadata could not be saved.')
+    const recordToSave = currentVideoRecord
+    await persistLibrary(
+      'Server video opened.',
+      'Video opened, but its metadata could not be saved.',
+      () => videoStorage.saveVideo(videoLibrary, recordToSave),
+    )
     renderClipHistory()
     updateAttachSourceButton()
     video.load()
@@ -732,11 +845,22 @@ const renderVideo = () => {
         throw new Error(value.error?.message ?? 'The server returned an invalid video list.')
       }
       serverLibrary = { source: value.source, clips: value.clips }
+      let recordsChanged = false
+      for (const asset of [...serverLibrary.source, ...serverLibrary.clips]) {
+        const record = videoLibrary.videos.find((item) => item.id === serverVideoIdentity(asset.relativePath))
+        if (record?.type === 'server' &&
+          (record.server?.relativePath !== asset.relativePath || record.server.url !== asset.url)) {
+          record.server = { relativePath: asset.relativePath, url: asset.url }
+          recordsChanged = true
+        }
+      }
+      if (recordsChanged) applyStoredLibrary(await videoStorage.saveLibrary(videoLibrary))
       if (currentServerAsset) {
         currentServerAsset = [...serverLibrary.source, ...serverLibrary.clips]
           .find((asset) => asset.relativePath === currentServerAsset?.relativePath) ?? currentServerAsset
       }
-      libraryStatus.textContent = `Found ${serverLibrary.source.length} source video${serverLibrary.source.length === 1 ? '' : 's'} and ${serverLibrary.clips.length} clip${serverLibrary.clips.length === 1 ? '' : 's'}.`
+      libraryStatus.textContent = videoLibraryLoadError ||
+        `Found ${serverLibrary.source.length} source video${serverLibrary.source.length === 1 ? '' : 's'} and ${serverLibrary.clips.length} clip${serverLibrary.clips.length === 1 ? '' : 's'}.`
       renderVideoLibrary()
     } catch (error) {
       libraryStatus.textContent = error instanceof Error ? error.message : 'Could not refresh the server video library.'
@@ -755,10 +879,12 @@ const renderVideo = () => {
       downloadCommandStatus.textContent = 'Enter a source URL first.'
       return
     }
-    try {
-      localStorage.setItem(recentVideoSourceUrlKey, sourceUrl)
-    } catch {
-      // Command generation still works when browser storage is unavailable.
+    if (layoutMode === 'video') {
+      try {
+        localStorage.setItem(recentVideoSourceUrlKey, sourceUrl)
+      } catch {
+        // Command generation still works when browser storage is unavailable.
+      }
     }
     downloadCommandOutput.value = `yt-dlp -P ${quoteShellArgument(sourceVideoDirectory)} ${quoteShellArgument(sourceUrl)}`
     copyDownloadButton.disabled = false
@@ -773,10 +899,15 @@ const renderVideo = () => {
     void copyText(downloadCommandOutput.value, downloadCommandStatus, downloadCommandOutput)
   })
 
-  attachSourceButton.addEventListener('click', () => {
+  attachSourceButton.addEventListener('click', async () => {
     if (!currentVideoRecord || !sourceUrlInput.value.trim()) return
     if (associateSourceWithRecord(currentVideoRecord)) {
-      persistLibrary('Source URL attached to the current video.', 'The source URL could not be saved.')
+      const recordToSave = currentVideoRecord
+      await persistLibrary(
+        'Source URL attached to the current video.',
+        'The source URL could not be saved.',
+        () => videoStorage.saveVideo(videoLibrary, recordToSave),
+      )
       updateCurrentVideoDetails()
       downloadCommandStatus.textContent = 'Source URL attached.'
     } else {
@@ -792,7 +923,7 @@ const renderVideo = () => {
     if (button.dataset.libraryAction === 'open' && button.dataset.relativePath) {
       const asset = [...serverLibrary.source, ...serverLibrary.clips]
         .find((item) => item.relativePath === button.dataset.relativePath)
-      if (asset) openServerAsset(asset)
+      if (asset) void openServerAsset(asset)
       return
     }
     if (button.dataset.libraryAction === 'view' && button.dataset.videoId) {
@@ -830,9 +961,9 @@ const renderVideo = () => {
         else videoLibrary.videos.push(incoming)
       }
       if (currentVideoRecord) currentVideoRecord = videoLibrary.videos.find((record) => record.id === currentVideoRecord?.id) ?? null
-      persistLibrary(
+      await persistLibrary(
         `Imported ${importedRecords.length} video record${importedRecords.length === 1 ? '' : 's'}.`,
-        'The library was merged in memory, but browser storage could not be updated.',
+        'The library was merged in memory, but persistent storage could not be updated.',
       )
       renderClipHistory()
       updateCurrentVideoDetails()
@@ -886,7 +1017,9 @@ const renderVideo = () => {
       return
     }
 
-    clipDuration.textContent = formatVideoTime(selectedRange.duration)
+    clipDuration.textContent = layoutMode === 'video-v2'
+      ? `${selectedRange.duration.toFixed(3)}s`
+      : formatVideoTime(selectedRange.duration)
     rangeStatus.textContent = ''
     const outputFilename = currentServerAsset
       ? serverClipOutputFilename(selectedRange.start, selectedRange.end)
@@ -895,12 +1028,17 @@ const renderVideo = () => {
       ? `${testVideoDirectory}/${currentServerAsset.relativePath}`
       : selectedFilename
     const outputPath = currentServerAsset ? `${clipVideoDirectory}/${outputFilename}` : outputFilename
-    command.value = `ffmpeg -ss ${formatVideoTime(selectedRange.start)} -i ${quoteShellArgument(inputPath)} -t ${formatVideoTime(selectedRange.duration)} -c:v libx264 -c:a aac ${quoteShellArgument(outputPath)}`
+    command.value = buildFfmpegClipCommand({
+      start: selectedRange.start,
+      duration: selectedRange.duration,
+      inputPath,
+      outputPath,
+    })
     clipOutputName.textContent = `Output: ${outputFilename}`
     copyButton.disabled = false
   }
 
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0]
     cleanupVideoObjectUrl()
     command.value = ''
@@ -940,7 +1078,12 @@ const renderVideo = () => {
       }
       videoLibrary.videos.unshift(currentVideoRecord)
     }
-    persistLibrary('Video metadata saved.', 'Video selected, but its metadata could not be saved.')
+    const recordToSave = currentVideoRecord
+    await persistLibrary(
+      'Video metadata saved.',
+      'Video selected, but its metadata could not be saved.',
+      () => videoStorage.saveVideo(videoLibrary, recordToSave),
+    )
     filename.textContent = file.name
     startInput.value = '0.000'
     endInput.value = '0.000'
@@ -985,7 +1128,7 @@ const renderVideo = () => {
   startInput.addEventListener('input', updateCommand)
   endInput.addEventListener('input', updateCommand)
 
-  addHistoryButton.addEventListener('click', () => {
+  addHistoryButton.addEventListener('click', async () => {
     const selectedRange = getCurrentRange()
     if (!selectedRange || !currentVideoRecord) return
     const normalizedStart = Math.round(selectedRange.start * 1000) / 1000
@@ -997,14 +1140,15 @@ const renderVideo = () => {
     }
 
     const outputFilename = currentServerAsset ? serverClipOutputFilename(normalizedStart, normalizedEnd) : undefined
-    currentVideoRecord.clips.unshift({
+    const clipRecord = {
       id: createId(),
       start: normalizedStart,
       end: normalizedEnd,
       duration: normalizedEnd - normalizedStart,
       createdAt: new Date().toISOString(),
       outputFilename,
-    })
+    }
+    currentVideoRecord.clips.unshift(clipRecord)
     if (currentServerAsset && outputFilename) {
       const sequence = Number(outputFilename.match(/-clip-(\d+)\.mp4$/)?.[1])
       currentVideoRecord.nextClipNumber = Number.isFinite(sequence)
@@ -1012,20 +1156,47 @@ const renderVideo = () => {
         : (currentVideoRecord.nextClipNumber ?? 1) + 1
     }
     currentVideoRecord.updatedAt = new Date().toISOString()
-    historyStatus.textContent = saveVideoLibrary(videoLibrary)
-      ? 'Range added.'
-      : 'Could not save history in this browser.'
+    const videoToSave = currentVideoRecord
+    try {
+      applyStoredLibrary(await videoStorage.addClip(videoLibrary, videoToSave, clipRecord))
+      historyStatus.textContent = 'Range added.'
+    } catch (error) {
+      await restoreServerLibrary()
+      historyStatus.textContent = error instanceof Error
+        ? `Could not save history. ${error.message}`
+        : 'Could not save history.'
+    }
     renderClipHistory()
     renderVideoLibrary()
     updateCommand()
   })
 
-  historyList.addEventListener('click', (event) => {
+  historyList.addEventListener('click', async (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-history-action]')
     if (!button) return
     const record = currentVideoRecord?.clips.find((item) => item.id === button.dataset.historyId)
     if (!record) return
     const action = button.dataset.historyAction
+
+    if (action === 'generate') {
+      button.disabled = true
+      button.textContent = record.generatedClip ? 'Regenerating…' : 'Generating…'
+      historyStatus.textContent = 'Generating clip with FFmpeg…'
+      try {
+        applyStoredLibrary(await videoStorage.generateClip(record.id))
+        await refreshServerLibrary()
+        historyStatus.textContent = 'Clip generated.'
+      } catch (error) {
+        await restoreServerLibrary()
+        historyStatus.textContent = error instanceof Error
+          ? `Clip generation failed. ${error.message}`
+          : 'Clip generation failed.'
+      }
+      renderClipHistory()
+      renderVideoLibrary()
+      updateCommand()
+      return
+    }
 
     if (action === 'go-start' || action === 'go-end') {
       if (!Number.isFinite(video.duration)) return
@@ -1045,9 +1216,16 @@ const renderVideo = () => {
       if (!currentVideoRecord) return
       currentVideoRecord.clips = currentVideoRecord.clips.filter((item) => item.id !== record.id)
       currentVideoRecord.updatedAt = new Date().toISOString()
-      historyStatus.textContent = saveVideoLibrary(videoLibrary)
-        ? 'Range deleted.'
-        : 'Range removed here, but browser storage could not be updated.'
+      const videoToSave = currentVideoRecord
+      try {
+        applyStoredLibrary(await videoStorage.deleteClip(videoLibrary, videoToSave, record.id))
+        historyStatus.textContent = 'Range deleted.'
+      } catch (error) {
+        await restoreServerLibrary()
+        historyStatus.textContent = error instanceof Error
+          ? `Range removed here, but persistent storage could not be updated. ${error.message}`
+          : 'Range removed here, but persistent storage could not be updated.'
+      }
       renderClipHistory()
       renderVideoLibrary()
     }
@@ -1056,19 +1234,6 @@ const renderVideo = () => {
   copyButton.addEventListener('click', async () => {
     await copyText(command.value, copyStatus, command)
   })
-}
-
-const renderVideoV2 = () => {
-  stopPlayback()
-  cleanupVideoObjectUrl()
-  app.innerHTML = `
-    <main class="video-v2-main">
-      <section class="video-v2-page" aria-label="Video V2 resizable panel baseline">
-        <div id="video-v2-root"></div>
-      </section>
-    </main>
-  `
-  mountVideoV2(document.querySelector<HTMLDivElement>('#video-v2-root')!)
 }
 
 const loadRecords = async () => {
@@ -1086,11 +1251,11 @@ const loadRecords = async () => {
 const renderRoute = async () => {
   unmountVideoV2()
   if (window.location.hash === '#/video-v2') {
-    renderVideoV2()
+    await renderVideo('video-v2')
     return
   }
   if (window.location.hash === '#/video') {
-    renderVideo()
+    await renderVideo()
     return
   }
   cleanupVideoObjectUrl()

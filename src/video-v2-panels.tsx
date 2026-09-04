@@ -1,4 +1,5 @@
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { useEffect, useRef, useState } from 'react'
 
@@ -61,20 +62,20 @@ export const VideoV2Panels = () => (
   <Group className="video-v2-panel-group" orientation="horizontal">
     <Panel id="video-v2-left" className="video-v2-panel-scroll" defaultSize="25%" minSize="15%">
       <section className="video-v2-panel" aria-label="Left panel">
-        <p>Left Panel</p>
+        <div id="video-v2-left-slot" className="video-v2-panel-slot" />
       </section>
     </Panel>
     <Separator id="video-v2-left-separator" className="video-v2-separator" />
     <Panel id="video-v2-center" className="video-v2-panel-scroll" defaultSize="35%" minSize="20%">
       <section className="video-v2-panel" aria-label="Center panel">
-        <p>Center Panel</p>
+        <div id="video-v2-center-slot" className="video-v2-panel-slot" />
       </section>
     </Panel>
     <Separator id="video-v2-right-separator" className="video-v2-separator" />
     <Panel id="video-v2-right" className="video-v2-panel-scroll" defaultSize="40%" minSize="20%">
       <section className="video-v2-panel" aria-label="Right panel">
         <MoreActionsMenu />
-        <p>Right Panel</p>
+        <div id="video-v2-right-slot" className="video-v2-panel-slot video-v2-right-slot" />
       </section>
     </Panel>
   </Group>
@@ -83,7 +84,7 @@ export const VideoV2Panels = () => (
 export const mountVideoV2 = (container: HTMLElement) => {
   videoV2Root?.unmount()
   videoV2Root = createRoot(container)
-  videoV2Root.render(<VideoV2Panels />)
+  flushSync(() => videoV2Root?.render(<VideoV2Panels />))
 }
 
 export const unmountVideoV2 = () => {

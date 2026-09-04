@@ -7,18 +7,24 @@ import { fileURLToPath } from 'node:url'
 import textToSpeech from '@google-cloud/text-to-speech'
 import { createServer as createViteServer } from 'vite'
 import { probeAudioDuration } from './server/audio-duration.mjs'
+import { generateClip } from './server/video-clip-generator.mjs'
+import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
+const videoLibraryFile = path.join(projectRoot, 'data', 'video-library.json')
 const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
 const sourceVideoDirectory = path.join(testVideoDirectory, 'source')
 const clipVideoDirectory = path.join(testVideoDirectory, 'clips')
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
+const maxVideoLibraryRequestBytes = 1024 * 1024
 const maxInputBytes = 8_000
+
+const videoLibraryRepository = createVideoLibraryRepository(videoLibraryFile)
 
 class AudioDurationError extends Error {}
 
@@ -57,12 +63,11 @@ const readTestVideoLibrary = async () => {
     mkdir(sourceVideoDirectory, { recursive: true }),
     mkdir(clipVideoDirectory, { recursive: true }),
   ])
-  const [source, clips, legacyRoot] = await Promise.all([
+  const [source, clips] = await Promise.all([
     readVideoDirectory(sourceVideoDirectory, 'source', 'source'),
     readVideoDirectory(clipVideoDirectory, 'clips', 'clip'),
-    readVideoDirectory(testVideoDirectory, '', 'legacy-root'),
   ])
-  return { source: [...source, ...legacyRoot], clips }
+  return { source, clips }
 }
 
 const readMetadata = async () => {
@@ -108,13 +113,13 @@ const localTimestamp = (date) => {
   }
 }
 
-const readJsonBody = (request) => new Promise((resolve, reject) => {
+const readJsonBody = (request, maximumBytes = maxRequestBytes) => new Promise((resolve, reject) => {
   let size = 0
   const chunks = []
 
   request.on('data', (chunk) => {
     size += chunk.length
-    if (size > maxRequestBytes) {
+    if (size > maximumBytes) {
       reject(Object.assign(new Error('Request body is too large.'), { statusCode: 413 }))
       request.destroy()
       return
@@ -311,8 +316,108 @@ const serveGeneratedAudio = async (pathname, response) => {
   }
 }
 
+const sendVideoLibraryError = (response, error) => {
+  const statusByCode = {
+    INVALID_VIDEO_LIBRARY_SCHEMA: 400,
+    VIDEO_NOT_FOUND: 404,
+    CLIP_RANGE_NOT_FOUND: 404,
+    SOURCE_VIDEO_NOT_FOUND: 404,
+    SOURCE_VIDEO_UNAVAILABLE: 400,
+    CLIP_GENERATION_IN_PROGRESS: 409,
+    FFMPEG_FAILED: 422,
+    FFMPEG_UNAVAILABLE: 500,
+    FFMPEG_OUTPUT_MISSING: 500,
+  }
+  const statusCode = error?.statusCode ?? statusByCode[error?.code] ?? 500
+  const code = error instanceof VideoLibraryStorageError
+    ? error.code
+    : error?.statusCode ? 'INVALID_REQUEST' : 'VIDEO_LIBRARY_STORAGE_ERROR'
+  console.error('Video library request failed', { code, message: error?.message })
+  sendJson(response, statusCode, { error: { code, message: error?.message ?? 'Video library storage failed.' } })
+}
+
+const readVideoLibraryRequest = async (request) => readJsonBody(request, maxVideoLibraryRequestBytes)
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/video-v2/library') {
+    try {
+      if (request.method === 'GET') {
+        sendJson(response, 200, await videoLibraryRepository.loadVideoLibrary())
+        return
+      }
+      if (request.method === 'PUT') {
+        const body = await readVideoLibraryRequest(request)
+        sendJson(response, 200, await videoLibraryRepository.replaceVideos(body?.videos))
+        return
+      }
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or PUT for /api/video-v2/library.' } })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/video-v2/video') {
+    if (request.method !== 'PUT') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use PUT for /api/video-v2/video.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      sendJson(response, 200, await videoLibraryRepository.upsertVideo(body?.video))
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/video-v2/clip/generate') {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST for /api/video-v2/clip/generate.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      const result = await generateClip({
+        clipRangeId: body?.clipRangeId,
+        repository: videoLibraryRepository,
+        sourceVideoDirectory,
+        clipVideoDirectory,
+      })
+      sendJson(response, 200, {
+        ...result.library,
+        generatedClip: result.generatedClip,
+        ffmpegArgs: result.ffmpegArgs,
+      })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/video-v2/clip') {
+    if (request.method !== 'POST' && request.method !== 'DELETE') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST or DELETE for /api/video-v2/clip.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      const library = request.method === 'POST'
+        ? await videoLibraryRepository.addClipRange(
+          body?.videoId,
+          body?.clip,
+          body?.nextClipNumber,
+          body?.updatedAt,
+        )
+        : await videoLibraryRepository.deleteClipRange(body?.videoId, body?.clipId, body?.updatedAt)
+      sendJson(response, 200, library)
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
 
   if (url.pathname === '/api/test-videos') {
     if (request.method !== 'GET') {

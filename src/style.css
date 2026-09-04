@@ -157,6 +157,9 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-index { color: var(--accent); font-size: 0.62rem; }
 .history-range { margin-top: 5px; font-size: 0.72rem; }
 .history-duration { margin-top: 4px; color: var(--muted); font-size: 0.6rem; }
+.history-generated { margin: 5px 0 0; color: var(--muted); font-size: 0.66rem; overflow-wrap: anywhere; }
+.history-generated a { color: var(--ink); }
+.history-generated a:hover, .history-generated a:focus-visible { color: var(--accent); }
 .history-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .actions-panel { padding: 0 14px; }
 .action-group { padding: 15px 0; border-bottom: 1px solid var(--line); }
@@ -181,8 +184,9 @@ th:last-child, td:last-child { padding-right: 0; }
 
 .video-v2-panel-group { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .video-v2-panel-scroll { height: 100%; min-width: 0; min-height: 0; overflow-y: auto; }
-.video-v2-panel { position: relative; display: grid; width: 100%; min-width: 0; min-height: 100%; place-items: center; border: 1px solid var(--line); background: var(--card); }
-.video-v2-panel p { margin: 0; }
+.video-v2-panel { position: relative; width: 100%; min-width: 0; min-height: 100%; border: 1px solid var(--line); background: var(--card); }
+.video-v2-panel-slot { width: 100%; min-width: 0; min-height: 100%; }
+.video-v2-right-slot { padding: 42px 14px 14px; }
 .video-v2-separator { width: 8px; background: var(--line); cursor: col-resize; }
 .video-v2-separator[data-separator="active"], .video-v2-separator:hover, .video-v2-separator:focus-visible { background: var(--accent); outline: none; }
 .video-v2-more-actions { position: absolute; z-index: 2; top: 10px; right: 10px; }
@@ -192,6 +196,31 @@ th:last-child, td:last-child { padding-right: 0; }
 .video-v2-more-menu a { padding: 9px 11px; color: var(--ink); font-size: 0.78rem; text-decoration: none; }
 .video-v2-more-menu a:hover, .video-v2-more-menu a:focus-visible { color: var(--accent); background: #f5f1e9; outline: none; }
 .video-v2-more-menu a[aria-current="page"] { color: var(--muted); }
+.video-v2-page .workspace-panel-heading { background: var(--card); }
+.video-v2-page .action-group { padding: 14px; }
+.video-v2-page .video-library-item-actions button, .video-v2-page .history-actions button, .video-v2-page .action-group button, .video-v2-page .seek-controls button, .video-v2-range-actions button {
+  min-height: 34px; padding: 0 10px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.56rem;
+}
+.video-v2-page button:hover:not(:disabled), .video-v2-page button:focus-visible { border-color: var(--accent); color: var(--accent); }
+.video-v2-page button:disabled { cursor: not-allowed; opacity: 0.42; }
+.video-v2-page .import-library-button { width: 100%; }
+.video-v2-page #video-workspace { padding: 14px; }
+.video-v2-page #video-player { max-height: 42vh; object-fit: contain; }
+.video-v2-playhead-section { margin-top: 10px; padding-top: 10px; }
+.video-v2-clip-range-section { margin-top: 10px; padding-top: 10px; }
+.video-v2-page .video-v2-clip-range-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.video-v2-page .video-v2-clip-range-fields label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; }
+.video-v2-page .video-v2-clip-range-fields label > span { display: inline; margin: 0; color: var(--ink); font-family: inherit; font-size: 0.72rem; text-transform: none; letter-spacing: 0; }
+.video-v2-page .video-v2-clip-range-fields input { min-width: 0; height: 36px; padding: 0 9px; }
+.video-v2-clip-duration { margin: 0; font-size: 0.72rem; white-space: nowrap; }
+.video-v2-clip-duration strong { margin-left: 4px; font-family: 'DM Mono', monospace; font-weight: 500; }
+.video-v2-clip-range-section #range-status:empty { display: none; }
+.video-v2-clip-range-section #range-status { margin: 7px 0 0; }
+.video-v2-range-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+.video-v2-video-info { margin: 14px; padding-top: 12px; color: var(--muted); }
+.video-v2-video-info .video-metadata dd { color: var(--ink); }
+.video-v2-page #copy-command { width: 100%; margin-top: 10px; }
+.video-v2-page .download-command textarea { resize: vertical; }
 
 html:has(.video-v2-page), body:has(.video-v2-page) { height: 100%; overflow: hidden; }
 body:has(.video-v2-page) #app { display: flex; height: 100%; min-height: 0; flex-direction: column; }

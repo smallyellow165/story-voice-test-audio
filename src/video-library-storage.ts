@@ -5,6 +5,11 @@ export type ClipHistoryRecord = {
   duration: number
   createdAt: string
   outputFilename?: string
+  generatedClip?: {
+    filename: string
+    relativePath: string
+    createdAt: string
+  }
 }
 
 export type VideoFileMetadata = {
@@ -34,15 +39,26 @@ export type VideoRecord = {
 export type VideoLibrary = {
   version: 1
   videos: VideoRecord[]
-  migratedLegacyKeys: string[]
 }
 
-const clipHistoryStoragePrefix = 'story-voice.clip-history.v1:'
+export type VideoStorage = {
+  kind: 'local' | 'server'
+  loadLibrary: () => Promise<VideoLibrary>
+  saveLibrary: (library: VideoLibrary) => Promise<VideoLibrary>
+  saveVideo: (library: VideoLibrary, video: VideoRecord) => Promise<VideoLibrary>
+  addClip: (library: VideoLibrary, video: VideoRecord, clip: ClipHistoryRecord) => Promise<VideoLibrary>
+  deleteClip: (library: VideoLibrary, video: VideoRecord, clipId: string) => Promise<VideoLibrary>
+  generateClip: (clipRangeId: string) => Promise<VideoLibrary>
+}
+
 export const videoLibraryStorageKey = 'story-voice.video-library.v1'
 
 export const videoIdentity = (file: VideoFileMetadata) => JSON.stringify([file.name, file.size, file.lastModified])
 
-export const serverVideoIdentity = (relativePath: string) => `server:${relativePath}`
+export const serverVideoIdentity = (relativePath: string) => {
+  const filename = relativePath.split('/').at(-1) ?? relativePath
+  return `server:${filename}`
+}
 
 export const serverVideoUrl = (relativePath: string) =>
   `/test-videos/${relativePath.split('/').map(encodeURIComponent).join('/')}`
@@ -67,6 +83,17 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
     candidate.start! < 0 || candidate.end! <= candidate.start! || typeof candidate.createdAt !== 'string') return null
   const start = Math.round(candidate.start! * 1000) / 1000
   const end = Math.round(candidate.end! * 1000) / 1000
+  const generatedClip = candidate.generatedClip
+  const normalizedGeneratedClip = generatedClip &&
+    typeof generatedClip.filename === 'string' && generatedClip.filename &&
+    typeof generatedClip.relativePath === 'string' && generatedClip.relativePath &&
+    typeof generatedClip.createdAt === 'string' && generatedClip.createdAt
+    ? {
+        filename: generatedClip.filename,
+        relativePath: generatedClip.relativePath,
+        createdAt: generatedClip.createdAt,
+      }
+    : undefined
   return {
     id: typeof candidate.id === 'string' && candidate.id ? candidate.id : createId(),
     start,
@@ -74,6 +101,7 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
     duration: end - start,
     createdAt: candidate.createdAt,
     outputFilename: typeof candidate.outputFilename === 'string' ? candidate.outputFilename : undefined,
+    generatedClip: normalizedGeneratedClip,
   }
 }
 
@@ -117,17 +145,19 @@ export const normalizeVideoRecord = (value: unknown): VideoRecord | null => {
 export const loadVideoLibrary = (): VideoLibrary => {
   try {
     const value = JSON.parse(localStorage.getItem(videoLibraryStorageKey) ?? '{}') as Partial<VideoLibrary>
+    const records = Array.isArray(value.videos)
+      ? value.videos.map(normalizeVideoRecord).filter((record): record is VideoRecord => Boolean(record))
+      : []
+    const videos = new Map<string, VideoRecord>()
+    for (const record of records) {
+      videos.set(record.id, mergeVideoRecord(videos.get(record.id), record))
+    }
     return {
       version: 1,
-      videos: Array.isArray(value.videos)
-        ? value.videos.map(normalizeVideoRecord).filter((record): record is VideoRecord => Boolean(record))
-        : [],
-      migratedLegacyKeys: Array.isArray(value.migratedLegacyKeys)
-        ? value.migratedLegacyKeys.filter((key): key is string => typeof key === 'string')
-        : [],
+      videos: [...videos.values()],
     }
   } catch {
-    return { version: 1, videos: [], migratedLegacyKeys: [] }
+    return { version: 1, videos: [] }
   }
 }
 
@@ -140,12 +170,13 @@ export const saveVideoLibrary = (library: VideoLibrary) => {
   }
 }
 
-export const mergeVideoRecord = (existing: VideoRecord | undefined, incoming: VideoRecord): VideoRecord => {
+export function mergeVideoRecord(existing: VideoRecord | undefined, incoming: VideoRecord): VideoRecord {
   if (!existing) return incoming
   const existingUpdated = Date.parse(existing.updatedAt) || 0
   const incomingUpdated = Date.parse(incoming.updatedAt) || 0
   return {
     ...existing,
+    server: incoming.server ?? existing.server,
     source: incoming.source ?? existing.source,
     clips: mergeClips(existing.clips, incoming.clips),
     createdAt: Date.parse(existing.createdAt) <= Date.parse(incoming.createdAt) ? existing.createdAt : incoming.createdAt,
@@ -154,39 +185,80 @@ export const mergeVideoRecord = (existing: VideoRecord | undefined, incoming: Vi
   }
 }
 
-export const migrateLegacyClipHistory = (library: VideoLibrary) => {
-  let changed = false
-  try {
-    const legacyKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      .filter((key): key is string => Boolean(key?.startsWith(clipHistoryStoragePrefix)))
-    for (const storageKey of legacyKeys) {
-      if (library.migratedLegacyKeys.includes(storageKey)) continue
-      const identityValue = JSON.parse(storageKey.slice(clipHistoryStoragePrefix.length)) as unknown
-      const rawClips = JSON.parse(localStorage.getItem(storageKey) ?? '[]') as unknown
-      if (!Array.isArray(identityValue) || identityValue.length !== 3 || !Array.isArray(rawClips)) continue
-      const file = { name: identityValue[0], size: identityValue[1], lastModified: identityValue[2] }
-      if (typeof file.name !== 'string' || !Number.isFinite(file.size) || !Number.isFinite(file.lastModified)) continue
-      const clips = rawClips.map(normalizeClip).filter((clip): clip is ClipHistoryRecord => Boolean(clip))
-      const timestamps = clips.map((clip) => clip.createdAt).sort()
-      const now = new Date().toISOString()
-      const incoming: VideoRecord = {
-        id: videoIdentity(file),
-        type: 'local',
-        file,
-        clips,
-        createdAt: timestamps[0] ?? now,
-        updatedAt: timestamps.at(-1) ?? now,
-      }
-      const existingIndex = library.videos.findIndex((record) => record.id === incoming.id)
-      const existing = existingIndex >= 0 ? library.videos[existingIndex] : undefined
-      const merged = mergeVideoRecord(existing, incoming)
-      if (existingIndex >= 0) library.videos[existingIndex] = merged
-      else library.videos.push(merged)
-      library.migratedLegacyKeys.push(storageKey)
-      changed = true
-    }
-  } catch {
-    return false
+const normalizeVideoLibrary = (value: unknown): VideoLibrary => {
+  if (!value || typeof value !== 'object') throw new Error('Video library response must be an object.')
+  const candidate = value as { version?: unknown; videos?: unknown }
+  if (candidate.version !== 1 || !Array.isArray(candidate.videos)) {
+    throw new Error('Video library response must contain version 1 and a videos array.')
   }
-  return changed
+  const normalized = candidate.videos.map(normalizeVideoRecord)
+  if (normalized.some((record) => !record)) throw new Error('Video library contains an invalid video record.')
+  const videos = new Map<string, VideoRecord>()
+  for (const record of normalized as VideoRecord[]) {
+    videos.set(record.id, mergeVideoRecord(videos.get(record.id), record))
+  }
+  return { version: 1, videos: [...videos.values()] }
 }
+
+const requestServerVideoLibrary = async (path: string, init?: RequestInit) => {
+  const response = await fetch(path, {
+    ...init,
+    headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
+  })
+  const value = await response.json() as unknown
+  if (!response.ok) {
+    const error = value as { error?: { message?: string } }
+    throw new Error(error.error?.message ?? 'Server video library request failed.')
+  }
+  return normalizeVideoLibrary(value)
+}
+
+const saveLocalLibrary = async (library: VideoLibrary) => {
+  if (!saveVideoLibrary(library)) throw new Error('Could not save the video library in this browser.')
+  return library
+}
+
+const localVideoStorage: VideoStorage = {
+  kind: 'local',
+  loadLibrary: async () => loadVideoLibrary(),
+  saveLibrary: saveLocalLibrary,
+  saveVideo: saveLocalLibrary,
+  addClip: saveLocalLibrary,
+  deleteClip: saveLocalLibrary,
+  generateClip: async () => {
+    throw new Error('Server clip generation is only available in Video V2.')
+  },
+}
+
+const serverVideoStorage: VideoStorage = {
+  kind: 'server',
+  loadLibrary: () => requestServerVideoLibrary('/api/video-v2/library'),
+  saveLibrary: (library) => requestServerVideoLibrary('/api/video-v2/library', {
+    method: 'PUT',
+    body: JSON.stringify({ videos: library.videos }),
+  }),
+  saveVideo: (_library, video) => requestServerVideoLibrary('/api/video-v2/video', {
+    method: 'PUT',
+    body: JSON.stringify({ video }),
+  }),
+  addClip: (_library, video, clip) => requestServerVideoLibrary('/api/video-v2/clip', {
+    method: 'POST',
+    body: JSON.stringify({
+      videoId: video.id,
+      clip,
+      nextClipNumber: video.nextClipNumber,
+      updatedAt: video.updatedAt,
+    }),
+  }),
+  deleteClip: (_library, video, clipId) => requestServerVideoLibrary('/api/video-v2/clip', {
+    method: 'DELETE',
+    body: JSON.stringify({ videoId: video.id, clipId, updatedAt: video.updatedAt }),
+  }),
+  generateClip: (clipRangeId) => requestServerVideoLibrary('/api/video-v2/clip/generate', {
+    method: 'POST',
+    body: JSON.stringify({ clipRangeId }),
+  }),
+}
+
+export const createVideoStorage = (kind: VideoStorage['kind']) =>
+  kind === 'server' ? serverVideoStorage : localVideoStorage
