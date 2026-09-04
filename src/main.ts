@@ -828,7 +828,19 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       return
     }
 
-    historyList.innerHTML = clipHistory.map((record, index) => {
+    const compactRunId = (runId: string) => runId.split('_').at(-1) ?? runId
+    const compactModelName = (modelName: string) => modelName
+      .replace(/^Pose Landmarker\s*/i, '')
+      .replace(/\s*\([^)]*\)$/, '') || modelName
+
+    historyList.innerHTML = `
+      <div class="history-table-wrap history-clip-table-wrap">
+        <table class="history-table history-clip-table">
+          <thead>
+            <tr><th>Clip</th><th>Range</th><th>Duration</th><th>Label</th><th>Pose</th><th>LLM</th><th>Generated Clip</th></tr>
+          </thead>
+          <tbody>
+    ${clipHistory.map((record, index) => {
       const runView = getClipRunSelection(
         videoLibrary,
         record.clipId,
@@ -837,102 +849,91 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       )
       const selectedPose = runView.selectedPoseRun as PoseRun | undefined
       const selectedLlm = runView.selectedLlmPoseRun as LlmPoseRun | undefined
+      const clipLlmRunCount = videoLibrary.llmPoseRuns.filter((run) => run.clipId === record.clipId).length
       return `
-        <article class="history-item" data-clip-id="${escapeHtml(record.clipId)}">
-          <div class="history-clip-heading">
-            <div>
-              <p class="history-index">Clip #${index + 1}</p>
-              <p class="history-range">${formatVideoTime(record.start)} <span aria-hidden="true">→</span> ${formatVideoTime(record.end)}</p>
-              <p class="history-duration">Duration: ${formatVideoTime(record.duration)}</p>
+        <tr data-clip-id="${escapeHtml(record.clipId)}">
+          <td><strong>#${index + 1}</strong><code title="${escapeHtml(record.clipId)}">${escapeHtml(record.clipId)}</code></td>
+          <td class="history-nowrap">${formatVideoTime(record.start)} → ${formatVideoTime(record.end)}</td>
+          <td class="history-nowrap">${formatVideoTime(record.duration)}</td>
+          <td>
+            <div class="history-table-label">
+              <input aria-label="Label for ${escapeHtml(record.clipId)}" data-clip-label-input value="${escapeHtml(record.label ?? '')}" placeholder="left_single_leg_hop" />
+              <button type="button" data-history-action="save-label" data-history-id="${escapeHtml(record.id)}">Save</button>
             </div>
-            <code>${escapeHtml(record.clipId)}</code>
-          </div>
-          <div class="history-label-editor">
-            <label for="clip-label-${escapeHtml(record.clipId)}">Label</label>
-            <input id="clip-label-${escapeHtml(record.clipId)}" data-clip-label-input value="${escapeHtml(record.label ?? '')}" placeholder="left_single_leg_hop" />
-            <button type="button" data-history-action="save-label" data-history-id="${escapeHtml(record.id)}">Save</button>
-          </div>
-          ${record.generatedClip ? `
-            <p class="history-generated">
-              Generated:
-              <a href="${escapeHtml(serverVideoUrl(record.generatedClip.relativePath))}" target="_blank" rel="noopener" title="${escapeHtml(record.generatedClip.filename)}">${escapeHtml(record.generatedClip.filename)}</a>
-            </p>
-          ` : '<p class="history-generated">No generated Clip artifact yet.</p>'}
+          </td>
+          <td>${runView.poseRuns.length}</td>
+          <td>${clipLlmRunCount}</td>
+          <td class="history-file-cell">${record.generatedClip
+            ? `<a href="${escapeHtml(serverVideoUrl(record.generatedClip.relativePath))}" target="_blank" rel="noopener" title="${escapeHtml(record.generatedClip.filename)}">${escapeHtml(record.generatedClip.filename)}</a>`
+            : '<span class="history-muted">Not generated</span>'}</td>
+        </tr>
+        <tr class="history-detail-row"><td colspan="7">
+          <article class="history-item" data-clip-id="${escapeHtml(record.clipId)}">
 
           <section class="history-run-section" aria-label="Pose Runs">
-            <h4>Pose Runs <span>(${runView.poseRuns.length})</span></h4>
+            <div class="history-table-heading">
+              <h4>Pose Runs <span>(${runView.poseRuns.length})</span></h4>
+              ${layoutMode === 'video-v2' && record.generatedClip ? `<button type="button" data-history-action="analyze-pose" data-history-id="${escapeHtml(record.id)}"${analyzingPoseClipIds.has(record.id) ? ' disabled' : ''}>${analyzingPoseClipIds.has(record.id) ? 'Analyzing…' : runView.poseRuns.length ? 'Analyze Again' : 'Analyze Pose'}</button>` : ''}
+            </div>
             ${runView.poseRuns.length ? `
-              <div class="history-run-list">
-                ${runView.poseRuns.map((poseRun: PoseRun) => `
-                  <button type="button" class="history-run-row${poseRun.poseRunId === selectedPose?.poseRunId ? ' is-selected' : ''}"
-                    data-history-action="select-pose" data-history-id="${escapeHtml(record.id)}"
-                    data-pose-run-id="${escapeHtml(poseRun.poseRunId)}" aria-pressed="${poseRun.poseRunId === selectedPose?.poseRunId}">
-                    <code>${escapeHtml(poseRun.poseRunId)}</code>
-                    <span>${escapeHtml(poseRun.model.name)} · ${poseRun.samplingFps} FPS · ${poseRun.frameCount}/${poseRun.detectedPoseFrameCount} · ${(poseRun.processingDurationMs / 1000).toFixed(1)}s</span>
-                  </button>
-                `).join('')}
+              <div class="history-table-wrap">
+                <table class="history-table history-run-table">
+                  <thead><tr><th>Sel</th><th>Pose Run</th><th>Model</th><th>FPS</th><th>Frames</th><th>Time</th><th>Actions</th></tr></thead>
+                  <tbody>${runView.poseRuns.map((poseRun: PoseRun) => `
+                    <tr class="${poseRun.poseRunId === selectedPose?.poseRunId ? 'is-selected' : ''}">
+                      <td><button type="button" class="history-select-button" data-history-action="select-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}" aria-pressed="${poseRun.poseRunId === selectedPose?.poseRunId}">${poseRun.poseRunId === selectedPose?.poseRunId ? '✓' : 'Select'}</button></td>
+                      <td><code title="${escapeHtml(poseRun.poseRunId)}">${escapeHtml(compactRunId(poseRun.poseRunId))}</code></td>
+                      <td title="${escapeHtml(poseRun.model.name)}">${escapeHtml(compactModelName(poseRun.model.name))}</td>
+                      <td>${poseRun.samplingFps}</td>
+                      <td>${poseRun.frameCount}/${poseRun.detectedPoseFrameCount}</td>
+                      <td>${(poseRun.processingDurationMs / 1000).toFixed(1)}s</td>
+                      <td><div class="history-row-actions">
+                        <a href="${escapeHtml(serverVideoUrl(poseRun.relativePath))}" target="_blank" rel="noopener">Open</a>
+                        <button type="button" data-history-action="copy-pose-path" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Copy</button>
+                        ${layoutMode === 'video-v2' ? `<button type="button" data-history-action="replay-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Replay</button><button type="button" class="danger-action" data-history-action="delete-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Delete</button>` : ''}
+                      </div></td>
+                    </tr>
+                  `).join('')}</tbody>
+                </table>
               </div>
             ` : '<p class="history-run-empty">No Pose Runs yet.</p>'}
-
-            ${selectedPose ? `
-              <div class="history-selected-run">
-                <h5>Selected Pose</h5>
-                <code>${escapeHtml(selectedPose.poseRunId)}</code>
-                <p>${selectedPose.frameCount.toLocaleString()} frames / ${selectedPose.detectedPoseFrameCount.toLocaleString()} detected · ${escapeHtml(selectedPose.model.name)} · ${selectedPose.samplingFps} FPS</p>
-                <div class="history-pose-actions">
-                  <a href="${escapeHtml(serverVideoUrl(selectedPose.relativePath))}" target="_blank" rel="noopener">Open Pose JSON</a>
-                  <button type="button" data-history-action="copy-pose-path" data-history-id="${escapeHtml(record.id)}">Copy Pose Path</button>
-                  ${layoutMode === 'video-v2' ? `
-                    <button type="button" data-history-action="replay-pose" data-history-id="${escapeHtml(record.id)}">${replayingClipId === record.id ? 'Replay Active' : 'Replay Pose'}</button>
-                    <button type="button" class="danger-action" data-history-action="delete-pose" data-history-id="${escapeHtml(record.id)}">Delete Pose Run</button>
-                  ` : ''}
-                </div>
-
-                ${layoutMode === 'video-v2' ? `
-                  <div class="history-llm-section">
-                    <h5>LLM Pose Runs <span>(${runView.llmPoseRuns.length})</span></h5>
-                    ${runView.llmPoseRuns.length ? `
-                      <div class="history-run-list">
-                        ${runView.llmPoseRuns.map((llmRun: LlmPoseRun) => `
-                          <button type="button" class="history-run-row${llmRun.llmPoseRunId === selectedLlm?.llmPoseRunId ? ' is-selected' : ''}"
-                            data-history-action="select-llm-pose" data-history-id="${escapeHtml(record.id)}"
-                            data-llm-pose-run-id="${escapeHtml(llmRun.llmPoseRunId)}" aria-pressed="${llmRun.llmPoseRunId === selectedLlm?.llmPoseRunId}">
-                            <code>${escapeHtml(llmRun.llmPoseRunId)}</code>
-                            <span>schema v${llmRun.schemaVersion} · ${llmRun.targetFps} FPS · ${llmRun.frameCount} frames · ${(llmRun.sizeBytes / 1024).toFixed(1)} KB</span>
-                          </button>
-                        `).join('')}
-                      </div>
-                    ` : '<p class="history-run-empty">No LLM Pose Runs for this Pose Run.</p>'}
-                    ${selectedLlm ? `
-                      <div class="history-selected-run history-selected-llm">
-                        <h5>Selected LLM Pose</h5>
-                        <code>${escapeHtml(selectedLlm.llmPoseRunId)}</code>
-                        <p>schema v${selectedLlm.schemaVersion} · ${selectedLlm.targetFps} FPS · ${selectedLlm.frameCount} frames · ${(selectedLlm.sizeBytes / 1024).toFixed(1)} KB</p>
-                        <div class="history-pose-actions">
-                          <a href="${escapeHtml(serverVideoUrl(selectedLlm.relativePath))}" target="_blank" rel="noopener">Open LLM Pose JSON</a>
-                          <button type="button" data-history-action="copy-llm-pose-path" data-history-id="${escapeHtml(record.id)}">Copy LLM Pose Path</button>
-                          <button type="button" class="danger-action" data-history-action="delete-llm-pose" data-history-id="${escapeHtml(record.id)}">Delete LLM Pose Run</button>
-                        </div>
-                      </div>
-                    ` : ''}
-                    <div class="history-pose-actions">
-                      <button type="button" data-history-action="build-llm-pose" data-history-id="${escapeHtml(record.id)}"${compressingPoseClipIds.has(record.id) ? ' disabled' : ''}>${compressingPoseClipIds.has(record.id) ? 'Compressing Pose…' : runView.llmPoseRuns.length ? 'Build Another LLM Pose' : 'Build LLM Pose'}</button>
-                    </div>
-                  </div>
-                ` : ''}
-              </div>
-            ` : ''}
           </section>
 
+          ${layoutMode === 'video-v2' && selectedPose ? `
+            <section class="history-run-section history-llm-section" aria-label="LLM Pose Runs">
+              <div class="history-table-heading">
+                <h4>LLM Pose Runs <span>(${runView.llmPoseRuns.length})</span></h4>
+                <button type="button" data-history-action="build-llm-pose" data-history-id="${escapeHtml(record.id)}"${compressingPoseClipIds.has(record.id) ? ' disabled' : ''}>${compressingPoseClipIds.has(record.id) ? 'Building…' : runView.llmPoseRuns.length ? 'Build Another LLM' : 'Build LLM Pose'}</button>
+              </div>
+              ${runView.llmPoseRuns.length ? `
+                <div class="history-table-wrap">
+                  <table class="history-table history-run-table">
+                    <thead><tr><th>Sel</th><th>LLM Run</th><th>Schema</th><th>FPS</th><th>Frames</th><th>Size</th><th>Actions</th></tr></thead>
+                    <tbody>${runView.llmPoseRuns.map((llmRun: LlmPoseRun) => `
+                      <tr class="${llmRun.llmPoseRunId === selectedLlm?.llmPoseRunId ? 'is-selected' : ''}">
+                        <td><button type="button" class="history-select-button" data-history-action="select-llm-pose" data-history-id="${escapeHtml(record.id)}" data-llm-pose-run-id="${escapeHtml(llmRun.llmPoseRunId)}" aria-pressed="${llmRun.llmPoseRunId === selectedLlm?.llmPoseRunId}">${llmRun.llmPoseRunId === selectedLlm?.llmPoseRunId ? '✓' : 'Select'}</button></td>
+                        <td><code title="${escapeHtml(llmRun.llmPoseRunId)}">${escapeHtml(compactRunId(llmRun.llmPoseRunId))}</code></td>
+                        <td>v${llmRun.schemaVersion}</td><td>${llmRun.targetFps}</td><td>${llmRun.frameCount}</td><td>${(llmRun.sizeBytes / 1024).toFixed(1)} KB</td>
+                        <td><div class="history-row-actions">
+                          <a href="${escapeHtml(serverVideoUrl(llmRun.relativePath))}" target="_blank" rel="noopener">Open</a>
+                          <button type="button" data-history-action="copy-llm-pose-path" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(selectedPose.poseRunId)}" data-llm-pose-run-id="${escapeHtml(llmRun.llmPoseRunId)}">Copy</button>
+                          <button type="button" class="danger-action" data-history-action="delete-llm-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(selectedPose.poseRunId)}" data-llm-pose-run-id="${escapeHtml(llmRun.llmPoseRunId)}">Delete</button>
+                        </div></td>
+                      </tr>
+                    `).join('')}</tbody>
+                  </table>
+                </div>
+              ` : '<p class="history-run-empty">No LLM Pose Runs for this Pose Run.</p>'}
+            </section>
+          ` : ''}
+
           <section class="history-clip-actions" aria-label="Clip Actions">
-            <h4>Clip Actions</h4>
             <div class="history-actions">
               <button type="button" data-history-action="go-start" data-history-id="${escapeHtml(record.id)}">Go Start</button>
               <button type="button" data-history-action="go-end" data-history-id="${escapeHtml(record.id)}">Go End</button>
               <button type="button" data-history-action="use-range" data-history-id="${escapeHtml(record.id)}">Use Range</button>
               ${layoutMode === 'video-v2' && record.generatedClip ? `
                 <button type="button" data-history-action="copy-full-path" data-history-id="${escapeHtml(record.id)}">Copy Full Path</button>
-                <button type="button" data-history-action="analyze-pose" data-history-id="${escapeHtml(record.id)}"${analyzingPoseClipIds.has(record.id) ? ' disabled' : ''}>${analyzingPoseClipIds.has(record.id) ? 'Analyzing Pose…' : runView.poseRuns.length ? 'Analyze Pose Again' : 'Analyze Pose'}</button>
               ` : ''}
               ${layoutMode === 'video-v2' && currentServerAsset?.category === 'source' ? `
                 <button type="button" data-history-action="generate" data-history-id="${escapeHtml(record.id)}">${record.generatedClip ? 'Regenerate Clip' : 'Generate Clip'}</button>
@@ -940,9 +941,14 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
               <button type="button" class="danger-action" data-history-action="delete" data-history-id="${escapeHtml(record.id)}">Delete Clip</button>
             </div>
           </section>
-        </article>
+          </article>
+        </td></tr>
       `
-    }).join('')
+    }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
   }
 
   const rebuildCurrentVideoRecord = () => {
@@ -1516,7 +1522,10 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       button.disabled = true
       button.textContent = 'Copying…'
       try {
-        const poseResult = selectedRuns().selectedPoseRun as PoseRun | undefined
+        const poseRunId = button.dataset.poseRunId
+        const poseResult = poseRunId
+          ? videoLibrary.poseRuns.find((run) => run.poseRunId === poseRunId && run.clipId === record.clipId)
+          : selectedRuns().selectedPoseRun as PoseRun | undefined
         if (!poseResult) throw new Error('This clip has no Pose Run.')
         const fullPath = await requestPoseResultFullPath(record.videoId, record.clipId, poseResult.poseRunId)
         if (!navigator.clipboard?.writeText) throw new Error('Clipboard API is unavailable in this browser.')
@@ -1545,8 +1554,12 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       button.textContent = 'Copying…'
       try {
         const runView = selectedRuns()
-        const poseResult = runView.selectedPoseRun as PoseRun | undefined
-        const llmResult = runView.selectedLlmPoseRun as LlmPoseRun | undefined
+        const poseResult = button.dataset.poseRunId
+          ? videoLibrary.poseRuns.find((run) => run.poseRunId === button.dataset.poseRunId && run.clipId === record.clipId)
+          : runView.selectedPoseRun as PoseRun | undefined
+        const llmResult = button.dataset.llmPoseRunId
+          ? videoLibrary.llmPoseRuns.find((run) => run.llmPoseRunId === button.dataset.llmPoseRunId && run.poseRunId === poseResult?.poseRunId)
+          : runView.selectedLlmPoseRun as LlmPoseRun | undefined
         if (!poseResult || !llmResult) throw new Error('This Pose Run has no LLM Pose Run.')
         const fullPath = await requestLlmPoseResultFullPath(
           record.videoId,
@@ -1611,6 +1624,14 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     }
 
     if (action === 'replay-pose') {
+      if (button.dataset.poseRunId) {
+        try {
+          selectPoseRun(videoLibrary, record.clipId, button.dataset.poseRunId, selectedPoseRunByClipId)
+        } catch (error) {
+          historyStatus.textContent = error instanceof Error ? error.message : 'Could not select Pose Run for replay.'
+          return
+        }
+      }
       rebuildCurrentVideoRecord()
       const updatedRecord = currentVideoRecord?.clips.find((item) => item.id === record.id)
       if (!updatedRecord) return
@@ -1668,8 +1689,12 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
     if (action === 'delete-llm-pose') {
       const runView = selectedRuns()
-      const poseRun = runView.selectedPoseRun as PoseRun | undefined
-      const llmRun = runView.selectedLlmPoseRun as LlmPoseRun | undefined
+      const poseRun = button.dataset.poseRunId
+        ? videoLibrary.poseRuns.find((run) => run.poseRunId === button.dataset.poseRunId && run.clipId === record.clipId)
+        : runView.selectedPoseRun as PoseRun | undefined
+      const llmRun = button.dataset.llmPoseRunId
+        ? videoLibrary.llmPoseRuns.find((run) => run.llmPoseRunId === button.dataset.llmPoseRunId && run.poseRunId === poseRun?.poseRunId)
+        : runView.selectedLlmPoseRun as LlmPoseRun | undefined
       if (!poseRun || !llmRun || !window.confirm(`Delete LLM Pose Run ${llmRun.llmPoseRunId}?\n\nThe parent Pose Run will be kept.`)) return
       button.disabled = true
       try {
@@ -1679,7 +1704,9 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
           poseRun.poseRunId,
           llmRun.llmPoseRunId,
         )
-        selectedLlmPoseRunByPoseRunId.delete(poseRun.poseRunId)
+        if (runView.selectedLlmPoseRun?.llmPoseRunId === llmRun.llmPoseRunId) {
+          selectedLlmPoseRunByPoseRunId.delete(poseRun.poseRunId)
+        }
         applyStoredLibrary(storedLibrary)
         historyStatus.textContent = `Deleted LLM Pose Run ${llmRun.llmPoseRunId}.`
       } catch (error) {
@@ -1693,15 +1720,19 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
     if (action === 'delete-pose') {
       const runView = selectedRuns()
-      const poseRun = runView.selectedPoseRun as PoseRun | undefined
+      const poseRun = button.dataset.poseRunId
+        ? videoLibrary.poseRuns.find((run) => run.poseRunId === button.dataset.poseRunId && run.clipId === record.clipId)
+        : runView.selectedPoseRun as PoseRun | undefined
       if (!poseRun) return
-      const childCount = runView.llmPoseRuns.length
+      const childCount = videoLibrary.llmPoseRuns.filter((run) => run.poseRunId === poseRun.poseRunId).length
       if (!window.confirm(`Delete Pose Run ${poseRun.poseRunId} and its ${childCount} LLM Pose Run${childCount === 1 ? '' : 's'}?`)) return
       button.disabled = true
       cleanupPoseReplay()
       try {
         const storedLibrary = await videoStorage.deletePoseRun(record.videoId, record.clipId, poseRun.poseRunId)
-        selectedPoseRunByClipId.delete(record.clipId)
+        if (runView.selectedPoseRun?.poseRunId === poseRun.poseRunId) {
+          selectedPoseRunByClipId.delete(record.clipId)
+        }
         selectedLlmPoseRunByPoseRunId.delete(poseRun.poseRunId)
         applyStoredLibrary(storedLibrary)
         historyStatus.textContent = `Deleted Pose Run ${poseRun.poseRunId}.`
