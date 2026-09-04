@@ -21,6 +21,15 @@ export type PoseResultMetadata = {
   durationMs: number
   processingDurationMs: number
   createdAt: string
+  llmResult?: LlmPoseResultMetadata
+}
+
+export type LlmPoseResultMetadata = {
+  filename: string
+  relativePath: string
+  frameCount: number
+  sizeBytes: number
+  createdAt: string
 }
 
 export type RawPoseResult = {
@@ -86,6 +95,7 @@ export type VideoStorage = {
   deleteClip: (library: VideoLibrary, video: VideoRecord, clipId: string) => Promise<VideoLibrary>
   generateClip: (clipRangeId: string) => Promise<VideoLibrary>
   savePoseResult: (clipRangeId: string, poseData: RawPoseResult) => Promise<VideoLibrary>
+  buildLlmPoseResult: (clipRangeId: string) => Promise<VideoLibrary>
 }
 
 export const videoLibraryStorageKey = 'story-voice.video-library.v1'
@@ -122,6 +132,21 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
   const end = Math.round(candidate.end! * 1000) / 1000
   const generatedClip = candidate.generatedClip
   const poseResult = generatedClip?.poseResult
+  const llmResult = poseResult?.llmResult
+  const normalizedLlmResult = llmResult &&
+    typeof llmResult.filename === 'string' && llmResult.filename &&
+    typeof llmResult.relativePath === 'string' && llmResult.relativePath &&
+    Number.isFinite(llmResult.frameCount) &&
+    Number.isFinite(llmResult.sizeBytes) &&
+    typeof llmResult.createdAt === 'string' && llmResult.createdAt
+    ? {
+        filename: llmResult.filename,
+        relativePath: llmResult.relativePath,
+        frameCount: llmResult.frameCount,
+        sizeBytes: llmResult.sizeBytes,
+        createdAt: llmResult.createdAt,
+      }
+    : undefined
   const normalizedPoseResult = poseResult &&
     typeof poseResult.filename === 'string' && poseResult.filename &&
     typeof poseResult.relativePath === 'string' && poseResult.relativePath &&
@@ -138,6 +163,7 @@ const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
         durationMs: poseResult.durationMs,
         processingDurationMs: poseResult.processingDurationMs,
         createdAt: poseResult.createdAt,
+        llmResult: normalizedLlmResult,
       }
     : undefined
   const normalizedGeneratedClip = generatedClip &&
@@ -288,6 +314,9 @@ const localVideoStorage: VideoStorage = {
   savePoseResult: async () => {
     throw new Error('Pose analysis is only available for generated clips in Video V2.')
   },
+  buildLlmPoseResult: async () => {
+    throw new Error('LLM Pose compression is only available in Video V2.')
+  },
 }
 
 const serverVideoStorage: VideoStorage = {
@@ -321,6 +350,10 @@ const serverVideoStorage: VideoStorage = {
   savePoseResult: (clipRangeId, poseData) => requestServerVideoLibrary('/api/video-v2/clip/pose', {
     method: 'POST',
     body: JSON.stringify({ clipRangeId, poseData }),
+  }),
+  buildLlmPoseResult: (clipRangeId) => requestServerVideoLibrary('/api/video-v2/clip/pose/compress', {
+    method: 'POST',
+    body: JSON.stringify({ clipRangeId }),
   }),
 }
 

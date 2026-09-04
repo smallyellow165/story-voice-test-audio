@@ -4,6 +4,7 @@ import testScripts from './data/test-scripts.json'
 import { mountVideoV2, unmountVideoV2 } from './video-v2-panels'
 import { buildFfmpegClipCommand, formatFfmpegTime, quoteShellArgument } from './video-clip.mjs'
 import { analyzePoseVideo } from './pose-video-analyzer'
+import { createPoseReplay, loadPoseReplayData, type PoseReplaySession } from './pose-replay'
 import {
   createVideoStorage,
   createId,
@@ -54,6 +55,7 @@ let sortColumn: SortColumn = 'createdAt'
 let sortDirection: 'asc' | 'desc' = 'desc'
 let activeVideoObjectUrl: string | null = null
 let activePoseAnalysisController: AbortController | null = null
+let activePoseReplayCleanup: (() => void) | null = null
 
 const voiceOptionLabel = (voice: typeof geminiVoices[number]) => {
   const shortNotes = voice.notes.split('，').slice(0, 2).join('，')
@@ -321,7 +323,8 @@ const moveVideoToolsIntoV2 = () => {
   const emptyState = document.querySelector<HTMLElement>('#video-empty-state')!
   const workspace = document.querySelector<HTMLElement>('#video-workspace')!
   const currentTitle = document.querySelector<HTMLElement>('.current-video-title-row')!
-  const video = document.querySelector<HTMLVideoElement>('#video-player')!
+  const videoStage = document.querySelector<HTMLElement>('#video-player-stage')!
+  const poseReplayControls = document.querySelector<HTMLElement>('#pose-replay-controls')!
   const videoInfo = document.querySelector<HTMLElement>('#video-info-title')!.closest<HTMLElement>('.current-section')!
   const clipRange = document.querySelector<HTMLElement>('#clip-range-title')!.closest<HTMLElement>('.current-section')!
   const ffmpegCommand = document.querySelector<HTMLElement>('#ffmpeg-command-title')!.closest<HTMLElement>('.current-section')!
@@ -378,7 +381,7 @@ const moveVideoToolsIntoV2 = () => {
   videoActions.querySelector('.stacked-actions')?.remove()
   videoInfo.classList.add('video-v2-video-info')
 
-  workspace.replaceChildren(currentTitle, video, playheadSection, clipRange, clipHistory)
+  workspace.replaceChildren(currentTitle, videoStage, poseReplayControls, playheadSection, clipRange, clipHistory)
   leftSlot.append(libraryHeading, libraryList, libraryActions)
   centerSlot.append(currentHeading, emptyState, workspace)
   rightSlot.append(ffmpegCommand, downloadCommand, videoActions, videoInfo)
@@ -387,6 +390,8 @@ const moveVideoToolsIntoV2 = () => {
 const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   activePoseAnalysisController?.abort()
   activePoseAnalysisController = null
+  activePoseReplayCleanup?.()
+  activePoseReplayCleanup = null
   stopPlayback()
   cleanupVideoObjectUrl()
   const videoStorage = createVideoStorage(layoutMode === 'video-v2' ? 'server' : 'local')
@@ -427,7 +432,14 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
                 <p id="current-video-kind">—</p>
               </div>
             </div>
-            <video id="video-player" controls preload="metadata"></video>
+            <div id="video-player-stage" class="video-player-stage">
+              <video id="video-player" controls preload="metadata"></video>
+              <canvas id="pose-replay-canvas" class="pose-replay-canvas" aria-hidden="true" hidden></canvas>
+            </div>
+            <div id="pose-replay-controls" class="pose-replay-controls" hidden>
+              <span>Pose Replay</span>
+              <button id="exit-pose-replay" type="button">Exit Pose Replay</button>
+            </div>
 
             <section class="current-section" aria-labelledby="video-info-title">
               <h3 id="video-info-title">Video Info</h3>
@@ -536,6 +548,9 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const emptyState = document.querySelector<HTMLDivElement>('#video-empty-state')!
   const workspace = document.querySelector<HTMLDivElement>('#video-workspace')!
   const video = document.querySelector<HTMLVideoElement>('#video-player')!
+  const poseReplayCanvas = document.querySelector<HTMLCanvasElement>('#pose-replay-canvas')!
+  const poseReplayControls = document.querySelector<HTMLDivElement>('#pose-replay-controls')!
+  const exitPoseReplayButton = document.querySelector<HTMLButtonElement>('#exit-pose-replay')!
   const currentVideoName = document.querySelector<HTMLElement>('#current-video-name')!
   const currentVideoKind = document.querySelector<HTMLElement>('#current-video-kind')!
   const filename = document.querySelector<HTMLElement>('#video-filename')!
@@ -562,6 +577,21 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let viewedVideoId = ''
   let serverLibrary: ServerVideoLibrary = { source: [], clips: [] }
   const analyzingPoseClipIds = new Set<string>()
+  const compressingPoseClipIds = new Set<string>()
+  let poseReplaySession: PoseReplaySession | null = null
+  let poseReplayController: AbortController | null = null
+  let replayingClipId = ''
+
+  const cleanupPoseReplay = () => {
+    poseReplayController?.abort()
+    poseReplayController = null
+    poseReplaySession?.destroy()
+    poseReplaySession = null
+    replayingClipId = ''
+    poseReplayCanvas.hidden = true
+    poseReplayControls.hidden = true
+  }
+  activePoseReplayCleanup = cleanupPoseReplay
   if (layoutMode === 'video') {
     try {
       sourceUrlInput.value = localStorage.getItem(recentVideoSourceUrlKey) ?? ''
@@ -604,6 +634,55 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     videoSourceUrl.textContent = currentVideoRecord.source?.url ?? '—'
     videoSourceUrl.title = currentVideoRecord.source?.url ?? ''
   }
+
+  const restoreCurrentServerVideo = () => {
+    cleanupPoseReplay()
+    if (!currentServerAsset) return
+    selectedFilename = currentServerAsset.name
+    video.src = currentServerAsset.url
+    updateCurrentVideoDetails()
+    video.load()
+    renderClipHistory()
+    historyStatus.textContent = 'Pose replay closed.'
+  }
+
+  const startPoseReplay = async (record: VideoRecord['clips'][number]) => {
+    if (layoutMode !== 'video-v2' || !record.generatedClip?.poseResult) return
+    cleanupPoseReplay()
+    const controller = new AbortController()
+    poseReplayController = controller
+    replayingClipId = record.id
+    video.pause()
+    video.src = serverVideoUrl(record.generatedClip.relativePath)
+    currentVideoName.textContent = record.generatedClip.filename
+    currentVideoKind.textContent = 'Pose replay · Server clip'
+    filename.textContent = record.generatedClip.filename
+    videoType.textContent = 'Pose replay'
+    poseReplayControls.hidden = false
+    historyStatus.textContent = 'Loading saved Pose landmarks…'
+    renderClipHistory()
+    video.load()
+
+    try {
+      const replayData = await loadPoseReplayData(
+        serverVideoUrl(record.generatedClip.poseResult.relativePath),
+        controller.signal,
+      )
+      if (poseReplayController !== controller) return
+      poseReplayCanvas.hidden = false
+      poseReplaySession = createPoseReplay(video, poseReplayCanvas, replayData)
+      historyStatus.textContent = `Pose replay ready: ${replayData.frames.length} saved frames.`
+    } catch (error) {
+      if (controller.signal.aborted) return
+      cleanupPoseReplay()
+      renderClipHistory()
+      historyStatus.textContent = error instanceof Error
+        ? `Could not load Pose replay. ${error.message}`
+        : 'Could not load Pose replay.'
+    }
+  }
+
+  exitPoseReplayButton.addEventListener('click', restoreCurrentServerVideo)
 
   const renderVideoLibrary = () => {
     const serverAssetIds = new Set([...serverLibrary.source, ...serverLibrary.clips].map((asset) => serverVideoIdentity(asset.relativePath)))
@@ -717,7 +796,20 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
             <div class="history-pose-actions">
               <a href="${escapeHtml(serverVideoUrl(record.generatedClip.poseResult.relativePath))}" target="_blank" rel="noopener">Open Pose JSON</a>
               <button type="button" data-history-action="copy-pose-path" data-history-id="${escapeHtml(record.id)}">Copy Pose Path</button>
+              ${layoutMode === 'video-v2' ? `<button type="button" data-history-action="replay-pose" data-history-id="${escapeHtml(record.id)}">${replayingClipId === record.id ? 'Replay Active' : 'Replay Pose'}</button>` : ''}
             </div>
+            ${layoutMode === 'video-v2' ? `
+              ${record.generatedClip.poseResult.llmResult ? `
+                <p class="history-llm-pose-summary">LLM Pose: ${record.generatedClip.poseResult.llmResult.frameCount.toLocaleString()} frames | ${(record.generatedClip.poseResult.llmResult.sizeBytes / 1024).toFixed(1)} KB</p>
+                <div class="history-pose-actions">
+                  <a href="${escapeHtml(serverVideoUrl(record.generatedClip.poseResult.llmResult.relativePath))}" target="_blank" rel="noopener">Open LLM Pose JSON</a>
+                  <button type="button" data-history-action="copy-llm-pose-path" data-history-id="${escapeHtml(record.id)}">Copy LLM Pose Path</button>
+                </div>
+              ` : ''}
+              <div class="history-pose-actions">
+                <button type="button" data-history-action="build-llm-pose" data-history-id="${escapeHtml(record.id)}"${compressingPoseClipIds.has(record.id) ? ' disabled' : ''}>${compressingPoseClipIds.has(record.id) ? 'Compressing Pose…' : record.generatedClip.poseResult.llmResult ? 'Rebuild LLM Pose' : 'Build LLM Pose'}</button>
+              </div>
+            ` : ''}
           </div>
         ` : ''}
         <div class="history-actions">
@@ -814,11 +906,21 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     return payload.fullPath
   }
 
+  const requestLlmPoseResultFullPath = async (clipRangeId: string) => {
+    const response = await fetch(`/api/video-v2/clip/${encodeURIComponent(clipRangeId)}/pose/llm/path`, { cache: 'no-store' })
+    const payload = await response.json() as { fullPath?: unknown; error?: { message?: string } }
+    if (!response.ok || typeof payload.fullPath !== 'string' || !payload.fullPath) {
+      throw new Error(payload.error?.message ?? 'The server could not resolve this LLM Pose result path.')
+    }
+    return payload.fullPath
+  }
+
   const updateAttachSourceButton = () => {
     attachSourceButton.disabled = !currentVideoRecord || !sourceUrlInput.value.trim()
   }
 
   const openServerAsset = async (asset: ServerVideoAsset) => {
+    cleanupPoseReplay()
     cleanupVideoObjectUrl()
     const identity = serverVideoIdentity(asset.relativePath)
     currentVideoRecord = videoLibrary.videos.find((record) => record.id === identity) ?? null
@@ -1076,6 +1178,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0]
+    cleanupPoseReplay()
     cleanupVideoObjectUrl()
     command.value = ''
     copyButton.disabled = true
@@ -1266,8 +1369,66 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       return
     }
 
+    if (action === 'copy-llm-pose-path') {
+      const originalText = button.textContent
+      button.disabled = true
+      button.textContent = 'Copying…'
+      try {
+        const fullPath = await requestLlmPoseResultFullPath(record.id)
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API is unavailable in this browser.')
+        await navigator.clipboard.writeText(fullPath)
+        button.textContent = 'Copied'
+        historyStatus.textContent = 'LLM Pose result path copied.'
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.disabled = false
+            button.textContent = originalText
+          }
+        }, 1_200)
+      } catch (error) {
+        button.disabled = false
+        button.textContent = originalText
+        historyStatus.textContent = error instanceof Error
+          ? `Could not copy LLM Pose path. ${error.message}`
+          : 'Could not copy LLM Pose path.'
+      }
+      return
+    }
+
+    if (action === 'build-llm-pose') {
+      if (!record.generatedClip?.poseResult || compressingPoseClipIds.has(record.id)) return
+      compressingPoseClipIds.add(record.id)
+      button.disabled = true
+      button.textContent = 'Compressing Pose…'
+      historyStatus.textContent = 'Building LLM-friendly Pose JSON…'
+      try {
+        applyStoredLibrary(await videoStorage.buildLlmPoseResult(record.id))
+        const updatedRecord = currentVideoRecord?.clips.find((item) => item.id === record.id)
+        const llmResult = updatedRecord?.generatedClip?.poseResult?.llmResult
+        historyStatus.textContent = llmResult
+          ? `LLM Pose ready: ${llmResult.frameCount} frames · ${(llmResult.sizeBytes / 1024).toFixed(1)} KB.`
+          : 'LLM Pose compression complete.'
+      } catch (error) {
+        await restoreServerLibrary()
+        historyStatus.textContent = error instanceof Error
+          ? `LLM Pose compression failed. ${error.message}`
+          : 'LLM Pose compression failed.'
+      } finally {
+        compressingPoseClipIds.delete(record.id)
+        renderClipHistory()
+        renderVideoLibrary()
+      }
+      return
+    }
+
+    if (action === 'replay-pose') {
+      await startPoseReplay(record)
+      return
+    }
+
     if (action === 'analyze-pose') {
       if (!record.generatedClip || analyzingPoseClipIds.has(record.id)) return
+      cleanupPoseReplay()
       analyzingPoseClipIds.add(record.id)
       const previousPoseResult = record.generatedClip.poseResult
       const controller = new AbortController()
@@ -1304,6 +1465,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     }
 
     if (action === 'generate') {
+      cleanupPoseReplay()
       button.disabled = true
       button.textContent = record.generatedClip ? 'Regenerating…' : 'Generating…'
       historyStatus.textContent = 'Generating clip with FFmpeg…'
@@ -1339,6 +1501,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     }
     if (action === 'delete') {
       if (!currentVideoRecord) return
+      if (replayingClipId === record.id) cleanupPoseReplay()
       currentVideoRecord.clips = currentVideoRecord.clips.filter((item) => item.id !== record.id)
       currentVideoRecord.updatedAt = new Date().toISOString()
       const videoToSave = currentVideoRecord
@@ -1376,6 +1539,8 @@ const loadRecords = async () => {
 const renderRoute = async () => {
   activePoseAnalysisController?.abort()
   activePoseAnalysisController = null
+  activePoseReplayCleanup?.()
+  activePoseReplayCleanup = null
   unmountVideoV2()
   if (window.location.hash === '#/video-v2') {
     await renderVideo('video-v2')
@@ -1394,6 +1559,7 @@ const renderRoute = async () => {
 window.addEventListener('hashchange', () => void renderRoute())
 window.addEventListener('beforeunload', () => {
   activePoseAnalysisController?.abort()
+  activePoseReplayCleanup?.()
   cleanupVideoObjectUrl()
 })
 void renderRoute()

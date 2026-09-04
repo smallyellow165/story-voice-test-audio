@@ -132,7 +132,13 @@ th:last-child, td:last-child { padding-right: 0; }
 .current-video-title-row { margin-bottom: 12px; }
 .current-video-title-row h3 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
 .current-video-title-row p { margin: 4px 0 0; color: var(--accent); font-family: 'DM Mono', monospace; font-size: 0.62rem; text-transform: uppercase; }
+.video-player-stage { position: relative; width: 100%; line-height: 0; }
 #video-player { display: block; width: 100%; height: auto; background: #171513; }
+.pose-replay-canvas { position: absolute; z-index: 1; pointer-events: none; }
+.pose-replay-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 7px 9px; border-left: 2px solid var(--accent); background: #f5f1e9; }
+.pose-replay-controls[hidden] { display: none; }
+.pose-replay-controls span { color: var(--accent); font-family: 'DM Mono', monospace; font-size: 0.62rem; text-transform: uppercase; }
+.pose-replay-controls button { min-height: 30px; padding: 0 9px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.56rem; }
 .current-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .current-section > h3, .clip-history-heading h3 { margin: 0 0 11px; font-size: 0.78rem; font-weight: 600; }
 .video-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 0; }
@@ -162,6 +168,7 @@ th:last-child, td:last-child { padding-right: 0; }
 .history-generated a:hover, .history-generated a:focus-visible { color: var(--accent); }
 .history-pose-result { margin-top: 8px; padding: 8px; border-left: 2px solid var(--accent); background: #f5f1e9; }
 .history-pose-result p { margin: 0; font-family: 'DM Mono', monospace; font-size: 0.62rem; }
+.history-pose-result .history-llm-pose-summary { margin-top: 9px; }
 .history-pose-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
 .history-pose-actions a { color: var(--ink); font-size: 0.62rem; }
 .history-pose-actions a:hover, .history-pose-actions a:focus-visible { color: var(--accent); }

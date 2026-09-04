@@ -10,6 +10,7 @@ import { probeAudioDuration } from './server/audio-duration.mjs'
 import { generateClip, resolveGeneratedClipFullPath } from './server/video-clip-generator.mjs'
 import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
 import { resolvePoseResultFullPath, savePoseResult } from './server/pose-result-store.mjs'
+import { buildLlmPoseResult, resolveLlmPoseResultFullPath } from './server/pose-llm-compressor.mjs'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
@@ -335,6 +336,10 @@ const sendVideoLibraryError = (response, error) => {
     POSE_RESULT_NOT_FOUND: 404,
     POSE_RESULT_FILE_NOT_FOUND: 404,
     POSE_RESULT_IN_PROGRESS: 409,
+    INVALID_LLM_POSE_RESULT_PATH: 400,
+    LLM_POSE_RESULT_NOT_FOUND: 404,
+    LLM_POSE_RESULT_FILE_NOT_FOUND: 404,
+    LLM_POSE_RESULT_IN_PROGRESS: 409,
     FFMPEG_FAILED: 422,
     FFMPEG_UNAVAILABLE: 500,
     FFMPEG_OUTPUT_MISSING: 500,
@@ -429,6 +434,25 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/video-v2/clip/pose/compress') {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST for /api/video-v2/clip/pose/compress.' } })
+      return
+    }
+    try {
+      const body = await readVideoLibraryRequest(request)
+      const result = await buildLlmPoseResult({
+        clipRangeId: body?.clipRangeId,
+        repository: videoLibraryRepository,
+        poseDirectory,
+      })
+      sendJson(response, 200, { ...result.library, llmResult: result.llmResult })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
   const clipPathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/path$/)
   if (clipPathMatch) {
     if (request.method !== 'GET') {
@@ -468,6 +492,27 @@ const server = createServer(async (request, response) => {
         throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
       }
       const fullPath = await resolvePoseResultFullPath({ clipRangeId, repository: videoLibraryRepository, poseDirectory })
+      sendJson(response, 200, { fullPath })
+    } catch (error) {
+      sendVideoLibraryError(response, error)
+    }
+    return
+  }
+
+  const llmPosePathMatch = url.pathname.match(/^\/api\/video-v2\/clip\/([^/]+)\/pose\/llm\/path$/)
+  if (llmPosePathMatch) {
+    if (request.method !== 'GET') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for an LLM Pose result path.' } })
+      return
+    }
+    try {
+      let clipRangeId
+      try {
+        clipRangeId = decodeURIComponent(llmPosePathMatch[1])
+      } catch {
+        throw new VideoLibraryStorageError('clipRangeId must be URI encoded.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
+      }
+      const fullPath = await resolveLlmPoseResultFullPath({ clipRangeId, repository: videoLibraryRepository, poseDirectory })
       sendJson(response, 200, { fullPath })
     } catch (error) {
       sendVideoLibraryError(response, error)

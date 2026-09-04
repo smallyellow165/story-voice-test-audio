@@ -32,6 +32,13 @@ const normalizeGeneratedClip = (value) => {
   if (!value || typeof value !== 'object') {
     throw new VideoLibraryStorageError('Generated clip metadata must be an object.', 'INVALID_VIDEO_LIBRARY_SCHEMA')
   }
+  const llmResult = value.poseResult?.llmResult === undefined ? undefined : {
+    filename: requireString(value.poseResult.llmResult?.filename, 'generatedClip.poseResult.llmResult.filename'),
+    relativePath: requireString(value.poseResult.llmResult?.relativePath, 'generatedClip.poseResult.llmResult.relativePath'),
+    frameCount: requireNumber(value.poseResult.llmResult?.frameCount, 'generatedClip.poseResult.llmResult.frameCount'),
+    sizeBytes: requireNumber(value.poseResult.llmResult?.sizeBytes, 'generatedClip.poseResult.llmResult.sizeBytes'),
+    createdAt: requireString(value.poseResult.llmResult?.createdAt, 'generatedClip.poseResult.llmResult.createdAt'),
+  }
   const poseResult = value.poseResult === undefined ? undefined : {
     filename: requireString(value.poseResult?.filename, 'generatedClip.poseResult.filename'),
     relativePath: requireString(value.poseResult?.relativePath, 'generatedClip.poseResult.relativePath'),
@@ -40,6 +47,7 @@ const normalizeGeneratedClip = (value) => {
     durationMs: requireNumber(value.poseResult?.durationMs, 'generatedClip.poseResult.durationMs'),
     processingDurationMs: requireNumber(value.poseResult?.processingDurationMs, 'generatedClip.poseResult.processingDurationMs'),
     createdAt: requireString(value.poseResult?.createdAt, 'generatedClip.poseResult.createdAt'),
+    llmResult,
   }
   return {
     filename: requireString(value.filename, 'generatedClip.filename'),
@@ -246,6 +254,23 @@ export const createVideoLibraryRepository = (storagePath) => {
     throw new VideoLibraryStorageError('Clip range was not found.', 'CLIP_RANGE_NOT_FOUND')
   })
 
+  const attachLlmPoseResult = (clipRangeId, llmResult) => mutateVideoLibrary((library) => {
+    for (const video of library.videos) {
+      const clip = video.clips.find((item) => item.id === clipRangeId)
+      if (!clip) continue
+      if (!clip.generatedClip?.poseResult) {
+        throw new VideoLibraryStorageError('This clip range does not have a raw Pose result.', 'POSE_RESULT_NOT_FOUND')
+      }
+      clip.generatedClip = normalizeGeneratedClip({
+        ...clip.generatedClip,
+        poseResult: { ...clip.generatedClip.poseResult, llmResult },
+      })
+      video.updatedAt = clip.generatedClip.poseResult.llmResult.createdAt
+      return
+    }
+    throw new VideoLibraryStorageError('Clip range was not found.', 'CLIP_RANGE_NOT_FOUND')
+  })
+
   return {
     storagePath,
     loadVideoLibrary,
@@ -256,5 +281,6 @@ export const createVideoLibraryRepository = (storagePath) => {
     findClipRange,
     attachGeneratedClip,
     attachPoseResult,
+    attachLlmPoseResult,
   }
 }

@@ -32,13 +32,20 @@
               "detectedPoseFrameCount": 195,
               "durationMs": 7566.6669999999995,
               "processingDurationMs": 9699.60000000149,
-              "createdAt": "2026-09-04T09:19:53.236Z"
+              "createdAt": "2026-09-04T09:19:53.236Z",
+              "llmResult": {
+                "filename": "少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.llm.json",
+                "relativePath": "pose/少儿斯巴达30天打卡day8青蛙跳 [BV1QK4y1b7zW]-clip-01.pose.llm.json",
+                "frameCount": 68,
+                "sizeBytes": 33328,
+                "createdAt": "2026-09-04T10:22:51.321Z"
+              }
             }
           }
         }
       ],
       "createdAt": "2026-09-04T06:57:34.719Z",
-      "updatedAt": "2026-09-04T09:19:53.236Z",
+      "updatedAt": "2026-09-04T10:22:51.321Z",
       "nextClipNumber": 2
     }
   ]

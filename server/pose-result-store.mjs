@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, lstat, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import path from 'node:path'
 import { VideoLibraryStorageError } from './video-library-repository.mjs'
 import { resolveGeneratedClipFullPath } from './video-clip-generator.mjs'
@@ -233,12 +234,17 @@ export const resolvePoseResultFullPath = async ({ clipRangeId, repository, poseD
       throw new VideoLibraryStorageError('Pose result path must remain within the pose directory.', 'INVALID_POSE_RESULT_PATH')
     }
     const resultStat = await stat(resolvedPath)
-    if (!resultStat.isFile()) throw new Error('not a file')
+    if (!resultStat.isFile()) {
+      throw new VideoLibraryStorageError('Pose result file does not exist.', 'POSE_RESULT_FILE_NOT_FOUND')
+    }
     await access(resolvedPath, constants.R_OK)
     return resolvedPath
   } catch (error) {
     if (error instanceof VideoLibraryStorageError) throw error
-    throw new VideoLibraryStorageError('Pose result file does not exist.', 'POSE_RESULT_FILE_NOT_FOUND')
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR' || error?.code === 'EACCES') {
+      throw new VideoLibraryStorageError('Pose result file does not exist.', 'POSE_RESULT_FILE_NOT_FOUND')
+    }
+    throw error
   }
 }
 

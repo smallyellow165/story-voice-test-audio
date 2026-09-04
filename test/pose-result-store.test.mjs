@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { createVideoLibraryRepository } from '../server/video-library-repository.mjs'
 import { resolvePoseResultFullPath, savePoseResult } from '../server/pose-result-store.mjs'
+import { buildLlmPoseResult, compressPoseForLlm, resolveLlmPoseResultFullPath } from '../server/pose-llm-compressor.mjs'
 
 const landmark = (seed) => ({ x: seed, y: seed + 0.1, z: seed - 0.1, visibility: 0.9, presence: 0.8 })
 const pose = (seed) => Array.from({ length: 33 }, (_, index) => landmark(seed + index / 100))
@@ -160,5 +161,72 @@ test('restores the previous artifact when metadata persistence fails', async (co
     clipVideoDirectory: fixture.clips,
     poseDirectory: fixture.poseDirectory,
   }), /simulated metadata failure/)
+  assert.equal(await readFile(fullPath, 'utf8'), before)
+})
+
+test('compresses world landmarks by video time with fixed official joint names and precision', () => {
+  const rawPose = {
+    schemaVersion: 1,
+    task: 'MediaPipe Pose Landmarker',
+    source: { clipRangeId: 'clip-1', generatedClipFilename: 'sample-clip.mp4', durationMs: 500 },
+    frames: [
+      frame(0),
+      frame(33),
+      frame(100),
+      frame(200, false),
+      frame(300),
+      frame(400),
+      frame(500),
+    ],
+  }
+  const compressed = compressPoseForLlm(rawPose)
+  assert.deepEqual(compressed.frames.map((item) => item.t), [0, 100, 300, 400, 500])
+  assert.equal(compressed.compression.targetFps, 10)
+  assert.equal(compressed.compression.maxDistanceMs, 75)
+  assert.equal(compressed.compression.coordinateSpace, 'world')
+  assert.equal(Object.keys(compressed.frames[0].j).length, 12)
+  assert.deepEqual(Object.keys(compressed.frames[0].j), [
+    'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist',
+    'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle',
+  ])
+  assert.deepEqual(compressed.frames[0].j.left_shoulder, [0.11, 0.21, 0.01, 0.9])
+  assert.equal('landmarks' in compressed.frames[0], false)
+  assert.equal('worldLandmarks' in compressed.frames[0], false)
+})
+
+test('persists and resolves one atomic LLM Pose artifact per raw Pose result', async (context) => {
+  const fixture = await setup()
+  context.after(() => rm(fixture.root, { recursive: true, force: true }))
+  await savePoseResult({
+    clipRangeId: 'clip-1',
+    poseData: poseData([frame(0), frame(50), frame(100)]),
+    repository: fixture.repository,
+    clipVideoDirectory: fixture.clips,
+    poseDirectory: fixture.poseDirectory,
+  })
+  const first = await buildLlmPoseResult({
+    clipRangeId: 'clip-1',
+    repository: fixture.repository,
+    poseDirectory: fixture.poseDirectory,
+  })
+  assert.equal(first.llmResult.filename, 'sample-clip.pose.llm.json')
+  assert.equal(first.llmResult.frameCount, 2)
+  const fullPath = await resolveLlmPoseResultFullPath({
+    clipRangeId: 'clip-1',
+    repository: fixture.repository,
+    poseDirectory: fixture.poseDirectory,
+  })
+  const before = await readFile(fullPath, 'utf8')
+  assert.equal(Buffer.byteLength(before), first.llmResult.sizeBytes)
+
+  const failingRepository = {
+    findClipRange: (...args) => fixture.repository.findClipRange(...args),
+    attachLlmPoseResult: async () => { throw new Error('simulated LLM metadata failure') },
+  }
+  await assert.rejects(() => buildLlmPoseResult({
+    clipRangeId: 'clip-1',
+    repository: failingRepository,
+    poseDirectory: fixture.poseDirectory,
+  }), /simulated LLM metadata failure/)
   assert.equal(await readFile(fullPath, 'utf8'), before)
 })
