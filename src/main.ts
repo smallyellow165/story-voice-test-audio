@@ -1,6 +1,19 @@
 import './style.css'
 import geminiVoices from './data/gemini-voices.json'
 import testScripts from './data/test-scripts.json'
+import { mountVideoV2, unmountVideoV2 } from './video-v2-panels'
+import {
+  createId,
+  detectSourceSite,
+  loadVideoLibrary,
+  mergeVideoRecord,
+  migrateLegacyClipHistory,
+  normalizeVideoRecord,
+  saveVideoLibrary,
+  serverVideoIdentity,
+  videoIdentity,
+  type VideoRecord,
+} from './video-library-storage'
 
 type AudioRecord = {
   id: string
@@ -13,40 +26,23 @@ type AudioRecord = {
 
 type SortColumn = 'voice' | 'script' | 'audioFile' | 'durationSeconds' | 'createdAt'
 
-type ClipHistoryRecord = {
-  id: string
-  start: number
-  end: number
-  duration: number
-  createdAt: string
-}
-
-type VideoFileMetadata = {
+type ServerVideoAsset = {
   name: string
-  size: number
-  lastModified: number
+  relativePath: string
+  url: string
+  category: 'source' | 'clip' | 'legacy-root'
+  previewSupported: boolean
 }
 
-type VideoRecord = {
-  id: string
-  file: VideoFileMetadata
-  source?: {
-    url: string
-    site: 'youtube' | 'bilibili' | 'other'
-  }
-  clips: ClipHistoryRecord[]
-  createdAt: string
-  updatedAt: string
+type ServerVideoLibrary = {
+  source: ServerVideoAsset[]
+  clips: ServerVideoAsset[]
 }
 
-type VideoLibrary = {
-  version: 1
-  videos: VideoRecord[]
-  migratedLegacyKeys: string[]
-}
-
-const clipHistoryStoragePrefix = 'story-voice.clip-history.v1:'
-const videoLibraryStorageKey = 'story-voice.video-library.v1'
+const recentVideoSourceUrlKey = 'story-voice.video-source-url.v1'
+const testVideoDirectory = '/home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio/public/test-videos'
+const sourceVideoDirectory = `${testVideoDirectory}/source`
+const clipVideoDirectory = `${testVideoDirectory}/clips`
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 let records: AudioRecord[] = []
@@ -139,13 +135,14 @@ const playRecord = async (record: AudioRecord, button: HTMLButtonElement) => {
   }
 }
 
-const layout = (content: string, activePage: 'audio' | 'video' = 'audio') => {
+const layout = (content: string, activePage: 'audio' | 'video' | 'video-v2' = 'audio') => {
   app.innerHTML = `
     <header class="site-header">
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="#/"${activePage === 'audio' && window.location.hash !== '#/generate' ? ' aria-current="page"' : ''}>Audio</a>
         <a href="#/generate"${window.location.hash === '#/generate' ? ' aria-current="page"' : ''}>Generate Audio</a>
         <a href="#/video"${activePage === 'video' ? ' aria-current="page"' : ''}>Video</a>
+        <a href="#/video-v2"${activePage === 'video-v2' ? ' aria-current="page"' : ''}>Video V2</a>
       </nav>
     </header>
     <main>${content}</main>
@@ -326,139 +323,6 @@ const clipOutputFilename = (filename: string) => {
   return `${filename.slice(0, extensionIndex)}-clip.mp4`
 }
 
-const videoIdentity = (file: VideoFileMetadata) => JSON.stringify([file.name, file.size, file.lastModified])
-
-const createId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-
-const detectSourceSite = (sourceUrl: string): NonNullable<VideoRecord['source']>['site'] => {
-  try {
-    const hostname = new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, '')
-    if (hostname === 'youtu.be' || hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) return 'youtube'
-    if (hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com')) return 'bilibili'
-  } catch {
-    // yt-dlp accepts more than standard HTTP URLs, so unclassified values remain usable.
-  }
-  return 'other'
-}
-
-const normalizeClip = (value: unknown): ClipHistoryRecord | null => {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<ClipHistoryRecord>
-  if (!Number.isFinite(candidate.start) || !Number.isFinite(candidate.end) ||
-    candidate.start! < 0 || candidate.end! <= candidate.start! || typeof candidate.createdAt !== 'string') return null
-  const start = Math.round(candidate.start! * 1000) / 1000
-  const end = Math.round(candidate.end! * 1000) / 1000
-  return {
-    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : createId(),
-    start,
-    end,
-    duration: end - start,
-    createdAt: candidate.createdAt,
-  }
-}
-
-const mergeClips = (existing: ClipHistoryRecord[], incoming: ClipHistoryRecord[]) => {
-  const merged = new Map(existing.map((clip) => [`${clip.start}:${clip.end}`, clip]))
-  for (const clip of incoming) {
-    const key = `${clip.start}:${clip.end}`
-    if (!merged.has(key)) merged.set(key, clip)
-  }
-  return [...merged.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-}
-
-const normalizeVideoRecord = (value: unknown): VideoRecord | null => {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<VideoRecord>
-  const file = candidate.file
-  if (!file || typeof file.name !== 'string' || !Number.isFinite(file.size) || !Number.isFinite(file.lastModified) ||
-    !Array.isArray(candidate.clips)) return null
-  const now = new Date().toISOString()
-  const sourceUrl = typeof candidate.source?.url === 'string' ? candidate.source.url.trim() : ''
-  return {
-    id: videoIdentity(file),
-    file: { name: file.name, size: file.size, lastModified: file.lastModified },
-    source: sourceUrl ? { url: sourceUrl, site: detectSourceSite(sourceUrl) } : undefined,
-    clips: mergeClips([], candidate.clips.map(normalizeClip).filter((clip): clip is ClipHistoryRecord => Boolean(clip))),
-    createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : now,
-    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : now,
-  }
-}
-
-const loadVideoLibrary = (): VideoLibrary => {
-  try {
-    const value = JSON.parse(localStorage.getItem(videoLibraryStorageKey) ?? '{}') as Partial<VideoLibrary>
-    return {
-      version: 1,
-      videos: Array.isArray(value.videos)
-        ? value.videos.map(normalizeVideoRecord).filter((record): record is VideoRecord => Boolean(record))
-        : [],
-      migratedLegacyKeys: Array.isArray(value.migratedLegacyKeys)
-        ? value.migratedLegacyKeys.filter((key): key is string => typeof key === 'string')
-        : [],
-    }
-  } catch {
-    return { version: 1, videos: [], migratedLegacyKeys: [] }
-  }
-}
-
-const saveVideoLibrary = (library: VideoLibrary) => {
-  try {
-    localStorage.setItem(videoLibraryStorageKey, JSON.stringify(library))
-    return true
-  } catch {
-    return false
-  }
-}
-
-const mergeVideoRecord = (existing: VideoRecord | undefined, incoming: VideoRecord): VideoRecord => {
-  if (!existing) return incoming
-  const existingUpdated = Date.parse(existing.updatedAt) || 0
-  const incomingUpdated = Date.parse(incoming.updatedAt) || 0
-  return {
-    ...existing,
-    source: incoming.source ?? existing.source,
-    clips: mergeClips(existing.clips, incoming.clips),
-    createdAt: Date.parse(existing.createdAt) <= Date.parse(incoming.createdAt) ? existing.createdAt : incoming.createdAt,
-    updatedAt: existingUpdated >= incomingUpdated ? existing.updatedAt : incoming.updatedAt,
-  }
-}
-
-const migrateLegacyClipHistory = (library: VideoLibrary) => {
-  let changed = false
-  try {
-    const legacyKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      .filter((key): key is string => Boolean(key?.startsWith(clipHistoryStoragePrefix)))
-    for (const storageKey of legacyKeys) {
-      if (library.migratedLegacyKeys.includes(storageKey)) continue
-      const identityValue = JSON.parse(storageKey.slice(clipHistoryStoragePrefix.length)) as unknown
-      const rawClips = JSON.parse(localStorage.getItem(storageKey) ?? '[]') as unknown
-      if (!Array.isArray(identityValue) || identityValue.length !== 3 || !Array.isArray(rawClips)) continue
-      const file = { name: identityValue[0], size: identityValue[1], lastModified: identityValue[2] }
-      if (typeof file.name !== 'string' || !Number.isFinite(file.size) || !Number.isFinite(file.lastModified)) continue
-      const clips = rawClips.map(normalizeClip).filter((clip): clip is ClipHistoryRecord => Boolean(clip))
-      const timestamps = clips.map((clip) => clip.createdAt).sort()
-      const now = new Date().toISOString()
-      const incoming: VideoRecord = {
-        id: videoIdentity(file),
-        file,
-        clips,
-        createdAt: timestamps[0] ?? now,
-        updatedAt: timestamps.at(-1) ?? now,
-      }
-      const existingIndex = library.videos.findIndex((record) => record.id === incoming.id)
-      const existing = existingIndex >= 0 ? library.videos[existingIndex] : undefined
-      const merged = mergeVideoRecord(existing, incoming)
-      if (existingIndex >= 0) library.videos[existingIndex] = merged
-      else library.videos.push(merged)
-      library.migratedLegacyKeys.push(storageKey)
-      changed = true
-    }
-  } catch {
-    return false
-  }
-  return changed
-}
-
 const renderVideo = () => {
   stopPlayback()
   cleanupVideoObjectUrl()
@@ -470,85 +334,118 @@ const renderVideo = () => {
         <h1 id="page-title">Video Tools</h1>
         <p>Generate local commands and keep clip metadata without uploading video files.</p>
       </div>
-      <div class="video-tool">
-        <section class="video-tool-section download-command" aria-labelledby="download-command-title">
-          <h2 id="download-command-title">Download Command</h2>
-          <label><span>Source URL</span><input id="source-url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" /></label>
-          <div class="tool-actions">
-            <button id="generate-download-command" type="button">Generate Command</button>
-            <button id="copy-download-command" type="button" disabled>Copy Command</button>
-            <p id="download-command-status" role="status" aria-live="polite"></p>
+      <div class="video-workspace-grid">
+        <aside class="workspace-panel library-panel" aria-labelledby="video-library-title">
+          <div class="workspace-panel-heading">
+            <h2 id="video-library-title">Video Library</h2>
+            <p id="library-status" class="section-status" role="status" aria-live="polite"></p>
           </div>
-          <textarea id="download-command-output" rows="2" readonly spellcheck="false" aria-label="yt-dlp command"></textarea>
+          <div id="video-library-list"></div>
+        </aside>
+
+        <section class="workspace-panel current-panel" aria-labelledby="current-video-title">
+          <div class="workspace-panel-heading">
+            <h2 id="current-video-title">Current Video</h2>
+          </div>
+          <div id="video-empty-state" class="video-empty-state">
+            <p>Select a server video from the library or choose a local file.</p>
+          </div>
+          <div id="video-workspace" hidden>
+            <div class="current-video-title-row">
+              <div>
+                <h3 id="current-video-name">—</h3>
+                <p id="current-video-kind">—</p>
+              </div>
+            </div>
+            <video id="video-player" controls preload="metadata"></video>
+
+            <section class="current-section" aria-labelledby="video-info-title">
+              <h3 id="video-info-title">Video Info</h3>
+              <dl class="video-metadata">
+                <div><dt>File</dt><dd id="video-filename">—</dd></div>
+                <div><dt>Type</dt><dd id="video-type">—</dd></div>
+                <div><dt>Duration</dt><dd id="video-duration">00:00:00.000</dd></div>
+                <div><dt>Current</dt><dd id="video-current">00:00:00.000</dd></div>
+                <div><dt>Source Site</dt><dd id="video-source-site">—</dd></div>
+                <div class="wide"><dt>Source URL</dt><dd id="video-source-url">—</dd></div>
+              </dl>
+            </section>
+
+            <section class="current-section" aria-labelledby="clip-range-title">
+              <h3 id="clip-range-title">Clip Range</h3>
+              <div class="clip-range">
+                <label><span>Start (seconds)</span><input id="clip-start" type="number" min="0" step="0.001" value="0.000" inputmode="decimal" disabled /></label>
+                <label><span>End (seconds)</span><input id="clip-end" type="number" min="0" step="0.001" value="0.000" inputmode="decimal" disabled /></label>
+              </div>
+              <div class="clip-summary">
+                <p>Clip Duration <strong id="clip-duration">00:00:00.000</strong></p>
+                <p id="range-status" role="status" aria-live="polite"></p>
+              </div>
+            </section>
+
+            <section class="current-section" aria-labelledby="ffmpeg-command-title">
+              <h3 id="ffmpeg-command-title">FFmpeg Command</h3>
+              <label class="command-field">
+                <span class="sr-only">FFmpeg Command</span>
+                <textarea id="ffmpeg-command" rows="4" readonly spellcheck="false" aria-describedby="command-note"></textarea>
+              </label>
+              <p id="command-note" class="command-note">The browser only exposes the filename. Run this command from the video's folder, or replace the input path.</p>
+              <p id="clip-output-name" class="clip-output-name"></p>
+              <p id="copy-status" class="section-status" role="status" aria-live="polite"></p>
+            </section>
+
+            <section class="clip-history current-section" aria-labelledby="clip-history-title">
+              <div class="clip-history-heading">
+                <h3 id="clip-history-title">Clip History</h3>
+                <p id="history-status" role="status" aria-live="polite"></p>
+              </div>
+              <div id="history-list"></div>
+            </section>
+          </div>
         </section>
 
-        <section class="video-tool-section video-library" aria-labelledby="video-library-title">
-          <div class="section-heading-row">
-            <h2 id="video-library-title">Video Library</h2>
-            <div class="library-actions">
+        <aside class="workspace-panel actions-panel" aria-label="Video actions">
+          <section class="action-group download-command" aria-labelledby="download-command-title">
+            <h2 id="download-command-title">Download Command</h2>
+            <label><span>Source URL</span><input id="source-url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" /></label>
+            <div class="stacked-actions">
+              <button id="generate-download-command" type="button">Generate yt-dlp Command</button>
+              <button id="copy-download-command" type="button" disabled>Copy Download Command</button>
+            </div>
+            <textarea id="download-command-output" rows="4" readonly spellcheck="false" aria-label="yt-dlp command"></textarea>
+            <p id="download-command-status" class="section-status" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="action-group" aria-labelledby="library-actions-title">
+            <h2 id="library-actions-title">Library Actions</h2>
+            <div class="stacked-actions">
+              <button id="refresh-video-library" type="button">Refresh Library</button>
               <button id="export-library" type="button">Export Library JSON</button>
               <label class="import-library-button">Import Library JSON<input id="import-library" type="file" accept="application/json,.json" /></label>
             </div>
-          </div>
-          <p id="library-status" class="section-status" role="status" aria-live="polite"></p>
-          <div id="video-library-list"></div>
-        </section>
-
-        <section class="video-tool-section current-video" aria-labelledby="current-video-title">
-          <h2 id="current-video-title">Current Video</h2>
-        <label class="video-file-field">
-          <span>Choose Video</span>
-          <input id="video-file" type="file" accept="video/*" />
-        </label>
-
-        <div id="video-workspace" hidden>
-          <dl class="video-metadata">
-            <div><dt>File</dt><dd id="video-filename">—</dd></div>
-            <div><dt>Duration</dt><dd id="video-duration">00:00:00.000</dd></div>
-            <div><dt>Current</dt><dd id="video-current">00:00:00.000</dd></div>
-          </dl>
-
-          <video id="video-player" controls preload="metadata"></video>
-
-          <div class="seek-controls" aria-label="Video seek controls">
-            <button type="button" data-seek="-1">-1s</button>
-            <button type="button" data-seek="-0.1">-0.1s</button>
-            <button type="button" data-seek="0.1">+0.1s</button>
-            <button type="button" data-seek="1">+1s</button>
-          </div>
-
-          <div class="clip-range">
-            <label><span>Start (seconds)</span><input id="clip-start" type="number" min="0" step="0.001" value="0.000" inputmode="decimal" /></label>
-            <button id="set-start" type="button">Set Start</button>
-            <label><span>End (seconds)</span><input id="clip-end" type="number" min="0" step="0.001" value="0.000" inputmode="decimal" /></label>
-            <button id="set-end" type="button">Set End</button>
-          </div>
-
-          <div class="clip-summary">
-            <p>Clip Duration <strong id="clip-duration">00:00:00.000</strong></p>
-            <p id="range-status" role="status" aria-live="polite"></p>
-            <button id="add-history" type="button" disabled>Add to History</button>
-          </div>
-
-          <label class="command-field">
-            <span>FFmpeg Command</span>
-            <textarea id="ffmpeg-command" rows="4" readonly spellcheck="false" aria-describedby="command-note"></textarea>
-          </label>
-          <p id="command-note" class="command-note">The browser only exposes the filename. Run this command from the video's folder, or replace the input path.</p>
-          <div class="copy-actions">
-            <button id="copy-command" type="button" disabled>Copy Command</button>
-            <p id="copy-status" role="status" aria-live="polite"></p>
-          </div>
-
-          <section class="clip-history" aria-labelledby="clip-history-title">
-            <div class="clip-history-heading">
-              <h2 id="clip-history-title">Clip History</h2>
-              <p id="history-status" role="status" aria-live="polite"></p>
-            </div>
-            <div id="history-list"></div>
           </section>
-        </div>
-        </section>
+
+          <section class="action-group" aria-labelledby="video-actions-title">
+            <h2 id="video-actions-title">Video Actions</h2>
+            <button id="attach-source-url" type="button" disabled>Attach Current Source URL</button>
+            <label class="video-file-field">
+              <span>Choose Local Video</span>
+              <input id="video-file" type="file" accept="video/*" />
+            </label>
+            <div class="seek-controls" aria-label="Video seek controls">
+              <button type="button" data-video-action data-seek="-1" disabled>-1s</button>
+              <button type="button" data-video-action data-seek="-0.1" disabled>-0.1s</button>
+              <button type="button" data-video-action data-seek="0.1" disabled>+0.1s</button>
+              <button type="button" data-video-action data-seek="1" disabled>+1s</button>
+            </div>
+            <div class="stacked-actions">
+              <button id="set-start" type="button" data-video-action disabled>Set Start</button>
+              <button id="set-end" type="button" data-video-action disabled>Set End</button>
+              <button id="add-history" type="button" disabled>Add to History</button>
+              <button id="copy-command" type="button" disabled>Copy FFmpeg Command</button>
+            </div>
+          </section>
+        </aside>
       </div>
     </section>
   `, 'video')
@@ -557,29 +454,46 @@ const renderVideo = () => {
   const downloadCommandOutput = document.querySelector<HTMLTextAreaElement>('#download-command-output')!
   const generateDownloadButton = document.querySelector<HTMLButtonElement>('#generate-download-command')!
   const copyDownloadButton = document.querySelector<HTMLButtonElement>('#copy-download-command')!
+  const attachSourceButton = document.querySelector<HTMLButtonElement>('#attach-source-url')!
   const downloadCommandStatus = document.querySelector<HTMLParagraphElement>('#download-command-status')!
   const videoLibraryList = document.querySelector<HTMLDivElement>('#video-library-list')!
   const libraryStatus = document.querySelector<HTMLParagraphElement>('#library-status')!
+  const refreshVideoLibraryButton = document.querySelector<HTMLButtonElement>('#refresh-video-library')!
   const importLibraryInput = document.querySelector<HTMLInputElement>('#import-library')!
   const fileInput = document.querySelector<HTMLInputElement>('#video-file')!
+  const emptyState = document.querySelector<HTMLDivElement>('#video-empty-state')!
   const workspace = document.querySelector<HTMLDivElement>('#video-workspace')!
   const video = document.querySelector<HTMLVideoElement>('#video-player')!
+  const currentVideoName = document.querySelector<HTMLElement>('#current-video-name')!
+  const currentVideoKind = document.querySelector<HTMLElement>('#current-video-kind')!
   const filename = document.querySelector<HTMLElement>('#video-filename')!
+  const videoType = document.querySelector<HTMLElement>('#video-type')!
   const duration = document.querySelector<HTMLElement>('#video-duration')!
   const current = document.querySelector<HTMLElement>('#video-current')!
+  const videoSourceSite = document.querySelector<HTMLElement>('#video-source-site')!
+  const videoSourceUrl = document.querySelector<HTMLElement>('#video-source-url')!
   const startInput = document.querySelector<HTMLInputElement>('#clip-start')!
   const endInput = document.querySelector<HTMLInputElement>('#clip-end')!
   const clipDuration = document.querySelector<HTMLElement>('#clip-duration')!
   const rangeStatus = document.querySelector<HTMLParagraphElement>('#range-status')!
   const addHistoryButton = document.querySelector<HTMLButtonElement>('#add-history')!
   const command = document.querySelector<HTMLTextAreaElement>('#ffmpeg-command')!
+  const commandNote = document.querySelector<HTMLParagraphElement>('#command-note')!
+  const clipOutputName = document.querySelector<HTMLParagraphElement>('#clip-output-name')!
   const copyButton = document.querySelector<HTMLButtonElement>('#copy-command')!
   const copyStatus = document.querySelector<HTMLParagraphElement>('#copy-status')!
   const historyList = document.querySelector<HTMLDivElement>('#history-list')!
   const historyStatus = document.querySelector<HTMLParagraphElement>('#history-status')!
   let selectedFilename = ''
   let currentVideoRecord: VideoRecord | null = null
+  let currentServerAsset: ServerVideoAsset | null = null
   let viewedVideoId = ''
+  let serverLibrary: ServerVideoLibrary = { source: [], clips: [] }
+  try {
+    sourceUrlInput.value = localStorage.getItem(recentVideoSourceUrlKey) ?? ''
+  } catch {
+    sourceUrlInput.value = ''
+  }
 
   const getCurrentRange = () => {
     const start = startInput.valueAsNumber
@@ -590,21 +504,44 @@ const renderVideo = () => {
     return { start, end, duration: end - start }
   }
 
-  const renderVideoLibrary = () => {
-    const sortedRecords = [...videoLibrary.videos].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-    if (!sortedRecords.length) {
-      videoLibraryList.innerHTML = '<p class="library-empty">No saved video metadata yet.</p>'
-      return
+  const setVideoActionsEnabled = (enabled: boolean) => {
+    document.querySelectorAll<HTMLButtonElement>('[data-video-action]').forEach((button) => {
+      button.disabled = !enabled
+    })
+    startInput.disabled = !enabled
+    endInput.disabled = !enabled
+    if (!enabled) {
+      addHistoryButton.disabled = true
+      copyButton.disabled = true
     }
+  }
 
-    videoLibraryList.innerHTML = sortedRecords.map((record) => {
-      const viewed = record.id === viewedVideoId
-      const source = record.source
-      const details = viewed ? `
+  const updateCurrentVideoDetails = () => {
+    if (!currentVideoRecord) return
+    const kind = currentServerAsset
+      ? currentServerAsset.category === 'source' ? 'Server source' : currentServerAsset.category === 'clip' ? 'Server clip' : 'Legacy server video'
+      : 'Local upload'
+    currentVideoName.textContent = currentVideoRecord.file.name
+    currentVideoKind.textContent = kind
+    filename.textContent = currentVideoRecord.file.name
+    videoType.textContent = kind
+    videoSourceSite.textContent = currentVideoRecord.source?.site ?? '—'
+    videoSourceUrl.textContent = currentVideoRecord.source?.url ?? '—'
+    videoSourceUrl.title = currentVideoRecord.source?.url ?? ''
+  }
+
+  const renderVideoLibrary = () => {
+    const serverAssetIds = new Set([...serverLibrary.source, ...serverLibrary.clips].map((asset) => serverVideoIdentity(asset.relativePath)))
+    const recordDetails = (record: VideoRecord | undefined) => {
+      if (!record || record.id !== viewedVideoId) return ''
+      return `
         <div class="video-library-detail">
           <dl>
-            <div><dt>Size</dt><dd>${record.file.size.toLocaleString()} bytes</dd></div>
-            <div><dt>Last Modified</dt><dd>${escapeHtml(formatCreatedAt(new Date(record.file.lastModified).toISOString()))}</dd></div>
+            <div><dt>Type</dt><dd>${record.type}</dd></div>
+            ${record.type === 'local' ? `
+              <div><dt>Size</dt><dd>${record.file.size.toLocaleString()} bytes</dd></div>
+              <div><dt>Last Modified</dt><dd>${escapeHtml(formatCreatedAt(new Date(record.file.lastModified).toISOString()))}</dd></div>
+            ` : `<div><dt>Path</dt><dd>${escapeHtml(record.server?.relativePath ?? '')}</dd></div>`}
             <div><dt>Created</dt><dd>${escapeHtml(formatCreatedAt(record.createdAt))}</dd></div>
           </dl>
           <div class="library-clip-list">
@@ -613,22 +550,72 @@ const renderVideo = () => {
             `).join('') : '<p>No clips saved.</p>'}
           </div>
         </div>
-      ` : ''
+      `
+    }
+    const recordSummary = (record: VideoRecord | undefined) => {
+      const source = record?.source
+      return `
+        <p>Source: ${source ? escapeHtml(source.site) : '—'}</p>
+        ${source ? `<p class="source-url" title="${escapeHtml(source.url)}">${escapeHtml(source.url)}</p>` : ''}
+        <p>Clips: ${record?.clips.length ?? 0}${record ? ` · Updated: ${escapeHtml(formatCreatedAt(record.updatedAt))}` : ''}</p>
+      `
+    }
+    const renderServerAsset = (asset: ServerVideoAsset) => {
+      const record = videoLibrary.videos.find((item) => item.id === serverVideoIdentity(asset.relativePath))
+      const viewed = record?.id === viewedVideoId
+      return `
+        <article class="video-library-item${currentServerAsset?.relativePath === asset.relativePath ? ' is-current' : ''}">
+          <div class="video-library-summary">
+            <div>
+              <h4 title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</h4>
+              <p>${asset.category === 'legacy-root' ? 'Legacy root video' : asset.category === 'clip' ? 'Generated clip' : 'Source video'}${asset.previewSupported ? '' : ' · Preview unsupported'}</p>
+              ${recordSummary(record)}
+            </div>
+            <div class="video-library-item-actions">
+              <button type="button" data-library-action="open" data-relative-path="${escapeHtml(asset.relativePath)}"${asset.previewSupported ? '' : ' disabled'}>Open</button>
+              ${record ? `<button type="button" data-library-action="view" data-video-id="${escapeHtml(record.id)}">${viewed ? 'Hide' : 'View'}</button>` : ''}
+            </div>
+          </div>
+          ${recordDetails(record)}
+        </article>
+      `
+    }
+    const metadataOnlyRecords = videoLibrary.videos
+      .filter((record) => !serverAssetIds.has(record.id))
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+    const renderMetadataRecord = (record: VideoRecord) => {
+      const viewed = record.id === viewedVideoId
       return `
         <article class="video-library-item${currentVideoRecord?.id === record.id ? ' is-current' : ''}">
           <div class="video-library-summary">
             <div>
-              <h3>${escapeHtml(record.file.name)}</h3>
-              <p>Source: ${source ? escapeHtml(source.site) : '—'}</p>
-              ${source ? `<p class="source-url" title="${escapeHtml(source.url)}">${escapeHtml(source.url)}</p>` : ''}
-              <p>Clips: ${record.clips.length} · Updated: ${escapeHtml(formatCreatedAt(record.updatedAt))}</p>
+              <h4 title="${escapeHtml(record.file.name)}">${escapeHtml(record.file.name)}</h4>
+              <p>${record.type === 'local' ? 'Local file metadata' : 'Server video not currently listed'}</p>
+              ${recordSummary(record)}
             </div>
             <button type="button" data-library-action="view" data-video-id="${escapeHtml(record.id)}">${viewed ? 'Hide' : 'View'}</button>
           </div>
-          ${details}
+          ${recordDetails(record)}
         </article>
       `
-    }).join('')
+    }
+
+    videoLibraryList.innerHTML = `
+      <section class="video-library-group">
+        <h3>Source Videos</h3>
+        ${serverLibrary.source.length ? serverLibrary.source.map(renderServerAsset).join('') : '<p class="library-empty">No videos found in source/.</p>'}
+      </section>
+      <section class="video-library-group">
+        <h3>Clips</h3>
+        ${serverLibrary.clips.length ? serverLibrary.clips.map(renderServerAsset).join('') : '<p class="library-empty">No videos found in clips/.</p>'}
+      </section>
+      ${metadataOnlyRecords.length ? `
+        <section class="video-library-group">
+          <h3>Saved Metadata</h3>
+          ${metadataOnlyRecords.map(renderMetadataRecord).join('')}
+        </section>
+      ` : ''}
+    `
   }
 
   const renderClipHistory = () => {
@@ -683,6 +670,82 @@ const renderVideo = () => {
     }
   }
 
+  const updateAttachSourceButton = () => {
+    attachSourceButton.disabled = !currentVideoRecord || !sourceUrlInput.value.trim()
+  }
+
+  const openServerAsset = (asset: ServerVideoAsset) => {
+    cleanupVideoObjectUrl()
+    const identity = serverVideoIdentity(asset.relativePath)
+    currentVideoRecord = videoLibrary.videos.find((record) => record.id === identity) ?? null
+    if (!currentVideoRecord) {
+      const now = new Date().toISOString()
+      currentVideoRecord = {
+        id: identity,
+        type: 'server',
+        file: { name: asset.name, size: 0, lastModified: 0 },
+        server: { relativePath: asset.relativePath, url: asset.url },
+        clips: [],
+        createdAt: now,
+        updatedAt: now,
+        nextClipNumber: 1,
+      }
+      videoLibrary.videos.unshift(currentVideoRecord)
+    } else {
+      currentVideoRecord.server = { relativePath: asset.relativePath, url: asset.url }
+    }
+    currentServerAsset = asset
+    selectedFilename = asset.name
+    fileInput.value = ''
+    filename.textContent = asset.name
+    startInput.value = '0.000'
+    endInput.value = '0.000'
+    command.value = ''
+    commandNote.textContent = `Server input uses ${testVideoDirectory}. Clip output is written to clips/.`
+    copyButton.disabled = true
+    addHistoryButton.disabled = true
+    copyStatus.textContent = ''
+    rangeStatus.textContent = ''
+    historyStatus.textContent = ''
+    video.src = asset.url
+    emptyState.hidden = true
+    workspace.hidden = false
+    setVideoActionsEnabled(true)
+    updateCurrentVideoDetails()
+    persistLibrary('Server video opened.', 'Video opened, but its metadata could not be saved.')
+    renderClipHistory()
+    updateAttachSourceButton()
+    video.load()
+  }
+
+  const refreshServerLibrary = async () => {
+    refreshVideoLibraryButton.disabled = true
+    refreshVideoLibraryButton.textContent = 'Refreshing…'
+    libraryStatus.textContent = 'Reading server video directories…'
+    try {
+      const response = await fetch('/api/test-videos', { cache: 'no-store' })
+      if (!response.headers.get('content-type')?.includes('application/json')) {
+        throw new Error('Video list API returned HTML instead of JSON. Restart the app with npm run dev.')
+      }
+      const value = await response.json() as Partial<ServerVideoLibrary> & { error?: { message?: string } }
+      if (!response.ok || !Array.isArray(value.source) || !Array.isArray(value.clips)) {
+        throw new Error(value.error?.message ?? 'The server returned an invalid video list.')
+      }
+      serverLibrary = { source: value.source, clips: value.clips }
+      if (currentServerAsset) {
+        currentServerAsset = [...serverLibrary.source, ...serverLibrary.clips]
+          .find((asset) => asset.relativePath === currentServerAsset?.relativePath) ?? currentServerAsset
+      }
+      libraryStatus.textContent = `Found ${serverLibrary.source.length} source video${serverLibrary.source.length === 1 ? '' : 's'} and ${serverLibrary.clips.length} clip${serverLibrary.clips.length === 1 ? '' : 's'}.`
+      renderVideoLibrary()
+    } catch (error) {
+      libraryStatus.textContent = error instanceof Error ? error.message : 'Could not refresh the server video library.'
+    } finally {
+      refreshVideoLibraryButton.disabled = false
+      refreshVideoLibraryButton.textContent = 'Refresh Library'
+    }
+  }
+
   generateDownloadButton.addEventListener('click', () => {
     const sourceUrl = sourceUrlInput.value.trim()
     downloadCommandStatus.textContent = ''
@@ -692,26 +755,50 @@ const renderVideo = () => {
       downloadCommandStatus.textContent = 'Enter a source URL first.'
       return
     }
-    downloadCommandOutput.value = `yt-dlp ${quoteShellArgument(sourceUrl)}`
-    copyDownloadButton.disabled = false
-    if (currentVideoRecord && associateSourceWithRecord(currentVideoRecord)) {
-      persistLibrary('Source URL associated with the current video.', 'Command generated, but the source URL could not be saved.')
+    try {
+      localStorage.setItem(recentVideoSourceUrlKey, sourceUrl)
+    } catch {
+      // Command generation still works when browser storage is unavailable.
     }
+    downloadCommandOutput.value = `yt-dlp -P ${quoteShellArgument(sourceVideoDirectory)} ${quoteShellArgument(sourceUrl)}`
+    copyDownloadButton.disabled = false
   })
   sourceUrlInput.addEventListener('input', () => {
     downloadCommandOutput.value = ''
     copyDownloadButton.disabled = true
     downloadCommandStatus.textContent = ''
+    updateAttachSourceButton()
   })
   copyDownloadButton.addEventListener('click', () => {
     void copyText(downloadCommandOutput.value, downloadCommandStatus, downloadCommandOutput)
   })
 
+  attachSourceButton.addEventListener('click', () => {
+    if (!currentVideoRecord || !sourceUrlInput.value.trim()) return
+    if (associateSourceWithRecord(currentVideoRecord)) {
+      persistLibrary('Source URL attached to the current video.', 'The source URL could not be saved.')
+      updateCurrentVideoDetails()
+      downloadCommandStatus.textContent = 'Source URL attached.'
+    } else {
+      downloadCommandStatus.textContent = 'This source URL is already attached.'
+    }
+  })
+
+  refreshVideoLibraryButton.addEventListener('click', () => void refreshServerLibrary())
+
   videoLibraryList.addEventListener('click', (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-library-action="view"]')
-    if (!button?.dataset.videoId) return
-    viewedVideoId = viewedVideoId === button.dataset.videoId ? '' : button.dataset.videoId
-    renderVideoLibrary()
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-library-action]')
+    if (!button) return
+    if (button.dataset.libraryAction === 'open' && button.dataset.relativePath) {
+      const asset = [...serverLibrary.source, ...serverLibrary.clips]
+        .find((item) => item.relativePath === button.dataset.relativePath)
+      if (asset) openServerAsset(asset)
+      return
+    }
+    if (button.dataset.libraryAction === 'view' && button.dataset.videoId) {
+      viewedVideoId = viewedVideoId === button.dataset.videoId ? '' : button.dataset.videoId
+      renderVideoLibrary()
+    }
   })
 
   document.querySelector<HTMLButtonElement>('#export-library')!.addEventListener('click', () => {
@@ -748,6 +835,7 @@ const renderVideo = () => {
         'The library was merged in memory, but browser storage could not be updated.',
       )
       renderClipHistory()
+      updateCurrentVideoDetails()
     } catch (error) {
       libraryStatus.textContent = error instanceof Error ? `Import failed: ${error.message}` : 'Import failed: invalid JSON.'
     } finally {
@@ -756,6 +844,28 @@ const renderVideo = () => {
   })
 
   renderVideoLibrary()
+  updateAttachSourceButton()
+  void refreshServerLibrary()
+
+  const serverClipOutputFilename = (start: number, end: number) => {
+    const normalizedStart = Math.round(start * 1000) / 1000
+    const normalizedEnd = Math.round(end * 1000) / 1000
+    const matchingClip = currentVideoRecord?.clips.find((clip) => clip.start === normalizedStart && clip.end === normalizedEnd)
+    if (matchingClip?.outputFilename) return matchingClip.outputFilename
+    const extensionIndex = selectedFilename.lastIndexOf('.')
+    const baseName = extensionIndex > 0 ? selectedFilename.slice(0, extensionIndex) : selectedFilename
+    const usedFilenames = new Set([
+      ...serverLibrary.clips.map((clip) => clip.name),
+      ...(currentVideoRecord?.clips.flatMap((clip) => clip.outputFilename ? [clip.outputFilename] : []) ?? []),
+    ])
+    let sequence = currentVideoRecord?.nextClipNumber ?? (currentVideoRecord?.clips.length ?? 0) + 1
+    let filename = `${baseName}-clip-${String(sequence).padStart(2, '0')}.mp4`
+    while (usedFilenames.has(filename)) {
+      sequence += 1
+      filename = `${baseName}-clip-${String(sequence).padStart(2, '0')}.mp4`
+    }
+    return filename
+  }
 
   const updateCommand = () => {
     const start = startInput.valueAsNumber
@@ -767,6 +877,7 @@ const renderVideo = () => {
     if (!selectedRange) {
       clipDuration.textContent = '—'
       command.value = ''
+      clipOutputName.textContent = ''
       copyButton.disabled = true
       if (!Number.isFinite(start) || !Number.isFinite(end)) rangeStatus.textContent = 'Enter valid numeric Start and End values.'
       else if (start < 0) rangeStatus.textContent = 'Start must be 0 or later.'
@@ -777,7 +888,15 @@ const renderVideo = () => {
 
     clipDuration.textContent = formatVideoTime(selectedRange.duration)
     rangeStatus.textContent = ''
-    command.value = `ffmpeg -ss ${formatVideoTime(selectedRange.start)} -i ${quoteShellArgument(selectedFilename)} -t ${formatVideoTime(selectedRange.duration)} -c:v libx264 -c:a aac ${quoteShellArgument(clipOutputFilename(selectedFilename))}`
+    const outputFilename = currentServerAsset
+      ? serverClipOutputFilename(selectedRange.start, selectedRange.end)
+      : clipOutputFilename(selectedFilename)
+    const inputPath = currentServerAsset
+      ? `${testVideoDirectory}/${currentServerAsset.relativePath}`
+      : selectedFilename
+    const outputPath = currentServerAsset ? `${clipVideoDirectory}/${outputFilename}` : outputFilename
+    command.value = `ffmpeg -ss ${formatVideoTime(selectedRange.start)} -i ${quoteShellArgument(inputPath)} -t ${formatVideoTime(selectedRange.duration)} -c:v libx264 -c:a aac ${quoteShellArgument(outputPath)}`
+    clipOutputName.textContent = `Output: ${outputFilename}`
     copyButton.disabled = false
   }
 
@@ -792,14 +911,20 @@ const renderVideo = () => {
     historyStatus.textContent = ''
     if (!file) {
       workspace.hidden = true
+      emptyState.hidden = false
       currentVideoRecord = null
+      currentServerAsset = null
+      setVideoActionsEnabled(false)
       renderVideoLibrary()
+      updateAttachSourceButton()
       video.removeAttribute('src')
       video.load()
       return
     }
 
     selectedFilename = file.name
+    currentServerAsset = null
+    commandNote.textContent = "The browser only exposes the filename. Run this command from the video's folder, or replace the input path."
     const fileMetadata = { name: file.name, size: file.size, lastModified: file.lastModified }
     const identity = videoIdentity(fileMetadata)
     currentVideoRecord = videoLibrary.videos.find((record) => record.id === identity) ?? null
@@ -807,6 +932,7 @@ const renderVideo = () => {
       const now = new Date().toISOString()
       currentVideoRecord = {
         id: identity,
+        type: 'local',
         file: fileMetadata,
         clips: [],
         createdAt: now,
@@ -814,15 +940,18 @@ const renderVideo = () => {
       }
       videoLibrary.videos.unshift(currentVideoRecord)
     }
-    associateSourceWithRecord(currentVideoRecord)
     persistLibrary('Video metadata saved.', 'Video selected, but its metadata could not be saved.')
     filename.textContent = file.name
     startInput.value = '0.000'
     endInput.value = '0.000'
     activeVideoObjectUrl = URL.createObjectURL(file)
     video.src = activeVideoObjectUrl
+    emptyState.hidden = true
     workspace.hidden = false
+    setVideoActionsEnabled(true)
+    updateCurrentVideoDetails()
     renderClipHistory()
+    updateAttachSourceButton()
     video.load()
   })
 
@@ -867,19 +996,28 @@ const renderVideo = () => {
       return
     }
 
+    const outputFilename = currentServerAsset ? serverClipOutputFilename(normalizedStart, normalizedEnd) : undefined
     currentVideoRecord.clips.unshift({
       id: createId(),
       start: normalizedStart,
       end: normalizedEnd,
       duration: normalizedEnd - normalizedStart,
       createdAt: new Date().toISOString(),
+      outputFilename,
     })
+    if (currentServerAsset && outputFilename) {
+      const sequence = Number(outputFilename.match(/-clip-(\d+)\.mp4$/)?.[1])
+      currentVideoRecord.nextClipNumber = Number.isFinite(sequence)
+        ? Math.max(currentVideoRecord.nextClipNumber ?? 1, sequence + 1)
+        : (currentVideoRecord.nextClipNumber ?? 1) + 1
+    }
     currentVideoRecord.updatedAt = new Date().toISOString()
     historyStatus.textContent = saveVideoLibrary(videoLibrary)
       ? 'Range added.'
       : 'Could not save history in this browser.'
     renderClipHistory()
     renderVideoLibrary()
+    updateCommand()
   })
 
   historyList.addEventListener('click', (event) => {
@@ -920,6 +1058,19 @@ const renderVideo = () => {
   })
 }
 
+const renderVideoV2 = () => {
+  stopPlayback()
+  cleanupVideoObjectUrl()
+  app.innerHTML = `
+    <main class="video-v2-main">
+      <section class="video-v2-page" aria-label="Video V2 resizable panel baseline">
+        <div id="video-v2-root"></div>
+      </section>
+    </main>
+  `
+  mountVideoV2(document.querySelector<HTMLDivElement>('#video-v2-root')!)
+}
+
 const loadRecords = async () => {
   try {
     const response = await fetch('/api/test-audio')
@@ -933,6 +1084,11 @@ const loadRecords = async () => {
 }
 
 const renderRoute = async () => {
+  unmountVideoV2()
+  if (window.location.hash === '#/video-v2') {
+    renderVideoV2()
+    return
+  }
   if (window.location.hash === '#/video') {
     renderVideo()
     return

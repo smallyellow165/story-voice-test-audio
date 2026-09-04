@@ -5,15 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "node --env-file-if-exists=.env server.mjs",
-    "dev:vite": "vite",
+    "dev:vite": "node --env-file-if-exists=.env server.mjs",
     "build": "tsc && vite build",
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^7.0.0"
+    "@google-cloud/text-to-speech": "^7.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-resizable-panels": "4.12.3"
   },
   "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   }

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -12,6 +12,9 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
+const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
+const sourceVideoDirectory = path.join(testVideoDirectory, 'source')
+const clipVideoDirectory = path.join(testVideoDirectory, 'clips')
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 5173)
 const maxRequestBytes = 32 * 1024
@@ -30,6 +33,36 @@ const sendJson = (response, statusCode, payload) => {
     'Cache-Control': 'no-store',
   })
   response.end(JSON.stringify(payload))
+}
+
+const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.mkv'])
+const previewExtensions = new Set(['.mp4', '.webm', '.mov'])
+
+const readVideoDirectory = async (directory, relativePrefix, category) => {
+  const entries = await readdir(directory, { withFileTypes: true })
+  return entries
+    .filter((entry) => entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase()))
+    .map((entry) => ({
+      name: entry.name,
+      relativePath: relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name,
+      url: `/test-videos/${relativePrefix ? `${relativePrefix}/` : ''}${encodeURIComponent(entry.name)}`,
+      category,
+      previewSupported: previewExtensions.has(path.extname(entry.name).toLowerCase()),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+const readTestVideoLibrary = async () => {
+  await Promise.all([
+    mkdir(sourceVideoDirectory, { recursive: true }),
+    mkdir(clipVideoDirectory, { recursive: true }),
+  ])
+  const [source, clips, legacyRoot] = await Promise.all([
+    readVideoDirectory(sourceVideoDirectory, 'source', 'source'),
+    readVideoDirectory(clipVideoDirectory, 'clips', 'clip'),
+    readVideoDirectory(testVideoDirectory, '', 'legacy-root'),
+  ])
+  return { source: [...source, ...legacyRoot], clips }
 }
 
 const readMetadata = async () => {
@@ -280,6 +313,20 @@ const serveGeneratedAudio = async (pathname, response) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/test-videos') {
+    if (request.method !== 'GET') {
+      sendJson(response, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET for /api/test-videos.' } })
+      return
+    }
+    try {
+      sendJson(response, 200, await readTestVideoLibrary())
+    } catch (error) {
+      console.error('Test video directories could not be read', { code: error?.code, message: error?.message })
+      sendJson(response, 500, { error: { code: 'VIDEO_LIBRARY_READ_FAILED', message: 'Test video directories could not be read.' } })
+    }
+    return
+  }
 
   if (url.pathname === '/api/test-audio') {
     if (request.method !== 'GET') {
