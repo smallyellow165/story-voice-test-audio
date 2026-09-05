@@ -890,6 +890,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     const recordSummary = (record: VideoUiRecord | undefined) => {
       const source = record?.source
       return `
+        ${record ? `<p class="video-library-video-id">Video ID: ${escapeHtml(record.videoId)}</p>` : ''}
         <p>Source: ${source ? escapeHtml(source.site) : '—'}</p>
         ${source ? `<p class="source-url" title="${escapeHtml(source.url)}">${escapeHtml(source.url)}</p>` : ''}
         <p>Clips: ${record?.clips.length ?? 0}${record ? ` · Updated: ${escapeHtml(formatCreatedAt(record.updatedAt))}` : ''}</p>

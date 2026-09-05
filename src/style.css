@@ -113,6 +113,7 @@ th:last-child, td:last-child { padding-right: 0; }
 .video-library-summary > div { min-width: 0; }
 .video-library-summary h4 { display: -webkit-box; margin: 0 0 5px; overflow: hidden; font-size: 0.78rem; font-weight: 600; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .video-library-summary p { margin: 3px 0 0; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.56rem; line-height: 1.4; }
+.video-library-summary .video-library-video-id { color: var(--ink); font-size: 0.64rem; font-weight: 700; }
 .video-library-summary .source-url { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
 .video-library-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .video-library-detail { margin-top: 10px; padding: 10px; border: 1px solid var(--line); background: var(--card); }
