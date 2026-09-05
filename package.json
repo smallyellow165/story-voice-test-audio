@@ -8,6 +8,7 @@
     "dev:vite": "node --env-file-if-exists=.env server.mjs",
     "build": "tsc && vite build",
     "test": "node --test",
+    "test:pose-classifier:e2e": "node scripts/run-pose-classifier-e2e.mjs",
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
     "preview": "vite preview"
   },

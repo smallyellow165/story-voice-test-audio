@@ -11,7 +11,7 @@ import {
   rawPoseFrameToClassifierLandmarks,
 } from '../src/pose-classifier.ts'
 
-const fixtureRoot = new URL('./fixtures/pose-classifier/', import.meta.url)
+const fixtureRoot = new URL('./fixtures/pose-classifier/synthetic/', import.meta.url)
 
 const loadFixtures = async () => Promise.all(['pushups_down.csv', 'pushups_up.csv'].map(async (fileName) => ({
   fileName,
