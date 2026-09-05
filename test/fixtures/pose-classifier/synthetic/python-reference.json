@@ -1,0 +1,667 @@
+{
+  "normalizedDown": [
+    [
+      0.0,
+      -97.01425170898438,
+      0.0
+    ],
+    [
+      -2.425356149673462,
+      -99.43960571289062,
+      0.0
+    ],
+    [
+      -3.8805696964263916,
+      -99.92467498779297,
+      0.0
+    ],
+    [
+      -5.820854663848877,
+      -99.43960571289062,
+      0.0
+    ],
+    [
+      2.425356149673462,
+      -99.43960571289062,
+      0.0
+    ],
+    [
+      3.8805696964263916,
+      -99.92467498779297,
+      0.0
+    ],
+    [
+      5.820854663848877,
+      -99.43960571289062,
+      0.0
+    ],
+    [
+      -9.701424598693848,
+      -94.5888900756836,
+      0.0
+    ],
+    [
+      9.701424598693848,
+      -94.5888900756836,
+      0.0
+    ],
+    [
+      -3.8805696964263916,
+      -89.73817443847656,
+      0.0
+    ],
+    [
+      3.8805696964263916,
+      -89.73817443847656,
+      0.0
+    ],
+    [
+      -9.701424598693848,
+      -14.55213737487793,
+      0.0
+    ],
+    [
+      9.701424598693848,
+      -14.55213737487793,
+      0.0
+    ],
+    [
+      -16.977493286132812,
+      4.850712299346924,
+      0.0
+    ],
+    [
+      16.977493286132812,
+      4.850712299346924,
+      0.0
+    ],
+    [
+      -26.678916931152344,
+      0.0,
+      0.0
+    ],
+    [
+      26.678916931152344,
+      0.0,
+      0.0
+    ],
+    [
+      -31.52962875366211,
+      2.425356149673462,
+      0.0
+    ],
+    [
+      31.52962875366211,
+      -2.425356149673462,
+      0.0
+    ],
+    [
+      -32.98484420776367,
+      2.425356149673462,
+      0.0
+    ],
+    [
+      32.98484420776367,
+      -2.425356149673462,
+      0.0
+    ],
+    [
+      -30.074417114257812,
+      2.425356149673462,
+      0.0
+    ],
+    [
+      30.074417114257812,
+      -2.425356149673462,
+      0.0
+    ],
+    [
+      -7.276068687438965,
+      0.0,
+      0.0
+    ],
+    [
+      7.276068687438965,
+      0.0,
+      0.0
+    ],
+    [
+      -9.701424598693848,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      9.701424598693848,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      -12.126781463623047,
+      77.61139678955078,
+      0.0
+    ],
+    [
+      12.126781463623047,
+      77.61139678955078,
+      0.0
+    ],
+    [
+      -14.55213737487793,
+      82.46210479736328,
+      0.0
+    ],
+    [
+      14.55213737487793,
+      82.46210479736328,
+      0.0
+    ],
+    [
+      -9.701424598693848,
+      87.31282043457031,
+      0.0
+    ],
+    [
+      9.701424598693848,
+      87.31282043457031,
+      0.0
+    ]
+  ],
+  "embeddingDown": [
+    [
+      0.0,
+      -14.55213737487793,
+      0.0
+    ],
+    [
+      -7.276068687438965,
+      19.402849197387695,
+      0.0
+    ],
+    [
+      7.276068687438965,
+      19.402849197387695,
+      0.0
+    ],
+    [
+      -9.701423645019531,
+      -4.850712299346924,
+      0.0
+    ],
+    [
+      9.701423645019531,
+      -4.850712299346924,
+      0.0
+    ],
+    [
+      -2.425355911254883,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      2.425355911254883,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      -2.425356864929199,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      2.425356864929199,
+      38.80569839477539,
+      0.0
+    ],
+    [
+      -16.977493286132812,
+      14.55213737487793,
+      0.0
+    ],
+    [
+      16.977493286132812,
+      14.55213737487793,
+      0.0
+    ],
+    [
+      -4.850712776184082,
+      77.61139678955078,
+      0.0
+    ],
+    [
+      4.850712776184082,
+      77.61139678955078,
+      0.0
+    ],
+    [
+      -19.402847290039062,
+      0.0,
+      0.0
+    ],
+    [
+      19.402847290039062,
+      0.0,
+      0.0
+    ],
+    [
+      -2.425356864929199,
+      92.16353607177734,
+      0.0
+    ],
+    [
+      2.425356864929199,
+      92.16353607177734,
+      0.0
+    ],
+    [
+      -19.402847290039062,
+      0.0,
+      0.0
+    ],
+    [
+      19.402847290039062,
+      0.0,
+      0.0
+    ],
+    [
+      33.954986572265625,
+      0.0,
+      0.0
+    ],
+    [
+      19.402849197387695,
+      0.0,
+      0.0
+    ],
+    [
+      53.35783386230469,
+      0.0,
+      0.0
+    ],
+    [
+      24.253562927246094,
+      0.0,
+      0.0
+    ]
+  ],
+  "mirroredDownClassification": {
+    "pushups_down": 10
+  },
+  "frames": [
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 10.0
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 7.689950389744178,
+        "pushups_up": 2.3100496102558212
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 5.966955101433983,
+        "pushups_up": 4.033044898566016
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 4.532983581943844,
+        "pushups_up": 5.467016418056155
+      },
+      "poseEntered": true,
+      "repetitions": 0
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 3.385806366351732,
+        "pushups_up": 6.6141936336482665
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 2.4680645938780432,
+        "pushups_up": 7.531935406121956
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 1.733871175899092,
+        "pushups_up": 8.266128824100909
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 1.1465164415159306,
+        "pushups_up": 8.853483558484069
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 0.6766326540094016,
+        "pushups_up": 9.323367345990597
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 2.5413061232075207,
+        "pushups_up": 7.458693876792478
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 4.033044898566016,
+        "pushups_up": 5.966955101433983
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 5.467016418056155,
+        "pushups_up": 4.532983581943844
+      },
+      "poseEntered": false,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 6.6141936336482665,
+        "pushups_up": 3.385806366351732
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 7.531935406121956,
+        "pushups_up": 2.4680645938780432
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 8.266128824100909,
+        "pushups_up": 1.733871175899092
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 8.853483558484069,
+        "pushups_up": 1.1465164415159306
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_down",
+      "classification": {
+        "pushups_down": 10
+      },
+      "ema": {
+        "pushups_down": 9.323367345990597,
+        "pushups_up": 0.6766326540094016
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 7.458693876792478,
+        "pushups_up": 2.5413061232075207
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 5.966955101433983,
+        "pushups_up": 4.033044898566016
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 4.532983581943844,
+        "pushups_up": 5.467016418056155
+      },
+      "poseEntered": true,
+      "repetitions": 1
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 3.385806366351732,
+        "pushups_up": 6.6141936336482665
+      },
+      "poseEntered": false,
+      "repetitions": 2
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 2.4680645938780432,
+        "pushups_up": 7.531935406121956
+      },
+      "poseEntered": false,
+      "repetitions": 2
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 1.733871175899092,
+        "pushups_up": 8.266128824100909
+      },
+      "poseEntered": false,
+      "repetitions": 2
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 1.1465164415159306,
+        "pushups_up": 8.853483558484069
+      },
+      "poseEntered": false,
+      "repetitions": 2
+    },
+    {
+      "input": "pushups_up",
+      "classification": {
+        "pushups_up": 10
+      },
+      "ema": {
+        "pushups_down": 0.6766326540094016,
+        "pushups_up": 9.323367345990597
+      },
+      "poseEntered": false,
+      "repetitions": 2
+    }
+  ]
+}
