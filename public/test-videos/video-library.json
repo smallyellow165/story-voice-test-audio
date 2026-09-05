@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "createdAt": "2026-09-04T00:00:00.000Z",
-  "updatedAt": "2026-09-04T22:52:17.464Z",
+  "updatedAt": "2026-09-04T23:01:03.502Z",
   "videos": [
     {
       "videoId": "video-001",
@@ -35,6 +35,17 @@
       "lastModified": 1788562308022.7769,
       "createdAt": "2026-09-04T22:51:50.847Z",
       "updatedAt": "2026-09-04T22:51:50.847Z"
+    },
+    {
+      "videoId": "video-004",
+      "filename": "少儿斯巴达30天打卡挑战小勇士Nova打卡day5右腿单脚跳 [BV1te411p7SZ].mp4",
+      "relativePath": "video-004/source.mp4",
+      "sourceUrl": "https://www.bilibili.com/video/BV1te411p7SZ/?spm_id_from=333.337.search-card.all.click&vd_source=271309e7d45fb57e6d9a770747046cd7",
+      "sourceSite": "bilibili",
+      "size": 28047963,
+      "lastModified": 1788562834260.6497,
+      "createdAt": "2026-09-04T23:00:37.149Z",
+      "updatedAt": "2026-09-04T23:00:37.149Z"
     }
   ],
   "clips": [
@@ -70,6 +81,17 @@
       "relativePath": "video-003/clips/video-003_clip-001.mp4",
       "createdAt": "2026-09-04T22:51:50.853Z",
       "updatedAt": "2026-09-04T22:51:51.929Z"
+    },
+    {
+      "clipId": "video-004_clip-001",
+      "videoId": "video-004",
+      "startMs": 10000,
+      "endMs": 15000,
+      "durationMs": 5000,
+      "label": "右腿单脚跳",
+      "relativePath": "video-004/clips/video-004_clip-001.mp4",
+      "createdAt": "2026-09-04T23:00:37.156Z",
+      "updatedAt": "2026-09-04T23:00:38.123Z"
     }
   ],
   "poseRuns": [
@@ -141,6 +163,29 @@
       "detectedPoseFrameCount": 150,
       "processingDurationMs": 25455.400000002235,
       "createdAt": "2026-09-04T22:52:17.421Z"
+    },
+    {
+      "poseRunId": "video-004_clip-001_pose-001",
+      "videoId": "video-004",
+      "clipId": "video-004_clip-001",
+      "relativePath": "video-004/pose/video-004_clip-001_pose-001.json",
+      "model": {
+        "name": "Pose Landmarker Lite (float16)",
+        "packageVersion": "1.0.1",
+        "modelAssetPath": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        "delegate": "GPU",
+        "runningMode": "VIDEO",
+        "numPoses": 1,
+        "minPoseDetectionConfidence": 0.5,
+        "minPosePresenceConfidence": 0.5,
+        "minTrackingConfidence": 0.5
+      },
+      "samplingFps": 30,
+      "durationMs": 5000,
+      "frameCount": 150,
+      "detectedPoseFrameCount": 150,
+      "processingDurationMs": 25306.099999997765,
+      "createdAt": "2026-09-04T23:01:03.462Z"
     }
   ],
   "llmPoseRuns": [
@@ -179,21 +224,36 @@
       "frameCount": 50,
       "sizeBytes": 48347,
       "createdAt": "2026-09-04T22:52:17.463Z"
+    },
+    {
+      "llmPoseRunId": "video-004_clip-001_pose-001_llm-001",
+      "videoId": "video-004",
+      "clipId": "video-004_clip-001",
+      "poseRunId": "video-004_clip-001_pose-001",
+      "relativePath": "video-004/llm-pose/video-004_clip-001_pose-001_llm-001.json",
+      "schemaVersion": 2,
+      "targetFps": 10,
+      "frameCount": 50,
+      "sizeBytes": 48149,
+      "createdAt": "2026-09-04T23:01:03.501Z"
     }
   ],
   "nextIds": {
-    "video": 4,
+    "video": 5,
     "clips": {
       "video-002": 3,
-      "video-003": 2
+      "video-003": 2,
+      "video-004": 2
     },
     "poseRuns": {
       "video-002_clip-001": 3,
-      "video-003_clip-001": 2
+      "video-003_clip-001": 2,
+      "video-004_clip-001": 2
     },
     "llmPoseRuns": {
       "video-002_clip-001_pose-002": 3,
-      "video-003_clip-001_pose-001": 2
+      "video-003_clip-001_pose-001": 2,
+      "video-004_clip-001_pose-001": 2
     }
   }
 }
