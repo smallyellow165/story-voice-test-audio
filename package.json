@@ -8,7 +8,9 @@
     "dev:vite": "node --env-file-if-exists=.env server.mjs",
     "build": "tsc && vite build",
     "test": "node --test",
+    "test:star-jump-dataset": "node --test test/star-jump-dataset-exporter.test.mjs",
     "test:pose-classifier:e2e": "node scripts/run-pose-classifier-e2e.mjs",
+    "export:star-jump-dataset": "node scripts/export-star-jump-dataset.mjs",
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
     "preview": "vite preview"
   },

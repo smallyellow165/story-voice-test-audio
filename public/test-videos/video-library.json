@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "createdAt": "2026-09-04T00:00:00.000Z",
-  "updatedAt": "2026-09-05T10:22:11.972Z",
+  "updatedAt": "2026-09-05T10:53:18.892Z",
   "videos": [
     {
       "videoId": "video-001",
@@ -68,6 +68,17 @@
       "lastModified": 1788603690122.2207,
       "createdAt": "2026-09-05T10:21:30.667Z",
       "updatedAt": "2026-09-05T10:21:30.667Z"
+    },
+    {
+      "videoId": "video-007",
+      "filename": "Star Jump - How to Demo [lkYtECQYrWo].webm",
+      "relativePath": "video-007/source.webm",
+      "sourceUrl": "https://www.youtube.com/watch?v=lkYtECQYrWo",
+      "sourceSite": "youtube",
+      "size": 1790867,
+      "lastModified": 1788605348350.4653,
+      "createdAt": "2026-09-05T10:49:08.699Z",
+      "updatedAt": "2026-09-05T10:49:08.715Z"
     }
   ],
   "clips": [
@@ -136,6 +147,17 @@
       "relativePath": "video-006/clips/video-006_clip-001.mp4",
       "createdAt": "2026-09-05T10:21:30.673Z",
       "updatedAt": "2026-09-05T10:21:31.939Z"
+    },
+    {
+      "clipId": "video-007_clip-001",
+      "videoId": "video-007",
+      "startMs": 6000,
+      "endMs": 20000,
+      "durationMs": 14000,
+      "label": null,
+      "relativePath": "video-007/clips/video-007_clip-001.mp4",
+      "createdAt": "2026-09-05T10:51:41.281Z",
+      "updatedAt": "2026-09-05T10:51:44.775Z"
     }
   ],
   "poseRuns": [
@@ -276,6 +298,29 @@
       "detectedPoseFrameCount": 180,
       "processingDurationMs": 39944.59999999404,
       "createdAt": "2026-09-05T10:22:11.921Z"
+    },
+    {
+      "poseRunId": "video-007_clip-001_pose-001",
+      "videoId": "video-007",
+      "clipId": "video-007_clip-001",
+      "relativePath": "video-007/pose/video-007_clip-001_pose-001.json",
+      "model": {
+        "name": "Pose Landmarker Lite (float16)",
+        "packageVersion": "1.0.1",
+        "modelAssetPath": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        "delegate": "GPU",
+        "runningMode": "VIDEO",
+        "numPoses": 1,
+        "minPoseDetectionConfidence": 0.5,
+        "minPosePresenceConfidence": 0.5,
+        "minTrackingConfidence": 0.5
+      },
+      "samplingFps": 30,
+      "durationMs": 14000,
+      "frameCount": 420,
+      "detectedPoseFrameCount": 420,
+      "processingDurationMs": 52251.79999999702,
+      "createdAt": "2026-09-05T10:53:18.859Z"
     }
   ],
   "llmPoseRuns": [
@@ -353,20 +398,22 @@
     }
   ],
   "nextIds": {
-    "video": 7,
+    "video": 8,
     "clips": {
       "video-002": 3,
       "video-003": 2,
       "video-004": 2,
       "video-005": 2,
-      "video-006": 2
+      "video-006": 2,
+      "video-007": 2
     },
     "poseRuns": {
       "video-002_clip-001": 3,
       "video-003_clip-001": 2,
       "video-004_clip-001": 2,
       "video-005_clip-001": 2,
-      "video-006_clip-001": 2
+      "video-006_clip-001": 2,
+      "video-007_clip-001": 2
     },
     "llmPoseRuns": {
       "video-002_clip-001_pose-002": 3,
