@@ -14,6 +14,13 @@ import {
 import { analyzePoseVideo } from './pose-video-analyzer'
 import { createPoseReplay, loadPoseReplayData, type PoseReplaySession } from './pose-replay'
 import {
+  defaultPoseHarvestConfig,
+  harvestPoseKeyframes,
+  nearestDetectedPoseFrame,
+  type PoseHarvestCandidate,
+  type PoseHarvestSeed,
+} from './pose-keyframe-harvest'
+import {
   clipsForVideo,
   createVideoStorage,
   detectSourceSite,
@@ -21,6 +28,7 @@ import {
   type ClipRecord,
   type LlmPoseRun,
   type PoseRun,
+  type RawPoseResult,
   type VideoLibrary,
   type VideoRecord,
 } from './video-library-storage'
@@ -72,6 +80,13 @@ type VideoUiRecord = VideoRecord & {
 type ServerVideoLibrary = {
   source: ServerVideoAsset[]
   clips: ServerVideoAsset[]
+}
+
+type PoseHarvestUiContext = {
+  videoId: string
+  clipId: string
+  poseRun: PoseRun
+  rawPose?: RawPoseResult
 }
 
 const recentVideoSourceUrlKey = 'story-voice.video-source-url.v1'
@@ -452,7 +467,66 @@ const moveVideoToolsIntoV2 = () => {
   workspace.replaceChildren(currentTitle, videoStage, poseReplayControls, playheadSection, clipRange, clipHistory)
   leftSlot.append(libraryTabs, libraryTabPanel, batchTabPanel)
   centerSlot.append(currentHeading, emptyState, workspace)
-  rightSlot.append(ffmpegCommand, downloadCommand, videoActions, videoInfo)
+  const rightTabs = document.createElement('div')
+  rightTabs.className = 'video-v2-right-tabs'
+  rightTabs.setAttribute('role', 'tablist')
+  rightTabs.innerHTML = `
+    <button id="video-tools-tab" type="button" role="tab" aria-selected="true" aria-controls="video-tools-tab-panel">Video</button>
+    <button id="pose-harvest-tab" type="button" role="tab" aria-selected="false" aria-controls="pose-harvest-tab-panel">Pose Harvest</button>
+  `
+  const videoToolsPanel = document.createElement('section')
+  videoToolsPanel.id = 'video-tools-tab-panel'
+  videoToolsPanel.className = 'video-v2-right-tab-panel'
+  videoToolsPanel.setAttribute('role', 'tabpanel')
+  videoToolsPanel.setAttribute('aria-labelledby', 'video-tools-tab')
+  videoToolsPanel.append(ffmpegCommand, downloadCommand, videoActions, videoInfo)
+  const poseHarvestPanel = document.createElement('section')
+  poseHarvestPanel.id = 'pose-harvest-tab-panel'
+  poseHarvestPanel.className = 'video-v2-right-tab-panel pose-harvest-panel'
+  poseHarvestPanel.setAttribute('role', 'tabpanel')
+  poseHarvestPanel.setAttribute('aria-labelledby', 'pose-harvest-tab')
+  poseHarvestPanel.hidden = true
+  poseHarvestPanel.innerHTML = `
+    <div class="pose-harvest-heading">
+      <h2>Pose Keyframe Harvest V1</h2>
+      <p>Seed two pose states, then inspect inferred turning points in the current Raw Pose Run.</p>
+    </div>
+    <section class="pose-harvest-section" aria-labelledby="pose-harvest-context-title">
+      <h3 id="pose-harvest-context-title">Current Context</h3>
+      <dl class="pose-harvest-context">
+        <div><dt>Video ID</dt><dd id="pose-harvest-video-id">—</dd></div>
+        <div><dt>Clip ID</dt><dd id="pose-harvest-clip-id">—</dd></div>
+        <div><dt>Pose Run ID</dt><dd id="pose-harvest-run-id">—</dd></div>
+      </dl>
+      <p class="pose-harvest-note">Choose <strong>Replay</strong> on a Raw Pose Run to set this context.</p>
+    </section>
+    <section class="pose-harvest-section pose-harvest-state" data-harvest-state="A">
+      <label><span>State A (positive)</span><input id="pose-harvest-state-a" value="star_open" autocomplete="off"></label>
+      <div id="pose-harvest-seeds-a" class="pose-harvest-seeds"><span>No seeds.</span></div>
+      <button id="pose-harvest-add-a" type="button" disabled>Add Current Frame</button>
+    </section>
+    <section class="pose-harvest-section pose-harvest-state" data-harvest-state="B">
+      <label><span>State B (negative)</span><input id="pose-harvest-state-b" value="star_close" autocomplete="off"></label>
+      <div id="pose-harvest-seeds-b" class="pose-harvest-seeds"><span>No seeds.</span></div>
+      <button id="pose-harvest-add-b" type="button" disabled>Add Current Frame</button>
+    </section>
+    <section class="pose-harvest-section">
+      <h3>Run</h3>
+      <p class="pose-harvest-parameters">Moving average: ${defaultPoseHarvestConfig.smoothingWindowFrames} frames · Extrema window: ±${defaultPoseHarvestConfig.extremaWindowFrames} frames · Min prominence: ${defaultPoseHarvestConfig.minimumProminence} · Same-state dedup: ${defaultPoseHarvestConfig.minimumTemporalDistanceMs}ms</p>
+      <button id="pose-harvest-run" type="button" disabled>Run Harvest</button>
+      <p id="pose-harvest-status" class="section-status" role="status" aria-live="polite">Select a Pose Run first.</p>
+    </section>
+    <section class="pose-harvest-section" aria-labelledby="pose-harvest-results-title">
+      <h3 id="pose-harvest-results-title">Candidates</h3>
+      <div class="pose-harvest-results-wrap">
+        <table class="pose-harvest-results">
+          <thead><tr><th>Type</th><th>Timestamp</th><th>Score</th><th>Action</th></tr></thead>
+          <tbody id="pose-harvest-results-body"><tr><td colspan="4">No results yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  `
+  rightSlot.append(rightTabs, videoToolsPanel, poseHarvestPanel)
 }
 
 const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
@@ -677,6 +751,22 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const batchAddRowButton = document.querySelector<HTMLButtonElement>('#batch-add-row')
   const batchValidateButton = document.querySelector<HTMLButtonElement>('#batch-validate')
   const batchProcessButton = document.querySelector<HTMLButtonElement>('#batch-process')
+  const videoToolsTab = document.querySelector<HTMLButtonElement>('#video-tools-tab')
+  const poseHarvestTab = document.querySelector<HTMLButtonElement>('#pose-harvest-tab')
+  const videoToolsTabPanel = document.querySelector<HTMLElement>('#video-tools-tab-panel')
+  const poseHarvestTabPanel = document.querySelector<HTMLElement>('#pose-harvest-tab-panel')
+  const harvestVideoId = document.querySelector<HTMLElement>('#pose-harvest-video-id')
+  const harvestClipId = document.querySelector<HTMLElement>('#pose-harvest-clip-id')
+  const harvestRunId = document.querySelector<HTMLElement>('#pose-harvest-run-id')
+  const harvestStateAInput = document.querySelector<HTMLInputElement>('#pose-harvest-state-a')
+  const harvestStateBInput = document.querySelector<HTMLInputElement>('#pose-harvest-state-b')
+  const harvestSeedsAElement = document.querySelector<HTMLElement>('#pose-harvest-seeds-a')
+  const harvestSeedsBElement = document.querySelector<HTMLElement>('#pose-harvest-seeds-b')
+  const harvestAddAButton = document.querySelector<HTMLButtonElement>('#pose-harvest-add-a')
+  const harvestAddBButton = document.querySelector<HTMLButtonElement>('#pose-harvest-add-b')
+  const harvestRunButton = document.querySelector<HTMLButtonElement>('#pose-harvest-run')
+  const harvestStatus = document.querySelector<HTMLParagraphElement>('#pose-harvest-status')
+  const harvestResultsBody = document.querySelector<HTMLTableSectionElement>('#pose-harvest-results-body')
   let selectedFilename = ''
   let currentVideoRecord: VideoUiRecord | null = null
   let currentServerAsset: ServerVideoAsset | null = null
@@ -690,6 +780,10 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let replayingClipId = ''
   let nextBatchRowId = 1
   let batchProcessing = false
+  let harvestContext: PoseHarvestUiContext | null = null
+  let harvestSeedsA: PoseHarvestSeed[] = []
+  let harvestSeedsB: PoseHarvestSeed[] = []
+  let harvestCandidates: PoseHarvestCandidate[] = []
   const batchRows: BatchInputRow[] = layoutMode === 'video-v2'
     ? [createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`)]
     : []
@@ -785,6 +879,17 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     renderBatchRows()
   }
 
+  if (layoutMode === 'video-v2' && videoToolsTab && poseHarvestTab && videoToolsTabPanel && poseHarvestTabPanel) {
+    const activateRightTab = (showHarvest: boolean) => {
+      videoToolsTab.setAttribute('aria-selected', String(!showHarvest))
+      poseHarvestTab.setAttribute('aria-selected', String(showHarvest))
+      videoToolsTabPanel.hidden = showHarvest
+      poseHarvestTabPanel.hidden = !showHarvest
+    }
+    videoToolsTab.addEventListener('click', () => activateRightTab(false))
+    poseHarvestTab.addEventListener('click', () => activateRightTab(true))
+  }
+
   const getCurrentRange = () => {
     const start = startInput.valueAsNumber
     const end = endInput.valueAsNumber
@@ -820,7 +925,168 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     videoSourceUrl.title = currentVideoRecord.source?.url ?? ''
   }
 
+  const renderHarvestSeeds = (element: HTMLElement | null, seeds: PoseHarvestSeed[], state: 'A' | 'B') => {
+    if (!element) return
+    element.innerHTML = seeds.length ? seeds.map((seed, index) => `
+      <div class="pose-harvest-seed">
+        <button type="button" class="pose-harvest-timestamp" data-harvest-seek="${seed.videoTimestampMs}" title="Requested ${(seed.requestedTimestampMs / 1000).toFixed(3)}s; mapped to Raw Pose frame ${seed.frameIndex}">${(seed.videoTimestampMs / 1000).toFixed(3)}s</button>
+        <span>frame ${seed.frameIndex}</span>
+        <button type="button" data-harvest-remove="${state}:${index}" aria-label="Remove seed">×</button>
+      </div>
+    `).join('') : '<span>No seeds.</span>'
+  }
+
+  const updateHarvestControls = () => {
+    const hasContext = harvestContext !== null
+    if (harvestVideoId) harvestVideoId.textContent = harvestContext?.videoId ?? '—'
+    if (harvestClipId) harvestClipId.textContent = harvestContext?.clipId ?? '—'
+    if (harvestRunId) harvestRunId.textContent = harvestContext?.poseRun.poseRunId ?? '—'
+    if (harvestAddAButton) harvestAddAButton.disabled = !hasContext || harvestSeedsA.length >= 2
+    if (harvestAddBButton) harvestAddBButton.disabled = !hasContext || harvestSeedsB.length >= 2
+    if (harvestRunButton) harvestRunButton.disabled = !hasContext || !harvestSeedsA.length || !harvestSeedsB.length
+    renderHarvestSeeds(harvestSeedsAElement, harvestSeedsA, 'A')
+    renderHarvestSeeds(harvestSeedsBElement, harvestSeedsB, 'B')
+  }
+
+  const renderHarvestCandidates = () => {
+    if (!harvestResultsBody) return
+    const stateNames = {
+      stateA: harvestStateAInput?.value.trim() || 'State A',
+      stateB: harvestStateBInput?.value.trim() || 'State B',
+    }
+    harvestResultsBody.innerHTML = harvestCandidates.length ? harvestCandidates.map((candidate) => `
+      <tr data-harvest-seek="${candidate.videoTimestampMs}" title="Raw score ${candidate.rawPhaseScore.toFixed(4)} · dA ${candidate.dStateA.toFixed(4)} · dB ${candidate.dStateB.toFixed(4)} · frame ${candidate.frameIndex} · prominence ${candidate.prominence.toFixed(4)}">
+        <td>${escapeHtml(stateNames[candidate.state])}</td>
+        <td><button type="button" class="pose-harvest-timestamp" data-harvest-seek="${candidate.videoTimestampMs}">${(candidate.videoTimestampMs / 1000).toFixed(3)}s</button></td>
+        <td>${candidate.smoothedPhaseScore.toFixed(3)}</td>
+        <td><button type="button" data-harvest-seek="${candidate.videoTimestampMs}">Jump</button></td>
+      </tr>
+    `).join('') : '<tr><td colspan="4">No turning points passed the current thresholds.</td></tr>'
+  }
+
+  const clearHarvestContext = () => {
+    harvestContext = null
+    harvestSeedsA = []
+    harvestSeedsB = []
+    harvestCandidates = []
+    updateHarvestControls()
+    renderHarvestCandidates()
+    if (harvestStatus) harvestStatus.textContent = 'Select a Pose Run first.'
+  }
+
+  const setHarvestContext = (record: ClipUiRecord, poseRun: PoseRun) => {
+    const unchanged = harvestContext?.poseRun.poseRunId === poseRun.poseRunId
+    harvestContext = { videoId: record.videoId, clipId: record.clipId, poseRun }
+    if (!unchanged) {
+      harvestSeedsA = []
+      harvestSeedsB = []
+      harvestCandidates = []
+      renderHarvestCandidates()
+    }
+    updateHarvestControls()
+    if (harvestStatus) harvestStatus.textContent = 'Pose Run selected. Seek the clip and add 1–2 seeds per state.'
+  }
+
+  const loadHarvestRawPose = async () => {
+    if (!harvestContext) throw new Error('Select a Raw Pose Run with Replay first.')
+    if (harvestContext.rawPose) return harvestContext.rawPose
+    const response = await fetch(serverVideoUrl(harvestContext.poseRun.relativePath), { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Raw Pose request failed (${response.status}).`)
+    const rawPose = await response.json() as RawPoseResult
+    if (!rawPose || rawPose.schemaVersion !== 1 || !Array.isArray(rawPose.frames)) {
+      throw new Error('The selected Pose Run is not a valid Raw Pose v1 result.')
+    }
+    harvestContext.rawPose = rawPose
+    return rawPose
+  }
+
+  const addHarvestSeed = async (state: 'A' | 'B') => {
+    const seeds = state === 'A' ? harvestSeedsA : harvestSeedsB
+    if (!harvestContext || seeds.length >= 2) return
+    try {
+      if (harvestStatus) harvestStatus.textContent = 'Mapping current time to the nearest detected Raw Pose frame…'
+      const rawPose = await loadHarvestRawPose()
+      const seed = nearestDetectedPoseFrame(rawPose.frames, video.currentTime * 1000)
+      if (seeds.some((item) => item.frameIndex === seed.frameIndex)) {
+        throw new Error(`Raw Pose frame ${seed.frameIndex} is already a seed for State ${state}.`)
+      }
+      seeds.push(seed)
+      harvestCandidates = []
+      renderHarvestCandidates()
+      updateHarvestControls()
+      if (harvestStatus) {
+        harvestStatus.textContent = `State ${state}: ${(seed.requestedTimestampMs / 1000).toFixed(3)}s mapped to frame ${seed.frameIndex} at ${(seed.videoTimestampMs / 1000).toFixed(3)}s.`
+      }
+    } catch (error) {
+      if (harvestStatus) harvestStatus.textContent = error instanceof Error ? error.message : 'Could not add this seed.'
+    }
+  }
+
+  harvestAddAButton?.addEventListener('click', () => void addHarvestSeed('A'))
+  harvestAddBButton?.addEventListener('click', () => void addHarvestSeed('B'))
+  poseHarvestTabPanel?.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-harvest-seek], [data-harvest-remove]')
+    if (!target) return
+    const seekMs = Number(target.dataset.harvestSeek ?? target.closest<HTMLElement>('[data-harvest-seek]')?.dataset.harvestSeek)
+    if (Number.isFinite(seekMs) && target.hasAttribute('data-harvest-seek')) {
+      video.currentTime = Math.min(video.duration, Math.max(0, seekMs / 1000))
+      current.textContent = formatVideoTime(video.currentTime)
+      video.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    if (target.dataset.harvestRemove) {
+      const [state, rawIndex] = target.dataset.harvestRemove.split(':')
+      const seeds = state === 'A' ? harvestSeedsA : harvestSeedsB
+      const index = Number(rawIndex)
+      if (Number.isInteger(index)) seeds.splice(index, 1)
+      harvestCandidates = []
+      updateHarvestControls()
+      renderHarvestCandidates()
+      if (harvestStatus) harvestStatus.textContent = 'Seed removed. Run Harvest again after both states have seeds.'
+    }
+  })
+  harvestRunButton?.addEventListener('click', async () => {
+    const stateAName = harvestStateAInput?.value.trim() ?? ''
+    const stateBName = harvestStateBInput?.value.trim() ?? ''
+    if (!harvestContext || !harvestSeedsA.length || !harvestSeedsB.length) return
+    if (!stateAName || !stateBName || stateAName === stateBName) {
+      if (harvestStatus) harvestStatus.textContent = 'Enter two different, non-empty state names.'
+      return
+    }
+    if (!video.videoWidth || !video.videoHeight) {
+      if (harvestStatus) harvestStatus.textContent = 'Wait for the clip metadata to load, then try again.'
+      return
+    }
+    harvestRunButton.disabled = true
+    if (harvestStatus) harvestStatus.textContent = 'Embedding detected frames and finding turning points…'
+    try {
+      const rawPose = await loadHarvestRawPose()
+      const result = harvestPoseKeyframes({
+        frames: rawPose.frames,
+        frameWidth: video.videoWidth,
+        frameHeight: video.videoHeight,
+        stateASeedTimestampsMs: harvestSeedsA.map((seed) => seed.videoTimestampMs),
+        stateBSeedTimestampsMs: harvestSeedsB.map((seed) => seed.videoTimestampMs),
+      })
+      harvestCandidates = result.candidates
+      renderHarvestCandidates()
+      if (harvestStatus) {
+        harvestStatus.textContent = `${result.candidates.length} candidates from ${result.frames.length} detected frames. Click any timestamp or row to inspect it.`
+      }
+    } catch (error) {
+      harvestCandidates = []
+      renderHarvestCandidates()
+      if (harvestStatus) harvestStatus.textContent = error instanceof Error ? error.message : 'Pose Harvest failed.'
+    } finally {
+      updateHarvestControls()
+    }
+  })
+  harvestStateAInput?.addEventListener('input', renderHarvestCandidates)
+  harvestStateBInput?.addEventListener('input', renderHarvestCandidates)
+  updateHarvestControls()
+
   const restoreCurrentServerVideo = () => {
+    clearHarvestContext()
     cleanupPoseReplay()
     if (!currentServerAsset) return
     selectedFilename = currentServerAsset.name
@@ -1202,6 +1468,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   }
 
   const openServerAsset = async (asset: ServerVideoAsset, downloadedSourceUrl?: string) => {
+    clearHarvestContext()
     cleanupPoseReplay()
     cleanupVideoObjectUrl()
     const storedRecord = videoLibrary.videos.find((record) => record.videoId === asset.videoId)
@@ -1503,6 +1770,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   }
 
   fileInput.addEventListener('change', async () => {
+    clearHarvestContext()
     const file = fileInput.files?.[0]
     cleanupPoseReplay()
     cleanupVideoObjectUrl()
@@ -1794,6 +2062,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       rebuildCurrentVideoRecord()
       const updatedRecord = currentVideoRecord?.clips.find((item) => item.id === record.id)
       if (!updatedRecord) return
+      setHarvestContext(updatedRecord, poseRun)
       await startPoseReplay(updatedRecord, poseRun)
       return
     }
