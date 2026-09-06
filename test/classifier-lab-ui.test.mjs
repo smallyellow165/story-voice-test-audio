@@ -29,3 +29,13 @@ test('Raw Pose Run selection and classification reuse the existing unseen pipeli
   assert.match(source, /data-classifier-seek=/)
   assert.match(source, /video\.currentTime = Math\.min\(video\.duration, Math\.max\(0, seekMs \/ 1000\)\)/)
 })
+
+test('Training Set exposes expandable provenance rows that open Pose Replay and seek by Raw Pose timestamp', () => {
+  assert.match(source, /data-training-samples-toggle="star_open"[^>]*>Show Samples<\/button>/)
+  assert.match(source, /data-training-samples-toggle="star_close"[^>]*>Show Samples<\/button>/)
+  assert.match(source, /<th>Frame<\/th><th>Timestamp<\/th><th>Source<\/th><th>Action<\/th>/)
+  assert.match(source, /buildTrainingSampleProvenance\(classifier\.samples, trainingRawPose\)/)
+  assert.match(source, /action[^]*data-training-sample=/i)
+  assert.match(source, /openStoredPoseReplay[\s\S]*startPoseReplay\(clip, storedPoseRun\)/)
+  assert.match(source, /inspectTrainingSample[\s\S]*openStoredPoseReplay\(sample\.videoId, sample\.clipId, sample\.poseRunId\)[\s\S]*seekVideoAfterMetadata\(sample\.videoTimestampMs\)/)
+})

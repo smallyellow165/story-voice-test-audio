@@ -259,6 +259,15 @@ th:last-child, td:last-child { padding-right: 0; }
 .classifier-dataset-name { margin: 0 0 8px; font-size: 0.7rem; font-weight: 600; }
 .classifier-training-class { display: grid; gap: 3px; margin: 7px 0; font-size: 0.58rem; }
 .classifier-training-class code { overflow: hidden; color: var(--muted); font-size: 0.52rem; text-overflow: ellipsis; white-space: nowrap; }
+.classifier-training-class > button { width: 100%; margin-top: 4px; }
+.classifier-training-samples { margin-top: 5px; }
+.classifier-training-samples-wrap { width: 100%; max-height: 300px; overflow: auto; border: 1px solid var(--line); }
+.classifier-training-samples-table { width: 100%; min-width: 330px; border-collapse: collapse; font-family: 'DM Mono', monospace; font-size: 0.48rem; }
+.classifier-training-samples-table th, .classifier-training-samples-table td { padding: 5px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.classifier-training-samples-table th { position: sticky; top: 0; color: var(--muted); background: var(--card); font-size: 0.45rem; font-weight: 500; text-transform: uppercase; }
+.classifier-training-samples-table td:nth-child(3) { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classifier-training-samples-table tbody tr[data-training-sample] { cursor: pointer; }
+.classifier-training-samples-table tbody tr[data-training-sample]:hover { background: #f5f1e9; }
 .classifier-lab-panel button { min-height: 30px; padding: 0 7px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.52rem; }
 #classifier-load, #classifier-run { width: 100%; margin-top: 9px; }
 .classifier-context { display: grid; gap: 5px; margin: 0; }

@@ -27,6 +27,11 @@ import {
   type StarJumpFrameClassification,
 } from './star-jump-unseen'
 import {
+  buildTrainingSampleProvenance,
+  type TrainingRawPose,
+  type TrainingSampleProvenance,
+} from './training-sample-provenance'
+import {
   clipsForVideo,
   createVideoStorage,
   detectSourceSite,
@@ -558,15 +563,20 @@ const moveVideoToolsIntoV2 = () => {
         <strong>star_open</strong>
         <code title="test/fixtures/pose-classifier/star-jump/star_open.csv">test/fixtures/pose-classifier/star-jump/star_open.csv</code>
         <span>Samples: <b id="classifier-open-samples">—</b></span>
+        <button type="button" data-training-samples-toggle="star_open" aria-expanded="false" aria-controls="classifier-open-sample-list" disabled>Show Samples</button>
+        <div id="classifier-open-sample-list" class="classifier-training-samples" hidden></div>
       </div>
       <div class="classifier-training-class">
         <strong>star_close</strong>
         <code title="test/fixtures/pose-classifier/star-jump/star_close.csv">test/fixtures/pose-classifier/star-jump/star_close.csv</code>
         <span>Samples: <b id="classifier-close-samples">—</b></span>
+        <button type="button" data-training-samples-toggle="star_close" aria-expanded="false" aria-controls="classifier-close-sample-list" disabled>Show Samples</button>
+        <div id="classifier-close-sample-list" class="classifier-training-samples" hidden></div>
       </div>
       <p class="classifier-pipeline">CSV 33×3 landmarks → FullBodyPoseEmbedder → normalization → 23-vector embedding → KNN ready</p>
       <button id="classifier-load" type="button">Load Classifier</button>
       <p id="classifier-load-status" class="section-status" role="status" aria-live="polite">Not loaded.</p>
+      <p id="training-sample-status" class="section-status" role="status" aria-live="polite"></p>
     </section>
     <section class="classifier-lab-section" aria-labelledby="classifier-input-title">
       <h3 id="classifier-input-title">Current Unseen Input</h3>
@@ -845,6 +855,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const classifierLoadButton = document.querySelector<HTMLButtonElement>('#classifier-load')
   const classifierRunButton = document.querySelector<HTMLButtonElement>('#classifier-run')
   const classifierLoadStatus = document.querySelector<HTMLParagraphElement>('#classifier-load-status')
+  const trainingSampleStatus = document.querySelector<HTMLParagraphElement>('#training-sample-status')
   const classifierRunStatus = document.querySelector<HTMLParagraphElement>('#classifier-run-status')
   const classifierOpenSamples = document.querySelector<HTMLElement>('#classifier-open-samples')
   const classifierCloseSamples = document.querySelector<HTMLElement>('#classifier-close-samples')
@@ -875,6 +886,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let starJumpClassifier: PoseClassifier | null = null
   let classifierContext: ClassifierUiContext | null = null
   let classifierFrames: StarJumpFrameClassification[] = []
+  let trainingSampleProvenance: TrainingSampleProvenance[] = []
   const batchRows: BatchInputRow[] = layoutMode === 'video-v2'
     ? [createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`)]
     : []
@@ -1259,34 +1271,80 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     return rawPose
   }
 
+  const compactTrainingSource = (sample: TrainingSampleProvenance) => {
+    const clip = sample.clipId.startsWith(`${sample.videoId}_`) ? sample.clipId.slice(sample.videoId.length + 1) : sample.clipId
+    const pose = sample.poseRunId.startsWith(`${sample.clipId}_`) ? sample.poseRunId.slice(sample.clipId.length + 1) : sample.poseRunId
+    return `${sample.videoId} / ${clip} / ${pose}`
+  }
+
+  const renderTrainingSampleLists = () => {
+    const renderClass = (className: 'star_open' | 'star_close', listId: string) => {
+      const list = document.querySelector<HTMLElement>(listId)
+      const samples = trainingSampleProvenance.filter((sample) => sample.className === className)
+      if (!list) return
+      list.innerHTML = samples.length ? `
+        <div class="classifier-training-samples-wrap">
+          <table class="classifier-training-samples-table">
+            <thead><tr><th>Frame</th><th>Timestamp</th><th>Source</th><th>Action</th></tr></thead>
+            <tbody>${samples.map((sample) => `
+              <tr data-training-sample="${escapeHtml(sample.sampleName)}" title="${escapeHtml(sample.sampleName)} · CSV timestamp ${sample.encodedTimestampMs}ms · Raw Pose timestamp ${sample.videoTimestampMs}ms">
+                <td>${sample.frameIndex}</td>
+                <td><button type="button" class="classifier-timestamp" data-training-sample="${escapeHtml(sample.sampleName)}">${(sample.videoTimestampMs / 1000).toFixed(3)}s</button></td>
+                <td title="${escapeHtml(`${sample.videoId} / ${sample.clipId} / ${sample.poseRunId}`)}">${escapeHtml(compactTrainingSource(sample))}</td>
+                <td><button type="button" data-training-sample="${escapeHtml(sample.sampleName)}">Jump</button></td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      ` : '<p>No provenance available.</p>'
+    }
+    renderClass('star_open', '#classifier-open-sample-list')
+    renderClass('star_close', '#classifier-close-sample-list')
+    document.querySelectorAll<HTMLButtonElement>('[data-training-samples-toggle]').forEach((button) => {
+      button.disabled = trainingSampleProvenance.length === 0
+    })
+  }
+
   classifierLoadButton?.addEventListener('click', async () => {
     classifierLoadButton.disabled = true
     classifierLoadButton.textContent = 'Loading…'
     if (classifierLoadStatus) classifierLoadStatus.textContent = 'Reading CSV samples and preparing embeddings…'
     try {
-      const [openCsvModule, closeCsvModule] = await Promise.all([
+      const [openCsvModule, closeCsvModule, rawPoseResponse] = await Promise.all([
         import('../test/fixtures/pose-classifier/star-jump/star_open.csv?raw'),
         import('../test/fixtures/pose-classifier/star-jump/star_close.csv?raw'),
+        fetch('/test-videos/video-006/pose/video-006_clip-001_pose-001.json', { cache: 'no-store' }),
       ])
+      if (!rawPoseResponse.ok) throw new Error(`Training Raw Pose request failed (${rawPoseResponse.status}).`)
+      const trainingRawPose = await rawPoseResponse.json() as TrainingRawPose
+      if (!trainingRawPose?.source || !Array.isArray(trainingRawPose.frames)) {
+        throw new Error('The Star Jump training Raw Pose artifact is invalid.')
+      }
       const classifier = PoseClassifier.fromCsvFiles([
         { fileName: 'star_open.csv', contents: openCsvModule.default },
         { fileName: 'star_close.csv', contents: closeCsvModule.default },
       ], new FullBodyPoseEmbedder())
       starJumpClassifier = classifier
+      trainingSampleProvenance = buildTrainingSampleProvenance(classifier.samples, trainingRawPose)
       const openCount = classifier.samples.filter((sample) => sample.className === 'star_open').length
       const closeCount = classifier.samples.filter((sample) => sample.className === 'star_close').length
       if (classifierOpenSamples) classifierOpenSamples.textContent = String(openCount)
       if (classifierCloseSamples) classifierCloseSamples.textContent = String(closeCount)
       if (classifierLoadStatus) classifierLoadStatus.textContent = `Loaded / Ready · 2 classes · ${classifier.samples.length} samples.`
+      if (trainingSampleStatus) trainingSampleStatus.textContent = 'Sample provenance ready. Expand either class to inspect its frames.'
       classifierLoadButton.textContent = 'Reload Classifier'
+      renderTrainingSampleLists()
       renderClassifierContext()
       if (classifierRunStatus && classifierContext) classifierRunStatus.textContent = 'Classifier ready. Run the selected unseen input.'
     } catch (error) {
       starJumpClassifier = null
+      trainingSampleProvenance = []
       if (classifierOpenSamples) classifierOpenSamples.textContent = '—'
       if (classifierCloseSamples) classifierCloseSamples.textContent = '—'
       if (classifierLoadStatus) classifierLoadStatus.textContent = error instanceof Error ? `Load failed: ${error.message}` : 'Classifier load failed.'
+      if (trainingSampleStatus) trainingSampleStatus.textContent = ''
       classifierLoadButton.textContent = 'Load Classifier'
+      renderTrainingSampleLists()
       renderClassifierContext()
     } finally {
       classifierLoadButton.disabled = false
@@ -1320,14 +1378,88 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     }
   })
 
-  classifierTabPanel?.addEventListener('click', (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-classifier-seek]')
-    if (!target) return
-    const seekMs = Number(target.dataset.classifierSeek)
-    if (!Number.isFinite(seekMs) || !Number.isFinite(video.duration)) return
-    video.currentTime = Math.min(video.duration, Math.max(0, seekMs / 1000))
+  const seekVideoAfterMetadata = async (videoTimestampMs: number) => {
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+      await new Promise<void>((resolve) => {
+        const timeout = window.setTimeout(resolve, 3_000)
+        video.addEventListener('loadedmetadata', () => {
+          window.clearTimeout(timeout)
+          resolve()
+        }, { once: true })
+      })
+    }
+    if (!Number.isFinite(video.duration)) throw new Error('The training Clip metadata did not load.')
+    video.currentTime = Math.min(video.duration, Math.max(0, videoTimestampMs / 1000))
     current.textContent = formatVideoTime(video.currentTime)
     video.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  const openStoredPoseReplay = async (videoId: string, clipId: string, poseRunId: string) => {
+    const storedVideo = videoLibrary.videos.find((item) => item.videoId === videoId)
+    const storedClip = videoLibrary.clips.find((item) => item.videoId === videoId && item.clipId === clipId)
+    const storedPoseRun = videoLibrary.poseRuns.find((item) => item.poseRunId === poseRunId && item.clipId === clipId)
+    if (!storedVideo || !storedClip?.relativePath || !storedPoseRun) {
+      throw new Error(`Pose source ${videoId} / ${clipId} / ${poseRunId} is missing from Video Library.`)
+    }
+    currentVideoRecord = toUiVideo(storedVideo)
+    currentServerAsset = serverLibrary.source.find((asset) => asset.videoId === videoId) ?? {
+      videoId: storedVideo.videoId,
+      name: storedVideo.filename,
+      relativePath: storedVideo.relativePath,
+      url: serverVideoUrl(storedVideo.relativePath),
+      category: 'source',
+      previewSupported: true,
+    }
+    const clip = currentVideoRecord.clips.find((item) => item.clipId === clipId)
+    if (!clip) throw new Error(`Clip ${clipId} is missing from the current video record.`)
+    await startPoseReplay(clip, storedPoseRun)
+  }
+
+  const inspectTrainingSample = async (sample: TrainingSampleProvenance) => {
+    if (replayingClipId !== sample.clipId) {
+      clearHarvestContext()
+      await openStoredPoseReplay(sample.videoId, sample.clipId, sample.poseRunId)
+    }
+    await seekVideoAfterMetadata(sample.videoTimestampMs)
+  }
+
+  classifierTabPanel?.addEventListener('click', async (event) => {
+    const clicked = event.target as HTMLElement
+    const toggle = clicked.closest<HTMLButtonElement>('[data-training-samples-toggle]')
+    if (toggle) {
+      const list = document.querySelector<HTMLElement>(toggle.dataset.trainingSamplesToggle === 'star_open'
+        ? '#classifier-open-sample-list'
+        : '#classifier-close-sample-list')
+      if (!list) return
+      list.hidden = !list.hidden
+      toggle.setAttribute('aria-expanded', String(!list.hidden))
+      toggle.textContent = list.hidden ? 'Show Samples' : 'Hide Samples'
+      return
+    }
+
+    const trainingTarget = clicked.closest<HTMLElement>('[data-training-sample]')
+    if (trainingTarget) {
+      const sample = trainingSampleProvenance.find((item) => item.sampleName === trainingTarget.dataset.trainingSample)
+      if (!sample) return
+      if (trainingSampleStatus) trainingSampleStatus.textContent = `Opening frame ${sample.frameIndex} from ${compactTrainingSource(sample)}…`
+      try {
+        await inspectTrainingSample(sample)
+        if (trainingSampleStatus) trainingSampleStatus.textContent = `Frame ${sample.frameIndex} · ${(sample.videoTimestampMs / 1000).toFixed(3)}s · ${compactTrainingSource(sample)}`
+      } catch (error) {
+        if (trainingSampleStatus) trainingSampleStatus.textContent = error instanceof Error ? error.message : 'Could not open this training sample.'
+      }
+      return
+    }
+
+    const transitionTarget = clicked.closest<HTMLElement>('[data-classifier-seek]')
+    if (!transitionTarget) return
+    const seekMs = Number(transitionTarget.dataset.classifierSeek)
+    if (!Number.isFinite(seekMs)) return
+    if (classifierContext && replayingClipId !== classifierContext.clipId) {
+      clearHarvestContext()
+      await openStoredPoseReplay(classifierContext.videoId, classifierContext.clipId, classifierContext.poseRun.poseRunId)
+    }
+    await seekVideoAfterMetadata(seekMs)
   })
   renderClassifierContext()
 
