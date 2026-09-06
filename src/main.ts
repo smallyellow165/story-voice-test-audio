@@ -12,6 +12,7 @@ import {
   type BatchRowStatus,
 } from './batch-dataset-input'
 import { analyzePoseVideo } from './pose-video-analyzer'
+import { FullBodyPoseEmbedder, PoseClassifier } from './pose-classifier'
 import { createPoseReplay, loadPoseReplayData, type PoseReplaySession } from './pose-replay'
 import {
   defaultPoseHarvestConfig,
@@ -20,6 +21,11 @@ import {
   type PoseHarvestCandidate,
   type PoseHarvestSeed,
 } from './pose-keyframe-harvest'
+import {
+  classifyUnseenStarJumpFrames,
+  summarizeUnseenStarJump,
+  type StarJumpFrameClassification,
+} from './star-jump-unseen'
 import {
   clipsForVideo,
   createVideoStorage,
@@ -83,6 +89,13 @@ type ServerVideoLibrary = {
 }
 
 type PoseHarvestUiContext = {
+  videoId: string
+  clipId: string
+  poseRun: PoseRun
+  rawPose?: RawPoseResult
+}
+
+type ClassifierUiContext = {
   videoId: string
   clipId: string
   poseRun: PoseRun
@@ -473,6 +486,7 @@ const moveVideoToolsIntoV2 = () => {
   rightTabs.innerHTML = `
     <button id="video-tools-tab" type="button" role="tab" aria-selected="true" aria-controls="video-tools-tab-panel">Video</button>
     <button id="pose-harvest-tab" type="button" role="tab" aria-selected="false" aria-controls="pose-harvest-tab-panel">Pose Harvest</button>
+    <button id="classifier-tab" type="button" role="tab" aria-selected="false" aria-controls="classifier-tab-panel">Classifier</button>
   `
   const videoToolsPanel = document.createElement('section')
   videoToolsPanel.id = 'video-tools-tab-panel'
@@ -526,7 +540,66 @@ const moveVideoToolsIntoV2 = () => {
       </div>
     </section>
   `
-  rightSlot.append(rightTabs, videoToolsPanel, poseHarvestPanel)
+  const classifierPanel = document.createElement('section')
+  classifierPanel.id = 'classifier-tab-panel'
+  classifierPanel.className = 'video-v2-right-tab-panel classifier-lab-panel'
+  classifierPanel.setAttribute('role', 'tabpanel')
+  classifierPanel.setAttribute('aria-labelledby', 'classifier-tab')
+  classifierPanel.hidden = true
+  classifierPanel.innerHTML = `
+    <div class="classifier-lab-heading">
+      <h2>Classifier Lab V1</h2>
+      <p>Load the existing Star Jump KNN dataset, then classify an unseen Raw Pose Run.</p>
+    </div>
+    <section class="classifier-lab-section" aria-labelledby="classifier-training-title">
+      <h3 id="classifier-training-title">Training Set</h3>
+      <p class="classifier-dataset-name">Star Jump</p>
+      <div class="classifier-training-class">
+        <strong>star_open</strong>
+        <code title="test/fixtures/pose-classifier/star-jump/star_open.csv">test/fixtures/pose-classifier/star-jump/star_open.csv</code>
+        <span>Samples: <b id="classifier-open-samples">—</b></span>
+      </div>
+      <div class="classifier-training-class">
+        <strong>star_close</strong>
+        <code title="test/fixtures/pose-classifier/star-jump/star_close.csv">test/fixtures/pose-classifier/star-jump/star_close.csv</code>
+        <span>Samples: <b id="classifier-close-samples">—</b></span>
+      </div>
+      <p class="classifier-pipeline">CSV 33×3 landmarks → FullBodyPoseEmbedder → normalization → 23-vector embedding → KNN ready</p>
+      <button id="classifier-load" type="button">Load Classifier</button>
+      <p id="classifier-load-status" class="section-status" role="status" aria-live="polite">Not loaded.</p>
+    </section>
+    <section class="classifier-lab-section" aria-labelledby="classifier-input-title">
+      <h3 id="classifier-input-title">Current Unseen Input</h3>
+      <dl class="classifier-context">
+        <div><dt>Video ID</dt><dd id="classifier-video-id">—</dd></div>
+        <div><dt>Clip ID</dt><dd id="classifier-clip-id">—</dd></div>
+        <div><dt>Pose Run ID</dt><dd id="classifier-run-id">—</dd></div>
+        <div><dt>Frames</dt><dd id="classifier-frame-count">—</dd></div>
+        <div><dt>Detected</dt><dd id="classifier-detected-count">—</dd></div>
+      </dl>
+      <p class="classifier-note">Choose <strong>Use for Classifier</strong> on a Raw Pose Run.</p>
+    </section>
+    <section class="classifier-lab-section">
+      <h3>Run Classifier</h3>
+      <p class="classifier-pipeline">Raw Pose → image landmarks adapter → existing PoseClassifier → raw result → existing EMA</p>
+      <button id="classifier-run" type="button" disabled>Run Classifier</button>
+      <p id="classifier-run-status" class="section-status" role="status" aria-live="polite">Load the classifier and select an unseen input.</p>
+    </section>
+    <section class="classifier-lab-section" aria-labelledby="classifier-summary-title">
+      <h3 id="classifier-summary-title">Result Summary</h3>
+      <div id="classifier-summary" class="classifier-summary"><p>No results yet.</p></div>
+    </section>
+    <section class="classifier-lab-section" aria-labelledby="classifier-transitions-title">
+      <h3 id="classifier-transitions-title">EMA Transitions</h3>
+      <div class="classifier-results-wrap">
+        <table class="classifier-results">
+          <thead><tr><th>Timestamp</th><th>State</th><th>Action</th></tr></thead>
+          <tbody id="classifier-transitions-body"><tr><td colspan="3">No results yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  `
+  rightSlot.append(rightTabs, videoToolsPanel, poseHarvestPanel, classifierPanel)
 }
 
 const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
@@ -753,8 +826,10 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const batchProcessButton = document.querySelector<HTMLButtonElement>('#batch-process')
   const videoToolsTab = document.querySelector<HTMLButtonElement>('#video-tools-tab')
   const poseHarvestTab = document.querySelector<HTMLButtonElement>('#pose-harvest-tab')
+  const classifierTab = document.querySelector<HTMLButtonElement>('#classifier-tab')
   const videoToolsTabPanel = document.querySelector<HTMLElement>('#video-tools-tab-panel')
   const poseHarvestTabPanel = document.querySelector<HTMLElement>('#pose-harvest-tab-panel')
+  const classifierTabPanel = document.querySelector<HTMLElement>('#classifier-tab-panel')
   const harvestVideoId = document.querySelector<HTMLElement>('#pose-harvest-video-id')
   const harvestClipId = document.querySelector<HTMLElement>('#pose-harvest-clip-id')
   const harvestRunId = document.querySelector<HTMLElement>('#pose-harvest-run-id')
@@ -767,6 +842,19 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const harvestRunButton = document.querySelector<HTMLButtonElement>('#pose-harvest-run')
   const harvestStatus = document.querySelector<HTMLParagraphElement>('#pose-harvest-status')
   const harvestResultsBody = document.querySelector<HTMLTableSectionElement>('#pose-harvest-results-body')
+  const classifierLoadButton = document.querySelector<HTMLButtonElement>('#classifier-load')
+  const classifierRunButton = document.querySelector<HTMLButtonElement>('#classifier-run')
+  const classifierLoadStatus = document.querySelector<HTMLParagraphElement>('#classifier-load-status')
+  const classifierRunStatus = document.querySelector<HTMLParagraphElement>('#classifier-run-status')
+  const classifierOpenSamples = document.querySelector<HTMLElement>('#classifier-open-samples')
+  const classifierCloseSamples = document.querySelector<HTMLElement>('#classifier-close-samples')
+  const classifierVideoId = document.querySelector<HTMLElement>('#classifier-video-id')
+  const classifierClipId = document.querySelector<HTMLElement>('#classifier-clip-id')
+  const classifierRunId = document.querySelector<HTMLElement>('#classifier-run-id')
+  const classifierFrameCount = document.querySelector<HTMLElement>('#classifier-frame-count')
+  const classifierDetectedCount = document.querySelector<HTMLElement>('#classifier-detected-count')
+  const classifierSummary = document.querySelector<HTMLElement>('#classifier-summary')
+  const classifierTransitionsBody = document.querySelector<HTMLTableSectionElement>('#classifier-transitions-body')
   let selectedFilename = ''
   let currentVideoRecord: VideoUiRecord | null = null
   let currentServerAsset: ServerVideoAsset | null = null
@@ -784,6 +872,9 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let harvestSeedsA: PoseHarvestSeed[] = []
   let harvestSeedsB: PoseHarvestSeed[] = []
   let harvestCandidates: PoseHarvestCandidate[] = []
+  let starJumpClassifier: PoseClassifier | null = null
+  let classifierContext: ClassifierUiContext | null = null
+  let classifierFrames: StarJumpFrameClassification[] = []
   const batchRows: BatchInputRow[] = layoutMode === 'video-v2'
     ? [createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`)]
     : []
@@ -879,15 +970,19 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     renderBatchRows()
   }
 
-  if (layoutMode === 'video-v2' && videoToolsTab && poseHarvestTab && videoToolsTabPanel && poseHarvestTabPanel) {
-    const activateRightTab = (showHarvest: boolean) => {
-      videoToolsTab.setAttribute('aria-selected', String(!showHarvest))
-      poseHarvestTab.setAttribute('aria-selected', String(showHarvest))
-      videoToolsTabPanel.hidden = showHarvest
-      poseHarvestTabPanel.hidden = !showHarvest
+  if (layoutMode === 'video-v2' && videoToolsTab && poseHarvestTab && classifierTab &&
+    videoToolsTabPanel && poseHarvestTabPanel && classifierTabPanel) {
+    const activateRightTab = (active: 'video' | 'harvest' | 'classifier') => {
+      videoToolsTab.setAttribute('aria-selected', String(active === 'video'))
+      poseHarvestTab.setAttribute('aria-selected', String(active === 'harvest'))
+      classifierTab.setAttribute('aria-selected', String(active === 'classifier'))
+      videoToolsTabPanel.hidden = active !== 'video'
+      poseHarvestTabPanel.hidden = active !== 'harvest'
+      classifierTabPanel.hidden = active !== 'classifier'
     }
-    videoToolsTab.addEventListener('click', () => activateRightTab(false))
-    poseHarvestTab.addEventListener('click', () => activateRightTab(true))
+    videoToolsTab.addEventListener('click', () => activateRightTab('video'))
+    poseHarvestTab.addEventListener('click', () => activateRightTab('harvest'))
+    classifierTab.addEventListener('click', () => activateRightTab('classifier'))
   }
 
   const getCurrentRange = () => {
@@ -1085,8 +1180,160 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   harvestStateBInput?.addEventListener('input', renderHarvestCandidates)
   updateHarvestControls()
 
+  const renderClassifierContext = () => {
+    if (classifierVideoId) classifierVideoId.textContent = classifierContext?.videoId ?? '—'
+    if (classifierClipId) classifierClipId.textContent = classifierContext?.clipId ?? '—'
+    if (classifierRunId) classifierRunId.textContent = classifierContext?.poseRun.poseRunId ?? '—'
+    if (classifierFrameCount) classifierFrameCount.textContent = classifierContext ? String(classifierContext.poseRun.frameCount) : '—'
+    if (classifierDetectedCount) classifierDetectedCount.textContent = classifierContext ? String(classifierContext.poseRun.detectedPoseFrameCount) : '—'
+    if (classifierRunButton) classifierRunButton.disabled = !starJumpClassifier || !classifierContext
+  }
+
+  const renderClassifierResults = () => {
+    if (!classifierSummary || !classifierTransitionsBody) return
+    if (!classifierFrames.length) {
+      classifierSummary.innerHTML = '<p>No results yet.</p>'
+      classifierTransitionsBody.innerHTML = '<tr><td colspan="3">No results yet.</td></tr>'
+      return
+    }
+    const result = summarizeUnseenStarJump(classifierFrames)
+    classifierSummary.innerHTML = `
+      <dl>
+        <div><dt>Frames</dt><dd>${classifierContext?.poseRun.frameCount ?? classifierFrames.length}</dd></div>
+        <div><dt>Classified</dt><dd>${classifierFrames.length}</dd></div>
+      </dl>
+      <div class="classifier-winner-summary">
+        <div><strong>Raw Winner</strong><span>star_open: ${result.rawWinnerCounts.star_open}</span><span>star_close: ${result.rawWinnerCounts.star_close}</span></div>
+        <div><strong>EMA Winner</strong><span>star_open: ${result.emaWinnerCounts.star_open}</span><span>star_close: ${result.emaWinnerCounts.star_close}</span></div>
+      </div>
+    `
+    const transitions = [
+      {
+        videoTimestampMs: classifierFrames[0].videoTimestampMs,
+        state: classifierFrames[0].emaWinner,
+      },
+      ...result.emaTransitions.map(({ videoTimestampMs, to }) => ({ videoTimestampMs, state: to })),
+    ]
+    classifierTransitionsBody.innerHTML = transitions.map((transition) => `
+      <tr data-classifier-seek="${transition.videoTimestampMs}">
+        <td><button type="button" class="classifier-timestamp" data-classifier-seek="${transition.videoTimestampMs}">${(transition.videoTimestampMs / 1000).toFixed(3)}s</button></td>
+        <td>${transition.state}</td>
+        <td><button type="button" data-classifier-seek="${transition.videoTimestampMs}">Jump</button></td>
+      </tr>
+    `).join('')
+  }
+
+  const clearClassifierInput = () => {
+    classifierContext = null
+    classifierFrames = []
+    renderClassifierContext()
+    renderClassifierResults()
+    if (classifierRunStatus) classifierRunStatus.textContent = starJumpClassifier
+      ? 'Select an unseen Raw Pose Run.'
+      : 'Load the classifier and select an unseen input.'
+  }
+
+  const setClassifierContext = (record: ClipUiRecord, poseRun: PoseRun) => {
+    const unchanged = classifierContext?.poseRun.poseRunId === poseRun.poseRunId
+    classifierContext = { videoId: record.videoId, clipId: record.clipId, poseRun }
+    if (!unchanged) {
+      classifierFrames = []
+      renderClassifierResults()
+    }
+    renderClassifierContext()
+    if (classifierRunStatus) classifierRunStatus.textContent = starJumpClassifier
+      ? 'Unseen input selected. Ready to run.'
+      : 'Unseen input selected. Load the classifier next.'
+  }
+
+  const loadClassifierRawPose = async () => {
+    if (!classifierContext) throw new Error('Choose a Raw Pose Run with Use for Classifier first.')
+    if (classifierContext.rawPose) return classifierContext.rawPose
+    const response = await fetch(serverVideoUrl(classifierContext.poseRun.relativePath), { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Raw Pose request failed (${response.status}).`)
+    const rawPose = await response.json() as RawPoseResult
+    if (!rawPose || rawPose.schemaVersion !== 1 || !Array.isArray(rawPose.frames)) {
+      throw new Error('The selected classifier input is not a valid Raw Pose v1 result.')
+    }
+    classifierContext.rawPose = rawPose
+    return rawPose
+  }
+
+  classifierLoadButton?.addEventListener('click', async () => {
+    classifierLoadButton.disabled = true
+    classifierLoadButton.textContent = 'Loading…'
+    if (classifierLoadStatus) classifierLoadStatus.textContent = 'Reading CSV samples and preparing embeddings…'
+    try {
+      const [openCsvModule, closeCsvModule] = await Promise.all([
+        import('../test/fixtures/pose-classifier/star-jump/star_open.csv?raw'),
+        import('../test/fixtures/pose-classifier/star-jump/star_close.csv?raw'),
+      ])
+      const classifier = PoseClassifier.fromCsvFiles([
+        { fileName: 'star_open.csv', contents: openCsvModule.default },
+        { fileName: 'star_close.csv', contents: closeCsvModule.default },
+      ], new FullBodyPoseEmbedder())
+      starJumpClassifier = classifier
+      const openCount = classifier.samples.filter((sample) => sample.className === 'star_open').length
+      const closeCount = classifier.samples.filter((sample) => sample.className === 'star_close').length
+      if (classifierOpenSamples) classifierOpenSamples.textContent = String(openCount)
+      if (classifierCloseSamples) classifierCloseSamples.textContent = String(closeCount)
+      if (classifierLoadStatus) classifierLoadStatus.textContent = `Loaded / Ready · 2 classes · ${classifier.samples.length} samples.`
+      classifierLoadButton.textContent = 'Reload Classifier'
+      renderClassifierContext()
+      if (classifierRunStatus && classifierContext) classifierRunStatus.textContent = 'Classifier ready. Run the selected unseen input.'
+    } catch (error) {
+      starJumpClassifier = null
+      if (classifierOpenSamples) classifierOpenSamples.textContent = '—'
+      if (classifierCloseSamples) classifierCloseSamples.textContent = '—'
+      if (classifierLoadStatus) classifierLoadStatus.textContent = error instanceof Error ? `Load failed: ${error.message}` : 'Classifier load failed.'
+      classifierLoadButton.textContent = 'Load Classifier'
+      renderClassifierContext()
+    } finally {
+      classifierLoadButton.disabled = false
+    }
+  })
+
+  classifierRunButton?.addEventListener('click', async () => {
+    if (!starJumpClassifier || !classifierContext) return
+    if (!video.videoWidth || !video.videoHeight) {
+      if (classifierRunStatus) classifierRunStatus.textContent = 'Wait for the selected Clip metadata to load, then try again.'
+      return
+    }
+    classifierRunButton.disabled = true
+    if (classifierRunStatus) classifierRunStatus.textContent = 'Classifying detected Raw Pose frames…'
+    try {
+      const rawPose = await loadClassifierRawPose()
+      classifierFrames = classifyUnseenStarJumpFrames({
+        frames: rawPose.frames,
+        frameWidth: video.videoWidth,
+        frameHeight: video.videoHeight,
+        classifier: starJumpClassifier,
+      })
+      renderClassifierResults()
+      if (classifierRunStatus) classifierRunStatus.textContent = `Complete · ${classifierFrames.length} classified frames · click a transition to inspect it.`
+    } catch (error) {
+      classifierFrames = []
+      renderClassifierResults()
+      if (classifierRunStatus) classifierRunStatus.textContent = error instanceof Error ? error.message : 'Classifier run failed.'
+    } finally {
+      renderClassifierContext()
+    }
+  })
+
+  classifierTabPanel?.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-classifier-seek]')
+    if (!target) return
+    const seekMs = Number(target.dataset.classifierSeek)
+    if (!Number.isFinite(seekMs) || !Number.isFinite(video.duration)) return
+    video.currentTime = Math.min(video.duration, Math.max(0, seekMs / 1000))
+    current.textContent = formatVideoTime(video.currentTime)
+    video.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+  renderClassifierContext()
+
   const restoreCurrentServerVideo = () => {
     clearHarvestContext()
+    clearClassifierInput()
     cleanupPoseReplay()
     if (!currentServerAsset) return
     selectedFilename = currentServerAsset.name
@@ -1252,7 +1499,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
                       <td><div class="history-row-actions">
                         <a href="${escapeHtml(serverVideoUrl(poseRun.relativePath))}" target="_blank" rel="noopener">Open</a>
                         <button type="button" data-history-action="copy-pose-path" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Copy</button>
-                        ${layoutMode === 'video-v2' ? `<button type="button" data-history-action="replay-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Replay</button><button type="button" data-history-action="build-llm-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}"${compressingPoseRunIds.has(poseRun.poseRunId) ? ' disabled' : ''}>${compressingPoseRunIds.has(poseRun.poseRunId) ? 'Building…' : 'Build LLM'}</button><button type="button" class="danger-action" data-history-action="delete-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Delete</button>` : ''}
+                        ${layoutMode === 'video-v2' ? `<button type="button" data-history-action="replay-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Replay</button><button type="button" data-history-action="use-classifier" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Use for Classifier</button><button type="button" data-history-action="build-llm-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}"${compressingPoseRunIds.has(poseRun.poseRunId) ? ' disabled' : ''}>${compressingPoseRunIds.has(poseRun.poseRunId) ? 'Building…' : 'Build LLM'}</button><button type="button" class="danger-action" data-history-action="delete-pose" data-history-id="${escapeHtml(record.id)}" data-pose-run-id="${escapeHtml(poseRun.poseRunId)}">Delete</button>` : ''}
                       </div></td>
                     </tr>
                   `).join('')}</tbody>
@@ -1469,6 +1716,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
   const openServerAsset = async (asset: ServerVideoAsset, downloadedSourceUrl?: string) => {
     clearHarvestContext()
+    clearClassifierInput()
     cleanupPoseReplay()
     cleanupVideoObjectUrl()
     const storedRecord = videoLibrary.videos.find((record) => record.videoId === asset.videoId)
@@ -1771,6 +2019,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
   fileInput.addEventListener('change', async () => {
     clearHarvestContext()
+    clearClassifierInput()
     const file = fileInput.files?.[0]
     cleanupPoseReplay()
     cleanupVideoObjectUrl()
@@ -2062,8 +2311,24 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       rebuildCurrentVideoRecord()
       const updatedRecord = currentVideoRecord?.clips.find((item) => item.id === record.id)
       if (!updatedRecord) return
+      clearClassifierInput()
       setHarvestContext(updatedRecord, poseRun)
       await startPoseReplay(updatedRecord, poseRun)
+      return
+    }
+
+    if (action === 'use-classifier') {
+      const poseRun = button.dataset.poseRunId
+        ? videoLibrary.poseRuns.find((run) => run.poseRunId === button.dataset.poseRunId && run.clipId === record.clipId)
+        : undefined
+      if (!poseRun) return
+      rebuildCurrentVideoRecord()
+      const updatedRecord = currentVideoRecord?.clips.find((item) => item.id === record.id)
+      if (!updatedRecord) return
+      clearHarvestContext()
+      setClassifierContext(updatedRecord, poseRun)
+      await startPoseReplay(updatedRecord, poseRun)
+      classifierTab?.click()
       return
     }
 
@@ -2145,6 +2410,8 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       try {
         const storedLibrary = await videoStorage.deletePoseRun(record.videoId, record.clipId, poseRun.poseRunId)
         applyStoredLibrary(storedLibrary)
+        if (harvestContext?.poseRun.poseRunId === poseRun.poseRunId) clearHarvestContext()
+        if (classifierContext?.poseRun.poseRunId === poseRun.poseRunId) clearClassifierInput()
         historyStatus.textContent = `Deleted Pose Run ${poseRun.poseRunId}.`
       } catch (error) {
         await restoreServerLibrary()
@@ -2205,6 +2472,8 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
       try {
         if (layoutMode === 'video-v2') {
           applyStoredLibrary(await videoStorage.deleteClip(record.videoId, record.clipId))
+          if (harvestContext?.clipId === record.clipId) clearHarvestContext()
+          if (classifierContext?.clipId === record.clipId) clearClassifierInput()
         } else {
           currentVideoRecord.clips = currentVideoRecord.clips.filter((item) => item.id !== record.id)
         }
