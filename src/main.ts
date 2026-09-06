@@ -12,6 +12,7 @@ import {
   type BatchRowStatus,
 } from './batch-dataset-input'
 import { analyzePoseVideo } from './pose-video-analyzer'
+import { classifierVoteDebug, nearestClassifiedFrame } from './classifier-score-debug'
 import { FullBodyPoseEmbedder, PoseClassifier } from './pose-classifier'
 import { createPoseReplay, loadPoseReplayData, type PoseReplaySession } from './pose-replay'
 import {
@@ -599,8 +600,15 @@ const moveVideoToolsIntoV2 = () => {
       <h3 id="classifier-summary-title">Result Summary</h3>
       <div id="classifier-summary" class="classifier-summary"><p>No results yet.</p></div>
     </section>
+    <section class="classifier-lab-section" aria-labelledby="classifier-detail-title">
+      <h3 id="classifier-detail-title">Classification Detail</h3>
+      <button id="classifier-inspect-current" type="button" disabled>Inspect Current Frame</button>
+      <p class="classifier-note">KNN winner is the larger final neighbor vote count; EMA winner is the larger smoothed value. There is no additional confidence threshold.</p>
+      <div id="classifier-detail" class="classifier-detail"><p>Click an EMA transition or inspect the current frame to see classifier scores.</p></div>
+    </section>
     <section class="classifier-lab-section" aria-labelledby="classifier-transitions-title">
       <h3 id="classifier-transitions-title">EMA Transitions</h3>
+      <p class="classifier-note">A transition marks where the smoothed winner changed; it is not necessarily a fully-open or fully-closed keyframe.</p>
       <div class="classifier-results-wrap">
         <table class="classifier-results">
           <thead><tr><th>Timestamp</th><th>State</th><th>Action</th></tr></thead>
@@ -865,6 +873,8 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const classifierFrameCount = document.querySelector<HTMLElement>('#classifier-frame-count')
   const classifierDetectedCount = document.querySelector<HTMLElement>('#classifier-detected-count')
   const classifierSummary = document.querySelector<HTMLElement>('#classifier-summary')
+  const classifierInspectCurrentButton = document.querySelector<HTMLButtonElement>('#classifier-inspect-current')
+  const classifierDetail = document.querySelector<HTMLElement>('#classifier-detail')
   const classifierTransitionsBody = document.querySelector<HTMLTableSectionElement>('#classifier-transitions-body')
   let selectedFilename = ''
   let currentVideoRecord: VideoUiRecord | null = null
@@ -886,6 +896,7 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   let starJumpClassifier: PoseClassifier | null = null
   let classifierContext: ClassifierUiContext | null = null
   let classifierFrames: StarJumpFrameClassification[] = []
+  let selectedClassifierFrame: StarJumpFrameClassification | null = null
   let trainingSampleProvenance: TrainingSampleProvenance[] = []
   const batchRows: BatchInputRow[] = layoutMode === 'video-v2'
     ? [createBatchInputRow(`batch-${String(nextBatchRowId++).padStart(3, '0')}`)]
@@ -1199,6 +1210,49 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     if (classifierFrameCount) classifierFrameCount.textContent = classifierContext ? String(classifierContext.poseRun.frameCount) : '—'
     if (classifierDetectedCount) classifierDetectedCount.textContent = classifierContext ? String(classifierContext.poseRun.detectedPoseFrameCount) : '—'
     if (classifierRunButton) classifierRunButton.disabled = !starJumpClassifier || !classifierContext
+    if (classifierInspectCurrentButton) classifierInspectCurrentButton.disabled = !classifierContext || !classifierFrames.length
+  }
+
+  const renderClassifierDetail = () => {
+    if (!classifierDetail) return
+    const frame = selectedClassifierFrame
+    if (!frame) {
+      classifierDetail.innerHTML = '<p>Click an EMA transition or inspect the current frame to see classifier scores.</p>'
+      return
+    }
+    const votes = classifierVoteDebug(frame)
+    const voteShare = votes.winnerVoteShare === null ? '—' : votes.winnerVoteShare.toFixed(2)
+    const rawDecision = frame.rawWinner === 'star_open'
+      ? `${frame.rawOpen} &gt; ${frame.rawClose} → star_open`
+      : `${frame.rawClose} ≥ ${frame.rawOpen} → star_close`
+    const emaDecision = frame.emaWinner === 'star_open'
+      ? `${frame.emaOpen.toFixed(2)} &gt; ${frame.emaClose.toFixed(2)} → star_open`
+      : `${frame.emaClose.toFixed(2)} ≥ ${frame.emaOpen.toFixed(2)} → star_close`
+    classifierDetail.innerHTML = `
+      <dl class="classifier-detail-identity">
+        <div><dt>Timestamp</dt><dd>${(frame.videoTimestampMs / 1000).toFixed(3)}s</dd></div>
+        <div><dt>Frame</dt><dd>${frame.frameIndex}</dd></div>
+        <div><dt>EMA State</dt><dd>${frame.emaWinner}</dd></div>
+      </dl>
+      <div class="classifier-score-groups">
+        <section>
+          <strong>Raw KNN</strong>
+          <span>star_open votes: ${frame.rawOpen}</span>
+          <span>star_close votes: ${frame.rawClose}</span>
+          <span>winner: ${frame.rawWinner}</span>
+          <span>KNN vote share: ${voteShare} (${votes.winnerVotes}/${votes.totalVotes})</span>
+          <small>Neighbor vote proportion; not a calibrated probability.</small>
+          <code>${rawDecision}</code>
+        </section>
+        <section>
+          <strong>EMA</strong>
+          <span>star_open: ${frame.emaOpen.toFixed(2)}</span>
+          <span>star_close: ${frame.emaClose.toFixed(2)}</span>
+          <span>winner: ${frame.emaWinner}</span>
+          <code>${emaDecision}</code>
+        </section>
+      </div>
+    `
   }
 
   const renderClassifierResults = () => {
@@ -1238,8 +1292,10 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
   const clearClassifierInput = () => {
     classifierContext = null
     classifierFrames = []
+    selectedClassifierFrame = null
     renderClassifierContext()
     renderClassifierResults()
+    renderClassifierDetail()
     if (classifierRunStatus) classifierRunStatus.textContent = starJumpClassifier
       ? 'Select an unseen Raw Pose Run.'
       : 'Load the classifier and select an unseen input.'
@@ -1250,7 +1306,9 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     classifierContext = { videoId: record.videoId, clipId: record.clipId, poseRun }
     if (!unchanged) {
       classifierFrames = []
+      selectedClassifierFrame = null
       renderClassifierResults()
+      renderClassifierDetail()
     }
     renderClassifierContext()
     if (classifierRunStatus) classifierRunStatus.textContent = starJumpClassifier
@@ -1367,11 +1425,15 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
         frameHeight: video.videoHeight,
         classifier: starJumpClassifier,
       })
+      selectedClassifierFrame = null
       renderClassifierResults()
+      renderClassifierDetail()
       if (classifierRunStatus) classifierRunStatus.textContent = `Complete · ${classifierFrames.length} classified frames · click a transition to inspect it.`
     } catch (error) {
       classifierFrames = []
+      selectedClassifierFrame = null
       renderClassifierResults()
+      renderClassifierDetail()
       if (classifierRunStatus) classifierRunStatus.textContent = error instanceof Error ? error.message : 'Classifier run failed.'
     } finally {
       renderClassifierContext()
@@ -1425,6 +1487,20 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
 
   classifierTabPanel?.addEventListener('click', async (event) => {
     const clicked = event.target as HTMLElement
+    if (clicked.closest('#classifier-inspect-current')) {
+      if (!classifierContext || !classifierFrames.length) return
+      const requestedTimestampMs = video.currentTime * 1000
+      if (replayingClipId !== classifierContext.clipId) {
+        clearHarvestContext()
+        await openStoredPoseReplay(classifierContext.videoId, classifierContext.clipId, classifierContext.poseRun.poseRunId)
+      }
+      const frame = nearestClassifiedFrame(classifierFrames, requestedTimestampMs)
+      if (!frame) return
+      selectedClassifierFrame = frame
+      renderClassifierDetail()
+      await seekVideoAfterMetadata(frame.videoTimestampMs)
+      return
+    }
     const toggle = clicked.closest<HTMLButtonElement>('[data-training-samples-toggle]')
     if (toggle) {
       const list = document.querySelector<HTMLElement>(toggle.dataset.trainingSamplesToggle === 'star_open'
@@ -1455,13 +1531,18 @@ const renderVideo = async (layoutMode: 'video' | 'video-v2' = 'video') => {
     if (!transitionTarget) return
     const seekMs = Number(transitionTarget.dataset.classifierSeek)
     if (!Number.isFinite(seekMs)) return
+    const frame = nearestClassifiedFrame(classifierFrames, seekMs)
+    if (!frame) return
+    selectedClassifierFrame = frame
+    renderClassifierDetail()
     if (classifierContext && replayingClipId !== classifierContext.clipId) {
       clearHarvestContext()
       await openStoredPoseReplay(classifierContext.videoId, classifierContext.clipId, classifierContext.poseRun.poseRunId)
     }
-    await seekVideoAfterMetadata(seekMs)
+    await seekVideoAfterMetadata(frame.videoTimestampMs)
   })
   renderClassifierContext()
+  renderClassifierDetail()
 
   const restoreCurrentServerVideo = () => {
     clearHarvestContext()

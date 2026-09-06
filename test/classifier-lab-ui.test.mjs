@@ -27,7 +27,7 @@ test('Raw Pose Run selection and classification reuse the existing unseen pipeli
   assert.match(source, /classifyUnseenStarJumpFrames\(\{[\s\S]*classifier: starJumpClassifier/)
   assert.match(source, /summarizeUnseenStarJump\(classifierFrames\)/)
   assert.match(source, /data-classifier-seek=/)
-  assert.match(source, /video\.currentTime = Math\.min\(video\.duration, Math\.max\(0, seekMs \/ 1000\)\)/)
+  assert.match(source, /video\.currentTime = Math\.min\(video\.duration, Math\.max\(0, videoTimestampMs \/ 1000\)\)/)
 })
 
 test('Training Set exposes expandable provenance rows that open Pose Replay and seek by Raw Pose timestamp', () => {
@@ -38,4 +38,21 @@ test('Training Set exposes expandable provenance rows that open Pose Replay and 
   assert.match(source, /action[^]*data-training-sample=/i)
   assert.match(source, /openStoredPoseReplay[\s\S]*startPoseReplay\(clip, storedPoseRun\)/)
   assert.match(source, /inspectTrainingSample[\s\S]*openStoredPoseReplay\(sample\.videoId, sample\.clipId, sample\.poseRunId\)[\s\S]*seekVideoAfterMetadata\(sample\.videoTimestampMs\)/)
+})
+
+test('Classification Detail renders raw votes, vote share, EMA values, and has no invented threshold', () => {
+  assert.match(source, /id="classifier-detail-title">Classification Detail<\/h3>/)
+  assert.match(source, /id="classifier-inspect-current"[^>]*>Inspect Current Frame<\/button>/)
+  assert.match(source, /star_open votes: \$\{frame\.rawOpen\}/)
+  assert.match(source, /star_close votes: \$\{frame\.rawClose\}/)
+  assert.match(source, /KNN vote share: \$\{voteShare\}/)
+  assert.match(source, /Neighbor vote proportion; not a calibrated probability\./)
+  assert.match(source, /star_open: \$\{frame\.emaOpen\.toFixed\(2\)\}/)
+  assert.match(source, /star_close: \$\{frame\.emaClose\.toFixed\(2\)\}/)
+  assert.match(source, /There is no additional confidence threshold\./)
+})
+
+test('transition and current-frame inspection select the nearest classified frame while keeping seek behavior', () => {
+  assert.match(source, /clicked\.closest\('#classifier-inspect-current'\)[\s\S]*nearestClassifiedFrame\(classifierFrames, requestedTimestampMs\)[\s\S]*selectedClassifierFrame = frame[\s\S]*renderClassifierDetail\(\)/)
+  assert.match(source, /transitionTarget[\s\S]*nearestClassifiedFrame\(classifierFrames, seekMs\)[\s\S]*selectedClassifierFrame = frame[\s\S]*renderClassifierDetail\(\)[\s\S]*seekVideoAfterMetadata\(frame\.videoTimestampMs\)/)
 })

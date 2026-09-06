@@ -270,11 +270,22 @@ th:last-child, td:last-child { padding-right: 0; }
 .classifier-training-samples-table tbody tr[data-training-sample]:hover { background: #f5f1e9; }
 .classifier-lab-panel button { min-height: 30px; padding: 0 7px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'DM Mono', monospace; font-size: 0.52rem; }
 #classifier-load, #classifier-run { width: 100%; margin-top: 9px; }
+#classifier-inspect-current { width: 100%; }
 .classifier-context { display: grid; gap: 5px; margin: 0; }
 .classifier-context div, .classifier-summary dl div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; }
 .classifier-context dt, .classifier-summary dt { color: var(--muted); font-size: 0.54rem; text-transform: uppercase; }
 .classifier-context dd, .classifier-summary dd { overflow: hidden; margin: 0; font-family: 'DM Mono', monospace; font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
 .classifier-summary dl { display: grid; gap: 4px; margin: 0 0 9px; }
+.classifier-detail { margin-top: 9px; }
+.classifier-detail > p { margin: 0; color: var(--muted); font-size: 0.58rem; line-height: 1.45; }
+.classifier-detail-identity { display: grid; gap: 4px; margin: 0 0 8px; }
+.classifier-detail-identity div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; }
+.classifier-detail-identity dt { color: var(--muted); font-size: 0.54rem; text-transform: uppercase; }
+.classifier-detail-identity dd { margin: 0; font-family: 'DM Mono', monospace; font-size: 0.58rem; }
+.classifier-score-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.classifier-score-groups section { display: grid; gap: 4px; min-width: 0; padding: 7px; border: 1px solid var(--line); font-family: 'DM Mono', monospace; font-size: 0.5rem; line-height: 1.35; }
+.classifier-score-groups small { color: var(--muted); font-size: 0.45rem; }
+.classifier-score-groups code { overflow-wrap: anywhere; color: var(--accent); font-size: 0.47rem; }
 .classifier-winner-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .classifier-winner-summary div { display: grid; gap: 3px; padding: 7px; border: 1px solid var(--line); font-family: 'DM Mono', monospace; font-size: 0.53rem; }
 .classifier-results-wrap { width: 100%; overflow-x: auto; }
