@@ -1,3 +1,4 @@
+import { publishRingFacts } from './ring-infra-state'
 import { locateFeet, usableRing, type FootRingState } from './ring-feet-state'
 import { adaptGeminiRings, adaptLegacyRing, type RingDetectionResult, type RingStrategy } from './ring-detection-result'
 import { fromClient } from './ring-llm-coordinates'
@@ -259,8 +260,15 @@ new ResizeObserver(() => updateRingDebug()).observe(view)
 document.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
   .addEventListener('scroll', () => updateRingDebug(), { passive: true })
 
+function publishFeetFacts() {
+  publishRingFacts({ ringIds: (detection?.rings ?? []).filter(usableRing).map(r => r.id),
+    leftFootRingId: feetState.leftFootRingId, rightFootRingId: feetState.rightFootRingId,
+    leftFootStatus: feetState.leftFoot.status, rightFootStatus: feetState.rightFoot.status })
+}
+
 function unknown() {
   feetState = locateFeet(null, null, detection?.rings ?? null)
+  publishFeetFacts()
   leftLabel.textContent = 'LEFT: UNKNOWN'
   rightLabel.textContent = 'RIGHT: UNKNOWN'
   leftLabel.dataset.state = rightLabel.dataset.state = 'UNKNOWN'
@@ -350,6 +358,7 @@ function render(landmarks: NormalizedLandmark[]) {
     context.stroke()
   }
   feetState = locateFeet(footPoint(landmarks, 29, 31), footPoint(landmarks, 30, 32), detection?.rings ?? null)
+  publishFeetFacts()
   showFoot(feetState.leftFoot, 'LEFT', leftLabel)
   showFoot(feetState.rightFoot, 'RIGHT', rightLabel)
   if (!document.getElementById('ring-debug')!.hidden) updateRingDebug()

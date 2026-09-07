@@ -24,3 +24,11 @@ content.remove()
 
 // Bind handlers only after every original ID is present in the mounted layout.
 await import('./ring-feet')
+
+// Composition boundary: the game subscribes to facts; infra imports no game.
+const { mountGamePanel } = await import('./games/game-panel')
+const gameHost = document.createElement('section')
+gameHost.id = 'game-panel'
+state.after(gameHost)
+const unsubscribeGame = mountGamePanel(gameHost)
+if (import.meta.hot) import.meta.hot.dispose(unsubscribeGame)
