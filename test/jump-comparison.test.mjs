@@ -45,8 +45,8 @@ test('Jump Count emits only positive to negative transitions, without baseline o
   assert.equal(result.state, 'UNKNOWN')
   assert.equal(result.event, null)
 })
-test('all three factories reset independently; shared event interpretation retains baseline semantics', () => {
-  assert.equal(JUMP_STRATEGIES.length, 3)
+test('all four factories reset independently; shared event interpretation retains baseline semantics', () => {
+  assert.equal(JUMP_STRATEGIES.length, 4)
   for (const entry of JUMP_STRATEGIES) {
     const strategy = entry.create()
     assert.equal(strategy.reset().state, 'UNKNOWN')
