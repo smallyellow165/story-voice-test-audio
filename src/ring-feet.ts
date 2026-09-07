@@ -1,11 +1,17 @@
 import { DrawingUtils, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { poseAnalysisConfig } from './pose-video-analyzer'
 import { pointInPolygon, type Point } from './ring-feet-geometry'
-import { createBaselineJumpStrategy } from './jump-baseline-strategy'
+import { JUMP_STRATEGIES, jumpResult } from './jump-strategies'
 import type { JumpSnapshot, JumpState, JumpStrategy } from './jump-strategy'
 
-// Swap this factory to compare another strategy; ring/foot logic stays untouched.
-const jumpStrategy: JumpStrategy = createBaselineJumpStrategy()
+let jumpStrategy: JumpStrategy = JUMP_STRATEGIES[0]!.create()
+const jumpSelect = document.querySelector<HTMLSelectElement>('#jump-strategy')!
+const jumpHelp = document.querySelector<HTMLElement>('#jump-help')!
+const jumpCommon = document.querySelector<HTMLElement>('#jump-common')!
+const jumpCount = document.querySelector<HTMLElement>('#jump-count')!
+let jumpEvents = 0
+JUMP_STRATEGIES.forEach((entry, i) => jumpSelect.add(new Option(entry.name, String(i))))
+jumpHelp.textContent = JUMP_STRATEGIES[0]!.help
 const jumpName = document.querySelector<HTMLElement>('#jump-name')!
 const jumpState = document.querySelector<HTMLElement>('#jump-state')!
 const jumpDebug = document.querySelector<HTMLElement>('#jump-debug')!
@@ -15,6 +21,10 @@ let jumpHistory: JumpState[] = []
 jumpName.textContent = jumpStrategy.name
 
 function showJump(result: JumpSnapshot) {
+  const common = jumpResult(result)
+  if (common.event) jumpEvents++
+  jumpCount.textContent = `JUMP COUNT: ${jumpEvents}`
+  jumpCommon.textContent = `Detected: ${common.detected ? 'YES' : 'NO'} | Jump events: ${jumpEvents}`
   jumpState.textContent = `Jump: ${result.state}`
   if (jumpHistory.at(-1) !== result.state) {
     jumpHistory = [...jumpHistory, result.state].slice(-8)
@@ -29,12 +39,20 @@ function showJump(result: JumpSnapshot) {
   }
 }
 function resetJump() {
+  jumpEvents = 0
   jumpHistory = []
   jumpEvent.textContent = 'Last event: —'
   showJump(jumpStrategy.reset())
 }
 document.querySelector<HTMLButtonElement>('#jump-reset')!.onclick = resetJump
 resetJump()
+jumpSelect.onchange = () => {
+  const selected = JUMP_STRATEGIES[Number(jumpSelect.value)]!
+  jumpStrategy = selected.create()
+  jumpName.textContent = jumpStrategy.name
+  jumpHelp.textContent = selected.help
+  resetJump() // Immediately update the large status; never touch ring/camera state.
+}
 
 type Ring = {
   detected: boolean

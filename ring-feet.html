@@ -11,7 +11,7 @@
       button { padding: 10px 14px; margin: 0 6px 8px 0; cursor: pointer; }
       button:disabled { cursor: default; opacity: .5; }
       canvas { display: block; width: 100%; height: auto; background: #090e14; border-radius: 10px; }
-      .status-board { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 16px; margin: 20px 0 24px; }
+      .status-board { display: grid; grid-template-columns: 1fr 1fr 1.25fr 1fr; gap: 16px; margin: 20px 0 24px; }
       .status-card { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 144px; padding: 24px 16px; border: 2px solid #bca337; border-radius: 12px; background: #232b2b; color: #ffe45c; font-size: clamp(26px, 2.7vw, 52px); font-weight: 800; text-align: center; line-height: 1.25; overflow-wrap: anywhere; }
       .workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 28px; align-items: start; }
       .camera-panel, .controls { min-width: 0; }
@@ -23,6 +23,7 @@
       #jump-debug { font: 12px/1.6 monospace; overflow-wrap: anywhere; color: #9fadb9; }
       @media (max-width: 1000px) {
         body { padding: 0 16px; }
+        .status-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .workspace { grid-template-columns: 1fr; }
         .status-card { min-height: 112px; }
       }
@@ -38,6 +39,7 @@
       <div class="status-card"><span id="left">LEFT: UNKNOWN</span></div>
       <div class="status-card"><span id="right">RIGHT: UNKNOWN</span></div>
       <div class="status-card"><strong id="jump-state">Jump: UNKNOWN</strong></div>
+      <div class="status-card"><strong id="jump-count">JUMP COUNT: 0</strong></div>
     </section>
     <main class="workspace">
     <div class="camera-panel">
@@ -74,9 +76,14 @@
     <p id="status" role="status">尚未启动。首次加载 Pose 模型需要网络。</p>
     <p id="ring-status">尚未检测圈。移动摄像头或圈后请重新检测。</p>
     <div class="jump-details">
+      <p><label for="jump-strategy">Jump Strategy</label>
+        <select id="jump-strategy" style="max-width: 100%; padding: 8px; font: inherit"></select>
+      </p>
       <p>Strategy: <span id="jump-name"></span></p>
-      <button id="jump-reset">Reset Jump Baseline</button>
-      <p>先直立站稳约 1 秒再原地双脚跳。换位置或移动摄像头后重新校准；这是图像位移估计，不代表真实地面接触。</p>
+      <button id="jump-reset">Reset Jump Strategy</button>
+      <p id="jump-help"></p>
+      <p id="jump-common">Detected: NO | Jump events: 0</p>
+      <p>切换时清空当前策略历史及事件数，保留圈和摄像头。Detected 是策略当前信号，不代表已确认真实离地。</p>
       <p id="jump-event">Last event: —</p>
       <p id="jump-trace"></p>
       <p id="jump-debug"></p>
