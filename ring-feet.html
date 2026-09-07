@@ -39,6 +39,14 @@
     <p id="status" role="status">尚未启动。首次加载 Pose 模型需要网络。</p>
     <p id="ring-status">尚未检测圈。移动摄像头或圈后请重新检测。</p>
     <div class="feet"><span id="left">LEFT: UNKNOWN</span><span id="right">RIGHT: UNKNOWN</span></div>
+    <div>
+      <strong id="jump-state">Jump: UNKNOWN</strong> · <span id="jump-name"></span>
+      <button id="jump-reset">Reset Jump Baseline</button>
+      <p>先直立站稳约 1 秒再原地双脚跳。换位置或移动摄像头后重新校准；这是图像位移估计，不代表真实地面接触。</p>
+      <p id="jump-event">Last event: —</p>
+      <p id="jump-trace"></p>
+      <p id="jump-debug" style="font: 12px monospace; overflow-wrap: anywhere"></p>
+    </div>
     <video id="video" autoplay muted playsinline hidden></video>
     <canvas id="view" width="600" height="450"></canvas>
     <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>

@@ -1,6 +1,40 @@
 import { DrawingUtils, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { poseAnalysisConfig } from './pose-video-analyzer'
 import { pointInPolygon, type Point } from './ring-feet-geometry'
+import { createBaselineJumpStrategy } from './jump-baseline-strategy'
+import type { JumpSnapshot, JumpState, JumpStrategy } from './jump-strategy'
+
+// Swap this factory to compare another strategy; ring/foot logic stays untouched.
+const jumpStrategy: JumpStrategy = createBaselineJumpStrategy()
+const jumpName = document.querySelector<HTMLElement>('#jump-name')!
+const jumpState = document.querySelector<HTMLElement>('#jump-state')!
+const jumpDebug = document.querySelector<HTMLElement>('#jump-debug')!
+const jumpEvent = document.querySelector<HTMLElement>('#jump-event')!
+const jumpTrace = document.querySelector<HTMLElement>('#jump-trace')!
+let jumpHistory: JumpState[] = []
+jumpName.textContent = jumpStrategy.name
+
+function showJump(result: JumpSnapshot) {
+  jumpState.textContent = `Jump: ${result.state}`
+  if (jumpHistory.at(-1) !== result.state) {
+    jumpHistory = [...jumpHistory, result.state].slice(-8)
+    jumpTrace.textContent = jumpHistory.join(' → ')
+  }
+  jumpDebug.textContent = `${result.reason} | ` + Object.entries(result.debug)
+    .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(3) : value ?? '—'}`).join(' | ')
+  if (result.event) {
+    const event = result.event
+    jumpEvent.textContent = `Last event: ${event.type} @ ${Math.round(event.timestampMs)} ms`
+      + (event.durationMs === undefined ? '' : ` | cycle=${Math.round(event.durationMs)} ms`)
+  }
+}
+function resetJump() {
+  jumpHistory = []
+  jumpEvent.textContent = 'Last event: —'
+  showJump(jumpStrategy.reset())
+}
+document.querySelector<HTMLButtonElement>('#jump-reset')!.onclick = resetJump
+resetJump()
 
 type Ring = {
   detected: boolean
@@ -43,6 +77,7 @@ function unknown() {
 }
 
 function stop(message = '摄像头已停止。') {
+  resetJump()
   session++
   running = false
   busy = false
@@ -170,6 +205,8 @@ startButton.onclick = async () => {
         void tick()
       } else if (data.type === 'RESULT') {
         render(data.landmarks[0] ?? [])
+        showJump(jumpStrategy.update({ timestampMs: data.videoTimestampMs,
+          landmarks: data.landmarks[0] ?? [] }))
         busy = false
       } else if (data.type === 'ERROR') {
         stop(`Pose 错误：${data.message}`)
