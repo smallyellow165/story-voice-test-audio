@@ -56,6 +56,7 @@
       <span id="voice-status" role="status">Voice: off</span>
     </p>
     <p id="voice-heard">说 “detect ring”（优先英文）；也匹配识别结果中的“检测圈”或“识别圈”。</p>
+    <p>录屏语音： “start screencast” / “start recording” 开始；“stop screencast” / “stop recording” 停止并下载。请先手动开始 Screen Capture。</p>
     <p>
       <button id="screen-start">Start Screen Capture</button>
       <button id="screen-stop" disabled>Stop Screen Capture</button>
@@ -63,6 +64,12 @@
       <span id="screen-status" role="status">Screen Capture: off</span>
     </p>
     <p>手动开始共享并选择当前 Chrome tab，之后说 “screenshot” 或 “take screenshot” 下载整个可见页面的 PNG。</p>
+    <p>
+      <button id="screencast-start">Start Screencast</button>
+      <button id="screencast-stop" disabled>Stop Screencast</button>
+      <span id="screencast-status" role="status">Screencast: off</span>
+    </p>
+    <p>先开始 Screen Capture，再录制已共享页面的画面（无音频）。Stop Screencast 后下载视频；Screenshot 仍单独保存 PNG。离开页面前请先停止录制并下载。</p>
     <video id="screen-video" muted playsinline hidden></video>
     <p id="status" role="status">尚未启动。首次加载 Pose 模型需要网络。</p>
     <p id="ring-status">尚未检测圈。移动摄像头或圈后请重新检测。</p>

@@ -279,8 +279,88 @@ const screenSupported = !!navigator.mediaDevices?.getDisplayMedia
 let screenStream: MediaStream | null = null
 let screenSession = 0
 let screenshotBusy = false
+const screencastStart = document.querySelector<HTMLButtonElement>('#screencast-start')!
+const screencastStop = document.querySelector<HTMLButtonElement>('#screencast-stop')!
+const screencastStatus = document.querySelector<HTMLElement>('#screencast-status')!
+const recorderSupported = typeof MediaRecorder !== 'undefined'
+let screencast: MediaRecorder | null = null
+
+function stopScreencast() {
+  if (!screencast || screencast.state === 'inactive') return
+  screencastStatus.textContent = 'Screencast: finishing…'
+  screencastStop.disabled = true
+  screencast.stop() // Final dataavailable arrives before onstop; keep the shared tracks alive.
+}
+
+function startScreencast() {
+  if (!recorderSupported || screencast) return
+  const tracks = screenStream?.getVideoTracks().filter(track => track.readyState === 'live') ?? []
+  if (!tracks.length) {
+    screencastStatus.textContent = 'Screen capture not started'
+    return
+  }
+  try {
+    const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4']
+      .find(type => MediaRecorder.isTypeSupported(type))
+    // Reuse only the capture's video tracks, never webcam or microphone audio.
+    const recorder = new MediaRecorder(new MediaStream(tracks), mimeType ? { mimeType } : undefined)
+    const chunks: Blob[] = []
+    const started = new Date().toISOString().replace(/[:.]/g, '-')
+    let failed = false
+    recorder.ondataavailable = event => {
+      if (event.data.size) chunks.push(event.data)
+    }
+    recorder.onerror = () => {
+      failed = true
+      screencastStatus.textContent = 'Screencast: recording error; attempting partial download'
+      if (recorder.state !== 'inactive') recorder.stop()
+    }
+    recorder.onstop = () => {
+      try {
+        if (!chunks.length) throw new Error('No video data recorded')
+        const type = recorder.mimeType || chunks[0]!.type
+        const blob = new Blob(chunks, { type })
+        const extension = type.includes('mp4') ? 'mp4' : 'webm'
+        const filename = `ring-feet-screencast-${started}.${extension}`
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        document.body.append(link)
+        try {
+          link.click()
+          screencastStatus.textContent = `${failed ? 'Partial video' : 'Screencast'} download requested: ${filename}`
+        } finally {
+          link.remove()
+          window.setTimeout(() => URL.revokeObjectURL(url), 10000)
+        }
+      } catch (error) {
+        screencastStatus.textContent = `Screencast failed: ${String(error)}`
+      } finally {
+        chunks.length = 0
+        screencast = null
+        screencastStart.disabled = false
+        screencastStop.disabled = true
+      }
+    }
+    recorder.start(1000)
+    screencast = recorder
+    screencastStart.disabled = true
+    screencastStop.disabled = false
+    screencastStatus.textContent = 'Screencast: recording (video only)'
+  } catch (error) {
+    screencastStatus.textContent = `Screencast failed: ${String(error)}`
+  }
+}
+screencastStart.onclick = startScreencast
+screencastStop.onclick = stopScreencast
+if (!recorderSupported) {
+  screencastStart.disabled = true
+  screencastStatus.textContent = 'MediaRecorder not supported'
+}
 
 function stopScreenCapture(message = 'Screen Capture: off') {
+  stopScreencast()
   screenSession++
   screenStream?.getTracks().forEach(track => track.stop())
   screenStream = null
@@ -397,6 +477,8 @@ let recognition: VoiceRecognition | null = null
 let voiceRestart: number | undefined
 let lastVoiceTrigger = -Infinity
 let lastScreenshotTrigger = -Infinity
+let lastScreencastStartTrigger = -Infinity
+let lastScreencastStopTrigger = -Infinity
 
 function stopVoice(message = 'Voice: off') {
   voiceEnabled = false
@@ -433,6 +515,15 @@ function listen() {
         const command = /\bdetect ring\b/.test(normalized)
           || normalized.includes('检测圈') || normalized.includes('识别圈')
         const now = performance.now()
+        // Separate start/stop cooldowns allow stopping immediately after starting.
+        if (/\bstart (?:screencast|recording)\b/.test(normalized) && now - lastScreencastStartTrigger >= 3000) {
+          lastScreencastStartTrigger = now
+          startScreencast()
+        }
+        if (/\bstop (?:screencast|recording)\b/.test(normalized) && now - lastScreencastStopTrigger >= 3000) {
+          lastScreencastStopTrigger = now
+          stopScreencast()
+        }
         // Independent command and cooldown: "take screenshot" matches once,
         // and screenshots work even when the camera is stopped or detecting.
         if (/\bscreenshot\b/.test(normalized) && now - lastScreenshotTrigger >= 3000) {
