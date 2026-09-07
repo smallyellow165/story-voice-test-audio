@@ -1,3 +1,4 @@
+import { detectRingsWithLlm } from './server/ring-llm.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -377,6 +378,17 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/ring-llm/detect') {
+    if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use POST' }); return }
+    try {
+      const result = await detectRingsWithLlm(await readJsonBody(request, 13 * 1024 * 1024))
+      sendJson(response, result.error ? 502 : 200, result)
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Ring detection failed. Check server Google Cloud authentication/configuration.' })
+    }
+    return
+  }
 
   if (url.pathname === screencastEndpoint) {
     await screencastMiddleware(request, response, () => {})
