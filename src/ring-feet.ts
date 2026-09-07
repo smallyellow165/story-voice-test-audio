@@ -3,6 +3,15 @@ import { poseAnalysisConfig } from './pose-video-analyzer'
 import { pointInPolygon, type Point } from './ring-feet-geometry'
 import { JUMP_STRATEGIES, jumpResult } from './jump-strategies'
 import type { JumpSnapshot, JumpState, JumpStrategy } from './jump-strategy'
+import { createJumpIntoRing, type LandingSnapshot } from './jump-into-ring'
+
+const landingCheck = createJumpIntoRing()
+const landingStatus = document.querySelector<HTMLElement>('#jump-into-ring')!
+const landingDebug = document.querySelector<HTMLElement>('#landing-debug')!
+function showLanding(result: LandingSnapshot) {
+  landingStatus.textContent = `JUMP INTO RING: ${result.state}`
+  landingDebug.textContent = `${result.reason} | stable=${Math.round(result.stableMs)} ms`
+}
 
 let jumpStrategy: JumpStrategy = JUMP_STRATEGIES[0]!.create()
 const jumpSelect = document.querySelector<HTMLSelectElement>('#jump-strategy')!
@@ -39,6 +48,7 @@ function showJump(result: JumpSnapshot) {
   }
 }
 function resetJump() {
+  showLanding(landingCheck.reset())
   jumpEvents = 0
   jumpHistory = []
   jumpEvent.textContent = 'Last event: —'
@@ -223,8 +233,18 @@ startButton.onclick = async () => {
         void tick()
       } else if (data.type === 'RESULT') {
         render(data.landmarks[0] ?? [])
-        showJump(jumpStrategy.update({ timestampMs: data.videoTimestampMs,
-          landmarks: data.landmarks[0] ?? [] }))
+        const pose = data.landmarks[0] ?? []
+        const jump = jumpStrategy.update({ timestampMs: data.videoTimestampMs, landmarks: pose })
+        showJump(jump)
+        const left = footPoint(pose, 29, 31), right = footPoint(pose, 30, 32)
+        // Same frame/foot points and already-rendered IN/OUT decisions. Normalize
+        // both axes by width so the stability tolerance is 4.8px at width 600.
+        showLanding(landingCheck.update({ timestampMs: data.videoTimestampMs,
+          jumpEvent: jumpResult(jump).event, ringReady: ring !== null,
+          left: left ? [left[0] / view.width, left[1] / view.width] : null,
+          right: right ? [right[0] / view.width, right[1] / view.width] : null,
+          leftIn: leftLabel.dataset.state === 'UNKNOWN' ? null : leftLabel.dataset.state === 'IN',
+          rightIn: rightLabel.dataset.state === 'UNKNOWN' ? null : rightLabel.dataset.state === 'IN' }))
         busy = false
       } else if (data.type === 'ERROR') {
         stop(`Pose 错误：${data.message}`)
@@ -251,6 +271,7 @@ async function detectRing() {
   upload = controller
   detectButton.disabled = true
   ring = null // A failed re-detection must not silently retain an old polygon.
+  showLanding(landingCheck.reset()) // Changing the target cancels pending/old results.
   unknown()
   ringStatus.textContent = '正在检测当前这一帧…'
   const timeout = window.setTimeout(() => controller.abort(), 15000)
