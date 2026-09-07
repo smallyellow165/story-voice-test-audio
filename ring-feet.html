@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>单圈 · 双脚 IN / OUT</title>
+    <style>
+      body { margin: 24px auto; padding: 0 16px; max-width: 900px; font-family: system-ui, sans-serif; background: #16202b; color: #edf3f8; }
+      h1 { font-size: 24px; }
+      button { padding: 10px 18px; margin-right: 8px; cursor: pointer; }
+      button:disabled { cursor: default; opacity: .5; }
+      canvas { display: block; width: 100%; height: auto; margin-top: 16px; background: #090e14; }
+      .feet { display: flex; gap: 32px; font-size: 26px; font-weight: bold; margin: 16px 0; }
+      [data-state="IN"] { color: #5beba4; }
+      [data-state="OUT"] { color: #ffae91; }
+      p { line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <h1>单圈 · 双脚 IN / OUT</h1>
+    <p>固定摄像头和圈，先让圈完整露出并点击 Detect Ring，再走入圈中。左右指身体的左右侧，画面不镜像。</p>
+    <button id="start">Start Camera</button>
+    <button id="detect" disabled>Detect Ring</button>
+    <button id="stop" disabled>Stop Camera</button>
+    <p>
+      <button id="voice-start">Start Voice Control</button>
+      <button id="voice-stop" disabled>Stop Voice Control</button>
+      <span id="voice-status" role="status">Voice: off</span>
+    </p>
+    <p id="voice-heard">说 “detect ring”（优先英文）；也匹配识别结果中的“检测圈”或“识别圈”。</p>
+    <p>
+      <button id="screen-start">Start Screen Capture</button>
+      <button id="screen-stop" disabled>Stop Screen Capture</button>
+      <button id="screenshot">Screenshot</button>
+      <span id="screen-status" role="status">Screen Capture: off</span>
+    </p>
+    <p>手动开始共享并选择当前 Chrome tab，之后说 “screenshot” 或 “take screenshot” 下载整个可见页面的 PNG。</p>
+    <video id="screen-video" muted playsinline hidden></video>
+    <p id="status" role="status">尚未启动。首次加载 Pose 模型需要网络。</p>
+    <p id="ring-status">尚未检测圈。移动摄像头或圈后请重新检测。</p>
+    <div class="feet"><span id="left">LEFT: UNKNOWN</span><span id="right">RIGHT: UNKNOWN</span></div>
+    <video id="video" autoplay muted playsinline hidden></video>
+    <canvas id="view" width="600" height="450"></canvas>
+    <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+    <script type="module" src="/src/ring-feet.ts"></script>
+  </body>
+</html>
