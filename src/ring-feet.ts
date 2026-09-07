@@ -1,3 +1,4 @@
+import { locateFeet, usableRing, type FootRingState } from './ring-feet-state'
 import { adaptGeminiRings, adaptLegacyRing, type RingDetectionResult, type RingStrategy } from './ring-detection-result'
 import { fromClient } from './ring-llm-coordinates'
 import { DrawingUtils, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision'
@@ -11,7 +12,7 @@ const landingCheck = createJumpIntoRing()
 const landingStatus = document.querySelector<HTMLElement>('#jump-into-ring')!
 const landingDebug = document.querySelector<HTMLElement>('#landing-debug')!
 function showLanding(result: LandingSnapshot) {
-  landingStatus.textContent = `JUMP INTO RING: ${result.state}`
+  landingStatus.textContent = `LEGACY LANDING: ${result.state}`
   landingDebug.textContent = `${result.reason} | stable=${Math.round(result.stableMs)} ms`
 }
 
@@ -97,6 +98,11 @@ const ringModelStatus = document.querySelector<HTMLElement>('#ring-model-status'
 const ringRaw = document.querySelector<HTMLElement>('#ring-raw')!
 const ringTarget = document.querySelector<HTMLElement>('#ring-target')!
 const ringDebug = document.querySelector<HTMLElement>('#ring-coordinates')!
+let feetState = locateFeet(null, null, null)
+const historySelect = document.querySelector<HTMLSelectElement>('#ring-history')!
+const historyStatus = document.querySelector<HTMLElement>('#ring-history-status')!
+let historyId: string | null = null
+let historyListRequest = 0
 let geminiReady = false
 let probe: ReturnType<typeof fromClient> | null = null
 let ringError: string | null = null
@@ -110,20 +116,91 @@ function updateRingDebug(error?: string) {
     snapshotAndOverlayRaster: { width: view.width, height: view.height },
     viewportCssRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     mapping: 'Gemini normalized x * snapshot.width, y * snapshot.height. Same uncropped, unmirrored raster aspect as camera overlay; no DPR multiplier.',
-    activeRingId: detection?.active?.id || null,
-    selection: 'Single-ring game only; Gemini uses largest valid inner polygon. Empty polygon is display-only.',
+    historyId,
+    ...feetState,
+    membership: 'All valid inner polygons; boundary counts IN. Overlap is AMBIGUOUS, missing pose/polygon is UNKNOWN.',
+    legacyLandingRingId: detection?.active?.id || null,
     clickedNormalized: probe,
     rasterRings: detection?.rings || [], source: detection?.source || null, error: ringError,
   }, null, 2)
 }
+async function refreshHistory(selected = historySelect.value) {
+  const request = ++historyListRequest
+  try {
+    const response = await fetch('/api/ring-feet/history')
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+    if (request !== historyListRequest) return
+    historySelect.replaceChildren(...data.runs.map((run: { id: string; createdAt: string; model: string; ringCount: number }) =>
+      new Option(`${new Date(run.createdAt).toLocaleString()} · ${run.model} · ${run.ringCount} rings · ${run.id.slice(0, 8)}`, run.id)))
+    if (!data.runs.length) historySelect.add(new Option('尚无历史记录', ''))
+    if (data.runs.some((run: { id: string }) => run.id === selected)) historySelect.value = selected
+  } catch (error) {
+    if (request === historyListRequest) historyStatus.textContent = `History 列表加载失败：${String(error)}`
+  }
+}
+document.querySelector<HTMLButtonElement>('#ring-history-refresh')!.onclick = () => {
+  historyStatus.textContent = ''
+  void refreshHistory()
+}
+void refreshHistory()
+
+function applyDetection(result: RingDetectionResult) {
+  if (result.width !== capture.width || result.height !== capture.height) throw new Error('返回坐标尺寸不一致')
+  detection = result
+  ringRaw.textContent = result.rawJson
+  ringTarget.textContent = `Feet rings: ${result.rings.filter(usableRing).map(r => r.id).join(', ') || 'none'}。仅有效内边界参与脚点判断；bbox 不替代 polygon。`
+  updateRingDebug()
+}
+document.querySelector<HTMLButtonElement>('#ring-history-load')!.onclick = async () => {
+  if (!running) { historyStatus.textContent = '请先 Start Camera，等待 Pose 就绪。'; return }
+  if (upload) { historyStatus.textContent = '正在检测或恢复，请稍候。'; return }
+  if (!historySelect.value) { historyStatus.textContent = '请先选择 History。'; return }
+  const id = historySelect.value
+  const currentSession = session
+  clearRingDetection()
+  const controller = new AbortController()
+  upload = controller
+  detectButton.disabled = true
+  historyStatus.textContent = '正在恢复 History…'
+  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  try {
+    const response = await fetch(`/api/ring-feet/history/${encodeURIComponent(id)}`, { signal: controller.signal })
+    const run = await response.json()
+    if (currentSession !== session || upload !== controller) return
+    if (!response.ok) throw new Error(run.error || `HTTP ${response.status}`)
+    if (run.strategy !== 'gemini' || run.width !== capture.width || run.height !== capture.height) {
+      throw new Error('历史截图尺寸与当前 camera 不一致，请使用原画面比例或重新 Detect Ring。')
+    }
+    const result = adaptGeminiRings({ model: run.model, rings: run.rings, rawJson: run.rawJson }, capture.width, capture.height)
+    ringStrategy.value = 'gemini'
+    document.querySelector<HTMLElement>('#ring-model-control')!.hidden = false
+    if (![...ringModel.options].some(option => option.value === run.model)) ringModel.add(new Option(run.model, run.model))
+    ringModel.value = run.model
+    historyId = run.id
+    applyDetection(result)
+    ringStatus.textContent = `${run.model} · ${result.rings.length} rings · History ${run.id}。`
+    historyStatus.textContent = `已恢复 ${run.id}；未调用 Gemini。`
+  } catch (error) {
+    if (currentSession === session && upload === controller) {
+      historyStatus.textContent = `History 恢复失败：${String(error)}`
+      updateRingDebug(String(error))
+    }
+  } finally {
+    window.clearTimeout(timeout)
+    if (currentSession === session && upload === controller) { upload = null; detectButton.disabled = !running }
+  }
+}
+
 function clearRingDetection() {
   upload?.abort()
   upload = null
   detection = null
+  historyId = null
   probe = null
   ringError = null
   ringRaw.textContent = '尚未检测。'
-  ringTarget.textContent = '尚未选择游戏圈。'
+  ringTarget.textContent = '尚未检测圈。'
   showLanding(landingCheck.reset())
   unknown()
   updateRingDebug()
@@ -180,9 +257,13 @@ document.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
   .addEventListener('scroll', () => updateRingDebug(), { passive: true })
 
 function unknown() {
+  feetState = locateFeet(null, null, detection?.rings ?? null)
   leftLabel.textContent = 'LEFT: UNKNOWN'
   rightLabel.textContent = 'RIGHT: UNKNOWN'
   leftLabel.dataset.state = rightLabel.dataset.state = 'UNKNOWN'
+  delete leftLabel.dataset.ringId
+  delete rightLabel.dataset.ringId
+  updateRingDebug()
 }
 
 function stop(message = '摄像头已停止。') {
@@ -217,11 +298,14 @@ function footPoint(landmarks: NormalizedLandmark[], heel: number, toe: number): 
   return [(a.x + b.x) * view.width / 2, (a.y + b.y) * view.height / 2]
 }
 
-function showFoot(point: Point | null, side: 'LEFT' | 'RIGHT', label: HTMLElement) {
-  const ring = detection?.active
-  const state = point && ring ? (pointInPolygon(point, ring.polygon) ? 'IN' : 'OUT') : 'UNKNOWN'
-  label.textContent = `${side}: ${state}`
-  label.dataset.state = state
+function showFoot(foot: FootRingState, side: 'LEFT' | 'RIGHT', label: HTMLElement) {
+  const { point, status, ringId, matchingRingIds } = foot
+  const text = status === 'IN' ? ringId : status === 'OUT' ? 'OUT (null)'
+    : status === 'AMBIGUOUS' ? `AMBIGUOUS (${matchingRingIds.join(', ')})` : 'UNKNOWN'
+  label.textContent = `${side}: ${text}`
+  label.dataset.state = status
+  if (ringId) label.dataset.ringId = ringId
+  else delete label.dataset.ringId
   if (!point) return
   context.beginPath()
   context.arc(point[0], point[1], 6, 0, 2 * Math.PI)
@@ -246,7 +330,7 @@ function render(landmarks: NormalizedLandmark[]) {
       context.strokeStyle = '#ffe45c'; context.lineWidth = 2
       context.strokeRect(b.x, b.y, b.width, b.height)
       context.fillStyle = '#ffe45c'; context.font = 'bold 14px sans-serif'
-      context.fillText(`${ring.id}${ring.id === detection?.active?.id ? ' (Game)' : ''}`, b.x, Math.max(15, b.y - 5))
+      context.fillText(ring.id, b.x, Math.max(15, b.y - 5))
     }
     if (ring.center) {
       context.fillStyle = '#ffe45c'; context.beginPath()
@@ -262,8 +346,10 @@ function render(landmarks: NormalizedLandmark[]) {
     context.lineWidth = 3
     context.stroke()
   }
-  showFoot(footPoint(landmarks, 29, 31), 'LEFT', leftLabel)
-  showFoot(footPoint(landmarks, 30, 32), 'RIGHT', rightLabel)
+  feetState = locateFeet(footPoint(landmarks, 29, 31), footPoint(landmarks, 30, 32), detection?.rings ?? null)
+  showFoot(feetState.leftFoot, 'LEFT', leftLabel)
+  showFoot(feetState.rightFoot, 'RIGHT', rightLabel)
+  if (!document.getElementById('ring-debug')!.hidden) updateRingDebug()
 }
 
 async function tick() {
@@ -331,14 +417,14 @@ startButton.onclick = async () => {
         const jump = jumpStrategy.update({ timestampMs: data.videoTimestampMs, landmarks: pose })
         showJump(jump)
         const left = footPoint(pose, 29, 31), right = footPoint(pose, 30, 32)
-        // Same frame/foot points and already-rendered IN/OUT decisions. Normalize
+        // Preserve the existing single-ring landing check independently of multi-ring feet state. Normalize
         // both axes by width so the stability tolerance is 4.8px at width 600.
         showLanding(landingCheck.update({ timestampMs: data.videoTimestampMs,
           jumpEvent: jumpResult(jump).event, ringReady: detection?.active != null,
           left: left ? [left[0] / view.width, left[1] / view.width] : null,
           right: right ? [right[0] / view.width, right[1] / view.width] : null,
-          leftIn: leftLabel.dataset.state === 'UNKNOWN' ? null : leftLabel.dataset.state === 'IN',
-          rightIn: rightLabel.dataset.state === 'UNKNOWN' ? null : rightLabel.dataset.state === 'IN' }))
+          leftIn: left && detection?.active ? pointInPolygon(left, detection.active.polygon) : null,
+          rightIn: right && detection?.active ? pointInPolygon(right, detection.active.polygon) : null }))
         busy = false
       } else if (data.type === 'ERROR') {
         stop(`Pose 错误：${data.message}`)
@@ -367,11 +453,12 @@ async function detectRing() {
   const controller = new AbortController()
   upload = controller
   detectButton.disabled = true
+  historyId = null
   detection = null // A failed re-detection must not silently retain an old polygon.
   ringError = null
   probe = null
   ringRaw.textContent = '检测中…'
-  ringTarget.textContent = '尚未选择游戏圈。'
+  ringTarget.textContent = '尚未检测圈。'
   updateRingDebug()
   showLanding(landingCheck.reset()) // Changing the target cancels pending/old results.
   unknown()
@@ -386,7 +473,7 @@ async function detectRing() {
     if (strategy === 'gemini') {
       const response = await fetch('/api/gemini-baseline/rings/detect', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ model, mimeType: 'image/jpeg', imageBase64: snapshot.toDataURL('image/jpeg', 0.94).split(',')[1],
+        body: JSON.stringify({ model, saveHistory: true, mimeType: 'image/jpeg', imageBase64: snapshot.toDataURL('image/jpeg', 0.94).split(',')[1],
           width: snapshot.width, height: snapshot.height }),
       })
       const data = await response.json()
@@ -394,6 +481,9 @@ async function detectRing() {
       ringRaw.textContent = data.rawJson || JSON.stringify(data, null, 2)
       if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`)
       result = adaptGeminiRings(data, snapshot.width, snapshot.height)
+      historyId = data.history?.id || null
+      historyStatus.textContent = data.historyError || (historyId ? `已保存到 History：${historyId}` : '检测成功，但服务端未返回 History 保存确认。')
+      if (historyId) void refreshHistory(historyId)
     } else {
       const blob = await new Promise<Blob>((resolve, reject) => snapshot.toBlob(
         value => value ? resolve(value) : reject(new Error('截图失败')), 'image/png'))
@@ -407,14 +497,9 @@ async function detectRing() {
       result = adaptLegacyRing(data, snapshot.width, snapshot.height)
     }
     if (currentSession !== session || upload !== controller || controller.signal.aborted) return
-    if (result.width !== capture.width || result.height !== capture.height) throw new Error('返回坐标尺寸不一致')
-    detection = result
-    ringRaw.textContent = result.rawJson
-    ringTarget.textContent = result.active
-      ? `Game target: ${result.active.id}。仅此圈用于现有单圈 IN/OUT 与 landing 判定。${strategy === 'gemini' ? '选择有效内边界面积最大的圈。' : ''}`
-      : '没有可用于游戏判定的内边界；bbox 不替代 polygon。'
+    applyDetection(result)
     if (strategy === 'gemini') {
-      ringStatus.textContent = `${result.model} · ${result.rings.length} rings · Game target: ${result.active?.id || 'none'}。请检查边界；移动摄像头或圈后重新检测。`
+      ringStatus.textContent = `${result.model} · ${result.rings.length} rings。请检查边界；移动摄像头或圈后重新检测。`
     } else if (result.active) {
       ringStatus.textContent = `${result.active.color} ring 已保存；${result.candidateCount} 个合格候选中选择主孔洞最大的一个。请检查青色边界后走入圈中。`
     } else {

@@ -1,3 +1,4 @@
+import { createRingHistory } from './server/ring-history.mjs'
 import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
 import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
 import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-rings.mjs'
@@ -25,6 +26,7 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
+const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
 const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
@@ -381,6 +383,18 @@ const sourceSiteFromUrl = (sourceUrl) => {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
+  if (url.pathname === '/api/ring-feet/history' || url.pathname.startsWith('/api/ring-feet/history/')) {
+    if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET' }); return }
+    try {
+      const id = url.pathname.slice('/api/ring-feet/history/'.length)
+      sendJson(response, 200, url.pathname === '/api/ring-feet/history'
+        ? { runs: await ringHistory.list() } : await ringHistory.load(id))
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Cannot read Ring History.' })
+    }
+    return
+  }
+
   if (url.pathname === '/api/gemini-baseline/rings/models') {
     sendJson(response, request.method === 'GET' ? 200 : 405,
       request.method === 'GET' ? geminiRingModelOptions() : { error: 'Use GET' })
@@ -389,7 +403,12 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/api/gemini-baseline/rings/detect') {
     if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use POST' }); return }
     try {
-      const result = await detectRingsWithGemini(await readJsonBody(request, 13 * 1024 * 1024))
+      const input = await readJsonBody(request, 13 * 1024 * 1024)
+      const result = await detectRingsWithGemini(input)
+      if (!result.error && input.saveHistory === true) {
+        try { result.history = await ringHistory.save(result, input) }
+        catch { result.historyError = '检测成功，但 History 保存失败。请检查服务端 generated/ring-history 的写入权限和磁盘空间。' }
+      }
       sendJson(response, result.error ? 502 : 200, result)
     } catch (error) {
       sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Gemini ring detection failed.' })

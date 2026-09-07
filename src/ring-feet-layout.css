@@ -21,3 +21,9 @@ html, body { width: 100%; height: 100%; overflow: hidden; }
 .ring-tabs [aria-selected="true"] { outline: 2px solid #bca337; }
 .camera-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 monospace; }
 #ring-model-status { display: block; }
+
+.controls hr { border: 0; border-top: 1px solid #344353; margin: 18px 0; }
+.control-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.control-row > p, .control-row button { margin: 0; }
+.control-row > p { min-width: 0; }
+#ring-history { min-width: 0; flex: 1 1 180px; }

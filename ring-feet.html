@@ -3,39 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>单圈 · 双脚 IN / OUT</title>
+    <title>多圈 · 双脚 Ring ID</title>
 
   </head>
   <body>
     <div id="ring-feet-layout"></div>
     <template id="ring-feet-content">
-    <h1>单圈 · 双脚 IN / OUT</h1>
+    <h1>多圈 · 双脚 Ring ID</h1>
     <section class="status-board" aria-label="关键实时状态">
       <div class="status-card"><span id="left">LEFT: UNKNOWN</span></div>
       <div class="status-card"><span id="right">RIGHT: UNKNOWN</span></div>
       <div class="status-card"><strong id="jump-state">Jump: UNKNOWN</strong></div>
       <div class="status-card"><strong id="jump-count">JUMP COUNT: 0</strong></div>
-      <div class="status-card landing-card"><strong id="jump-into-ring">JUMP INTO RING: WAITING</strong></div>
+      <div class="status-card landing-card"><strong id="jump-into-ring">LEGACY LANDING: WAITING</strong></div>
     </section>
     <main class="workspace">
     <div class="camera-panel">
       <video id="video" autoplay muted playsinline hidden></video>
       <canvas id="view" width="600" height="450"></canvas>
       <div class="ring-tabs" role="tablist" aria-label="Camera details">
-        <button id="ring-tab-game" role="tab" aria-selected="true" aria-controls="ring-game">Game</button>
+        <button id="ring-tab-game" role="tab" aria-selected="true" aria-controls="ring-game">Feet</button>
         <button id="ring-tab-debug" role="tab" aria-selected="false" aria-controls="ring-debug" tabindex="-1">Ring Debug</button>
         <button id="ring-tab-json" role="tab" aria-selected="false" aria-controls="ring-json" tabindex="-1">Raw JSON</button>
       </div>
       <div id="ring-game" role="tabpanel" aria-labelledby="ring-tab-game">
-        <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
-        <p id="ring-target">尚未选择游戏圈。</p>
+        <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。OUT (null) 表示圈外；重叠圈显示 AMBIGUOUS。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+        <p id="ring-target">尚未检测圈。</p>
       </div>
       <div id="ring-debug" role="tabpanel" aria-labelledby="ring-tab-debug" hidden><pre id="ring-coordinates">尚未检测。</pre></div>
       <div id="ring-json" role="tabpanel" aria-labelledby="ring-tab-json" hidden><pre id="ring-raw">尚未检测。</pre></div>
     </div>
     <aside class="controls" aria-label="测试控制与详细调试信息">
     <p>固定摄像头和圈，先让圈完整露出并点击 Detect Ring，再走入圈中。左右指身体的左右侧，画面不镜像。</p>
-    <button id="start">Start Camera</button>
+    <div class="control-row"><button id="start">Start Camera</button><button id="stop" disabled>Stop Camera</button></div>
+    <hr>
+    <div class="control-row ring-control-row">
     <p><label for="ring-strategy">Ring Detection Strategy</label>
       <select id="ring-strategy"><option value="gemini">Gemini LLM</option><option value="opencv">OpenCV Legacy</option></select>
     </p>
@@ -44,13 +46,21 @@
       <span id="ring-model-status" role="status"></span>
     </p>
     <button id="detect" disabled>Detect Ring</button>
-    <button id="stop" disabled>Stop Camera</button>
+    </div>
+    <div class="control-row">
+      <label for="ring-history">History</label><select id="ring-history"><option value="">尚无历史记录</option></select>
+      <button id="ring-history-refresh">Refresh</button><button id="ring-history-load">Load / Restore</button>
+    </div>
+    <p id="ring-history-status" role="status"></p>
+    <p>恢复历史时，请保持摄像头和物理圈位置不变。</p>
+    <hr>
     <p>
       <button id="voice-start">Start Voice Control</button>
       <button id="voice-stop" disabled>Stop Voice Control</button>
       <span id="voice-status" role="status">Voice: off</span>
     </p>
     <p id="voice-heard">说 “detect ring”（优先英文）；也匹配识别结果中的“检测圈”或“识别圈”。</p>
+    <hr>
     <p>录屏语音： “start screencast” / “start recording” 开始；“stop screencast” / “stop recording” 停止并下载。请先手动开始 Screen Capture。</p>
     <p>
       <button id="screen-start">Start Screen Capture</button>
@@ -77,7 +87,7 @@
       <p id="jump-help"></p>
       <p id="jump-common">Detected: NO | Jump events: 0</p>
       <p id="landing-debug"></p>
-      <p>跳进圈 V1：事件后等待 600ms，再确认双脚位置与 IN/OUT 连续稳定 300ms。请落地后短暂停稳；这是二维稳定代理，不是真实接触测量。</p>
+      <p>旧单圈 landing（独立于多圈脚点状态）：事件后等待 600ms，再确认双脚位置与 IN/OUT 连续稳定 300ms。请落地后短暂停稳；这是二维稳定代理，不是真实接触测量。</p>
       <p>切换时清空当前策略历史及事件数，保留圈和摄像头。Detected 是策略当前信号，不代表已确认真实离地。</p>
       <p id="jump-event">Last event: —</p>
       <p id="jump-trace"></p>
