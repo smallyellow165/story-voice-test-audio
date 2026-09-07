@@ -1,6 +1,24 @@
 import { GoogleAuth } from 'google-auth-library'
 
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] })
+// IDs checked against Google model documentation, 2026-09-07.
+const models = [
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (baseline)' },
+  ...['3.5', '3.6', '3.7', '3.8'].map(v => ({ id: `gemini-${v}-flash`, label: `Gemini ${v} Flash` })),
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+]
+export function ringModelOptions() {
+  const defaultModel = process.env.RING_LLM_MODEL || 'gemini-2.5-flash'
+  return { defaultModel, models: models.some(m => m.id === defaultModel) ? models : [...models, { id: defaultModel, label: `${defaultModel} (server default)` }] }
+}
+export function resolveRingModel(requested) {
+  const options = ringModelOptions()
+  const model = requested === undefined ? options.defaultModel : requested
+  if (!options.models.some(m => m.id === model)) {
+    throw Object.assign(new Error('Unsupported ring model. Choose a model from the selector.'), { statusCode: 400 })
+  }
+  return model
+}
 const point = { type: 'OBJECT', properties: { x: { type: 'NUMBER' }, y: { type: 'NUMBER' } }, required: ['x', 'y'] }
 export const ringSchema = {
   type: 'OBJECT', properties: { rings: { type: 'ARRAY', items: {
@@ -51,7 +69,7 @@ export async function detectRingsWithLlm(body) {
   }
   const dimensions = Number.isInteger(body.width) && Number.isInteger(body.height) && body.width > 0 && body.height > 0
     ? ` Image dimensions: ${body.width} pixels wide, ${body.height} pixels high. Normalize x by ${body.width} and y by ${body.height}; do not normalize y by width or by padded square dimensions.` : ''
-  const model = process.env.RING_LLM_MODEL || 'gemini-2.5-flash'
+  const model = resolveRingModel(body.model)
   const location = process.env.GOOGLE_CLOUD_LOCATION || 'global'
   const project = process.env.GOOGLE_CLOUD_PROJECT || await auth.getProjectId()
   const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`
@@ -61,13 +79,13 @@ export async function detectRingsWithLlm(body) {
   try {
     const result = await client.request({ url, method: 'POST', timeout: 90000, retry: false, data: {
       contents: [{ role: 'user', parts: [{ text: prompt + dimensions }, { inlineData: { mimeType: body.mimeType, data: body.imageBase64 } }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: 'application/json', responseSchema: ringSchema },
+      generationConfig: { ...(model === 'gemini-2.5-flash' ? { temperature: 0 } : {}), maxOutputTokens: 8192, responseMimeType: 'application/json', responseSchema: ringSchema },
     } })
     data = result.data
   } catch (error) {
     // Do not expose the auth client's request/config: it includes credentials and image data.
     const status = error.response?.status
-    throw Object.assign(new Error(`Vertex AI request failed${status ? ` (HTTP ${status})` : ''}. Check Google Cloud credentials, Vertex AI API access, project permissions and model availability.`), { statusCode: 502 })
+    throw Object.assign(new Error(`Vertex AI request failed for ${model}${status ? ` (HTTP ${status})` : ''}. Check Google Cloud credentials, Vertex AI API access, project permissions and model availability.`), { statusCode: 502 })
   }
   const candidate = data.candidates?.[0]
   const rawJson = candidate?.content?.parts?.filter(p => !p.thought).map(p => p.text || '').join('') || ''

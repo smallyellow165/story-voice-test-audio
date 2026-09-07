@@ -1,4 +1,4 @@
-import { detectRingsWithLlm } from './server/ring-llm.mjs'
+import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -378,6 +378,12 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/ring-llm/models') {
+    sendJson(response, request.method === 'GET' ? 200 : 405,
+      request.method === 'GET' ? ringModelOptions() : { error: 'Use GET' })
+    return
+  }
 
   if (url.pathname === '/api/ring-llm/detect') {
     if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use POST' }); return }
