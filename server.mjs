@@ -1,4 +1,6 @@
 import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
+import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
+import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-rings.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -378,6 +380,33 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/gemini-baseline/rings/models') {
+    sendJson(response, request.method === 'GET' ? 200 : 405,
+      request.method === 'GET' ? geminiRingModelOptions() : { error: 'Use GET' })
+    return
+  }
+  if (url.pathname === '/api/gemini-baseline/rings/detect') {
+    if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use POST' }); return }
+    try {
+      const result = await detectRingsWithGemini(await readJsonBody(request, 13 * 1024 * 1024))
+      sendJson(response, result.error ? 502 : 200, result)
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Gemini ring detection failed.' })
+    }
+    return
+  }
+
+  if (url.pathname === '/api/gemini-baseline') {
+    if (request.method === 'GET') { sendJson(response, 200, baselineStatus()); return }
+    if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use GET or POST' }); return }
+    try {
+      sendJson(response, 200, await runGeminiBaseline())
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Gemini baseline failed.' })
+    }
+    return
+  }
 
   if (url.pathname === '/api/ring-llm/models') {
     sendJson(response, request.method === 'GET' ? 200 : 405,

@@ -1,5 +1,7 @@
 import './ring-llm.css'
 import { toPixels, bboxPixels, fromClient, type Point } from './ring-llm-coordinates'
+// The old Vertex page keeps its original endpoint; both pages share all rendering/mapping.
+const apiBase = document.body.dataset.ringApi || '/api/ring-llm'
 type Ring = { id: string; center: Point; bbox: { xMin: number; yMin: number; xMax: number; yMax: number }; polygon: Point[]; colorGuess: string; confidence: number; explanation: string }
 const file = document.querySelector<HTMLInputElement>('#file')!
 const button = document.querySelector<HTMLButtonElement>('#detect')!
@@ -117,7 +119,7 @@ button.onclick = async () => {
   status.textContent = `${requestedModel} 检测中…`
   const started = performance.now()
   try {
-    const response = await fetch('/api/ring-llm/detect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64, model: requestedModel, width: canvas.width, height: canvas.height }), signal: AbortSignal.timeout(110000) })
+    const response = await fetch(`${apiBase}/detect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mimeType: 'image/jpeg', imageBase64, model: requestedModel, width: canvas.width, height: canvas.height }), signal: AbortSignal.timeout(110000) })
     const data = await response.json()
     json.textContent = data.rawJson || JSON.stringify(data, null, 2)
     if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`)
@@ -131,11 +133,15 @@ button.onclick = async () => {
 
 async function loadModels() {
   try {
-    const response = await fetch('/api/ring-llm/models')
+    const response = await fetch(`${apiBase}/models`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const data: { defaultModel: string; models: { id: string; label: string }[] } = await response.json()
+    const data: { apiKeyConfigured?: boolean; defaultModel: string; models: { id: string; label: string }[] } = await response.json()
     modelSelect.replaceChildren(...data.models.map(model => new Option(model.label, model.id)))
     modelSelect.value = data.defaultModel
+    if (data.apiKeyConfigured === false) {
+      status.textContent = '服务端缺少 GEMINI_API_KEY：请配置项目 .env，重启服务后刷新页面。'
+      return
+    }
     modelsReady = true
     modelSelect.disabled = false
     button.disabled = !imageBase64

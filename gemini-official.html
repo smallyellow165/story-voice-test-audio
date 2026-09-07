@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini 官方图片理解 Baseline</title>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">GOOGLE OFFICIAL EXAMPLE</p>
+      <h1>Gemini 图片理解 Baseline</h1>
+      <p>运行 Google 官方管风琴图片示例，验证 API Key → 图片上传 → generateContent。</p>
+      <p><a href="https://ai.google.dev/api/generate-content#image">官方示例与 API 文档</a></p>
+      <div class="layout">
+        <section aria-label="官方示例输入">
+          <img src="/gemini-baseline/organ.jpg" alt="Google 官方示例 organ.jpg：管风琴" />
+          <p>固定输入：<code>organ.jpg</code></p>
+          <p>Prompt：<span id="prompt">加载中…</span></p>
+          <p>Model：<code id="model">加载中…</code></p>
+          <button id="run" disabled>运行官方图片示例</button>
+          <p id="status" role="status" aria-live="polite">检查服务端配置…</p>
+        </section>
+        <section aria-label="模型响应">
+          <h2>图片理解结果</h2>
+          <pre id="result">尚未调用。</pre>
+          <details><summary>调用信息</summary><pre id="details">尚未调用。</pre></details>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/src/gemini-baseline.ts"></script>
+  </body>
+</html>

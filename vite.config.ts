@@ -18,5 +18,5 @@ export default defineConfig({
   }],
   server: { proxy: ringProxy },
   preview: { proxy: ringProxy },
-  build: { rollupOptions: { input: { main: 'index.html', ringFeet: 'ring-feet.html', ringLlm: 'ring-llm.html' } } },
+  build: { rollupOptions: { input: { main: 'index.html', ringFeet: 'ring-feet.html', ringLlm: 'ring-llm.html', geminiBaseline: 'gemini-baseline.html', geminiOfficial: 'gemini-official.html' } } },
 })
