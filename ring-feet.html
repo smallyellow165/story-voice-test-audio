@@ -4,37 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>单圈 · 双脚 IN / OUT</title>
-    <style>
-      * { box-sizing: border-box; }
-      body { margin: 24px auto; padding: 0 28px; max-width: 1920px; font-family: system-ui, sans-serif; background: #16202b; color: #edf3f8; }
-      h1 { font-size: 24px; }
-      button { padding: 10px 14px; margin: 0 6px 8px 0; cursor: pointer; }
-      button:disabled { cursor: default; opacity: .5; }
-      canvas { display: block; width: 100%; height: auto; background: #090e14; border-radius: 10px; }
-      .status-board { display: grid; grid-template-columns: 1fr 1fr 1.25fr 1fr; gap: 16px; margin: 20px 0 24px; }
-      .status-card { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 144px; padding: 24px 16px; border: 2px solid #bca337; border-radius: 12px; background: #232b2b; color: #ffe45c; font-size: clamp(26px, 2.7vw, 52px); font-weight: 800; text-align: center; line-height: 1.25; overflow-wrap: anywhere; }
-      .landing-card { grid-column: 1 / -1; min-height: 104px; }
-      .workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 28px; align-items: start; }
-      .camera-panel, .controls { min-width: 0; }
-      .controls { padding: 20px; border: 1px solid #344353; border-radius: 10px; background: #1b2733; }
-      p { font-size: 14px; line-height: 1.6; color: #b6c4d2; }
-      .controls > p:first-child { margin-top: 0; }
-      .jump-details { margin-top: 20px; padding-top: 16px; border-top: 1px solid #344353; font-size: 14px; color: #b6c4d2; }
-      #jump-event, #jump-trace { font-size: 13px; overflow-wrap: anywhere; }
-      #jump-debug { font: 12px/1.6 monospace; overflow-wrap: anywhere; color: #9fadb9; }
-      @media (max-width: 1000px) {
-        body { padding: 0 16px; }
-        .status-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .workspace { grid-template-columns: 1fr; }
-        .status-card { min-height: 112px; }
-      }
-      @media (max-width: 600px) {
-        .status-board { grid-template-columns: 1fr; gap: 10px; }
-        .status-card { min-height: 88px; font-size: 32px; padding: 16px; }
-      }
-    </style>
+
   </head>
   <body>
+    <div id="ring-feet-layout"></div>
+    <template id="ring-feet-content">
     <h1>单圈 · 双脚 IN / OUT</h1>
     <section class="status-board" aria-label="关键实时状态">
       <div class="status-card"><span id="left">LEFT: UNKNOWN</span></div>
@@ -94,6 +68,7 @@
     </div>
     </aside>
     </main>
-    <script type="module" src="/src/ring-feet.ts"></script>
+    </template>
+    <script type="module" src="/src/ring-feet-layout.tsx"></script>
   </body>
 </html>
