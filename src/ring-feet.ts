@@ -1,3 +1,5 @@
+import { adaptGeminiRings, adaptLegacyRing, type RingDetectionResult, type RingStrategy } from './ring-detection-result'
+import { fromClient } from './ring-llm-coordinates'
 import { DrawingUtils, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { poseAnalysisConfig } from './pose-video-analyzer'
 import { pointInPolygon, type Point } from './ring-feet-geometry'
@@ -64,15 +66,6 @@ jumpSelect.onchange = () => {
   resetJump() // Immediately update the large status; never touch ring/camera state.
 }
 
-type Ring = {
-  detected: boolean
-  width: number
-  height: number
-  polygon: Point[]
-  color?: string
-  candidate_count: number
-}
-
 const video = document.querySelector<HTMLVideoElement>('#video')!
 const view = document.querySelector<HTMLCanvasElement>('#view')!
 const context = view.getContext('2d')!
@@ -88,7 +81,7 @@ const capture = document.createElement('canvas')
 const captureContext = capture.getContext('2d')!
 let worker: Worker | null = null
 let stream: MediaStream | null = null
-let ring: Ring | null = null
+let detection: RingDetectionResult | null = null
 let busy = false
 let running = false
 let session = 0
@@ -97,6 +90,94 @@ let lastVideoTime = -1
 let requestId = 0
 let watchdog: number | undefined
 let upload: AbortController | null = null
+
+const ringStrategy = document.querySelector<HTMLSelectElement>('#ring-strategy')!
+const ringModel = document.querySelector<HTMLSelectElement>('#ring-model')!
+const ringModelStatus = document.querySelector<HTMLElement>('#ring-model-status')!
+const ringRaw = document.querySelector<HTMLElement>('#ring-raw')!
+const ringTarget = document.querySelector<HTMLElement>('#ring-target')!
+const ringDebug = document.querySelector<HTMLElement>('#ring-coordinates')!
+let geminiReady = false
+let probe: ReturnType<typeof fromClient> | null = null
+let ringError: string | null = null
+
+function updateRingDebug(error?: string) {
+  if (error) ringError = error
+  const rect = view.getBoundingClientRect()
+  ringDebug.textContent = JSON.stringify({
+    strategy: ringStrategy.value, model: detection?.model || (ringStrategy.value === 'gemini' ? ringModel.value : null),
+    camera: { width: video.videoWidth, height: video.videoHeight },
+    snapshotAndOverlayRaster: { width: view.width, height: view.height },
+    viewportCssRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    mapping: 'Gemini normalized x * snapshot.width, y * snapshot.height. Same uncropped, unmirrored raster aspect as camera overlay; no DPR multiplier.',
+    activeRingId: detection?.active?.id || null,
+    selection: 'Single-ring game only; Gemini uses largest valid inner polygon. Empty polygon is display-only.',
+    clickedNormalized: probe,
+    rasterRings: detection?.rings || [], source: detection?.source || null, error: ringError,
+  }, null, 2)
+}
+function clearRingDetection() {
+  upload?.abort()
+  upload = null
+  detection = null
+  probe = null
+  ringError = null
+  ringRaw.textContent = '尚未检测。'
+  ringTarget.textContent = '尚未选择游戏圈。'
+  showLanding(landingCheck.reset())
+  unknown()
+  updateRingDebug()
+}
+ringStrategy.onchange = () => {
+  clearRingDetection()
+  document.querySelector<HTMLElement>('#ring-model-control')!.hidden = ringStrategy.value !== 'gemini'
+  ringStatus.textContent = '检测策略已切换，请重新点击 Detect Ring。'
+  detectButton.disabled = !running
+}
+ringModel.onchange = () => {
+  clearRingDetection()
+  ringStatus.textContent = '模型已切换，请重新点击 Detect Ring。'
+  detectButton.disabled = !running
+}
+void (async () => {
+  try {
+    const response = await fetch('/api/gemini-baseline/rings/models')
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json()
+    ringModel.replaceChildren(...data.models.map((m: {id: string; label: string}) => new Option(m.label, m.id)))
+    ringModel.value = data.models.some((m: {id: string}) => m.id === 'gemini-3.6-flash') ? 'gemini-3.6-flash' : data.defaultModel
+    ringModel.disabled = false
+    geminiReady = data.apiKeyConfigured === true
+    ringModelStatus.textContent = geminiReady ? '' : '服务端缺少 GEMINI_API_KEY，请配置后重启并刷新。'
+  } catch (error) {
+    ringModelStatus.textContent = `Gemini 模型列表加载失败：${String(error)}。请确认 Node dev server 已启动。`
+  }
+})()
+const ringTabs = [...document.querySelectorAll<HTMLButtonElement>('.ring-tabs [role="tab"]')]
+ringTabs.forEach((tab, index) => {
+  tab.onclick = () => {
+    ringTabs.forEach(button => {
+      const selected = button === tab
+      button.setAttribute('aria-selected', String(selected))
+      button.tabIndex = selected ? 0 : -1
+      document.getElementById(button.getAttribute('aria-controls')!)!.hidden = !selected
+    })
+    updateRingDebug()
+  }
+  tab.onkeydown = event => {
+    const next = event.key === 'ArrowRight' ? (index + 1) % ringTabs.length
+      : event.key === 'ArrowLeft' ? (index + ringTabs.length - 1) % ringTabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? ringTabs.length - 1 : -1
+    if (next >= 0) { event.preventDefault(); ringTabs[next]!.click(); ringTabs[next]!.focus() }
+  }
+})
+view.addEventListener('click', event => {
+  probe = fromClient({ x: event.clientX, y: event.clientY }, view.getBoundingClientRect())
+  updateRingDebug()
+})
+new ResizeObserver(() => updateRingDebug()).observe(view)
+document.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
+  .addEventListener('scroll', () => updateRingDebug(), { passive: true })
 
 function unknown() {
   leftLabel.textContent = 'LEFT: UNKNOWN'
@@ -118,7 +199,7 @@ function stop(message = '摄像头已停止。') {
   video.srcObject = null
   upload?.abort()
   upload = null
-  ring = null
+  clearRingDetection()
   unknown()
   context.clearRect(0, 0, view.width, view.height)
   startButton.disabled = false
@@ -137,6 +218,7 @@ function footPoint(landmarks: NormalizedLandmark[], heel: number, toe: number): 
 }
 
 function showFoot(point: Point | null, side: 'LEFT' | 'RIGHT', label: HTMLElement) {
+  const ring = detection?.active
   const state = point && ring ? (pointInPolygon(point, ring.polygon) ? 'IN' : 'OUT') : 'UNKNOWN'
   label.textContent = `${side}: ${state}`
   label.dataset.state = state
@@ -158,7 +240,19 @@ function render(landmarks: NormalizedLandmark[]) {
   context.drawImage(capture, 0, 0)
   if (landmarks.length) drawing.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS,
     { color: '#ffffff80', lineWidth: 1 })
-  if (ring) {
+  for (const ring of detection?.rings ?? []) {
+    if (ring.bbox) {
+      const b = ring.bbox
+      context.strokeStyle = '#ffe45c'; context.lineWidth = 2
+      context.strokeRect(b.x, b.y, b.width, b.height)
+      context.fillStyle = '#ffe45c'; context.font = 'bold 14px sans-serif'
+      context.fillText(`${ring.id}${ring.id === detection?.active?.id ? ' (Game)' : ''}`, b.x, Math.max(15, b.y - 5))
+    }
+    if (ring.center) {
+      context.fillStyle = '#ffe45c'; context.beginPath()
+      context.arc(ring.center.x, ring.center.y, 3, 0, Math.PI * 2); context.fill()
+    }
+    if (ring.polygon.length < 3) continue
     context.beginPath()
     ring.polygon.forEach(([x, y], index) => index === 0 ? context.moveTo(x, y) : context.lineTo(x, y))
     context.closePath()
@@ -240,7 +334,7 @@ startButton.onclick = async () => {
         // Same frame/foot points and already-rendered IN/OUT decisions. Normalize
         // both axes by width so the stability tolerance is 4.8px at width 600.
         showLanding(landingCheck.update({ timestampMs: data.videoTimestampMs,
-          jumpEvent: jumpResult(jump).event, ringReady: ring !== null,
+          jumpEvent: jumpResult(jump).event, ringReady: detection?.active != null,
           left: left ? [left[0] / view.width, left[1] / view.width] : null,
           right: right ? [right[0] / view.width, right[1] / view.width] : null,
           leftIn: leftLabel.dataset.state === 'UNKNOWN' ? null : leftLabel.dataset.state === 'IN',
@@ -267,42 +361,74 @@ startButton.onclick = async () => {
 async function detectRing() {
   if (!running || upload) return
   const currentSession = session
+  const strategy = ringStrategy.value as RingStrategy
+  const model = ringModel.value
+  if (strategy === 'gemini' && !geminiReady) { ringStatus.textContent = ringModelStatus.textContent; return }
   const controller = new AbortController()
   upload = controller
   detectButton.disabled = true
-  ring = null // A failed re-detection must not silently retain an old polygon.
+  detection = null // A failed re-detection must not silently retain an old polygon.
+  ringError = null
+  probe = null
+  ringRaw.textContent = '检测中…'
+  ringTarget.textContent = '尚未选择游戏圈。'
+  updateRingDebug()
   showLanding(landingCheck.reset()) // Changing the target cancels pending/old results.
   unknown()
   ringStatus.textContent = '正在检测当前这一帧…'
-  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  const timeout = window.setTimeout(() => controller.abort(), strategy === 'gemini' ? 100000 : 15000)
   try {
     const snapshot = document.createElement('canvas')
     snapshot.width = capture.width
     snapshot.height = capture.height
     snapshot.getContext('2d')!.drawImage(video, 0, 0, snapshot.width, snapshot.height)
-    const blob = await new Promise<Blob>((resolve, reject) => snapshot.toBlob(
-      value => value ? resolve(value) : reject(new Error('截图失败')), 'image/png'))
-    const response = await fetch(`${import.meta.env.BASE_URL}ring-api/detect-ring`, {
-      method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob, signal: controller.signal,
-    })
-    if (!response.ok) throw new Error(`HTTP ${response.status}；请确认 Python service 已启动`)
-    const result: Ring = await response.json()
-    if (currentSession !== session) return
+    let result: RingDetectionResult
+    if (strategy === 'gemini') {
+      const response = await fetch('/api/gemini-baseline/rings/detect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ model, mimeType: 'image/jpeg', imageBase64: snapshot.toDataURL('image/jpeg', 0.94).split(',')[1],
+          width: snapshot.width, height: snapshot.height }),
+      })
+      const data = await response.json()
+      if (currentSession !== session || upload !== controller) return
+      ringRaw.textContent = data.rawJson || JSON.stringify(data, null, 2)
+      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`)
+      result = adaptGeminiRings(data, snapshot.width, snapshot.height)
+    } else {
+      const blob = await new Promise<Blob>((resolve, reject) => snapshot.toBlob(
+        value => value ? resolve(value) : reject(new Error('截图失败')), 'image/png'))
+      const response = await fetch(`${import.meta.env.BASE_URL}ring-api/detect-ring`, {
+        method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob, signal: controller.signal,
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}；请确认 Python service 已启动`)
+      const data = await response.json()
+      if (currentSession !== session || upload !== controller) return
+      ringRaw.textContent = JSON.stringify(data, null, 2)
+      result = adaptLegacyRing(data, snapshot.width, snapshot.height)
+    }
+    if (currentSession !== session || upload !== controller || controller.signal.aborted) return
     if (result.width !== capture.width || result.height !== capture.height) throw new Error('返回坐标尺寸不一致')
-    if (result.detected) {
-      if (!Array.isArray(result.polygon) || result.polygon.length < 3
-        || result.polygon.some(p => !Array.isArray(p) || p.length !== 2
-          || !p.every(Number.isFinite))) throw new Error('返回的 polygon 无效')
-      ring = result
-      ringStatus.textContent = `${result.color} ring 已保存；${result.candidate_count} 个合格候选中选择主孔洞最大的一个。请检查青色边界后走入圈中。`
+    detection = result
+    ringRaw.textContent = result.rawJson
+    ringTarget.textContent = result.active
+      ? `Game target: ${result.active.id}。仅此圈用于现有单圈 IN/OUT 与 landing 判定。${strategy === 'gemini' ? '选择有效内边界面积最大的圈。' : ''}`
+      : '没有可用于游戏判定的内边界；bbox 不替代 polygon。'
+    if (strategy === 'gemini') {
+      ringStatus.textContent = `${result.model} · ${result.rings.length} rings · Game target: ${result.active?.id || 'none'}。请检查边界；移动摄像头或圈后重新检测。`
+    } else if (result.active) {
+      ringStatus.textContent = `${result.active.color} ring 已保存；${result.candidateCount} 个合格候选中选择主孔洞最大的一个。请检查青色边界后走入圈中。`
     } else {
       ringStatus.textContent = '未检测到完整圈。让圈远离画面边缘、移开遮挡后重新点击。'
     }
+    updateRingDebug()
   } catch (error) {
-    if (currentSession === session) ringStatus.textContent = `检测失败：${String(error)}`
+    if (currentSession === session && upload === controller) {
+      ringStatus.textContent = `检测失败：${String(error)}`
+      updateRingDebug(String(error))
+    }
   } finally {
     window.clearTimeout(timeout)
-    if (currentSession === session) { upload = null; detectButton.disabled = !running }
+    if (currentSession === session && upload === controller) { upload = null; detectButton.disabled = !running }
   }
 }
 

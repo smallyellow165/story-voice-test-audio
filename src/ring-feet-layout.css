@@ -16,3 +16,8 @@ p { font-size: 14px; line-height: 1.6; color: #b6c4d2; }
 #jump-debug { font: 12px/1.6 monospace; overflow-wrap: anywhere; color: #9fadb9; }
 html, body { width: 100%; height: 100%; overflow: hidden; }
 #ring-feet-layout { width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; }
+.controls select { max-width: 100%; padding: 8px; font: inherit; }
+.ring-tabs { display: flex; flex-wrap: wrap; margin-top: 12px; }
+.ring-tabs [aria-selected="true"] { outline: 2px solid #bca337; }
+.camera-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 monospace; }
+#ring-model-status { display: block; }

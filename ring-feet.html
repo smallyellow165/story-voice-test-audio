@@ -21,11 +21,28 @@
     <div class="camera-panel">
       <video id="video" autoplay muted playsinline hidden></video>
       <canvas id="view" width="600" height="450"></canvas>
-      <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+      <div class="ring-tabs" role="tablist" aria-label="Camera details">
+        <button id="ring-tab-game" role="tab" aria-selected="true" aria-controls="ring-game">Game</button>
+        <button id="ring-tab-debug" role="tab" aria-selected="false" aria-controls="ring-debug" tabindex="-1">Ring Debug</button>
+        <button id="ring-tab-json" role="tab" aria-selected="false" aria-controls="ring-json" tabindex="-1">Raw JSON</button>
+      </div>
+      <div id="ring-game" role="tabpanel" aria-labelledby="ring-tab-game">
+        <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+        <p id="ring-target">尚未选择游戏圈。</p>
+      </div>
+      <div id="ring-debug" role="tabpanel" aria-labelledby="ring-tab-debug" hidden><pre id="ring-coordinates">尚未检测。</pre></div>
+      <div id="ring-json" role="tabpanel" aria-labelledby="ring-tab-json" hidden><pre id="ring-raw">尚未检测。</pre></div>
     </div>
     <aside class="controls" aria-label="测试控制与详细调试信息">
     <p>固定摄像头和圈，先让圈完整露出并点击 Detect Ring，再走入圈中。左右指身体的左右侧，画面不镜像。</p>
     <button id="start">Start Camera</button>
+    <p><label for="ring-strategy">Ring Detection Strategy</label>
+      <select id="ring-strategy"><option value="gemini">Gemini LLM</option><option value="opencv">OpenCV Legacy</option></select>
+    </p>
+    <p id="ring-model-control"><label for="ring-model">Gemini Model</label>
+      <select id="ring-model" disabled><option value="gemini-3.6-flash">Gemini 3.6 Flash</option></select>
+      <span id="ring-model-status" role="status"></span>
+    </p>
     <button id="detect" disabled>Detect Ring</button>
     <button id="stop" disabled>Stop Camera</button>
     <p>
