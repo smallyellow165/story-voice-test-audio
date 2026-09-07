@@ -315,14 +315,27 @@ function startScreencast() {
       screencastStatus.textContent = 'Screencast: recording error; attempting partial download'
       if (recorder.state !== 'inactive') recorder.stop()
     }
-    recorder.onstop = () => {
+    recorder.onstop = async () => {
+      screencastStop.disabled = true
       try {
         if (!chunks.length) throw new Error('No video data recorded')
         const type = recorder.mimeType || chunks[0]!.type
         const blob = new Blob(chunks, { type })
-        const extension = type.includes('mp4') ? 'mp4' : 'webm'
-        const filename = `ring-feet-screencast-${started}.${extension}`
-        const url = URL.createObjectURL(blob)
+        screencastStatus.textContent = 'Screencast: uploading / converting to seekable MP4…'
+        const response = await fetch('/api/screencast/mp4', {
+          method: 'POST', headers: { 'Content-Type': type }, body: blob,
+        })
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null)
+          throw new Error(detail?.error ?? `MP4 conversion HTTP ${response.status}; restart the Web server`)
+        }
+        if (!response.headers.get('Content-Type')?.includes('video/mp4')) {
+          throw new Error('MP4 endpoint unavailable; restart the Web server')
+        }
+        const mp4 = await response.blob()
+        if (!mp4.size) throw new Error('Server returned an empty MP4')
+        const filename = `ring-feet-screencast-${started}.mp4`
+        const url = URL.createObjectURL(mp4)
         const link = document.createElement('a')
         link.href = url
         link.download = filename

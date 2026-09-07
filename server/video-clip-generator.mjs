@@ -7,8 +7,9 @@ import { VideoLibraryStorageError } from './video-library-repository.mjs'
 
 const inFlightClips = new Set()
 
-const runFfmpeg = (args) => new Promise((resolve, reject) => {
-  const process = spawn('ffmpeg', args, { shell: false, stdio: ['ignore', 'ignore', 'pipe'] })
+export const runFfmpeg = (args, { timeoutMs = 0 } = {}) => new Promise((resolve, reject) => {
+  const process = spawn('ffmpeg', args, { shell: false, stdio: ['ignore', 'ignore', 'pipe'],
+    timeout: timeoutMs, killSignal: 'SIGKILL' })
   let stderr = ''
   process.stderr.setEncoding('utf8')
   process.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-12_000) })

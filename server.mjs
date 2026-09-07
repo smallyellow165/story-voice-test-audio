@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import textToSpeech from '@google-cloud/text-to-speech'
 import { createServer as createViteServer } from 'vite'
+import { screencastEndpoint, screencastMiddleware } from './server/screencast-transcode.mjs'
 import { probeAudioDuration } from './server/audio-duration.mjs'
 import { generateClip, resolveGeneratedClipFullPath } from './server/video-clip-generator.mjs'
 import { VideoLibraryStorageError, createVideoLibraryRepository } from './server/video-library-repository.mjs'
@@ -376,6 +377,11 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === screencastEndpoint) {
+    await screencastMiddleware(request, response, () => {})
+    return
+  }
 
   if (url.pathname === '/api/video-v2/source/download') {
     if (request.method !== 'POST') {

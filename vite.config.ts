@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { screencastMiddleware } from './server/screencast-transcode.mjs'
 
 const base = '/story-voice-test-audio/'
 const ringProxy = {
@@ -10,6 +11,11 @@ const ringProxy = {
 
 export default defineConfig({
   base,
+  plugins: [{
+    name: 'local-screencast-mp4',
+    configureServer(server) { server.middlewares.use(screencastMiddleware) },
+    configurePreviewServer(server) { server.middlewares.use(screencastMiddleware) },
+  }],
   server: { proxy: ringProxy },
   preview: { proxy: ringProxy },
   build: { rollupOptions: { input: { main: 'index.html', ringFeet: 'ring-feet.html' } } },
