@@ -16,14 +16,17 @@ function showLanding(result: LandingSnapshot) {
   landingDebug.textContent = `${result.reason} | stable=${Math.round(result.stableMs)} ms`
 }
 
-let jumpStrategy: JumpStrategy = JUMP_STRATEGIES[0]!.create()
+const defaultJumpIndex = JUMP_STRATEGIES.findIndex(entry => entry.name === 'Dino Jump')
+const defaultJump = JUMP_STRATEGIES[defaultJumpIndex]!
+let jumpStrategy: JumpStrategy = defaultJump.create()
 const jumpSelect = document.querySelector<HTMLSelectElement>('#jump-strategy')!
 const jumpHelp = document.querySelector<HTMLElement>('#jump-help')!
 const jumpCommon = document.querySelector<HTMLElement>('#jump-common')!
 const jumpCount = document.querySelector<HTMLElement>('#jump-count')!
 let jumpEvents = 0
 JUMP_STRATEGIES.forEach((entry, i) => jumpSelect.add(new Option(entry.name, String(i))))
-jumpHelp.textContent = JUMP_STRATEGIES[0]!.help
+jumpSelect.value = String(defaultJumpIndex)
+jumpHelp.textContent = defaultJump.help
 const jumpName = document.querySelector<HTMLElement>('#jump-name')!
 const jumpState = document.querySelector<HTMLElement>('#jump-state')!
 const jumpDebug = document.querySelector<HTMLElement>('#jump-debug')!
