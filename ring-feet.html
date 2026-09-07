@@ -5,19 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>单圈 · 双脚 IN / OUT</title>
     <style>
-      body { margin: 24px auto; padding: 0 16px; max-width: 900px; font-family: system-ui, sans-serif; background: #16202b; color: #edf3f8; }
+      * { box-sizing: border-box; }
+      body { margin: 24px auto; padding: 0 28px; max-width: 1920px; font-family: system-ui, sans-serif; background: #16202b; color: #edf3f8; }
       h1 { font-size: 24px; }
-      button { padding: 10px 18px; margin-right: 8px; cursor: pointer; }
+      button { padding: 10px 14px; margin: 0 6px 8px 0; cursor: pointer; }
       button:disabled { cursor: default; opacity: .5; }
-      canvas { display: block; width: 100%; height: auto; margin-top: 16px; background: #090e14; }
-      .feet { display: flex; gap: 32px; font-size: 26px; font-weight: bold; margin: 16px 0; }
-      [data-state="IN"] { color: #5beba4; }
-      [data-state="OUT"] { color: #ffae91; }
-      p { line-height: 1.6; }
+      canvas { display: block; width: 100%; height: auto; background: #090e14; border-radius: 10px; }
+      .status-board { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 16px; margin: 20px 0 24px; }
+      .status-card { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 144px; padding: 24px 16px; border: 2px solid #bca337; border-radius: 12px; background: #232b2b; color: #ffe45c; font-size: clamp(26px, 2.7vw, 52px); font-weight: 800; text-align: center; line-height: 1.25; overflow-wrap: anywhere; }
+      .workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 28px; align-items: start; }
+      .camera-panel, .controls { min-width: 0; }
+      .controls { padding: 20px; border: 1px solid #344353; border-radius: 10px; background: #1b2733; }
+      p { font-size: 14px; line-height: 1.6; color: #b6c4d2; }
+      .controls > p:first-child { margin-top: 0; }
+      .jump-details { margin-top: 20px; padding-top: 16px; border-top: 1px solid #344353; font-size: 14px; color: #b6c4d2; }
+      #jump-event, #jump-trace { font-size: 13px; overflow-wrap: anywhere; }
+      #jump-debug { font: 12px/1.6 monospace; overflow-wrap: anywhere; color: #9fadb9; }
+      @media (max-width: 1000px) {
+        body { padding: 0 16px; }
+        .workspace { grid-template-columns: 1fr; }
+        .status-card { min-height: 112px; }
+      }
+      @media (max-width: 600px) {
+        .status-board { grid-template-columns: 1fr; gap: 10px; }
+        .status-card { min-height: 88px; font-size: 32px; padding: 16px; }
+      }
     </style>
   </head>
   <body>
     <h1>单圈 · 双脚 IN / OUT</h1>
+    <section class="status-board" aria-label="关键实时状态">
+      <div class="status-card"><span id="left">LEFT: UNKNOWN</span></div>
+      <div class="status-card"><span id="right">RIGHT: UNKNOWN</span></div>
+      <div class="status-card"><strong id="jump-state">Jump: UNKNOWN</strong></div>
+    </section>
+    <main class="workspace">
+    <div class="camera-panel">
+      <video id="video" autoplay muted playsinline hidden></video>
+      <canvas id="view" width="600" height="450"></canvas>
+      <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+    </div>
+    <aside class="controls" aria-label="测试控制与详细调试信息">
     <p>固定摄像头和圈，先让圈完整露出并点击 Detect Ring，再走入圈中。左右指身体的左右侧，画面不镜像。</p>
     <button id="start">Start Camera</button>
     <button id="detect" disabled>Detect Ring</button>
@@ -38,18 +66,16 @@
     <video id="screen-video" muted playsinline hidden></video>
     <p id="status" role="status">尚未启动。首次加载 Pose 模型需要网络。</p>
     <p id="ring-status">尚未检测圈。移动摄像头或圈后请重新检测。</p>
-    <div class="feet"><span id="left">LEFT: UNKNOWN</span><span id="right">RIGHT: UNKNOWN</span></div>
-    <div>
-      <strong id="jump-state">Jump: UNKNOWN</strong> · <span id="jump-name"></span>
+    <div class="jump-details">
+      <p>Strategy: <span id="jump-name"></span></p>
       <button id="jump-reset">Reset Jump Baseline</button>
       <p>先直立站稳约 1 秒再原地双脚跳。换位置或移动摄像头后重新校准；这是图像位移估计，不代表真实地面接触。</p>
       <p id="jump-event">Last event: —</p>
       <p id="jump-trace"></p>
-      <p id="jump-debug" style="font: 12px monospace; overflow-wrap: anywhere"></p>
+      <p id="jump-debug"></p>
     </div>
-    <video id="video" autoplay muted playsinline hidden></video>
-    <canvas id="view" width="600" height="450"></canvas>
-    <p>青色线是保存的圈内边界；L / R 是脚跟与前脚掌标记点的中点。脚点缺失或不可靠时显示 UNKNOWN。只判断二维脚点，不判断整只脚或是否接触地面。</p>
+    </aside>
+    </main>
     <script type="module" src="/src/ring-feet.ts"></script>
   </body>
 </html>
