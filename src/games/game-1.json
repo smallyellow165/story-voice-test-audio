@@ -1,13 +1,13 @@
 {
   "id": "game-1",
   "name": "Game 1 · Feet in Rings",
-  "ringSlots": ["A", "B"],
+  "ringSlots": ["ring_1", "ring_2"],
   "tasks": [
-    { "id": "left-a", "description": "左脚进入圈 A，右脚不限。", "condition": { "type": "footInRing", "foot": "left", "ring": "A" } },
-    { "id": "right-b", "description": "右脚进入圈 B，左脚不限。", "condition": { "type": "footInRing", "foot": "right", "ring": "B" } },
-    { "id": "both-a", "description": "两只脚都进入圈 A。", "condition": { "type": "all", "conditions": [
-      { "type": "footInRing", "foot": "left", "ring": "A" },
-      { "type": "footInRing", "foot": "right", "ring": "A" }
+    { "id": "left-a", "description": "左脚 → {ring_1}", "condition": { "type": "footInRing", "foot": "left", "ring": "ring_1" } },
+    { "id": "right-b", "description": "右脚 → {ring_2}", "condition": { "type": "footInRing", "foot": "right", "ring": "ring_2" } },
+    { "id": "both-a", "description": "双脚 → {ring_1}", "condition": { "type": "all", "conditions": [
+      { "type": "footInRing", "foot": "left", "ring": "ring_1" },
+      { "type": "footInRing", "foot": "right", "ring": "ring_1" }
     ] } },
     { "id": "split", "description": "两只脚分别进入两个不同的有效圈，左右顺序不限。", "condition": { "type": "feetInDifferentRings" } }
   ]

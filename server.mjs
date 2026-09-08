@@ -383,6 +383,16 @@ const sourceSiteFromUrl = (sourceUrl) => {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
+  if (/^\/api\/ring-feet\/history\/[^/]+\/names$/.test(url.pathname)) {
+    if (request.method !== 'PUT') { sendJson(response, 405, { error: 'Use PUT' }); return }
+    try {
+      const body = await readJsonBody(request, 32 * 1024)
+      sendJson(response, 200, await ringHistory.renameRings(url.pathname.split('/')[4], body.ringNames))
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Ring names could not be saved.' })
+    }
+    return
+  }
   if (url.pathname === '/api/ring-feet/history' || url.pathname.startsWith('/api/ring-feet/history/')) {
     if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET' }); return }
     try {

@@ -16,6 +16,21 @@ export function createRingHistory(directory) {
   }
   return {
     load,
+    async renameRings(id, names) {
+      const run = await load(id)
+      if (!names || typeof names !== 'object' || Array.isArray(names)
+        || Object.entries(names).some(([key, value]) => !run.rings.some(r => r.id === key)
+          || typeof value !== 'string' || value.length > 80)) {
+        throw Object.assign(new Error('Invalid ring names (maximum 80 characters).'), { statusCode: 400 })
+      }
+      run.ringNames = Object.fromEntries(Object.entries(names).map(([key, value]) => [key, value.trim()]))
+      const file = path.join(directory, `${id}.json`), temp = `${file}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temp, JSON.stringify(run), { flag: 'wx', mode: 0o600 })
+        await rename(temp, file)
+      } finally { await rm(temp, { force: true }) }
+      return { id: run.id, ringNames: run.ringNames }
+    },
     async list() {
       await mkdir(directory, { recursive: true })
       const runs = []

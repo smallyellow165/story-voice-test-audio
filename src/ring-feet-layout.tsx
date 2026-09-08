@@ -29,6 +29,6 @@ await import('./ring-feet')
 const { mountGamePanel } = await import('./games/game-panel')
 const gameHost = document.createElement('section')
 gameHost.id = 'game-panel'
-state.after(gameHost)
+state.before(gameHost)
 const unsubscribeGame = mountGamePanel(gameHost)
 if (import.meta.hot) import.meta.hot.dispose(unsubscribeGame)

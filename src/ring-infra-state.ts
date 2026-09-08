@@ -1,6 +1,7 @@
 import type { FootRingState } from './ring-feet-state'
 
 export type RingInfraFacts = {
+  ringNames?: Record<string, string>
   ringIds: string[]
   leftFootRingId: string | null
   rightFootRingId: string | null

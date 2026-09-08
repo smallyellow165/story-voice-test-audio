@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { parseGame, createGameRuntime } from '../src/games/game-runtime.ts'
 const game = parseGame(JSON.parse(await readFile(new URL('../src/games/game-1.json',import.meta.url),'utf8')))
-const bindings={A:'ring_1',B:'ring_2'}
+const bindings={ring_1:'ring_1',ring_2:'ring_2'}
 const facts=(left,right)=>({ringIds:['ring_1','ring_2'],leftFootRingId:left,rightFootRingId:right,
  leftFootStatus:left?'IN':'OUT',rightFootStatus:right?'IN':'OUT'})
 test('JSON tasks evaluate both feet independently; next/reset and live reversal',()=>{

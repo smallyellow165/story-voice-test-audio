@@ -28,3 +28,21 @@ test('history persists full detection across store instances; summary excludes i
     assert.equal((await restarted.list()).length,2)
   } finally { await rm(dir,{recursive:true,force:true}) }
 })
+
+test('ring names survive reload without changing IDs/geometry; rejects unknown IDs', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ring-names-'))
+  try {
+    const store = createRingHistory(dir)
+    const ring = {id:'ring_1',center:{x:.5,y:.5},bbox:{xMin:0,yMin:0,xMax:1,yMax:1},
+      polygon:[{x:0,y:0},{x:1,y:0},{x:1,y:1}],colorGuess:'white',confidence:.9,explanation:'test'}
+    const saved = await store.save({model:'gemini-3.6-flash',rings:[ring],rawJson:'original'},
+      {width:600,height:338,mimeType:'image/jpeg',imageBase64:'dGVzdA=='})
+    await store.renameRings(saved.id,{ring_1:'白色圈'})
+    const loaded = await createRingHistory(dir).load(saved.id)
+    assert.deepEqual(loaded.ringNames,{ring_1:'白色圈'})
+    assert.deepEqual(loaded.rings,[ring])
+    assert.equal(loaded.rawJson,'original')
+    await assert.rejects(store.renameRings(saved.id,{wrong:'黑色圈'}),{statusCode:400})
+    await assert.rejects(store.renameRings(saved.id,{ring_1:'x'.repeat(81)}),{statusCode:400})
+  } finally {await rm(dir,{recursive:true,force:true})}
+})

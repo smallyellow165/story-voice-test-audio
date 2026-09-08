@@ -1,3 +1,4 @@
+import { mountManageRings } from './manage-rings'
 import { publishRingFacts } from './ring-infra-state'
 import { locateFeet, usableRing, type FootRingState } from './ring-feet-state'
 import { adaptGeminiRings, adaptLegacyRing, type RingDetectionResult, type RingStrategy } from './ring-detection-result'
@@ -106,6 +107,7 @@ let feetState = locateFeet(null, null, null)
 const historySelect = document.querySelector<HTMLSelectElement>('#ring-history')!
 const historyStatus = document.querySelector<HTMLElement>('#ring-history-status')!
 let historyId: string | null = null
+let ringNames: Record<string, string> = {}
 let historyListRequest = 0
 let geminiReady = false
 let probe: ReturnType<typeof fromClient> | null = null
@@ -120,7 +122,7 @@ function updateRingDebug(error?: string) {
     snapshotAndOverlayRaster: { width: view.width, height: view.height },
     viewportCssRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     mapping: 'Gemini normalized x * snapshot.width, y * snapshot.height. Same uncropped, unmirrored raster aspect as camera overlay; no DPR multiplier.',
-    historyId,
+    historyId, ringNames,
     ...feetState,
     membership: 'All valid inner polygons; boundary counts IN. Overlap is AMBIGUOUS, missing pose/polygon is UNKNOWN.',
     legacyLandingRingId: detection?.active?.id || null,
@@ -128,6 +130,16 @@ function updateRingDebug(error?: string) {
     rasterRings: detection?.rings || [], source: detection?.source || null, error: ringError,
   }, null, 2)
 }
+const unmountManageRings = mountManageRings(document.querySelector<HTMLButtonElement>('#manage-rings')!,
+  () => ({ historyId, ringIds: (detection?.rings ?? []).map(r => r.id), names: { ...ringNames } }),
+  (id, names) => {
+    if (id !== historyId) return
+    ringNames = names
+    publishFeetFacts()
+    updateRingDebug()
+  })
+if (import.meta.hot) import.meta.hot.dispose(unmountManageRings)
+
 async function refreshHistory(selected = historySelect.value) {
   const request = ++historyListRequest
   try {
@@ -181,6 +193,7 @@ document.querySelector<HTMLButtonElement>('#ring-history-load')!.onclick = async
     document.querySelector<HTMLElement>('#ring-model-control')!.hidden = false
     if (![...ringModel.options].some(option => option.value === run.model)) ringModel.add(new Option(run.model, run.model))
     ringModel.value = run.model
+    ringNames = run.ringNames || {}
     historyId = run.id
     applyDetection(result)
     ringStatus.textContent = `${run.model} · ${result.rings.length} rings · History ${run.id}。`
@@ -201,6 +214,7 @@ function clearRingDetection() {
   upload = null
   detection = null
   historyId = null
+  ringNames = {}
   probe = null
   ringError = null
   ringRaw.textContent = '尚未检测。'
@@ -261,7 +275,7 @@ document.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
   .addEventListener('scroll', () => updateRingDebug(), { passive: true })
 
 function publishFeetFacts() {
-  publishRingFacts({ ringIds: (detection?.rings ?? []).filter(usableRing).map(r => r.id),
+  publishRingFacts({ ringNames, ringIds: (detection?.rings ?? []).filter(usableRing).map(r => r.id),
     leftFootRingId: feetState.leftFootRingId, rightFootRingId: feetState.rightFootRingId,
     leftFootStatus: feetState.leftFoot.status, rightFootStatus: feetState.rightFoot.status })
 }
@@ -466,6 +480,7 @@ async function detectRing() {
   upload = controller
   detectButton.disabled = true
   historyId = null
+  ringNames = {}
   detection = null // A failed re-detection must not silently retain an old polygon.
   ringError = null
   probe = null
