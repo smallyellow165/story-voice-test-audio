@@ -33,14 +33,33 @@ export function mount(host: HTMLElement, options: MountOptions) {
   left.append(content.querySelector('h1')!, state)
   camera.append(content.querySelector('.camera-panel')!)
   const settings = document.createElement('details'); settings.className = 'player-settings'; settings.open = true
-  const summary = document.createElement('summary'); summary.textContent = '家长设置：摄像头 / Rings / History'
-  settings.append(summary, content.querySelector('.controls')!)
+  const summary = document.createElement('summary'); summary.textContent = 'Setup / 家长设置：摄像头 / Rings / History'
+  const controls = content.querySelector<HTMLElement>('.controls')!
+  const utilities = document.createElement('details'); utilities.className = 'player-utilities'
+  const utilityTitle = document.createElement('summary'); utilityTitle.textContent = 'Utilities / 其他调试能力'
+  const utilityControls = document.createElement('div'); utilityControls.className = 'controls'
+  // Reparent existing nodes only: IDs, event bindings and all explanatory text survive.
+  const utilityStart = controls.querySelector('#voice-start')!.parentElement!.previousElementSibling!
+  let node: ChildNode | null = utilityStart
+  while (node) { const next: ChildNode | null = node.nextSibling; utilityControls.append(node); node = next }
+  const cameraRow = controls.querySelector('#start')!.parentElement!
+  controls.prepend(cameraRow)
+  cameraRow.after(utilityControls.querySelector('#status')!)
+  // Detection and History are two choices in the same Rings setup group.
+  const rings = document.createElement('section'); rings.className = 'player-ring-setup'
+  const ringStart = controls.querySelector('.ring-control-row')!
+  node = ringStart
+  while (node) { const next: ChildNode | null = node.nextSibling; rings.append(node); node = next }
+  rings.append(utilityControls.querySelector('#ring-status')!)
+  controls.append(rings)
+  settings.append(summary, controls)
+  utilities.append(utilityTitle, utilityControls)
   wrapper.append(layout); root.replaceChildren(style, wrapper)
   const layoutRoot = createRoot(layout)
   flushSync(() => layoutRoot.render(<ThreeColumnLayout defaultSizes={['22%', '50%', '28%']}
     left={<><slot name="activity-navigation" /><div ref={slot => { if (slot) slot.append(left) }} /></>}
     center={<div ref={slot => { if (slot) slot.append(camera) }} />}
-    right={<><slot name="integration" /><div ref={slot => { if (slot) slot.append(settings) }} /></>}
+    right={<><div ref={slot => { if (slot) slot.append(settings) }} /><slot name="integration" /><div ref={slot => { if (slot) slot.append(utilities) }} /></>}
   />))
   const facts = createRingFacts()
   const infra = mountRingFeetInfra(root, { ...options, publishFacts: facts.publishRingFacts })
