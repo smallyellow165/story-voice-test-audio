@@ -38,7 +38,7 @@ export function mount(host: HTMLElement, options: MountOptions) {
   wrapper.append(layout); root.replaceChildren(style, wrapper)
   const layoutRoot = createRoot(layout)
   flushSync(() => layoutRoot.render(<ThreeColumnLayout defaultSizes={['22%', '50%', '28%']}
-    left={<div ref={slot => { if (slot) slot.append(left) }} />}
+    left={<><slot name="activity-navigation" /><div ref={slot => { if (slot) slot.append(left) }} /></>}
     center={<div ref={slot => { if (slot) slot.append(camera) }} />}
     right={<><slot name="integration" /><div ref={slot => { if (slot) slot.append(settings) }} /></>}
   />))
