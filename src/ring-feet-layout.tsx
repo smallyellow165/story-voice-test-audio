@@ -45,9 +45,11 @@ const { mountGamePanel } = await import('./games/game-panel')
 const gameHost = document.createElement('section')
 gameHost.id = 'game-panel'
 state.before(gameHost)
-let unsubscribeGame = () => {}
-const bridge = playerMode ? createActivityBridge(() => { unsubscribeGame(); infra.stopRingFeetActivity() }) : null
-unsubscribeGame = mountGamePanel(gameHost, (type, payload) => bridge?.send(type, payload))
+let gamePanel: ReturnType<typeof mountGamePanel> | undefined
+const unsubscribeGame = () => gamePanel?.()
+const bridge = playerMode ? createActivityBridge(() => { unsubscribeGame(); infra.stopRingFeetActivity() },
+  () => gamePanel?.snapshot() || {}, () => gamePanel?.reset()) : null
+gamePanel = mountGamePanel(gameHost, (type, payload) => bridge?.send(type, payload))
 bridge?.send('ready')
 window.addEventListener('pagehide', () => { unsubscribeGame(); bridge?.dispose() })
 if (import.meta.hot) import.meta.hot.dispose(unsubscribeGame)
