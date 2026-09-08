@@ -2,7 +2,7 @@ import gameJson from './game-1.json'
 import { subscribeRingFacts, type RingInfraFacts } from '../ring-infra-state'
 import { createGameRuntime, parseGame } from './game-runtime'
 
-export function mountGamePanel(host: HTMLElement) {
+export function mountGamePanel(host: HTMLElement, onEvent?: (type: 'task_changed' | 'task_succeeded' | 'ended', payload: Record<string, unknown>) => void) {
   const game = parseGame(gameJson), runtime = createGameRuntime(game)
   host.innerHTML = `<hr><h2></h2><p class="game-task"></p>
     <p class="game-description"></p><strong class="game-result"></strong>
@@ -15,6 +15,7 @@ export function mountGamePanel(host: HTMLElement) {
   let latest: RingInfraFacts, ringSignature = ''
   let timer: ReturnType<typeof setTimeout> | undefined
   let completed = false, armed = true
+  let lastTask = ''
   function cancelAdvance() {
     clearTimeout(timer)
     timer = undefined
@@ -30,9 +31,15 @@ export function mountGamePanel(host: HTMLElement) {
   const next = host.querySelector<HTMLButtonElement>('.game-next')!
   function render() {
     const state = runtime.read(latest, bindings)
+    if (lastTask !== state.task.id) {
+      lastTask = state.task.id
+      onEvent?.('task_changed', { gameId: game.id, taskId: state.task.id, index: state.index, total: state.total })
+    }
     if (!armed && state.result === 'NOT_YET') armed = true
     if (!completed && armed && state.result === 'SUCCESS') {
       completed = true
+      onEvent?.('task_succeeded', { gameId: game.id, taskId: state.task.id, index: state.index })
+      if (state.index === state.total - 1) onEvent?.('ended', { reason: 'completed', gameId: game.id })
       if (state.index < state.total - 1) timer = setTimeout(advance, 900)
     }
     const displayedResult = completed ? 'SUCCESS' : 'NOT_YET'
@@ -43,7 +50,7 @@ export function mountGamePanel(host: HTMLElement) {
     host.querySelector('.game-debug')!.textContent = JSON.stringify({ ...state, displayedResult, autoAdvance: { armed, completed, pending: timer !== undefined, delayMs: 900 }, bindings, facts: latest }, null, 2)
   }
   next.onclick = advance
-  host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = () => { cancelAdvance(); armed = true; runtime.reset(); render() }
+  host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = () => { cancelAdvance(); armed = true; runtime.reset(); lastTask = ''; render() }
   const unsubscribe = subscribeRingFacts(facts => {
     latest = facts
     const signature = JSON.stringify(facts.ringIds)
@@ -52,6 +59,7 @@ export function mountGamePanel(host: HTMLElement) {
       cancelAdvance()
       armed = true
       runtime.reset()
+      lastTask = ''
 
     }
     render()

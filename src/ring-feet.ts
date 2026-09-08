@@ -860,3 +860,9 @@ voiceStart.onclick = () => {
 }
 voiceStop.onclick = () => stopVoice()
 window.addEventListener('pagehide', () => { stopScreenCapture(); stopVoice(); stop() })
+
+export function stopRingFeetActivity() {
+  stopScreenCapture()
+  stopVoice()
+  stop()
+}

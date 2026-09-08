@@ -1,0 +1,12 @@
+.ringfeet-player #ring-feet-layout { display: grid; grid-template-columns: minmax(260px, 38%) minmax(0, 1fr); gap: 20px; padding: 20px; overflow: auto; }
+.ringfeet-player #ring-feet-layout > section { min-width: 0; }
+.ringfeet-player .status-board, .ringfeet-player h1, .ringfeet-player .ring-tabs,
+.ringfeet-player #ring-game, .ringfeet-player #ring-debug, .ringfeet-player #ring-json,
+.ringfeet-player #game-panel details, .ringfeet-player .jump-details { display: none; }
+.ringfeet-player .player-settings { grid-column: 1 / -1; }
+.ringfeet-player .player-settings > summary { cursor: pointer; padding: 12px; }
+.ringfeet-player .controls > p:has(#voice-start), .ringfeet-player #voice-heard,
+.ringfeet-player .controls > p:has(#screen-start), .ringfeet-player .controls > p:has(#screencast-start),
+.ringfeet-player .controls > p:has(+ #screen-video) { display: none; }
+.ringfeet-player .game-description, .ringfeet-player .game-result { font-size: clamp(40px, 4vw, 80px) !important; }
+@media (max-width: 700px) { .ringfeet-player #ring-feet-layout { grid-template-columns: minmax(0, 1fr); } }
