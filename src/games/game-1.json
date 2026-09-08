@@ -3,9 +3,9 @@
   "name": "Game 1 · Feet in Rings",
   "ringSlots": ["ring_1", "ring_2"],
   "tasks": [
-    { "id": "left-a", "description": "左脚 → {ring_1}", "condition": { "type": "footInRing", "foot": "left", "ring": "ring_1" } },
-    { "id": "right-b", "description": "右脚 → {ring_2}", "condition": { "type": "footInRing", "foot": "right", "ring": "ring_2" } },
-    { "id": "both-a", "description": "双脚 → {ring_1}", "condition": { "type": "all", "conditions": [
+    { "id": "left-a", "description": "把左脚放到{ring_1}里", "condition": { "type": "footInRing", "foot": "left", "ring": "ring_1" } },
+    { "id": "right-b", "description": "把右脚放到{ring_2}里", "condition": { "type": "footInRing", "foot": "right", "ring": "ring_2" } },
+    { "id": "both-a", "description": "把双脚放到{ring_1}里", "condition": { "type": "all", "conditions": [
       { "type": "footInRing", "foot": "left", "ring": "ring_1" },
       { "type": "footInRing", "foot": "right", "ring": "ring_1" }
     ] } },

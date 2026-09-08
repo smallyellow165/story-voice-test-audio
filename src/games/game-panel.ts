@@ -21,12 +21,16 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
   let lastTask = ''
   let runId = crypto.randomUUID(), taskAttemptId = crypto.randomUUID()
   let revision = 0, signature = ''
+  function describeTask(description: string) {
+    return description.replace(/\{([^}]+)\}/g, (_, id: string) =>
+      latest.ringNames?.[id] || `第${game.ringSlots.indexOf(id) + 1}个圈`)
+  }
   function snapshot() {
     const state = runtime.read(latest, bindings)
     return { activityType: 'ringfeet', gameId: game.id, gameName: game.name, runId, taskAttemptId,
       revision, lifecycle: completed && state.index === state.total - 1 ? 'finished' : 'running',
       taskId: state.task.id, index: state.index, total: state.total,
-      taskDescription: state.task.description.replace(/\{([^}]+)\}/g, (_, id: string) => latest.ringNames?.[id] || id),
+      taskDescription: describeTask(state.task.description),
       taskStatus: completed ? 'succeeded' : 'not_yet', progress: { completed: succeededTasks.size, total: state.total },
       capabilities: ['get_snapshot', 'reset', 'exit'] }
   }
@@ -71,7 +75,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     }
     const displayedResult = completed ? 'SUCCESS' : 'NOT_YET'
     host.querySelector('.game-task')!.textContent = `Task ${state.index + 1} / ${state.total}`
-    host.querySelector('.game-description')!.textContent = state.task.description.replace(/\{([^}]+)\}/g, (_, id: string) => latest.ringNames?.[id] || id)
+    host.querySelector('.game-description')!.textContent = describeTask(state.task.description)
     host.querySelector('.game-result')!.textContent = displayedResult
     next.disabled = state.index === state.total - 1
     host.querySelector('.game-debug')!.textContent = JSON.stringify({ ...state, displayedResult, autoAdvance: { armed, completed, pending: timer !== undefined, delayMs: 900 }, bindings, facts: latest }, null, 2)
