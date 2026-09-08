@@ -883,7 +883,7 @@ function stopRingFeetActivity() {
   stop()
 }
 
-return { stop: stopRingFeetActivity, dispose() {
+return { inspect: () => ({ poseReady: running, poseStatus: status.textContent, inFlight: busy }), stop: stopRingFeetActivity, dispose() {
   if (disposed) return
   disposed = true
   lifetime.abort()

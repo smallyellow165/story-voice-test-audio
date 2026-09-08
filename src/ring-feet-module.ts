@@ -9,6 +9,7 @@ import { createRingFacts } from './ring-infra-state'
 
 export type MountOptions = RingFeetInput & {
   instanceId: string
+  debug?: boolean
   onMessage: (message: any) => void
 }
 // UI and processing stay in this project. The host supplies media and semantic messaging only.
@@ -20,6 +21,7 @@ export function mount(host: HTMLElement, options: MountOptions) {
   const style = document.createElement('style')
   style.textContent = css.replace(/\bbody\b/g, ':host').replace(/html, /g, '') + playerCss + sheetCss +
     ':host{display:block;height:100%;width:100%;overflow:auto} #ring-feet-layout{width:100%;height:100%;min-height:100%;} '
+  if (options.debug) style.textContent += '.ringfeet-player #ring-feet-layout{grid-template-columns:minmax(0,2fr) minmax(240px,1fr)} .player-camera{max-width:420px} .ringfeet-player #game-panel .game-description,.ringfeet-player #game-panel .game-result{font-size:32px!important} @media(max-width:700px){.ringfeet-player #ring-feet-layout{grid-template-columns:1fr}}'
   const wrapper = document.createElement('div'); wrapper.className = 'ringfeet-player'
   const layout = document.createElement('div'); layout.id = 'ring-feet-layout'
   const left = document.createElement('section'), camera = document.createElement('section')
@@ -41,7 +43,7 @@ export function mount(host: HTMLElement, options: MountOptions) {
   bridge.send('ready')
   let disposed = false
   console.info('[RingFeet] module mounted', options.instanceId)
-  return { receive: bridge.receive, unmount() {
+  return { inspect: infra.inspect, receive: bridge.receive, unmount() {
     if (disposed) return
     disposed = true
     bridge.receive({ v: 1, id: crypto.randomUUID(), instanceId: options.instanceId, kind: 'command', name: 'exit', payload: {} })
