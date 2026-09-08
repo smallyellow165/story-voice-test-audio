@@ -12,6 +12,7 @@ const ringProxy = {
 
 export default defineConfig({
   base,
+  worker: { format: 'es' },
   plugins: [{
     name: 'local-screencast-mp4',
     configureServer(server) { server.middlewares.use(screencastMiddleware) },

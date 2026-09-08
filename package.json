@@ -14,7 +14,9 @@
     "test:pose-classifier:e2e": "node scripts/run-pose-classifier-e2e.mjs",
     "export:star-jump-dataset": "node scripts/export-star-jump-dataset.mjs",
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:module": "tsc && vite build --config vite.module.config.ts",
+    "watch:module": "vite build --config vite.module.config.ts --watch"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
@@ -30,5 +32,11 @@
     "@types/react-dom": "19.2.7",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
+  },
+  "exports": {
+    "./ringfeet": {
+      "types": "./src/ring-feet-module.d.ts",
+      "import": "./dist-module/index.js"
+    }
   }
 }

@@ -10,9 +10,26 @@ import { JUMP_STRATEGIES, jumpResult } from './jump-strategies'
 import type { JumpSnapshot, JumpState, JumpStrategy } from './jump-strategy'
 import { createJumpIntoRing, type LandingSnapshot } from './jump-into-ring'
 
+import PoseWorker from './pose-landmarker.worker?worker&inline'
+
+export type CameraLease = { stream: MediaStream; release: () => void }
+export type RingFeetInput = {
+  acquireCamera: () => Promise<CameraLease>
+  apiBase?: string
+  publishFacts?: typeof publishRingFacts
+}
+
+export function mountRingFeetInfra(root: Document | ShadowRoot, input: RingFeetInput) {
+let disposed = false
+const lifetime = new AbortController()
+const publishFacts = input.publishFacts || publishRingFacts
+const fetch: typeof globalThis.fetch = (url, init) => globalThis.fetch(
+  `${input.apiBase || ''}${url}`, { ...init, signal: init?.signal
+    ? AbortSignal.any([init.signal, lifetime.signal]) : lifetime.signal })
+let cameraLease: CameraLease | null = null
 const landingCheck = createJumpIntoRing()
-const landingStatus = document.querySelector<HTMLElement>('#jump-into-ring')!
-const landingDebug = document.querySelector<HTMLElement>('#landing-debug')!
+const landingStatus = root.querySelector<HTMLElement>('#jump-into-ring')!
+const landingDebug = root.querySelector<HTMLElement>('#landing-debug')!
 function showLanding(result: LandingSnapshot) {
   landingStatus.textContent = `LEGACY LANDING: ${result.state}`
   landingDebug.textContent = `${result.reason} | stable=${Math.round(result.stableMs)} ms`
@@ -21,19 +38,19 @@ function showLanding(result: LandingSnapshot) {
 const defaultJumpIndex = JUMP_STRATEGIES.findIndex(entry => entry.name === 'Dino Jump')
 const defaultJump = JUMP_STRATEGIES[defaultJumpIndex]!
 let jumpStrategy: JumpStrategy = defaultJump.create()
-const jumpSelect = document.querySelector<HTMLSelectElement>('#jump-strategy')!
-const jumpHelp = document.querySelector<HTMLElement>('#jump-help')!
-const jumpCommon = document.querySelector<HTMLElement>('#jump-common')!
-const jumpCount = document.querySelector<HTMLElement>('#jump-count')!
+const jumpSelect = root.querySelector<HTMLSelectElement>('#jump-strategy')!
+const jumpHelp = root.querySelector<HTMLElement>('#jump-help')!
+const jumpCommon = root.querySelector<HTMLElement>('#jump-common')!
+const jumpCount = root.querySelector<HTMLElement>('#jump-count')!
 let jumpEvents = 0
 JUMP_STRATEGIES.forEach((entry, i) => jumpSelect.add(new Option(entry.name, String(i))))
 jumpSelect.value = String(defaultJumpIndex)
 jumpHelp.textContent = defaultJump.help
-const jumpName = document.querySelector<HTMLElement>('#jump-name')!
-const jumpState = document.querySelector<HTMLElement>('#jump-state')!
-const jumpDebug = document.querySelector<HTMLElement>('#jump-debug')!
-const jumpEvent = document.querySelector<HTMLElement>('#jump-event')!
-const jumpTrace = document.querySelector<HTMLElement>('#jump-trace')!
+const jumpName = root.querySelector<HTMLElement>('#jump-name')!
+const jumpState = root.querySelector<HTMLElement>('#jump-state')!
+const jumpDebug = root.querySelector<HTMLElement>('#jump-debug')!
+const jumpEvent = root.querySelector<HTMLElement>('#jump-event')!
+const jumpTrace = root.querySelector<HTMLElement>('#jump-trace')!
 let jumpHistory: JumpState[] = []
 jumpName.textContent = jumpStrategy.name
 
@@ -62,7 +79,7 @@ function resetJump() {
   jumpEvent.textContent = 'Last event: —'
   showJump(jumpStrategy.reset())
 }
-document.querySelector<HTMLButtonElement>('#jump-reset')!.onclick = resetJump
+root.querySelector<HTMLButtonElement>('#jump-reset')!.onclick = resetJump
 resetJump()
 jumpSelect.onchange = () => {
   const selected = JUMP_STRATEGIES[Number(jumpSelect.value)]!
@@ -72,21 +89,20 @@ jumpSelect.onchange = () => {
   resetJump() // Immediately update the large status; never touch ring/camera state.
 }
 
-const video = document.querySelector<HTMLVideoElement>('#video')!
-const view = document.querySelector<HTMLCanvasElement>('#view')!
+const video = root.querySelector<HTMLVideoElement>('#video')!
+const view = root.querySelector<HTMLCanvasElement>('#view')!
 const context = view.getContext('2d')!
 const drawing = new DrawingUtils(context)
-const startButton = document.querySelector<HTMLButtonElement>('#start')!
-const stopButton = document.querySelector<HTMLButtonElement>('#stop')!
-const detectButton = document.querySelector<HTMLButtonElement>('#detect')!
-const status = document.querySelector<HTMLElement>('#status')!
-const ringStatus = document.querySelector<HTMLElement>('#ring-status')!
-const leftLabel = document.querySelector<HTMLElement>('#left')!
-const rightLabel = document.querySelector<HTMLElement>('#right')!
+const startButton = root.querySelector<HTMLButtonElement>('#start')!
+const stopButton = root.querySelector<HTMLButtonElement>('#stop')!
+const detectButton = root.querySelector<HTMLButtonElement>('#detect')!
+const status = root.querySelector<HTMLElement>('#status')!
+const ringStatus = root.querySelector<HTMLElement>('#ring-status')!
+const leftLabel = root.querySelector<HTMLElement>('#left')!
+const rightLabel = root.querySelector<HTMLElement>('#right')!
 const capture = document.createElement('canvas')
 const captureContext = capture.getContext('2d')!
 let worker: Worker | null = null
-let stream: MediaStream | null = null
 let detection: RingDetectionResult | null = null
 let busy = false
 let running = false
@@ -97,15 +113,15 @@ let requestId = 0
 let watchdog: number | undefined
 let upload: AbortController | null = null
 
-const ringStrategy = document.querySelector<HTMLSelectElement>('#ring-strategy')!
-const ringModel = document.querySelector<HTMLSelectElement>('#ring-model')!
-const ringModelStatus = document.querySelector<HTMLElement>('#ring-model-status')!
-const ringRaw = document.querySelector<HTMLElement>('#ring-raw')!
-const ringTarget = document.querySelector<HTMLElement>('#ring-target')!
-const ringDebug = document.querySelector<HTMLElement>('#ring-coordinates')!
+const ringStrategy = root.querySelector<HTMLSelectElement>('#ring-strategy')!
+const ringModel = root.querySelector<HTMLSelectElement>('#ring-model')!
+const ringModelStatus = root.querySelector<HTMLElement>('#ring-model-status')!
+const ringRaw = root.querySelector<HTMLElement>('#ring-raw')!
+const ringTarget = root.querySelector<HTMLElement>('#ring-target')!
+const ringDebug = root.querySelector<HTMLElement>('#ring-coordinates')!
 let feetState = locateFeet(null, null, null)
-const historySelect = document.querySelector<HTMLSelectElement>('#ring-history')!
-const historyStatus = document.querySelector<HTMLElement>('#ring-history-status')!
+const historySelect = root.querySelector<HTMLSelectElement>('#ring-history')!
+const historyStatus = root.querySelector<HTMLElement>('#ring-history-status')!
 let historyId: string | null = null
 let ringNames: Record<string, string> = {}
 let historyListRequest = 0
@@ -130,15 +146,15 @@ function updateRingDebug(error?: string) {
     rasterRings: detection?.rings || [], source: detection?.source || null, error: ringError,
   }, null, 2)
 }
-const unmountManageRings = mountManageRings(document.querySelector<HTMLButtonElement>('#manage-rings')!,
+const unmountManageRings = mountManageRings(root.querySelector<HTMLButtonElement>('#manage-rings')!,
   () => ({ historyId, ringIds: (detection?.rings ?? []).map(r => r.id), names: { ...ringNames } }),
   (id, names) => {
     if (id !== historyId) return
     ringNames = names
     publishFeetFacts()
     updateRingDebug()
-  })
-if (import.meta.hot) import.meta.hot.dispose(unmountManageRings)
+  }, root, input.apiBase)
+
 
 async function refreshHistory(selected = historySelect.value) {
   const request = ++historyListRequest
@@ -155,7 +171,7 @@ async function refreshHistory(selected = historySelect.value) {
     if (request === historyListRequest) historyStatus.textContent = `History 列表加载失败：${String(error)}`
   }
 }
-document.querySelector<HTMLButtonElement>('#ring-history-refresh')!.onclick = () => {
+root.querySelector<HTMLButtonElement>('#ring-history-refresh')!.onclick = () => {
   historyStatus.textContent = ''
   void refreshHistory()
 }
@@ -168,7 +184,7 @@ function applyDetection(result: RingDetectionResult) {
   ringTarget.textContent = `Feet rings: ${result.rings.filter(usableRing).map(r => r.id).join(', ') || 'none'}。仅有效内边界参与脚点判断；bbox 不替代 polygon。`
   updateRingDebug()
 }
-document.querySelector<HTMLButtonElement>('#ring-history-load')!.onclick = async () => {
+root.querySelector<HTMLButtonElement>('#ring-history-load')!.onclick = async () => {
   if (!running) { historyStatus.textContent = '请先 Start Camera，等待 Pose 就绪。'; return }
   if (upload) { historyStatus.textContent = '正在检测或恢复，请稍候。'; return }
   if (!historySelect.value) { historyStatus.textContent = '请先选择 History。'; return }
@@ -190,7 +206,7 @@ document.querySelector<HTMLButtonElement>('#ring-history-load')!.onclick = async
     }
     const result = adaptGeminiRings({ model: run.model, rings: run.rings, rawJson: run.rawJson }, capture.width, capture.height)
     ringStrategy.value = 'gemini'
-    document.querySelector<HTMLElement>('#ring-model-control')!.hidden = false
+    root.querySelector<HTMLElement>('#ring-model-control')!.hidden = false
     if (![...ringModel.options].some(option => option.value === run.model)) ringModel.add(new Option(run.model, run.model))
     ringModel.value = run.model
     ringNames = run.ringNames || {}
@@ -225,7 +241,7 @@ function clearRingDetection() {
 }
 ringStrategy.onchange = () => {
   clearRingDetection()
-  document.querySelector<HTMLElement>('#ring-model-control')!.hidden = ringStrategy.value !== 'gemini'
+  root.querySelector<HTMLElement>('#ring-model-control')!.hidden = ringStrategy.value !== 'gemini'
   ringStatus.textContent = '检测策略已切换，请重新点击 Detect Ring。'
   detectButton.disabled = !running
 }
@@ -248,14 +264,14 @@ void (async () => {
     ringModelStatus.textContent = `Gemini 模型列表加载失败：${String(error)}。请确认 Node dev server 已启动。`
   }
 })()
-const ringTabs = [...document.querySelectorAll<HTMLButtonElement>('.ring-tabs [role="tab"]')]
+const ringTabs = [...root.querySelectorAll<HTMLButtonElement>('.ring-tabs [role="tab"]')]
 ringTabs.forEach((tab, index) => {
   tab.onclick = () => {
     ringTabs.forEach(button => {
       const selected = button === tab
       button.setAttribute('aria-selected', String(selected))
       button.tabIndex = selected ? 0 : -1
-      document.getElementById(button.getAttribute('aria-controls')!)!.hidden = !selected
+      root.getElementById(button.getAttribute('aria-controls')!)!.hidden = !selected
     })
     updateRingDebug()
   }
@@ -271,11 +287,11 @@ view.addEventListener('click', event => {
   updateRingDebug()
 })
 new ResizeObserver(() => updateRingDebug()).observe(view)
-document.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
+root.querySelector('.camera-panel')!.closest('.three-column-layout__panel')!
   .addEventListener('scroll', () => updateRingDebug(), { passive: true })
 
 function publishFeetFacts() {
-  publishRingFacts({ ringNames, ringIds: (detection?.rings ?? []).filter(usableRing).map(r => r.id),
+  publishFacts({ ringNames, ringIds: (detection?.rings ?? []).filter(usableRing).map(r => r.id),
     leftFootRingId: feetState.leftFootRingId, rightFootRingId: feetState.rightFootRingId,
     leftFootStatus: feetState.leftFoot.status, rightFootStatus: feetState.rightFoot.status })
 }
@@ -300,8 +316,8 @@ function stop(message = '摄像头已停止。') {
   window.clearTimeout(watchdog)
   worker?.terminate()
   worker = null
-  stream?.getTracks().forEach(track => track.stop())
-  stream = null
+  cameraLease?.release()
+  cameraLease = null
   video.srcObject = null
   upload?.abort()
   upload = null
@@ -375,7 +391,7 @@ function render(landmarks: NormalizedLandmark[]) {
   publishFeetFacts()
   showFoot(feetState.leftFoot, 'LEFT', leftLabel)
   showFoot(feetState.rightFoot, 'RIGHT', rightLabel)
-  if (!document.getElementById('ring-debug')!.hidden) updateRingDebug()
+  if (!root.getElementById('ring-debug')!.hidden) updateRingDebug()
 }
 
 async function tick() {
@@ -409,10 +425,10 @@ startButton.onclick = async () => {
   status.textContent = '正在加载 Pose 模型并请求摄像头权限…'
   const currentSession = ++session
   try {
-    const media = await navigator.mediaDevices.getUserMedia({ audio: false,
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } } })
-    if (currentSession !== session) { media.getTracks().forEach(t => t.stop()); return }
-    stream = media
+    const lease = await input.acquireCamera()
+    if (disposed || currentSession !== session) { lease.release(); return }
+    cameraLease = lease
+    const media = lease.stream
     media.getVideoTracks()[0]!.addEventListener('ended', () => {
       if (currentSession === session) stop('摄像头连接已断开。')
     })
@@ -422,7 +438,7 @@ startButton.onclick = async () => {
     capture.width = view.width = 600
     capture.height = view.height = Math.max(1, Math.round(video.videoHeight * 600 / video.videoWidth))
     lastVideoTime = -1
-    const poseWorker = new Worker(new URL('./pose-landmarker.worker.ts', import.meta.url), { type: 'module' })
+    const poseWorker = new PoseWorker()
     worker = poseWorker
     watchdog = window.setTimeout(() => stop('Pose 模型加载超时，请检查网络后重试。'), 60000)
     poseWorker.onerror = () => {
@@ -514,7 +530,7 @@ async function detectRing() {
     } else {
       const blob = await new Promise<Blob>((resolve, reject) => snapshot.toBlob(
         value => value ? resolve(value) : reject(new Error('截图失败')), 'image/png'))
-      const response = await fetch(`${import.meta.env.BASE_URL}ring-api/detect-ring`, {
+      const response = await fetch('/story-voice-test-audio/ring-api/detect-ring', {
         method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob, signal: controller.signal,
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}；请确认 Python service 已启动`)
@@ -547,18 +563,18 @@ async function detectRing() {
 detectButton.onclick = () => { void detectRing() }
 stopButton.onclick = () => stop()
 
-const screenStart = document.querySelector<HTMLButtonElement>('#screen-start')!
-const screenStop = document.querySelector<HTMLButtonElement>('#screen-stop')!
-const screenshotButton = document.querySelector<HTMLButtonElement>('#screenshot')!
-const screenStatus = document.querySelector<HTMLElement>('#screen-status')!
-const screenVideo = document.querySelector<HTMLVideoElement>('#screen-video')!
+const screenStart = root.querySelector<HTMLButtonElement>('#screen-start')!
+const screenStop = root.querySelector<HTMLButtonElement>('#screen-stop')!
+const screenshotButton = root.querySelector<HTMLButtonElement>('#screenshot')!
+const screenStatus = root.querySelector<HTMLElement>('#screen-status')!
+const screenVideo = root.querySelector<HTMLVideoElement>('#screen-video')!
 const screenSupported = !!navigator.mediaDevices?.getDisplayMedia
 let screenStream: MediaStream | null = null
 let screenSession = 0
 let screenshotBusy = false
-const screencastStart = document.querySelector<HTMLButtonElement>('#screencast-start')!
-const screencastStop = document.querySelector<HTMLButtonElement>('#screencast-stop')!
-const screencastStatus = document.querySelector<HTMLElement>('#screencast-status')!
+const screencastStart = root.querySelector<HTMLButtonElement>('#screencast-start')!
+const screencastStop = root.querySelector<HTMLButtonElement>('#screencast-stop')!
+const screencastStatus = root.querySelector<HTMLElement>('#screencast-status')!
 const recorderSupported = typeof MediaRecorder !== 'undefined'
 let screencast: MediaRecorder | null = null
 
@@ -758,10 +774,10 @@ const speechWindow = window as typeof window & {
   webkitSpeechRecognition?: VoiceConstructor
 }
 const SpeechRecognitionAPI = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
-const voiceStart = document.querySelector<HTMLButtonElement>('#voice-start')!
-const voiceStop = document.querySelector<HTMLButtonElement>('#voice-stop')!
-const voiceStatus = document.querySelector<HTMLElement>('#voice-status')!
-const voiceHeard = document.querySelector<HTMLElement>('#voice-heard')!
+const voiceStart = root.querySelector<HTMLButtonElement>('#voice-start')!
+const voiceStop = root.querySelector<HTMLButtonElement>('#voice-stop')!
+const voiceStatus = root.querySelector<HTMLElement>('#voice-status')!
+const voiceHeard = root.querySelector<HTMLElement>('#voice-heard')!
 let voiceEnabled = false
 let recognition: VoiceRecognition | null = null
 let voiceRestart: number | undefined
@@ -859,10 +875,22 @@ voiceStart.onclick = () => {
   listen()
 }
 voiceStop.onclick = () => stopVoice()
-window.addEventListener('pagehide', () => { stopScreenCapture(); stopVoice(); stop() })
 
-export function stopRingFeetActivity() {
+
+function stopRingFeetActivity() {
   stopScreenCapture()
   stopVoice()
   stop()
+}
+
+return { stop: stopRingFeetActivity, dispose() {
+  if (disposed) return
+  disposed = true
+  lifetime.abort()
+  // Do not initiate a recording upload/download after unmount.
+  if (screencast) { screencast.onstop = null; screencast.ondataavailable = null }
+  stopRingFeetActivity()
+  unmountManageRings()
+  drawing.close()
+} }
 }

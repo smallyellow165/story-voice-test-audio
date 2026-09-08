@@ -1,11 +1,12 @@
 import { createBottomSheet } from './ui/bottom-sheet'
 export type ManagedRings = { historyId: string | null; ringIds: string[]; names: Record<string, string> }
 export function mountManageRings(button: HTMLButtonElement, getState: () => ManagedRings,
-  onSaved: (id: string, names: Record<string, string>) => void) {
+  onSaved: (id: string, names: Record<string, string>) => void, root: Document | ShadowRoot = document, apiBase = '') {
+  const lifetime = new AbortController()
   const content = document.createElement('div'), footer = document.createElement('div')
   const save = document.createElement('button'), status = document.createElement('p')
   save.textContent = '保存名字'; status.setAttribute('role', 'status'); footer.append(save, status)
-  const sheet = createBottomSheet({ title: 'Manage Rings', content, footer })
+  const sheet = createBottomSheet({ title: 'Manage Rings', content, footer, root })
   let inputs = new Map<string, HTMLInputElement>(), snapshot: ManagedRings, generation = 0
   button.onclick = () => {
     generation++
@@ -29,15 +30,16 @@ export function mountManageRings(button: HTMLButtonElement, getState: () => Mana
     save.disabled = true; status.textContent = '保存中…'
     try {
       const ringNames = Object.fromEntries([...inputs].map(([key, input]) => [key, input.value]))
-      const response = await fetch(`/api/ring-feet/history/${id}/names`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ringNames }), signal: AbortSignal.timeout(15000),
+      const response = await fetch(`${apiBase}/api/ring-feet/history/${id}/names`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ringNames }), signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(15000)]),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+      if (lifetime.signal.aborted) return
       onSaved(id, data.ringNames)
       if (request === generation) status.textContent = '已保存到 History。'
     } catch (error) { if (request === generation) status.textContent = `保存失败：${String(error)}` }
     finally { if (request === generation) save.disabled = false }
   }
-  return () => { button.onclick = null; sheet.destroy() }
+  return () => { lifetime.abort(); button.onclick = null; sheet.destroy() }
 }

@@ -3,24 +3,29 @@ export function createActivityBridge(
   onExit: () => void,
   getSnapshot: () => Record<string, unknown>,
   reset: () => void,
+  endpoint?: { instanceId: string; send: (message: any) => void },
 ) {
   const params = new URLSearchParams(location.search)
-  const instanceId = params.get('activityId'), origin = params.get('hostOrigin')
+  const instanceId = endpoint?.instanceId || params.get('activityId'), origin = params.get('hostOrigin')
   const allowed = new Set(['http://localhost:3000', 'http://127.0.0.1:3000'])
-  const enabled = window.parent !== window && !!origin && allowed.has(origin) && !!instanceId
+  const enabled = !!endpoint || window.parent !== window && !!origin && allowed.has(origin) && !!instanceId
   let closed = false
   const results = new Map<string, Record<string, unknown>>()
   function send(name: string, payload: Record<string, unknown> = {}) {
     if (!enabled || closed) return
     const snapshot = payload.snapshot || getSnapshot()
-    window.parent.postMessage({ channel: 'activity-v1', v: 1, instanceId,
+    const message = { channel: 'activity-v1', v: 1, instanceId,
       id: crypto.randomUUID(), kind: name === 'command_result' ? 'result' : name === 'state' ? 'state' : 'event',
-      name, payload: { ...payload, snapshot } }, origin!)
+      name, payload: { ...payload, snapshot } }
+    if (endpoint) endpoint.send(message)
+    else window.parent.postMessage(message, origin!)
   }
   function receive(event: MessageEvent) {
-    const data = event.data
-    if (!enabled || event.source !== parent || event.origin !== origin || data?.channel !== 'activity-v1'
-      || data.v !== 1 || data.instanceId !== instanceId || data.kind !== 'command'
+    if (event.source !== parent || event.origin !== origin || event.data?.channel !== 'activity-v1') return
+    receiveCommand(event.data)
+  }
+  function receiveCommand(data: any) {
+    if (!enabled || closed || data?.v !== 1 || data.instanceId !== instanceId || data.kind !== 'command'
       || typeof data.id !== 'string' || data.id.length > 128) return
     if (results.has(data.id)) { send('command_result', results.get(data.id)); return }
     if (data.name === 'get_snapshot') { send('state'); return }
@@ -43,6 +48,6 @@ export function createActivityBridge(
       send('activity_closed', { snapshot: result.snapshot }); closed = true
     }
   }
-  window.addEventListener('message', receive)
-  return { send, dispose() { closed = true; window.removeEventListener('message', receive) } }
+  if (!endpoint) window.addEventListener('message', receive)
+  return { send, receive: receiveCommand, dispose() { closed = true; window.removeEventListener('message', receive) } }
 }

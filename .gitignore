@@ -36,3 +36,5 @@ public/test-videos/*
 *.njsproj
 *.sln
 *.sw?
+
+dist-module/

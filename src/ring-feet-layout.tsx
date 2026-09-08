@@ -38,7 +38,11 @@ if (playerMode) {
 content.remove()
 
 // Bind handlers only after every original ID is present in the mounted layout.
-const infra = await import('./ring-feet')
+const { mountRingFeetInfra } = await import('./ring-feet')
+const infra = mountRingFeetInfra(document, { acquireCamera: async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } })
+  return { stream, release: () => stream.getTracks().forEach(track => track.stop()) }
+} })
 
 // Composition boundary: the game subscribes to facts; infra imports no game.
 const { mountGamePanel } = await import('./games/game-panel')
@@ -47,9 +51,9 @@ gameHost.id = 'game-panel'
 state.before(gameHost)
 let gamePanel: ReturnType<typeof mountGamePanel> | undefined
 const unsubscribeGame = () => gamePanel?.()
-const bridge = playerMode ? createActivityBridge(() => { unsubscribeGame(); infra.stopRingFeetActivity() },
+const bridge = playerMode ? createActivityBridge(() => { unsubscribeGame(); infra.stop() },
   () => gamePanel?.snapshot() || {}, () => gamePanel?.reset()) : null
 gamePanel = mountGamePanel(gameHost, (type, payload) => bridge?.send(type, payload))
 bridge?.send('ready')
-window.addEventListener('pagehide', () => { unsubscribeGame(); bridge?.dispose() })
-if (import.meta.hot) import.meta.hot.dispose(unsubscribeGame)
+window.addEventListener('pagehide', () => { unsubscribeGame(); bridge?.dispose(); infra.dispose() })
+if (import.meta.hot) import.meta.hot.dispose(() => { unsubscribeGame(); bridge?.dispose(); infra.dispose() })

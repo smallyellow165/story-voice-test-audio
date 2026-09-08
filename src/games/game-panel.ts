@@ -4,7 +4,7 @@ import { createGameRuntime, parseGame } from './game-runtime'
 
 type GameEvent = 'task_changed' | 'task_succeeded' | 'game_finished' | 'state'
 
-export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, payload: Record<string, unknown>) => void) {
+export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, payload: Record<string, unknown>) => void, subscribe = subscribeRingFacts) {
   const game = parseGame(gameJson), runtime = createGameRuntime(game)
   host.innerHTML = `<hr><h2></h2><p class="game-task"></p>
     <p class="game-description"></p><strong class="game-result"></strong>
@@ -78,7 +78,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
   }
   next.onclick = advance
   host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = reset
-  const unsubscribe = subscribeRingFacts(facts => {
+  const unsubscribe = subscribe(facts => {
     latest = facts
     const signature = JSON.stringify(facts.ringIds)
     if (signature !== ringSignature) {

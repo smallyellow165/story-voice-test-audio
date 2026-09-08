@@ -8,15 +8,20 @@ export type RingInfraFacts = {
   leftFootStatus: FootRingState['status']
   rightFootStatus: FootRingState['status']
 }
+export function createRingFacts() {
 let current: RingInfraFacts = { ringIds: [], leftFootRingId: null, rightFootRingId: null,
   leftFootStatus: 'UNKNOWN', rightFootStatus: 'UNKNOWN' }
 const listeners = new Set<(facts: RingInfraFacts) => void>()
-export function publishRingFacts(facts: RingInfraFacts) {
+function publishRingFacts(facts: RingInfraFacts) {
   current = structuredClone(facts)
   listeners.forEach(listener => listener(structuredClone(current)))
 }
-export function subscribeRingFacts(listener: (facts: RingInfraFacts) => void) {
+function subscribeRingFacts(listener: (facts: RingInfraFacts) => void) {
   listeners.add(listener)
   listener(structuredClone(current))
   return () => { listeners.delete(listener) }
 }
+
+return { publishRingFacts, subscribeRingFacts }
+}
+export const { publishRingFacts, subscribeRingFacts } = createRingFacts()

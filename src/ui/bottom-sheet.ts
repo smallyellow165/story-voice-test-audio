@@ -1,7 +1,7 @@
 import './bottom-sheet.css'
 
 // Generic modal surface; content remains owned by the caller.
-export function createBottomSheet(options: { title: string; content: HTMLElement; footer?: HTMLElement }) {
+export function createBottomSheet(options: { title: string; content: HTMLElement; footer?: HTMLElement; root?: Document | ShadowRoot }) {
   const dialog = document.createElement('dialog')
   dialog.className = 'bottom-sheet'
   const heading = document.createElement('h2')
@@ -14,7 +14,8 @@ export function createBottomSheet(options: { title: string; content: HTMLElement
   const body = document.createElement('div'); body.className = 'bottom-sheet__body'; body.append(options.content)
   dialog.append(header, body)
   if (options.footer) { const footer = document.createElement('footer'); footer.append(options.footer); dialog.append(footer) }
-  document.body.append(dialog)
+  const root = options.root || document
+  ;(root instanceof Document ? root.body : root).append(dialog)
   let timer: ReturnType<typeof setTimeout> | undefined, previous: HTMLElement | null = null
   let overflow = '', backdropDown = false
   function finish() {

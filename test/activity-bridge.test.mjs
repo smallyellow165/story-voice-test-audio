@@ -29,3 +29,25 @@ test('bridge enforces origin/instance, deduplicates reset, rejects stale runs, w
   assert.equal(sent.at(-1).payload.snapshot.taskId, 't2');
   bridge.dispose();
 });
+
+test('module endpoint uses same contract with no window message listener', () => {
+  const sent = [];
+  Object.assign(globalThis, { location: { search: '' }, window: {
+    addEventListener() { throw new Error('module must not subscribe to postMessage'); },
+    removeEventListener() {},
+  } });
+  let runId = 'r1', resets = 0, exited = false;
+  const bridge = createActivityBridge(() => { exited = true }, () => ({ runId, revision: resets + 1 }),
+    () => { runId = 'r2'; resets++ }, { instanceId: 'module', send: m => sent.push(m) });
+  const command = { v: 1, instanceId: 'module', id: 'reset-1', kind: 'command', name: 'reset',
+    sessionEpoch: 'epoch', payload: { expectedRunId: 'r1' } };
+  bridge.receive(command); bridge.receive(command);
+  assert.equal(resets, 1); assert.equal(sent.at(-1).payload.replyTo, 'reset-1');
+  bridge.receive({ ...command, id: 'stale' });
+  assert.equal(sent.at(-1).payload.status, 'rejected');
+  bridge.receive({ ...command, id: 'snapshot', name: 'get_snapshot' });
+  assert.equal(sent.at(-1).payload.snapshot.runId, 'r2');
+  bridge.receive({ ...command, id: 'exit', name: 'exit' });
+  assert.equal(exited, true); assert.equal(sent.at(-1).payload.snapshot.lifecycle, 'closed');
+  bridge.dispose();
+});
