@@ -1,3 +1,8 @@
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
+import { ThreeColumnLayout } from './three-column-layout'
+import columnsCss from './three-column-layout.css?inline'
+import desktopCss from './ring-feet-desktop.css?inline'
 import html from '../ring-feet.html?raw'
 import css from './ring-feet-layout.css?inline'
 import playerCss from './ring-feet-player.css?inline'
@@ -19,20 +24,24 @@ export function mount(host: HTMLElement, options: MountOptions) {
   template.innerHTML = html
   const content = template.content.querySelector<HTMLTemplateElement>('#ring-feet-content')!.content
   const style = document.createElement('style')
-  style.textContent = css.replace(/\bbody\b/g, ':host').replace(/html, /g, '') + playerCss + sheetCss +
-    ':host{display:block;height:100%;width:100%;overflow:auto} #ring-feet-layout{width:100%;height:100%;min-height:100%;} '
-  if (options.debug) style.textContent += '.ringfeet-player #ring-feet-layout{grid-template-columns:minmax(0,2fr) minmax(240px,1fr)} .player-camera{max-width:420px} .ringfeet-player #game-panel .game-description,.ringfeet-player #game-panel .game-result{font-size:32px!important} @media(max-width:700px){.ringfeet-player #ring-feet-layout{grid-template-columns:1fr}}'
-  const wrapper = document.createElement('div'); wrapper.className = 'ringfeet-player'
+  style.textContent = css.replace(/\bbody\b/g, ':host').replace(/html, /g, '') + playerCss + sheetCss + columnsCss + desktopCss
+  const wrapper = document.createElement('div'); wrapper.className = 'ringfeet-player ringfeet-desktop'
   const layout = document.createElement('div'); layout.id = 'ring-feet-layout'
   const left = document.createElement('section'), camera = document.createElement('section')
-  camera.className = 'three-column-layout__panel player-camera'
+  camera.className = 'player-camera'
   const state = content.querySelector<HTMLElement>('.status-board')!
   left.append(content.querySelector('h1')!, state)
   camera.append(content.querySelector('.camera-panel')!)
-  const settings = document.createElement('details'); settings.className = 'player-settings'
+  const settings = document.createElement('details'); settings.className = 'player-settings'; settings.open = true
   const summary = document.createElement('summary'); summary.textContent = '家长设置：摄像头 / Rings / History'
   settings.append(summary, content.querySelector('.controls')!)
-  layout.append(left, camera, settings); wrapper.append(layout); root.replaceChildren(style, wrapper)
+  wrapper.append(layout); root.replaceChildren(style, wrapper)
+  const layoutRoot = createRoot(layout)
+  flushSync(() => layoutRoot.render(<ThreeColumnLayout defaultSizes={['22%', '50%', '28%']}
+    left={<div ref={slot => { if (slot) slot.append(left) }} />}
+    center={<div ref={slot => { if (slot) slot.append(camera) }} />}
+    right={<><slot name="integration" /><div ref={slot => { if (slot) slot.append(settings) }} /></>}
+  />))
   const facts = createRingFacts()
   const infra = mountRingFeetInfra(root, { ...options, publishFacts: facts.publishRingFacts })
   const gameHost = document.createElement('section'); gameHost.id = 'game-panel'; state.before(gameHost)
@@ -47,7 +56,7 @@ export function mount(host: HTMLElement, options: MountOptions) {
     if (disposed) return
     disposed = true
     bridge.receive({ v: 1, id: crypto.randomUUID(), instanceId: options.instanceId, kind: 'command', name: 'exit', payload: {} })
-    panel?.(); bridge.dispose(); infra.dispose(); root.replaceChildren()
+    panel?.(); bridge.dispose(); infra.dispose(); layoutRoot.unmount(); root.replaceChildren()
     console.info('[RingFeet] module unmounted', options.instanceId)
   } }
 }
