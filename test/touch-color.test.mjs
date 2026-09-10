@@ -33,3 +33,13 @@ test('selectSequence validates targets and evaluates exact ordered facts', () =>
   assert.equal(evaluate(condition, { selectedTargets: ['red','blue'] }, {}), 'SUCCESS')
   for (const targets of [[], ['green'], null]) assert.throws(() => parseGame({ ...definition, tasks: [{id:'x',description:'x',condition:{type:'selectSequence',targets}}] }))
 })
+
+test('restore keeps sequence input and task position without starting another run', () => {
+  const game = createGameRuntime(definition);
+  game.restore(3, ['red']);
+  assert.equal(game.read().index, 3);
+  assert.deepEqual(game.read().selectedTargets, ['red']);
+  game.select('blue'); assert.equal(game.read().result, 'SUCCESS');
+  assert.throws(() => game.restore(3, ['yellow']));
+  assert.throws(() => game.restore(99));
+});

@@ -118,6 +118,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     if (value.gameId !== game.id || game.tasks[value.index]?.id !== value.taskId) throw new Error('game_snapshot_mismatch')
     clearTimeout(timer); timer = undefined
     runtime.restore(value.index, value.selectedTargets || [])
+    ringSignature = JSON.stringify(latest.ringIds)
     runId = value.runId; taskAttemptId = value.taskAttemptId; revision = value.revision
     lastTask = value.taskId; completed = value.taskStatus === 'succeeded'; armed = false
     succeededTasks.clear()
