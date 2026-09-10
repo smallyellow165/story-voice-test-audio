@@ -9,6 +9,6 @@ export default defineConfig({
   worker: { format: 'es' },
   build: {
     outDir: 'dist-module',
-    lib: { entry: 'src/ring-feet-module.tsx', formats: ['es'], fileName: () => 'index.js' },
+    lib: { entry: { index: 'src/ring-feet-module.tsx', 'touch-color': 'src/touch-color-module.ts' }, formats: ['es'], fileName: (_format, name) => `${name}.js` },
   },
 })

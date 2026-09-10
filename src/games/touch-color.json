@@ -1,0 +1,12 @@
+{
+  "id": "touch-color-v0",
+  "name": "触摸颜色游戏",
+  "ringSlots": [],
+  "tasks": [
+    {"id":"touch-red","description":"点红色。","condition":{"type":"selectSequence","targets":["red"]}},
+    {"id":"touch-blue","description":"点蓝色。","condition":{"type":"selectSequence","targets":["blue"]}},
+    {"id":"touch-yellow","description":"点黄色。","condition":{"type":"selectSequence","targets":["yellow"]}},
+    {"id":"touch-red-blue","description":"先点红色，再点蓝色。","condition":{"type":"selectSequence","targets":["red","blue"]}},
+    {"id":"touch-yellow-red-blue","description":"先点黄色，再点红色，最后点蓝色。","condition":{"type":"selectSequence","targets":["yellow","red","blue"]}}
+  ]
+}

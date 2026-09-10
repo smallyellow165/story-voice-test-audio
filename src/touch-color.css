@@ -1,0 +1,18 @@
+:host { display: block; color: #f3f4f6; font-family: system-ui, sans-serif; }
+.touch-color-player { max-width: 900px; margin: auto; padding: clamp(16px, 3vw, 32px); background: #172231; border-radius: 20px; }
+h2 { margin-top: 0; font-size: clamp(24px, 4vw, 36px); }
+hr { display: none; }
+.game-description { font-size: clamp(24px, 5vw, 40px); min-height: 2.6em; line-height: 1.4; }
+.game-task, .selection-progress { font-size: 18px; }
+.game-result { display: block; font-size: 24px; margin-bottom: 16px; }
+.color-targets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(8px, 2vw, 20px); }
+button { cursor: pointer; font: inherit; touch-action: manipulation; }
+.color-target { min-height: clamp(140px, 24vw, 230px); border-radius: 20px; border: 4px solid #fff9; font-size: clamp(24px, 4vw, 40px); font-weight: 800; box-shadow: 0 6px 0 #0005; user-select: none; }
+.color-target:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #0005; }
+.red { background: #d93236; color: white; }
+.blue { background: #1964d6; color: white; }
+.yellow { background: #ffda38; color: #302600; }
+button:focus-visible { outline: 4px solid white; outline-offset: 4px; }
+button:disabled { cursor: default; opacity: .65; }
+.game-reset { padding: 12px 20px; border-radius: 10px; border: 1px solid #aaa; }
+.game-debug { overflow: auto; max-height: 200px; font-size: 12px; }

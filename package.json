@@ -37,6 +37,10 @@
     "./ringfeet": {
       "types": "./src/ring-feet-module.d.ts",
       "import": "./dist-module/index.js"
+    },
+    "./touch-color": {
+      "types": "./src/touch-color-module.d.ts",
+      "import": "./dist-module/touch-color.js"
     }
   }
 }

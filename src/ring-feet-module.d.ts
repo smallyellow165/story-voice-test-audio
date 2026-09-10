@@ -1,7 +1,5 @@
-export type ActivityMessage = {
-  v: number; id: string; instanceId: string; kind: string; name: string;
-  sessionEpoch?: string; payload: Record<string, unknown>;
-}
+import type { ActivityMessage } from "./activity-message"
+export type { ActivityMessage } from "./activity-message"
 export type CameraLease = { stream: MediaStream; release(): void }
 export function mount(host: HTMLElement, options: {
   instanceId: string; debug?: boolean; apiBase?: string;
