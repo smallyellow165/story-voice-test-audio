@@ -47,6 +47,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
       taskId: state.task.id, index: state.index, total: state.total,
       taskDescription: describeTask(state.task.description),
       taskStatus: completed ? 'succeeded' : 'not_yet', progress: { completed: succeededTasks.size, total: state.total },
+      selectedTargets: state.selectedTargets, succeededTaskIds: [...succeededTasks],
       capabilities: ['get_snapshot', 'reset', 'exit'] }
   }
   function reset() {
@@ -67,7 +68,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     render()
   }
   const next = host.querySelector<HTMLButtonElement>('.game-next')!
-  function render() {
+  function render(silent = false) {
     const state = runtime.read(latest, bindings)
     const events: GameEvent[] = []
     if (lastTask !== state.task.id) {
@@ -76,7 +77,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
       events.push('task_changed')
     }
     if (!armed && state.result === 'NOT_YET') armed = true
-    if (canInteract() && !completed && armed && state.result === 'SUCCESS') {
+    if (!silent && canInteract() && !completed && armed && state.result === 'SUCCESS') {
       completed = true
       succeededTasks.add(state.task.id)
       events.push('task_succeeded')
@@ -85,7 +86,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     }
     const current = snapshot()
     const nextSignature = JSON.stringify({ ...current, revision: 0 })
-    if (nextSignature !== signature) {
+    if (!silent && nextSignature !== signature) {
       signature = nextSignature; revision++
       if (!events.length) events.push('state')
       for (const name of events) onEvent?.(name, { snapshot: snapshot() })
@@ -111,12 +112,25 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     clearTimeout(timer); timer = undefined
     if (canInteract() && completed && runtime.read(latest, bindings).index < game.tasks.length - 1) timer = setTimeout(advance, 900)
     // Permission changes are not gameplay events and must not reevaluate a held input.
-    render()
+    render(true)
+  }
+  function restore(value: Record<string, any>) {
+    if (value.gameId !== game.id || game.tasks[value.index]?.id !== value.taskId) throw new Error('game_snapshot_mismatch')
+    clearTimeout(timer); timer = undefined
+    runtime.restore(value.index, value.selectedTargets || [])
+    runId = value.runId; taskAttemptId = value.taskAttemptId; revision = value.revision
+    lastTask = value.taskId; completed = value.taskStatus === 'succeeded'; armed = false
+    succeededTasks.clear()
+    const successes = value.succeededTaskIds || game.tasks.slice(0, value.progress.completed).map(t => t.id)
+    for (const id of successes) if (game.tasks.some(t => t.id === id)) succeededTasks.add(id)
+    signature = JSON.stringify({ ...snapshot(), revision: 0 })
+    render(true)
   }
   next.onclick = advance
   host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = reset
   const unsubscribe = subscribe(facts => {
     latest = facts
+    if (!canInteract()) { render(true); return }
     const signature = JSON.stringify(facts.ringIds)
     if (signature !== ringSignature) {
       ringSignature = signature
@@ -130,5 +144,5 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     }
     render()
   })
-  return Object.assign(() => { cancelAdvance(); unsubscribe() }, { snapshot, reset, select, setEnabled })
+  return Object.assign(() => { cancelAdvance(); unsubscribe() }, { snapshot, reset, select, setEnabled, restore })
 }

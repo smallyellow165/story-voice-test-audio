@@ -14,6 +14,7 @@ import { createRingFacts } from './ring-infra-state'
 
 export type MountOptions = RingFeetInput & {
   instanceId: string
+  canInteract?: () => boolean
   debug?: boolean
   onMessage: (message: any) => void
 }
@@ -67,11 +68,11 @@ export function mount(host: HTMLElement, options: MountOptions) {
   let panel: ReturnType<typeof mountGamePanel> | undefined
   const bridge = createActivityBridge(() => { panel?.(); infra.stop() },
     () => panel?.snapshot() || {}, () => panel?.reset(), { instanceId: options.instanceId, send: options.onMessage })
-  panel = mountGamePanel(gameHost, (name, payload) => bridge.send(name, payload), facts.subscribeRingFacts)
+  panel = mountGamePanel(gameHost, (name, payload) => bridge.send(name, payload), facts.subscribeRingFacts, { canInteract: options.canInteract })
   bridge.send('ready')
   let disposed = false
   console.info('[RingFeet] module mounted', options.instanceId)
-  return { inspect: infra.inspect, receive: bridge.receive, unmount() {
+  return { inspect: infra.inspect, restore: panel.restore, setEnabled: panel.setEnabled, receive: bridge.receive, unmount() {
     if (disposed) return
     disposed = true
     bridge.receive({ v: 1, id: crypto.randomUUID(), instanceId: options.instanceId, kind: 'command', name: 'exit', payload: {} })

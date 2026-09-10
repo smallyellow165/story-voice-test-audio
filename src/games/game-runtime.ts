@@ -42,6 +42,13 @@ export function createGameRuntime(definition: GameDefinition) {
   return {
     reset() { index = 0; selected = [] },
     next() { index = Math.min(index + 1, definition.tasks.length - 1); selected = [] },
+    restore(position: number, targets: ColorTarget[] = []) {
+      if (!Number.isInteger(position) || position < 0 || position >= definition.tasks.length) throw new Error('invalid_task_index')
+      const condition = definition.tasks[position]!.condition
+      if (targets.length && (condition.type !== 'selectSequence' || targets.length > condition.targets.length
+        || targets.some((target, i) => target !== condition.targets[i]))) throw new Error('invalid_selection')
+      index = position; selected = [...targets]
+    },
     // A discrete target selection can later come from a zone/feet input adapter.
     select(target: ColorTarget) {
       const condition = definition.tasks[index]!.condition

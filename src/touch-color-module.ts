@@ -25,6 +25,7 @@ export function mount(host: HTMLElement, options: {
   bridge.send('ready')
   return {
     snapshot: panel.snapshot,
+    restore: panel.restore,
     setEnabled: panel.setEnabled,
     receive(message: ActivityMessage) {
       // Read-only inspection remains available, even after an authority handoff.
