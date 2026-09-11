@@ -195,6 +195,12 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
   next.onclick = () => input('next_task')
   host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = () => input('reset')
   const unsubscribe = subscribe(facts => {
+    // Revoking camera eligibility stops perception input, not the shared runtime.
+    if (!options.touch && !options.simon && options.permissions && !options.permissions().canProvideCamera) {
+      latest = { ...(latest || facts), leftFootRingId: null, rightFootRingId: null,
+        leftFootStatus: 'UNKNOWN', rightFootStatus: 'UNKNOWN' }
+      render(true); return
+    }
     latest = facts
     if (!canInteract()) { render(true); return }
     const signature = JSON.stringify(facts.ringIds)

@@ -75,7 +75,7 @@ export function mount(host: HTMLElement, options: MountOptions) {
   bridge.send('ready')
   let disposed = false
   console.info('[RingFeet] module mounted', options.instanceId)
-  return { inspect: infra.inspect, restore: panel.restore, setEnabled: panel.setEnabled, receive: bridge.receive, unmount() {
+  return { stopCamera: infra.stop, inspect: infra.inspect, restore: panel.restore, setEnabled: panel.setEnabled, receive: bridge.receive, unmount() {
     if (disposed) return
     disposed = true
     if (options.permissions && !options.permissions().canAdminGame) bridge.dispose()
