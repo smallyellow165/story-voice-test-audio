@@ -1,8 +1,10 @@
+import type { GameAction, GamePermissions } from './game-permissions'
 import type { ActivityMessage } from "./activity-message"
 export type { ActivityMessage } from "./activity-message"
 export type CameraLease = { stream: MediaStream; release(): void }
 export function mount(host: HTMLElement, options: {
   canInteract?: () => boolean;
+  permissions?: () => GamePermissions; onAction?: (name: GameAction, args: Record<string, unknown>) => void;
   instanceId: string; debug?: boolean; apiBase?: string;
   acquireCamera(): Promise<CameraLease>;
   onMessage(message: ActivityMessage): void;

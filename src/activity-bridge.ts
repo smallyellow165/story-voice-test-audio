@@ -1,9 +1,12 @@
+import type { GameAction } from './game-permissions'
+
 // Activity Contract v1. The envelope is independent of postMessage/RTVI/media.
 export function createActivityBridge(
   onExit: () => void,
   getSnapshot: () => Record<string, unknown>,
   reset: () => void,
   endpoint?: { instanceId: string; send: (message: any) => void },
+  applyAction?: (name: GameAction, args: Record<string, unknown>) => boolean,
 ) {
   const params = new URLSearchParams(location.search)
   const instanceId = endpoint?.instanceId || params.get('activityId'), origin = params.get('hostOrigin')
@@ -31,11 +34,15 @@ export function createActivityBridge(
     if (data.name === 'get_snapshot') { send('state'); return }
     let status = 'applied', error: string | undefined
     try {
+      const current = getSnapshot()
+      if (data.payload?.expectedTaskAttemptId !== undefined && (
+        data.payload.expectedRunId !== current.runId || data.payload.baseRevision !== current.revision
+        || data.payload.expectedTaskAttemptId !== current.taskAttemptId)) throw new Error('stale_game_input')
       if (data.name === 'reset') {
         if (data.payload?.expectedRunId !== getSnapshot().runId) throw new Error('stale_run')
         reset()
       } else if (data.name === 'exit') onExit()
-      else throw new Error('unsupported_command')
+      else if (!applyAction?.(data.name, data.payload?.args || {})) throw new Error('unsupported_or_unavailable_action')
     } catch (e) { status = 'rejected'; error = String(e) }
     const snapshot = getSnapshot()
     const result = { replyTo: data.id, sessionEpoch: data.sessionEpoch, status, error,

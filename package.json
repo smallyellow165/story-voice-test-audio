@@ -45,6 +45,10 @@
     "./simon-says": {
       "types": "./src/simon-says-module.d.ts",
       "import": "./dist-module/simon-says.js"
+    },
+    "./permissions": {
+      "types": "./src/game-permissions.ts",
+      "import": "./dist-module/permissions.js"
     }
   }
 }

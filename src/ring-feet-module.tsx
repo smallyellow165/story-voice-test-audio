@@ -1,3 +1,4 @@
+import type { GameAction, GamePermissions } from './game-permissions'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { ThreeColumnLayout } from './three-column-layout'
@@ -14,6 +15,8 @@ import { createRingFacts } from './ring-infra-state'
 
 export type MountOptions = RingFeetInput & {
   instanceId: string
+  permissions?: () => GamePermissions
+  onAction?: (name: GameAction, args: Record<string, unknown>) => void
   canInteract?: () => boolean
   debug?: boolean
   onMessage: (message: any) => void
@@ -67,14 +70,15 @@ export function mount(host: HTMLElement, options: MountOptions) {
   const gameHost = document.createElement('section'); gameHost.id = 'game-panel'; state.before(gameHost)
   let panel: ReturnType<typeof mountGamePanel> | undefined
   const bridge = createActivityBridge(() => { panel?.(); infra.stop() },
-    () => panel?.snapshot() || {}, () => panel?.reset(), { instanceId: options.instanceId, send: options.onMessage })
-  panel = mountGamePanel(gameHost, (name, payload) => bridge.send(name, payload), facts.subscribeRingFacts, { canInteract: options.canInteract })
+    () => panel?.snapshot() || {}, () => panel?.reset(), { instanceId: options.instanceId, send: options.onMessage }, (name, args) => panel?.applyAction(name, args) ?? false)
+  panel = mountGamePanel(gameHost, (name, payload) => bridge.send(name, payload), facts.subscribeRingFacts, { canInteract: options.canInteract, permissions: options.permissions, onAction: options.onAction })
   bridge.send('ready')
   let disposed = false
   console.info('[RingFeet] module mounted', options.instanceId)
   return { inspect: infra.inspect, restore: panel.restore, setEnabled: panel.setEnabled, receive: bridge.receive, unmount() {
     if (disposed) return
     disposed = true
+    if (options.permissions && !options.permissions().canAdminGame) bridge.dispose()
     bridge.receive({ v: 1, id: crypto.randomUUID(), instanceId: options.instanceId, kind: 'command', name: 'exit', payload: {} })
     panel?.(); bridge.dispose(); infra.dispose(); layoutRoot.unmount(); root.replaceChildren()
     console.info('[RingFeet] module unmounted', options.instanceId)

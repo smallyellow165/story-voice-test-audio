@@ -1,11 +1,12 @@
 import gameJson from './game-1.json'
+import { allowsGameAction, defaultGamePermissions, type GameAction, type GamePermissions } from '../game-permissions'
 import { createSimonRound, simonRoundFromIds, SIMON_ACTIONS } from './simon-says'
 import { subscribeRingFacts, type RingInfraFacts } from '../ring-infra-state'
 import { createGameRuntime, parseGame, type GameDefinition, type ColorTarget } from './game-runtime'
 
 type GameEvent = 'task_changed' | 'task_succeeded' | 'game_finished' | 'task_repeated' | 'task_skipped' | 'state'
 
-export type GamePanelOptions = { definition?: GameDefinition; touch?: boolean; simon?: boolean; canInteract?: () => boolean }
+export type GamePanelOptions = { definition?: GameDefinition; touch?: boolean; simon?: boolean; canInteract?: () => boolean; permissions?: () => GamePermissions; onAction?: (name: GameAction, args: Record<string, unknown>) => void }
 
 export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, payload: Record<string, unknown>) => void, subscribe = subscribeRingFacts, options: GamePanelOptions = {}) {
   let game = parseGame(options.simon ? createSimonRound() : options.definition || gameJson), runtime = createGameRuntime(game)
@@ -17,6 +18,12 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
   host.querySelector('h2')!.textContent = game.name
   let enabled = true
   const canInteract = () => enabled && (options.canInteract?.() ?? true)
+  const canInput = (name: GameAction) => allowsGameAction(options.permissions?.() ?? defaultGamePermissions(true, !canInteract()), name)
+  function input(name: GameAction, args: Record<string, unknown> = {}) {
+    if (!canInput(name)) return
+    if (options.onAction) options.onAction(name, args)
+    else applyAction(name, args)
+  }
   if (options.touch) {
     host.querySelector('.game-next')!.setAttribute('hidden', '')
     host.querySelector('.game-reset')!.parentElement!.nextElementSibling!.textContent = '点错没关系，再试一次！顺序点错后从头尝试。答对后会自动进入下一题。'
@@ -24,7 +31,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     for (const [color, label] of [['red', '红色'], ['blue', '蓝色'], ['yellow', '黄色']] as const) {
       const button = document.createElement('button'); button.className = `color-target ${color}`
       button.textContent = label; button.dataset.target = color
-      button.onclick = () => select(color)
+      button.onclick = () => input('submit_answer', { target: color })
       targets.append(button)
     }
     host.querySelector('.game-result')!.after(targets)
@@ -36,10 +43,10 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     host.querySelector('.game-reset')!.parentElement!.nextElementSibling!.textContent = '做完一个动作，请瑞瑞或家长点“做好了”。不想做也可以换一个。'
     const actions = document.createElement('div'); actions.className = 'simon-actions'
     for (const [name, label, action] of [
-      ['confirm', '✅ 做好了', confirm], ['repeat', '🔁 再说一次', repeat], ['skip', '⏭ 换一个', skip],
+      ['confirm', '✅ 做好了', 'confirm_task'], ['repeat', '🔁 再说一次', 'repeat_task'], ['skip', '⏭ 换一个', 'skip_task'],
     ] as const) {
       const button = document.createElement('button'); button.className = `simon-${name}`
-      button.textContent = label; button.onclick = action; actions.append(button)
+      button.textContent = label; button.onclick = () => input(action); actions.append(button)
     }
     host.querySelector('.game-result')!.after(actions)
     const progress = document.createElement('p'); progress.className = 'simon-progress'; progress.setAttribute('aria-live', 'polite'); actions.after(progress)
@@ -115,17 +122,17 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     host.querySelector('.game-task')!.textContent = `Task ${state.index + 1} / ${state.total}`
     host.querySelector('.game-description')!.textContent = describeTask(state.task.description)
     host.querySelector('.game-result')!.textContent = displayedResult
-    next.disabled = !canInteract() || state.index === state.total - 1
-    host.querySelector<HTMLButtonElement>('.game-reset')!.disabled = !canInteract()
-    for (const button of host.querySelectorAll<HTMLButtonElement>('.color-target')) button.disabled = !canInteract() || completed
+    next.disabled = !canInput('next_task') || state.index === state.total - 1
+    host.querySelector<HTMLButtonElement>('.game-reset')!.disabled = !canInput('reset')
+    for (const button of host.querySelectorAll<HTMLButtonElement>('.color-target')) button.disabled = !canInput('submit_answer') || completed
     const progress = host.querySelector('.selection-progress')
-    if (progress) progress.textContent = !canInteract() ? '当前为观看模式，请先取得 Game Authority。' : current.lifecycle === 'finished' ? '太棒啦，这一轮完成啦！' : `完成 ${current.progress.completed} / ${state.total} 题 · 当前顺序 ${state.selectedTargets.length} / ${state.task.condition.type === 'selectSequence' ? state.task.condition.targets.length : 0}`
+    if (progress) progress.textContent = !canInput('submit_answer') ? '当前为观看模式，请先取得 Game Authority。' : current.lifecycle === 'finished' ? '太棒啦，这一轮完成啦！' : `完成 ${current.progress.completed} / ${state.total} 题 · 当前顺序 ${state.selectedTargets.length} / ${state.task.condition.type === 'selectSequence' ? state.task.condition.targets.length : 0}`
     if (options.simon) {
       const action = SIMON_ACTIONS.find(action => action.id === state.task.id)!
       host.querySelector('.game-description')!.textContent = `${action.icon} ${action.label}`
       host.querySelector('.game-result')!.textContent = current.lifecycle === 'finished' ? '这一轮完成啦！' : completed ? skippedTasks.has(state.task.id) ? '换一个！' : '做到了！' : '准备好就开始吧'
-      for (const button of host.querySelectorAll<HTMLButtonElement>('.simon-actions button')) button.disabled = !canInteract() || completed
-      host.querySelector('.simon-progress')!.textContent = `${!canInteract() ? '观看模式 · ' : ''}完成 ${succeededTasks.size} · 跳过 ${skippedTasks.size} · 共 ${state.total} 个动作`
+      for (const button of host.querySelectorAll<HTMLButtonElement>('.simon-actions button')) button.disabled = !canInput('confirm_task') || completed
+      host.querySelector('.simon-progress')!.textContent = `${!canInput('confirm_task') ? '观看模式 · ' : ''}完成 ${succeededTasks.size} · 跳过 ${skippedTasks.size} · 共 ${state.total} 个动作`
     }
     host.querySelector('.game-debug')!.textContent = JSON.stringify({ ...state, displayedResult, autoAdvance: { armed, completed, pending: timer !== undefined, delayMs: 900 }, bindings, facts: latest }, null, 2)
   }
@@ -150,7 +157,7 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     return true
   }
   function setEnabled(value: boolean) {
-    if (enabled === value) return
+    if (enabled === value) { render(true); return }
     enabled = value
     clearTimeout(timer); timer = undefined
     if (canInteract() && completed && runtime.read(latest, bindings).index < game.tasks.length - 1) timer = setTimeout(advance, 900)
@@ -173,8 +180,20 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     signature = JSON.stringify({ ...snapshot(), revision: 0 })
     render(true)
   }
-  next.onclick = advance
-  host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = reset
+  function applyAction(name: GameAction, args: Record<string, unknown> = {}) {
+    if (!canInteract()) return false // only the single owner executes server-approved commands
+    switch (name) {
+      case 'submit_answer': return ['red', 'blue', 'yellow'].includes(String(args.target)) && select(args.target as ColorTarget)
+      case 'confirm_task': return confirm()
+      case 'repeat_task': return repeat()
+      case 'skip_task': return skip()
+      case 'reset': reset(); return true
+      case 'next_task': advance(); return true
+      default: return false
+    }
+  }
+  next.onclick = () => input('next_task')
+  host.querySelector<HTMLButtonElement>('.game-reset')!.onclick = () => input('reset')
   const unsubscribe = subscribe(facts => {
     latest = facts
     if (!canInteract()) { render(true); return }
@@ -191,5 +210,5 @@ export function mountGamePanel(host: HTMLElement, onEvent?: (type: GameEvent, pa
     }
     render()
   })
-  return Object.assign(() => { cancelAdvance(); unsubscribe() }, { snapshot, reset, select, confirm, repeat, skip, setEnabled, restore })
+  return Object.assign(() => { cancelAdvance(); unsubscribe() }, { snapshot, reset, select, confirm, repeat, skip, setEnabled, restore, applyAction })
 }
