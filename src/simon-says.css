@@ -1,0 +1,5 @@
+.simon-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.simon-actions button { min-height: 88px; padding: 12px; border: 2px solid #fff9; border-radius: 16px; color: #fff; background: #304c71; font-size: clamp(18px, 3vw, 26px); }
+.simon-actions .simon-confirm { background: #237044; }
+.simon-progress { font-size: 18px; }
+@media (max-width: 480px) { .simon-actions { grid-template-columns: 1fr; } .simon-actions button { min-height: 64px; } }

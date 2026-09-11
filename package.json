@@ -41,6 +41,10 @@
     "./touch-color": {
       "types": "./src/touch-color-module.d.ts",
       "import": "./dist-module/touch-color.js"
+    },
+    "./simon-says": {
+      "types": "./src/simon-says-module.d.ts",
+      "import": "./dist-module/simon-says.js"
     }
   }
 }

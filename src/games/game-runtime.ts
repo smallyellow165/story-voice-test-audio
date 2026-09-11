@@ -1,7 +1,8 @@
 import type { RingInfraFacts } from '../ring-infra-state.ts'
 export type ColorTarget = 'red' | 'blue' | 'yellow'
-export type GameFacts = RingInfraFacts | { selectedTargets: readonly ColorTarget[] }
+export type GameFacts = RingInfraFacts | { selectedTargets: readonly ColorTarget[] } | { confirmed: boolean }
 export type Condition = { type: 'footInRing'; foot: 'left' | 'right'; ring: string }
+  | { type: 'manual' }
   | { type: 'selectSequence'; targets: ColorTarget[] }
   | { type: 'all'; conditions: Condition[] } | { type: 'feetInDifferentRings' }
 export type GameDefinition = { id: string; name: string; ringSlots: string[];
@@ -11,6 +12,7 @@ export function parseGame(value: unknown): GameDefinition {
   const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   function valid(c: Condition, depth = 0): boolean {
     if (!c || depth > 10) return false
+    if (c.type === 'manual') return depth === 0
     if (c.type === 'footInRing') return ['left', 'right'].includes(c.foot) && g.ringSlots.includes(c.ring)
     if (c.type === 'selectSequence') return depth === 0 && Array.isArray(c.targets) && c.targets.length > 0 && c.targets.length <= 8 && c.targets.every(t => ['red', 'blue', 'yellow'].includes(t))
     if (c.type === 'all') return Array.isArray(c.conditions) && c.conditions.length > 0 && c.conditions.every(v => valid(v, depth + 1))
@@ -23,6 +25,7 @@ export function parseGame(value: unknown): GameDefinition {
   return g
 }
 export function evaluate(condition: Condition, facts: GameFacts, bindings: Record<string, string>): 'NOT_YET' | 'SUCCESS' {
+  if (condition.type === 'manual') return 'confirmed' in facts && facts.confirmed ? 'SUCCESS' : 'NOT_YET'
   if (condition.type === 'selectSequence') return 'selectedTargets' in facts && condition.targets.length === facts.selectedTargets.length && condition.targets.every((t, i) => t === facts.selectedTargets[i]) ? 'SUCCESS' : 'NOT_YET'
   if (!('ringIds' in facts)) return 'NOT_YET'
   const inside = (foot: 'left' | 'right') => facts[`${foot}FootStatus`] === 'IN'
@@ -38,17 +41,19 @@ export function evaluate(condition: Condition, facts: GameFacts, bindings: Recor
 }
 export function createGameRuntime(definition: GameDefinition) {
   let index = 0
+  let confirmed = false
   let selected: ColorTarget[] = []
   return {
-    reset() { index = 0; selected = [] },
-    next() { index = Math.min(index + 1, definition.tasks.length - 1); selected = [] },
+    reset() { index = 0; selected = []; confirmed = false },
+    next() { index = Math.min(index + 1, definition.tasks.length - 1); selected = []; confirmed = false },
     restore(position: number, targets: ColorTarget[] = []) {
       if (!Number.isInteger(position) || position < 0 || position >= definition.tasks.length) throw new Error('invalid_task_index')
       const condition = definition.tasks[position]!.condition
       if (targets.length && (condition.type !== 'selectSequence' || targets.length > condition.targets.length
         || targets.some((target, i) => target !== condition.targets[i]))) throw new Error('invalid_selection')
-      index = position; selected = [...targets]
+      index = position; selected = [...targets]; confirmed = false
     },
+    confirm() { if (definition.tasks[index]!.condition.type === 'manual') confirmed = true },
     // A discrete target selection can later come from a zone/feet input adapter.
     select(target: ColorTarget) {
       const condition = definition.tasks[index]!.condition
@@ -60,7 +65,7 @@ export function createGameRuntime(definition: GameDefinition) {
       const task = definition.tasks[index]!
       return { gameId: definition.id, task, index, total: definition.tasks.length,
         selectedTargets: [...selected],
-        result: evaluate(task.condition, task.condition.type === 'selectSequence' ? { selectedTargets: selected } : facts, bindings) }
+        result: evaluate(task.condition, task.condition.type === 'manual' ? { confirmed } : task.condition.type === 'selectSequence' ? { selectedTargets: selected } : facts, bindings) }
     },
   }
 }
