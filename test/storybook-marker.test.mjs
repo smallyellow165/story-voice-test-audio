@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createMarkerNavigation, loadMarkerMapping } from '../src/storybook-navigation.ts'
 import { loadStory, createStorySelection, sectionNarration } from '../src/story-content.ts'
-const json = name => JSON.parse(readFileSync(new URL(`../src/data/${name}.json`, import.meta.url), 'utf8'))
-const demo = json('storybook-demo'), mapping = loadMarkerMapping(json('storybook-markers'))
+const json = name => JSON.parse(readFileSync(new URL(`../../story-voice-pipecat-poc-v4/server/data/stories/${name}.json`, import.meta.url), 'utf8'))
+const demo = json('story').find(story => story.id === 'storybook-demo'), mapping = loadMarkerMapping(json('storybook-markers'))
 const nav = () => createMarkerNavigation(mapping)
 const confirmed = () => { const n = nav(); n.update([101], 0); n.update([101], 300); return n }
 test('all six data-driven markers select their corresponding section content', () => {
@@ -50,7 +50,6 @@ test('demo sections cover single narration, multiple narration and narration/sou
     ['narration', 'narration'], ['narration'], ['narration'],
   ])
   assert.equal(story.sections[2].items[1].sound_id, 'cat')
-  for (const section of story.sections) for (const item of section.items) assert.equal(Object.hasOwn(item, 'audio'), false)
 })
 test('marker section switches retain complete ordered item sequences, including on return', () => {
   const story = loadStory(demo), selection = createStorySelection(story), n = nav()

@@ -1,5 +1,5 @@
-import demo from './data/storybook-demo.json'
-import markerData from './data/storybook-markers.json'
+import stories from '../../story-voice-pipecat-poc-v4/server/data/stories/story.json'
+import markerData from '../../story-voice-pipecat-poc-v4/server/data/stories/storybook-markers.json'
 import { loadStory, createStorySelection, sectionNarration } from './story-content'
 import { createMarkerNavigation, loadMarkerMapping } from './storybook-navigation'
 import './storybook-marker.css'
@@ -13,7 +13,7 @@ app.innerHTML = `<header><h1>Storybook · Marker Simulator</h1><p>一个 Story�
 <section aria-live="polite"><h2 id="title"></h2><p id="page"></p><h3>Text · content</h3><p id="text"></p><h3>Narration · items</h3><p id="narration"></p><h3 id="items-title">Items · section 内的有序序列</h3><ol id="items"></ol><h3>Image / media metadata</h3><pre id="media"></pre></section>
 <section><h2>Navigation debug</h2><pre id="debug"></pre><h3>事件日志（最近 30 条）</h3><ol id="events"></ol></section></main>`
 const element = (id: string) => document.getElementById(id)!
-const story = loadStory(demo), mapping = loadMarkerMapping(markerData)
+const story = loadStory(stories.find(story => story.id === "storybook-demo")), mapping = loadMarkerMapping(markerData)
 for (const ref of Object.values(mapping)) {
   if (ref.storyId !== story.id || !story.sections.some(section => section.id === ref.sectionId)) throw new Error('Marker references unknown Story section')
 }

@@ -61,6 +61,10 @@
     "./hopscotch-scripts": {
       "types": "./src/hopscotch-scripts.ts",
       "import": "./dist-module/hopscotch-scripts.js"
+    },
+    "./storybook-navigation": {
+      "types": "./src/storybook-navigation.ts",
+      "import": "./dist-module/storybook-navigation.js"
     }
   }
 }

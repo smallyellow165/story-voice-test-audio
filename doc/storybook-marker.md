@@ -33,7 +33,7 @@ story.json → CuratedStoryProvider / normalize_story
 
 ## 本轮最小增量
 
-`src/data/storybook-demo.json` 是六页《瑞瑞和小种子》，保留 V4 Story 必需字段，并增加可选 `sections`。每个 section 只有 identity 和沿用的 `content/items/media`；narration 仍是 `{type:"narration",text:...}`，预录引用仍可用 `audio.asset_id`。没有新建 printedText/narration 平行字段。顶层 content 保留全文，便于旧模式兼容，但需要作者保持与 sections 一致；baseline 不自动同步或迁移旧数据。
+V4 `server/data/stories/story.json` 的 `storybook-demo` 记录是六页《瑞瑞和小种子》，保留 V4 Story 必需字段，并增加可选 `sections`。每个 section 只有 identity 和沿用的 `content/items/media`；narration 仍是 `{type:"narration",text:...}`，预录引用仍可用 `audio.asset_id`。没有新建 printedText/narration 平行字段。顶层 content 保留全文，便于旧模式兼容，但需要作者保持与 sections 一致；baseline 不自动同步或迁移旧数据。
 
 `media.image.description` 只是 demo 的不透明元数据示例，不宣称 V4 已实现 image schema/显示或真实图片资产。
 
@@ -50,7 +50,7 @@ story.json → CuratedStoryProvider / normalize_story
 | TTS segment | 合成/播放切分单元，可小于 section，也不保证等于 item。 |
 | Alignment segment | timestamp / spoken progress 的技术粒度；需要真实 alignment 数据，不能用页码代替。 |
 
-`src/data/storybook-markers.json` 单独保存 marker → `{storyId,sectionId,pageNumber}`，不包含正文/音频。页入口加载时检查所有引用存在。未来 detector 只替换 simulator 的 ID 数组输入：
+V4 `server/data/stories/storybook-markers.json` 单独保存 marker → `{storyId,sectionId,pageNumber}`，不包含正文/音频。页入口加载时检查所有引用存在。未来 detector 只替换 simulator 的 ID 数组输入：
 
 ```text
 simulator / detector IDs + monotonic timestamp
@@ -106,7 +106,7 @@ npm run build
 | section-5 / 105 | narration（观察蝴蝶） |
 | section-6 / 106 | narration（带着收获回家） |
 
-`cat` 沿用 V4 `story_009` 的 sound_id，现有 sound provider 可按 animal/tag 解析到 registry 的 cat-01；这里只显示字符串，不加载或播放音频。demo 没有 audio.asset_id，也没有新增音频资产。
+`cat` 沿用 V4 `story_009` 的 sound_id，现有 sound provider 可按 animal/tag 解析到 registry 的 cat-01；这里只显示字符串，不加载或播放音频。demo 的 audio.asset_id 随 V4 主数据维护；本 baseline 不加载或播放这些音频。
 
 `section.content` 是完整正文，`items[]` 是该 section 内的有序表现/播放单元。两者语义一致即可，loader 不要求 content 等于 narration 拼接；sound 不需要对应正文。更新 section-3 后同步了顶层全文、角色与图片描述。
 
@@ -117,3 +117,10 @@ UI 保留完整 content 和 narration 汇总，并增加带序号的 Items 列�
 本次新增三项回归检查，覆盖 demo 三种序列、marker 切换后完整有序 items（含返回原页）、content 与 narration 不必逐字拼接相等；原有 mapping 测试也改为比较完整 items，移除只检查第一条 narration 的假设。
 
 多 item 更新验证结果：定向测试 24/24，全量 Test Audio 测试 164/164，production build 通过，页面 HTTP 200。未做浏览器点击自动化验收。
+
+
+## V4 section 接入后的数据来源
+
+导航 core 通过 `storybook-navigation` export 保留。内容唯一来源已收敛到 sibling V4 的 `server/data/stories/story.json`（id=`storybook-demo`）；baseline 页面直接 import 该数组选取记录，marker mapping 直接引用 V4 的独立 JSON。本项目的两份 JSON 副本和原同步脚本已删除，因此本实验页面/测试需要 sibling V4 数据目录。这里只展示内容，不播放音频。
+
+V4 接入现已收敛到原 Story catalog/start_story，V4 专用 Debug UI 和 demo loader 已删除；本实验页面不再被描述为 V4 的播放入口。真实 marker provider 尚未接入 V4。
