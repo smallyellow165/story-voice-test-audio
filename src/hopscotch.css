@@ -18,9 +18,16 @@ header p { line-height: 1.6; max-width: 720px; }
 .lane-right { grid-column: 3 / 5; }
 .cell strong { font-size: 27px; }
 .cell small { min-height: 18px; font-size: 12px; }
-.cell.legal { border-style: dashed; border-color: #348c78; background: #eef8f3; }
-.cell.target { border: 3px solid #a56600; background: #fff0bd; color: #694400; }
-.cell.current { border-color: #175e57; background: #175e57; color: white; }
+.cell[data-color="green"] { background: #b5dfb2; }
+.cell[data-color="blue"] { background: #acd3f4; }
+.cell[data-color="orange"] { background: #ffca8c; }
+.cell[data-color="yellow"] { background: #f7e68c; }
+.cell[data-color="red"] { background: #f3a7a4; }
+.cell-color { font-size: 11px; }
+.cell.legal { border-style: dashed; border-color: #18302f; }
+.cell.target { border: 3px dashed #18302f; outline: 2px solid #18302f; outline-offset: 2px; }
+.cell.current { border: 3px solid #18302f; }
+.cell.current small, .cell.target small { background: #18302f; color: white; border-radius: 4px; padding: 0 5px; }
 .board-note { font-size: 12px; color: #57716b; text-align: center; margin-bottom: 0; }
 .eyebrow { font-size: 12px; letter-spacing: .06em; margin-top: 0; }
 #task { font-size: 34px; margin: 10px 0; border-radius: 8px; }

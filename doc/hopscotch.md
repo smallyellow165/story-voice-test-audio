@@ -35,7 +35,7 @@ npm run build:module
 ## 验证
 
 ```bash
-node --test test/hopscotch-core.test.mjs test/hopscotch-script.test.mjs
+node --test test/hopscotch-core.test.mjs test/hopscotch-script.test.mjs test/hopscotch-color.test.mjs
 npm run build
 npm run build:module
 ```
@@ -118,3 +118,30 @@ Debug 显示 mode/status/scriptId、零基 index、总数、原始与 resolved t
 6. Max Jump Steps=2 下 Reset，Skip 第一项使第二项合法目标为 4；改回 1，当前项应重新 resolve 到 2/3，index 和位置不变。
 7. 按默认配置 Done 到 10，在第七项关闭后退，应 blocked；开启后退恢复当前项，进度不重置。
 8. 中途切到另一个 Script，确认回 initialCell、index=0，保留 jump config。
+
+## 颜色与 Instruction Mode
+
+`HopscotchCell.color?: HopscotchColor` 是 board attribute，不参与跳跃规则。经典配置为 1–10：green、blue、orange、yellow、red、green、blue、orange、yellow、red。中文名称集中在 Core 的 `HOPSCOTCH_COLOR_LABELS`：绿色、蓝色、橙色、黄色、红色。更换颜色顺序只需修改 board 数据。
+
+UI 通过 cell 的 color 设置底色，当前位置使用实线边框与“● 当前”徽标，目标使用虚线边框、外轮廓与“★ 目标”徽标，其他合法格子使用虚线与“可跳”文字。状态不覆盖格子底色。
+
+Instruction Mode 与 Random/Script 独立，默认 Number：
+
+- Number：按 resolved cell label 显示“跳到 6”。
+- Color：按 resolved cell color 显示“跳到绿色”。只在当前 legalTargets 中该颜色恰有一个格子时使用；否则数字表达，并在 Debug 显示 `ambiguous_color`。没有 color 的自定义格子退回数字，原因是 `missing_color`。
+- Mixed：创建 active task 时只选一次 number/color。选择颜色后发现歧义就直接用数字，不再次随机。read/render/Repeat 不消耗随机数，不改变表达选择。Done/Skip 后下一项及 Reset 会重新选择。
+
+`formatHopscotchTask()` 生成三种动作的固定文案，`presentHopscotchTask()` 在 formatter 前检查颜色唯一性。Core 使用独立的 presentationRandom 输入，指令模式切换不消耗目标选择的随机源。脚本仍只存 id/type/target，不增加颜色版脚本。
+
+切换 Instruction Mode 只更新 presentation，不改变 currentCell、target、task type、legalTargets、script index 或 history。Reset、模式/脚本切换保留 Instruction Mode。修改跳跃配置后即使目标仍合法，也会重新检查颜色是否歧义；Mixed 保留原先的表达选择，不重新抽签。finished/blocked 状态没有任务文案，切换表达模式不会恢复游戏。
+
+Debug 增加 instructionMode、targetColor、presentationKind、presentationFallbackReason、displayText。颜色始终取 resolved target，Script fallback 不会继续使用原目标的颜色。
+
+手工验收：
+
+1. 检查十格底色和中文颜色名称；current/target/可跳同时清楚可见。
+2. Script → 动作混合，Done 第一项，保持 target=4。Number 显示“跳到 4，然后拍拍手”，切 Color 立即显示“跳到黄色，然后拍拍手”，位置/index/历史不变。
+3. 切 Mixed，连续 Repeat，文案保持；Done/Skip 下一项可重新选择表达。
+4. 默认步数 1，从混合脚本起点 Skip 第一项：下一项 planned=4、resolved=2，Color 应说“跳到蓝色，然后拍拍手”。
+5. 默认配置正常 Done 前两项，此时 current=4、target=6。Color 显示“跳到绿色”；步数改为 2，legalTargets 同时包含绿色 1/6，文案应退为“跳到 6”，Debug 原因为 ambiguous_color。关闭后退移除 1 后可恢复颜色表达。
+6. 玩完整轮、再来一轮及切回 Random，确认原有 Done/Skip/Reset/finished 行为保持。

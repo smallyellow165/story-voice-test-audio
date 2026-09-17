@@ -1,4 +1,4 @@
-import { CLASSIC_BOARD, createHopscotch } from './hopscotch-core'
+import { CLASSIC_BOARD, createHopscotch, HOPSCOTCH_COLOR_LABELS, type InstructionMode } from './hopscotch-core'
 import { HOPSCOTCH_SCRIPTS } from './hopscotch-scripts'
 import './hopscotch.css'
 
@@ -15,6 +15,7 @@ document.querySelector<HTMLDivElement>('#hopscotch')!.innerHTML = `
     <section class="task-panel" aria-label="游戏控制">
       <label>Game Mode <select id="mode"><option value="random">Random Mode</option><option value="script">Script Mode</option></select></label>
       <label id="script-picker" hidden>Script <select id="script"></select></label>
+      <label>Instruction Mode <select id="instruction"><option value="number">Number · 数字</option><option value="color">Color · 颜色</option><option value="mixed">Mixed · 混合</option></select></label>
       <p class="eyebrow">CURRENT TASK / 当前任务</p>
       <h2 id="task" aria-live="polite" aria-atomic="true"></h2>
       <p id="progress"></p>
@@ -42,9 +43,12 @@ for (const level of levels) {
   for (const cell of board.cells.filter(cell => cell.level === level)) {
     const tile = document.createElement('div')
     tile.className = `cell lane-${cell.lane}`; tile.dataset.cell = cell.id
+    if (cell.color) tile.dataset.color = cell.color
     const label = document.createElement('strong'); label.textContent = cell.label
+    const colorLabel = document.createElement('span'); colorLabel.className = 'cell-color'
+    colorLabel.textContent = cell.color ? HOPSCOTCH_COLOR_LABELS[cell.color] : ''
     const status = document.createElement('small')
-    tile.append(label, status); row.append(tile)
+    tile.append(label, colorLabel, status); row.append(tile)
   }
   boardElement.append(row)
 }
@@ -54,6 +58,7 @@ function render() {
   element('task').textContent = state.status === 'finished' ? '这一轮完成啦！' : state.task?.text ?? '没有合法目标'
   element('script-picker').hidden = state.mode !== 'script'
   element<HTMLSelectElement>('mode').value = state.mode
+  element<HTMLSelectElement>('instruction').value = state.instructionMode
   if (state.scriptId) element<HTMLSelectElement>('script').value = state.scriptId
   element('progress').textContent = state.mode === 'script'
     ? `${state.status === 'finished' ? '已结束' : `Task ${state.scriptTaskIndex! + 1}`} / ${state.scriptTaskCount} · 已完成 ${state.completedScriptTaskCount} · 已跳过 ${state.skippedCount}` : 'Random · 无限随机任务'
@@ -69,6 +74,8 @@ function render() {
   element<HTMLSelectElement>('steps').value = String(state.config.maxJumpSteps)
   element<HTMLInputElement>('backward').checked = state.config.allowBackward
   element('debug').textContent = JSON.stringify({ mode: state.mode, status: state.status, scriptId: state.scriptId,
+    instructionMode: state.instructionMode, targetColor: state.targetColor, presentationKind: state.presentationKind,
+    presentationFallbackReason: state.presentationFallbackReason, displayText: state.displayText,
     scriptTaskIndex: state.scriptTaskIndex, scriptTaskCount: state.scriptTaskCount,
     originalTask: state.originalTask, resolvedTask: state.resolvedTask,
     currentCell: state.currentCell, targetCell: state.targetCell,
@@ -99,6 +106,10 @@ function configure() {
 }
 element('steps').onchange = configure
 element('backward').onchange = configure
+element('instruction').onchange = () => {
+  game.setInstructionMode(element<HTMLSelectElement>('instruction').value as InstructionMode)
+  element('feedback').textContent = '指令表达已更新，位置、目标和任务进度不变。'; render()
+}
 element('mode').onchange = () => {
   game.setMode(element<HTMLSelectElement>('mode').value as 'random' | 'script')
   element('feedback').textContent = '已切换模式，从起点开始新一轮。'; render()

@@ -1,6 +1,12 @@
 /** Pure game state. Positions are parent-confirmed logical cells, never detections. */
+export type HopscotchColor = 'red' | 'yellow' | 'blue' | 'green' | 'orange'
+export const HOPSCOTCH_COLOR_LABELS: Readonly<Record<HopscotchColor, string>> = Object.freeze({
+  red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色', orange: '橙色',
+})
+export type InstructionMode = 'number' | 'color' | 'mixed'
+export type PresentationKind = Exclude<InstructionMode, 'mixed'>
 export type HopscotchCell = Readonly<{
-  id: string; label: string; level: number; lane: 'left' | 'center' | 'right'
+  id: string; label: string; level: number; lane: 'left' | 'center' | 'right'; color?: HopscotchColor
 }>
 export type HopscotchBoard = Readonly<{ initialCell: string; cells: readonly HopscotchCell[] }>
 export type HopscotchConfig = Readonly<{ maxJumpSteps: 1 | 2; allowBackward: boolean }>
@@ -14,10 +20,26 @@ export type HopscotchHistoryEntry = {
   taskId: string; type: HopscotchTask['type']; plannedTarget: string
 }
 
-export function formatHopscotchTask(task: HopscotchTask, board: HopscotchBoard): string {
-  const label = board.cells.find(cell => cell.id === task.target)?.label ?? task.target
+export function formatHopscotchTask(task: HopscotchTask, board: HopscotchBoard, kind: PresentationKind = 'number'): string {
+  const cell = board.cells.find(cell => cell.id === task.target)
+  const destination = kind === 'color' && cell?.color ? HOPSCOTCH_COLOR_LABELS[cell.color] : ` ${cell?.label ?? task.target}`
   const suffix = { jump_to: '', jump_to_and_clap: '，然后拍拍手', jump_to_and_turn: '，然后转一圈' }
-  return `跳到 ${label}${suffix[task.type]}`
+  return `跳到${destination}${suffix[task.type]}`
+}
+
+/** Deterministic presentation safety check; caller stores Mixed's requested kind per task. */
+export function presentHopscotchTask(task: HopscotchTask, board: HopscotchBoard, legalTargets: readonly string[], requestedKind: PresentationKind) {
+  const targetColor = board.cells.find(cell => cell.id === task.target)?.color ?? null
+  const matches = board.cells.filter(cell => legalTargets.includes(cell.id) && cell.color === targetColor).length
+  const presentationFallbackReason = requestedKind !== 'color' ? null
+    : !targetColor ? 'missing_color' as const : matches !== 1 ? 'ambiguous_color' as const : null
+  const presentationKind = presentationFallbackReason ? 'number' : requestedKind
+  return { targetColor, presentationKind, presentationFallbackReason,
+    displayText: formatHopscotchTask(task, board, presentationKind) }
+}
+
+function validateInstructionMode(mode: InstructionMode) {
+  if (!['number', 'color', 'mixed'].includes(mode)) throw new Error('Invalid instruction mode')
 }
 
 function copyScript(script: HopscotchScript): HopscotchScript {
@@ -31,16 +53,16 @@ function copyScript(script: HopscotchScript): HopscotchScript {
 export const CLASSIC_BOARD: HopscotchBoard = Object.freeze({
   initialCell: '1',
   cells: Object.freeze([
-    { id: '1', label: '1', level: 0, lane: 'center' },
-    { id: '2', label: '2', level: 1, lane: 'left' },
-    { id: '3', label: '3', level: 1, lane: 'right' },
-    { id: '4', label: '4', level: 2, lane: 'center' },
-    { id: '5', label: '5', level: 3, lane: 'left' },
-    { id: '6', label: '6', level: 3, lane: 'right' },
-    { id: '7', label: '7', level: 4, lane: 'center' },
-    { id: '8', label: '8', level: 5, lane: 'left' },
-    { id: '9', label: '9', level: 5, lane: 'right' },
-    { id: '10', label: '10', level: 6, lane: 'center' },
+    { id: '1', label: '1', level: 0, lane: 'center', color: 'green' },
+    { id: '2', label: '2', level: 1, lane: 'left', color: 'blue' },
+    { id: '3', label: '3', level: 1, lane: 'right', color: 'orange' },
+    { id: '4', label: '4', level: 2, lane: 'center', color: 'yellow' },
+    { id: '5', label: '5', level: 3, lane: 'left', color: 'red' },
+    { id: '6', label: '6', level: 3, lane: 'right', color: 'green' },
+    { id: '7', label: '7', level: 4, lane: 'center', color: 'blue' },
+    { id: '8', label: '8', level: 5, lane: 'left', color: 'orange' },
+    { id: '9', label: '9', level: 5, lane: 'right', color: 'yellow' },
+    { id: '10', label: '10', level: 6, lane: 'center', color: 'red' },
   ].map(cell => Object.freeze(cell as HopscotchCell))),
 })
 export const DEFAULT_CONFIG: HopscotchConfig = Object.freeze({ maxJumpSteps: 1, allowBackward: true })
@@ -62,16 +84,24 @@ export function getLegalTargets(board: HopscotchBoard, currentCell: string, conf
 
 export function createHopscotch(options: {
   board?: HopscotchBoard; config?: HopscotchConfig; random?: () => number;
-  mode?: HopscotchMode; script?: HopscotchScript
+  mode?: HopscotchMode; script?: HopscotchScript; instructionMode?: InstructionMode; presentationRandom?: () => number
 } = {}) {
   const board = structuredClone(options.board ?? CLASSIC_BOARD)
   if (!board.cells.length || new Set(board.cells.map(cell => cell.id)).size !== board.cells.length
     || !board.cells.some(cell => cell.id === board.initialCell)
     || board.cells.some(cell => !cell.id || !cell.label || !Number.isInteger(cell.level)
-      || !['left', 'center', 'right'].includes(cell.lane))) throw new Error('Invalid board')
+      || !['left', 'center', 'right'].includes(cell.lane)
+      || (cell.color !== undefined && !Object.hasOwn(HOPSCOTCH_COLOR_LABELS, cell.color)))) throw new Error('Invalid board')
   let config = { ...(options.config ?? DEFAULT_CONFIG) }
   validateConfig(config)
   const random = options.random ?? Math.random
+  const presentationRandom = options.presentationRandom ?? Math.random
+  let instructionMode = options.instructionMode ?? 'number'
+  validateInstructionMode(instructionMode)
+  let requestedKind: PresentationKind = 'number'
+  function choosePresentation() {
+    requestedKind = instructionMode === 'mixed' ? (presentationRandom() < 0.5 ? 'number' : 'color') : instructionMode
+  }
   let mode = options.mode ?? 'random'
   let script = options.script ? copyScript(options.script) : null
   if (mode === 'script' && !script) throw new Error('Script required')
@@ -97,10 +127,14 @@ export function createHopscotch(options: {
     if (target === null) return
     active = planned ? { ...planned, target } : { id: `random-${history.length + 1}`, type: 'jump_to', target }
     previousTarget = target
+    choosePresentation()
   }
   function read() {
     const completedCount = history.filter(entry => entry.outcome === 'DONE').length
+    const presentation = active ? presentHopscotchTask(active, board, legalTargets(), requestedKind)
+      : { targetColor: null, presentationKind: null, presentationFallbackReason: null, displayText: null }
     return {
+      instructionMode, ...presentation,
       mode, status: finished() ? 'finished' as const : active ? 'active' as const : 'blocked' as const,
       scriptId: mode === 'script' ? script!.id : null,
       scriptTaskIndex: mode === 'script' ? scriptTaskIndex : null,
@@ -110,7 +144,7 @@ export function createHopscotch(options: {
       resolvedTask: active ? { ...active } : null,
       currentCell, targetCell: active?.target ?? null, legalTargets: legalTargets(), config: { ...config },
       // Retain the V1 text/action convenience projection; structured task is authoritative.
-      task: active ? { ...active, action: active.type, text: formatHopscotchTask(active, board) } : null,
+      task: active ? { ...active, action: active.type, text: presentation.displayText! } : null,
       completedCount, skippedCount: history.filter(entry => entry.outcome === 'SKIP').length,
       history: history.map(entry => ({ ...entry })),
     }
@@ -146,6 +180,13 @@ export function createHopscotch(options: {
     setScript(next: HopscotchScript) {
       script = copyScript(next); mode = 'script'
       return reset()
+    },
+    setInstructionMode(next: InstructionMode) {
+      validateInstructionMode(next)
+      if (instructionMode === next) return read()
+      instructionMode = next
+      if (active) choosePresentation()
+      return read()
     },
     setConfig(next: HopscotchConfig) {
       validateConfig(next)
