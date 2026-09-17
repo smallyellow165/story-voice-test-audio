@@ -1,5 +1,6 @@
 :root { font-family: system-ui, sans-serif; color: #18302f; background: #f4f6f3; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; }
 main { max-width: 1000px; margin: auto; padding: 20px; }
 a { color: #25655b; }

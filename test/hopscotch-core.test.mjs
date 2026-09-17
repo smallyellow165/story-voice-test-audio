@@ -28,7 +28,7 @@ test('Done moves to target, then issues a legal task; Repeat changes nothing', (
   assert.equal(after.currentCell, '2')
   assert.ok(after.legalTargets.includes(after.targetCell))
   assert.equal(after.completedCount, 1)
-  assert.deepEqual(after.history, [{ from: '1', target: '2', outcome: 'DONE' }])
+  assert.deepEqual(after.history, [{ from: '1', target: '2', outcome: 'DONE', taskId: 'random-1', type: 'jump_to', plannedTarget: '2' }])
 })
 test('Skip leaves position unchanged and avoids the previous target when possible', () => {
   const game = createHopscotch({ random: () => 0 })
@@ -37,7 +37,7 @@ test('Skip leaves position unchanged and avoids the previous target when possibl
   assert.equal(after.targetCell, '3')
   assert.equal(after.completedCount, 0)
   assert.equal(after.skippedCount, 1)
-  assert.deepEqual(after.history, [{ from: '1', target: '2', outcome: 'SKIP' }])
+  assert.deepEqual(after.history, [{ from: '1', target: '2', outcome: 'SKIP', taskId: 'random-1', type: 'jump_to', plannedTarget: '2' }])
 })
 test('single target can repeat; no-target state is explicit and recoverable', () => {
   const game = createHopscotch({ config: { maxJumpSteps: 1, allowBackward: false }, random: () => 0 })

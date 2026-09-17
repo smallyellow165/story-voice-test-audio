@@ -4,7 +4,29 @@ export type HopscotchCell = Readonly<{
 }>
 export type HopscotchBoard = Readonly<{ initialCell: string; cells: readonly HopscotchCell[] }>
 export type HopscotchConfig = Readonly<{ maxJumpSteps: 1 | 2; allowBackward: boolean }>
-export type HopscotchHistoryEntry = { from: string; target: string; outcome: 'DONE' | 'SKIP' }
+export type HopscotchTask = Readonly<{
+  id: string; type: 'jump_to' | 'jump_to_and_clap' | 'jump_to_and_turn'; target: string
+}>
+export type HopscotchScript = Readonly<{ id: string; title: string; tasks: readonly HopscotchTask[] }>
+export type HopscotchMode = 'random' | 'script'
+export type HopscotchHistoryEntry = {
+  from: string; target: string; outcome: 'DONE' | 'SKIP';
+  taskId: string; type: HopscotchTask['type']; plannedTarget: string
+}
+
+export function formatHopscotchTask(task: HopscotchTask, board: HopscotchBoard): string {
+  const label = board.cells.find(cell => cell.id === task.target)?.label ?? task.target
+  const suffix = { jump_to: '', jump_to_and_clap: '，然后拍拍手', jump_to_and_turn: '，然后转一圈' }
+  return `跳到 ${label}${suffix[task.type]}`
+}
+
+function copyScript(script: HopscotchScript): HopscotchScript {
+  if (!script.id || !script.title || !Array.isArray(script.tasks) || !script.tasks.length
+    || new Set(script.tasks.map(task => task.id)).size !== script.tasks.length
+    || script.tasks.some(task => !task.id || typeof task.target !== 'string' || !task.target
+      || !['jump_to', 'jump_to_and_clap', 'jump_to_and_turn'].includes(task.type))) throw new Error('Invalid script')
+  return structuredClone(script)
+}
 
 export const CLASSIC_BOARD: HopscotchBoard = Object.freeze({
   initialCell: '1',
@@ -38,7 +60,10 @@ export function getLegalTargets(board: HopscotchBoard, currentCell: string, conf
   }).map(cell => cell.id)
 }
 
-export function createHopscotch(options: { board?: HopscotchBoard; config?: HopscotchConfig; random?: () => number } = {}) {
+export function createHopscotch(options: {
+  board?: HopscotchBoard; config?: HopscotchConfig; random?: () => number;
+  mode?: HopscotchMode; script?: HopscotchScript
+} = {}) {
   const board = structuredClone(options.board ?? CLASSIC_BOARD)
   if (!board.cells.length || new Set(board.cells.map(cell => cell.id)).size !== board.cells.length
     || !board.cells.some(cell => cell.id === board.initialCell)
@@ -47,51 +72,86 @@ export function createHopscotch(options: { board?: HopscotchBoard; config?: Hops
   let config = { ...(options.config ?? DEFAULT_CONFIG) }
   validateConfig(config)
   const random = options.random ?? Math.random
+  let mode = options.mode ?? 'random'
+  let script = options.script ? copyScript(options.script) : null
+  if (mode === 'script' && !script) throw new Error('Script required')
+  let scriptTaskIndex = 0
   let currentCell = board.initialCell
-  let targetCell: string | null = null
+  let active: HopscotchTask | null = null
   let previousTarget: string | null = null
   let history: HopscotchHistoryEntry[] = []
   const legalTargets = () => getLegalTargets(board, currentCell, config)
-  function chooseTarget() {
-    const legal = legalTargets()
+  const originalTask = () => mode === 'script' ? script!.tasks[scriptTaskIndex] ?? null : null
+  const finished = () => mode === 'script' && scriptTaskIndex >= script!.tasks.length
+  function chooseTarget(legal: string[]) {
     const alternatives = legal.filter(id => id !== previousTarget)
     const candidates = alternatives.length ? alternatives : legal
-    targetCell = candidates.length === 0 ? null : candidates.length === 1 ? candidates[0]! : candidates[Math.floor(random() * candidates.length)]!
-    if (targetCell !== null) previousTarget = targetCell
+    return candidates.length === 0 ? null : candidates.length === 1 ? candidates[0]! : candidates[Math.floor(random() * candidates.length)]!
+  }
+  function resolve() {
+    active = null
+    if (finished()) return
+    const legal = legalTargets()
+    const planned = originalTask()
+    const target = planned && legal.includes(planned.target) ? planned.target : chooseTarget(legal)
+    if (target === null) return
+    active = planned ? { ...planned, target } : { id: `random-${history.length + 1}`, type: 'jump_to', target }
+    previousTarget = target
   }
   function read() {
-    const target = board.cells.find(cell => cell.id === targetCell)
+    const completedCount = history.filter(entry => entry.outcome === 'DONE').length
     return {
-      currentCell, targetCell, legalTargets: legalTargets(), config: { ...config },
-      task: target ? { action: 'jump_to' as const, target: target.id, text: `跳到 ${target.label}` } : null,
-      completedCount: history.filter(entry => entry.outcome === 'DONE').length,
-      skippedCount: history.filter(entry => entry.outcome === 'SKIP').length,
+      mode, status: finished() ? 'finished' as const : active ? 'active' as const : 'blocked' as const,
+      scriptId: mode === 'script' ? script!.id : null,
+      scriptTaskIndex: mode === 'script' ? scriptTaskIndex : null,
+      scriptTaskCount: mode === 'script' ? script!.tasks.length : 0,
+      completedScriptTaskCount: mode === 'script' ? completedCount : 0,
+      originalTask: originalTask() ? { ...originalTask()! } : null,
+      resolvedTask: active ? { ...active } : null,
+      currentCell, targetCell: active?.target ?? null, legalTargets: legalTargets(), config: { ...config },
+      // Retain the V1 text/action convenience projection; structured task is authoritative.
+      task: active ? { ...active, action: active.type, text: formatHopscotchTask(active, board) } : null,
+      completedCount, skippedCount: history.filter(entry => entry.outcome === 'SKIP').length,
       history: history.map(entry => ({ ...entry })),
     }
   }
   function act(outcome: HopscotchHistoryEntry['outcome']) {
-    if (targetCell === null) return read()
-    history.push({ from: currentCell, target: targetCell, outcome })
-    if (outcome === 'DONE') currentCell = targetCell
-    chooseTarget()
+    if (!active) return read()
+    history.push({ from: currentCell, target: active.target, outcome, taskId: active.id,
+      type: active.type, plannedTarget: originalTask()?.target ?? active.target })
+    if (outcome === 'DONE') currentCell = active.target
+    if (mode === 'script') scriptTaskIndex++
+    resolve()
     return read()
   }
-  chooseTarget()
+  function reset() {
+    currentCell = board.initialCell; active = null; previousTarget = null; history = []; scriptTaskIndex = 0
+    resolve()
+    return read()
+  }
+  resolve()
   return {
     read,
     done: () => act('DONE'),
     skip: () => act('SKIP'),
-    repeat: read, // No event/history/progression mutation; presentation may emphasize the task.
-    reset() {
-      currentCell = board.initialCell; targetCell = previousTarget = null; history = []
-      chooseTarget()
-      return read()
+    repeat: read, // Never re-resolve, consume randomness, or alter history.
+    reset,
+    setMode(next: HopscotchMode) {
+      if (!['random', 'script'].includes(next)) throw new Error('Invalid mode')
+      if (next === 'script' && !script) throw new Error('Script required')
+      if (mode === next) return read()
+      mode = next
+      return reset()
+    },
+    setScript(next: HopscotchScript) {
+      script = copyScript(next); mode = 'script'
+      return reset()
     },
     setConfig(next: HopscotchConfig) {
       validateConfig(next)
       config = { ...next }
-      // Keep a still-legal instruction; never retain an invalid target after a config change.
-      if (targetCell === null || !legalTargets().includes(targetCell)) chooseTarget()
+      // A finished round stays finished, even when configuration restores legal moves.
+      if (!finished() && (!active || !legalTargets().includes(active.target))) resolve()
       return read()
     },
   }
