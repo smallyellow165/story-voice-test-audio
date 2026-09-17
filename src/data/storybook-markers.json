@@ -1,0 +1,32 @@
+{
+  "101": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-1",
+    "pageNumber": 1
+  },
+  "102": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-2",
+    "pageNumber": 2
+  },
+  "103": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-3",
+    "pageNumber": 3
+  },
+  "104": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-4",
+    "pageNumber": 4
+  },
+  "105": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-5",
+    "pageNumber": 5
+  },
+  "106": {
+    "storyId": "storybook-demo",
+    "sectionId": "section-6",
+    "pageNumber": 6
+  }
+}
