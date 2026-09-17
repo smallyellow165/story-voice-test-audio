@@ -15,6 +15,12 @@ export type HopscotchTask = Readonly<{
 }>
 export type HopscotchScript = Readonly<{ id: string; title: string; tasks: readonly HopscotchTask[] }>
 export type HopscotchMode = 'random' | 'script'
+/** Compact Script recovery state; definitions/config are supplied by the consumer. */
+export type HopscotchCheckpoint = {
+  v: 1; scriptId: string; scriptTaskIndex: number; currentCell: string;
+  resolvedTarget: string | null; requestedKind: PresentationKind;
+  completedCount: number; skippedCount: number
+}
 export type HopscotchHistoryEntry = {
   from: string; target: string; outcome: 'DONE' | 'SKIP';
   taskId: string; type: HopscotchTask['type']; plannedTarget: string
@@ -110,6 +116,7 @@ export function createHopscotch(options: {
   let active: HopscotchTask | null = null
   let previousTarget: string | null = null
   let history: HopscotchHistoryEntry[] = []
+  let restoredCompleted = 0, restoredSkipped = 0
   const legalTargets = () => getLegalTargets(board, currentCell, config)
   const originalTask = () => mode === 'script' ? script!.tasks[scriptTaskIndex] ?? null : null
   const finished = () => mode === 'script' && scriptTaskIndex >= script!.tasks.length
@@ -130,7 +137,7 @@ export function createHopscotch(options: {
     choosePresentation()
   }
   function read() {
-    const completedCount = history.filter(entry => entry.outcome === 'DONE').length
+    const completedCount = restoredCompleted + history.filter(entry => entry.outcome === 'DONE').length
     const presentation = active ? presentHopscotchTask(active, board, legalTargets(), requestedKind)
       : { targetColor: null, presentationKind: null, presentationFallbackReason: null, displayText: null }
     return {
@@ -145,7 +152,7 @@ export function createHopscotch(options: {
       currentCell, targetCell: active?.target ?? null, legalTargets: legalTargets(), config: { ...config },
       // Retain the V1 text/action convenience projection; structured task is authoritative.
       task: active ? { ...active, action: active.type, text: presentation.displayText! } : null,
-      completedCount, skippedCount: history.filter(entry => entry.outcome === 'SKIP').length,
+      completedCount, skippedCount: restoredSkipped + history.filter(entry => entry.outcome === 'SKIP').length,
       history: history.map(entry => ({ ...entry })),
     }
   }
@@ -160,12 +167,40 @@ export function createHopscotch(options: {
   }
   function reset() {
     currentCell = board.initialCell; active = null; previousTarget = null; history = []; scriptTaskIndex = 0
+    restoredCompleted = restoredSkipped = 0
     resolve()
     return read()
   }
   resolve()
   return {
     read,
+    checkpoint(): HopscotchCheckpoint {
+      if (mode !== 'script') throw new Error('Script recovery only')
+      const state = read()
+      return { v: 1, scriptId: script!.id, scriptTaskIndex, currentCell,
+        resolvedTarget: active?.target ?? null, requestedKind,
+        completedCount: state.completedCount, skippedCount: state.skippedCount }
+    },
+    restore(value: HopscotchCheckpoint) {
+      // Validate before committing; restoring must neither replay actions nor draw randomness.
+      if (mode !== 'script' || !value || value.v !== 1 || value.scriptId !== script!.id
+        || !Number.isInteger(value.scriptTaskIndex) || value.scriptTaskIndex < 0 || value.scriptTaskIndex > script!.tasks.length
+        || !Number.isInteger(value.completedCount) || value.completedCount < 0
+        || !Number.isInteger(value.skippedCount) || value.skippedCount < 0
+        || value.completedCount + value.skippedCount !== value.scriptTaskIndex
+        || !['number', 'color'].includes(value.requestedKind)
+        || (instructionMode !== 'mixed' && value.requestedKind !== instructionMode)) throw new Error('Invalid Hopscotch checkpoint')
+      const legal = getLegalTargets(board, value.currentCell, config)
+      const ended = value.scriptTaskIndex === script!.tasks.length
+      if ((ended && value.resolvedTarget !== null)
+        || (!ended && (legal.length ? !legal.includes(value.resolvedTarget!) : value.resolvedTarget !== null))) throw new Error('Invalid resolved target')
+      const task = script!.tasks[value.scriptTaskIndex]
+      currentCell = value.currentCell; scriptTaskIndex = value.scriptTaskIndex
+      active = task && value.resolvedTarget !== null ? { ...task, target: value.resolvedTarget } : null
+      previousTarget = value.resolvedTarget; requestedKind = value.requestedKind
+      restoredCompleted = value.completedCount; restoredSkipped = value.skippedCount; history = []
+      return read()
+    },
     done: () => act('DONE'),
     skip: () => act('SKIP'),
     repeat: read, // Never re-resolve, consume randomness, or alter history.

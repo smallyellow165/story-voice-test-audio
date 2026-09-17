@@ -9,6 +9,6 @@ export default defineConfig({
   worker: { format: 'es' },
   build: {
     outDir: 'dist-module',
-    lib: { entry: { 'hopscotch-core': 'src/hopscotch-core.ts', permissions: 'src/game-permissions.ts', index: 'src/ring-feet-module.tsx', 'touch-color': 'src/touch-color-module.ts', 'simon-says': 'src/simon-says-module.ts' }, formats: ['es'], fileName: (_format, name) => `${name}.js` },
+    lib: { entry: { hopscotch: 'src/hopscotch-module.ts', 'hopscotch-scripts': 'src/hopscotch-scripts.ts', 'hopscotch-core': 'src/hopscotch-core.ts', permissions: 'src/game-permissions.ts', index: 'src/ring-feet-module.tsx', 'touch-color': 'src/touch-color-module.ts', 'simon-says': 'src/simon-says-module.ts' }, formats: ['es'], fileName: (_format, name) => `${name}.js` },
   },
 })

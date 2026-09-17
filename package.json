@@ -53,6 +53,14 @@
     "./permissions": {
       "types": "./src/game-permissions.ts",
       "import": "./dist-module/permissions.js"
+    },
+    "./hopscotch": {
+      "types": "./src/hopscotch-module.d.ts",
+      "import": "./dist-module/hopscotch.js"
+    },
+    "./hopscotch-scripts": {
+      "types": "./src/hopscotch-scripts.ts",
+      "import": "./dist-module/hopscotch-scripts.js"
     }
   }
 }

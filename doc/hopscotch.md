@@ -1,5 +1,7 @@
 # Hopscotch / 跳格子 V2 baseline
 
+V4 产品接入复用本目录的 `hopscotch-core` / `hopscotch-scripts` / `hopscotch` exports。`src/hopscotch-module.ts` 是固定产品配置的薄 UI/Activity Bridge 模块，baseline 页面不加载它。Core 新增 Script `checkpoint()/restore()`：恢复当前位置、cursor、resolved target、Mixed 选择及累计计数，不传整份 Script，不重新随机；恢复后的 history 只记录新操作。baseline 的模式/配置选择器保持原样。
+
 独立页面：`http://localhost:5173/story-voice-test-audio/hopscotch.html`
 
 ```bash
