@@ -34,6 +34,10 @@
     "vite": "^8.2.2"
   },
   "exports": {
+    "./hopscotch-core": {
+      "types": "./src/hopscotch-core.ts",
+      "import": "./dist-module/hopscotch-core.js"
+    },
     "./ringfeet": {
       "types": "./src/ring-feet-module.d.ts",
       "import": "./dist-module/index.js"
