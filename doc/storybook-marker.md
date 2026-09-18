@@ -124,3 +124,5 @@ UI 保留完整 content 和 narration 汇总，并增加带序号的 Items 列�
 导航 core 通过 `storybook-navigation` export 保留。内容唯一来源已收敛到 sibling V4 的 `server/data/stories/story.json`（id=`storybook-demo`）；baseline 页面直接 import 该数组选取记录，marker mapping 直接引用 V4 的独立 JSON。本项目的两份 JSON 副本和原同步脚本已删除，因此本实验页面/测试需要 sibling V4 数据目录。这里只展示内容，不播放音频。
 
 V4 接入现已收敛到原 Story catalog/start_story，V4 专用 Debug UI 和 demo loader 已删除；本实验页面不再被描述为 V4 的播放入口。真实 marker provider 尚未接入 V4。
+
+V4 catalog 现已统一为 sections/items；普通点播默认 sequential，实体绘本明确使用 marker navigation policy。sections 不再隐含等待 marker。本 Test Audio baseline 仍只验证 marker 选择内容，不承担播放策略。
