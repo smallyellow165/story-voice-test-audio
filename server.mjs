@@ -1,3 +1,4 @@
+import { generateFishAudio, fishPublicError } from './server/fish-tts.mjs'
 import { createRingHistory } from './server/ring-history.mjs'
 import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
 import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
@@ -219,6 +220,34 @@ const toPublicError = (error) => {
   }
 }
 
+const saveTestAudio = async ({ audioContent, provider, model, voice, text }) => {
+  await mkdir(generatedAudioDirectory, { recursive: true })
+  const timestamp = localTimestamp(new Date())
+  const id = `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
+  const filename = `${id}-${voice.toLowerCase()}.mp3`
+  const audioPath = path.join(generatedAudioDirectory, filename)
+  await writeFile(audioPath, audioContent)
+  let durationSeconds
+  try {
+    durationSeconds = await probeAudioDuration(audioPath)
+  } catch (error) {
+    throw new AudioDurationError(error.message, { cause: error })
+  }
+
+  const record = await appendMetadataRecord({
+    id,
+    provider,
+    model,
+    voice,
+    script: text,
+    audioFile: filename,
+    durationSeconds,
+    createdAt: timestamp.createdAt,
+  })
+
+  return { record, filename }
+}
+
 const handleTestTts = async (request, response) => {
   let body
   try {
@@ -228,6 +257,15 @@ const handleTestTts = async (request, response) => {
     return
   }
 
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    sendJson(response, 400, { error: { code: 'INVALID_REQUEST', message: 'Expected a JSON object.' } })
+    return
+  }
+  const provider = body.provider ?? 'gemini'
+  if (!['gemini', 'fish'].includes(provider)) {
+    sendJson(response, 400, { error: { code: 'INVALID_PROVIDER', message: 'Provider must be gemini or fish.' } })
+    return
+  }
   const text = typeof body.text === 'string' ? body.text.trim() : ''
   const voice = typeof body.voice === 'string' && body.voice.trim() ? body.voice.trim() : 'Achernar'
   const style = typeof body.style === 'string' ? body.style.trim() : ''
@@ -238,6 +276,21 @@ const handleTestTts = async (request, response) => {
   }
   if (Buffer.byteLength(text, 'utf8') + Buffer.byteLength(style, 'utf8') > maxInputBytes) {
     sendJson(response, 400, { error: { code: 'TEXT_TOO_LONG', message: 'Text and style instructions must total 8,000 bytes or fewer.' } })
+    return
+  }
+  if (provider === 'fish') {
+    try {
+      const generated = await generateFishAudio(text)
+      const { record, filename } = await saveTestAudio({ ...generated, provider, text })
+      sendJson(response, 201, {
+        url: `/generated/test-audio/${filename}`,
+        format: 'audio/mpeg', provider, model: generated.model, voice: generated.voice,
+        bytes: generated.audioContent.length, record,
+      })
+    } catch (error) {
+      const publicError = fishPublicError(error)
+      sendJson(response, publicError.statusCode, { error: publicError })
+    }
     return
   }
   if (!/^[A-Za-z0-9-]+$/.test(voice)) {
@@ -267,31 +320,12 @@ const handleTestTts = async (request, response) => {
     })
     if (!result.audioContent) throw new Error('Cloud Text-to-Speech returned an empty audio response.')
 
-    await mkdir(generatedAudioDirectory, { recursive: true })
-    const timestamp = localTimestamp(new Date())
-    const id = `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
-    const filename = `${id}-${voice.toLowerCase()}.mp3`
-    const audioPath = path.join(generatedAudioDirectory, filename)
-    await writeFile(audioPath, result.audioContent)
-    let durationSeconds
-    try {
-      durationSeconds = await probeAudioDuration(audioPath)
-    } catch (error) {
-      throw new AudioDurationError(error.message, { cause: error })
-    }
-
-    const record = await appendMetadataRecord({
-      id,
-      voice,
-      script: text,
-      audioFile: filename,
-      durationSeconds,
-      createdAt: timestamp.createdAt,
-    })
+    const { record, filename } = await saveTestAudio({ audioContent: result.audioContent, provider: 'gemini', model: 'gemini-3.1-flash-tts-preview', voice, text })
 
     sendJson(response, 201, {
       url: `/generated/test-audio/${filename}`,
       format: 'audio/mpeg',
+      provider: 'gemini',
       model: 'gemini-3.1-flash-tts-preview',
       languageCode: 'cmn-CN',
       voice,

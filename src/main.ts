@@ -47,6 +47,8 @@ import {
 import { getClipRuns } from './video-run-history.mjs'
 
 type AudioRecord = {
+  provider?: 'gemini' | 'fish'
+  model?: string
   id: string
   voice: string
   script: string
@@ -218,6 +220,9 @@ const layout = (content: string, activePage: 'audio' | 'video' | 'video-v2' = 'a
   `
 }
 
+const providerLabel = (record: AudioRecord) => record.provider === 'fish' ? 'Fish Audio' : 'Gemini'
+const voiceLabel = (record: AudioRecord) => `${providerLabel(record)} / ${record.voice}`
+
 const renderLibraryRows = () => {
   const body = document.querySelector<HTMLTableSectionElement>('#library-table-body')!
   const count = document.querySelector<HTMLParagraphElement>('#result-count')!
@@ -225,7 +230,7 @@ const renderLibraryRows = () => {
   const voice = document.querySelector<HTMLSelectElement>('#voice-filter')!.value
   const filtered = records.filter((record) =>
     (!search || `${record.script} ${record.audioFile}`.toLocaleLowerCase().includes(search)) &&
-    (voice === 'all' || record.voice === voice),
+    (voice === 'all' || voiceLabel(record) === voice),
   )
   const sorted = sortRecords(filtered)
 
@@ -239,7 +244,7 @@ const renderLibraryRows = () => {
   body.innerHTML = sorted.map((record) => `
     <tr>
       <td><button class="table-play" type="button" data-record-id="${escapeHtml(record.id)}">Play</button></td>
-      <td class="voice-cell">${escapeHtml(record.voice)}</td>
+      <td class="voice-cell">${escapeHtml(voiceLabel(record))}<br><small>${escapeHtml(record.model ?? 'gemini-3.1-flash-tts-preview')}</small></td>
       <td class="script-cell" title="${escapeHtml(record.script)}">${escapeHtml(record.script)}</td>
       <td class="duration-cell">${escapeHtml(formatDuration(record.durationSeconds))}</td>
       <td class="file-cell" title="${escapeHtml(record.audioFile)}">${escapeHtml(record.audioFile)}</td>
@@ -289,7 +294,7 @@ const renderLibrary = () => {
   `)
 
   const voiceFilter = document.querySelector<HTMLSelectElement>('#voice-filter')!
-  for (const voice of [...new Set(records.map((record) => record.voice))].sort()) {
+  for (const voice of [...new Set(records.map(voiceLabel))].sort()) {
     voiceFilter.add(new Option(voice, voice))
   }
   document.querySelector<HTMLInputElement>('#search')!.addEventListener('input', renderLibraryRows)
@@ -314,6 +319,8 @@ const renderGenerate = () => {
     <section class="tool-page generate-page" aria-labelledby="page-title">
       <div class="page-heading"><h1 id="page-title">Generate Audio</h1></div>
       <form id="generate-form" class="generate-form">
+        <label><span>Provider</span><select id="tts-provider"><option value="gemini">Gemini</option><option value="fish">Fish Audio</option></select></label>
+        <p id="fish-voice-note" hidden>Voice: configured Fish Audio reference · Model: s2.1-pro-free</p>
         <label><span>Voice</span><select id="voice" required>${geminiVoices.map((voice) => `<option value="${escapeHtml(voice.name)}"${voice.name === 'Achernar' ? ' selected' : ''}>${escapeHtml(voiceOptionLabel(voice))}</option>`).join('')}</select></label>
         <label><span>Test Script</span><select id="script-preset"><option value="">Custom script</option>${testScripts.map((preset) => `<option value="${escapeHtml(preset.id)}">${escapeHtml(`${preset.label} · ${preset.duration}`)}</option>`).join('')}</select></label>
         <label><span>Script</span><textarea id="script" rows="6" required>瑞瑞，你怎么又把玉米藏到被子里面啦？</textarea></label>
@@ -330,7 +337,14 @@ const renderGenerate = () => {
   `)
 
   const form = document.querySelector<HTMLFormElement>('#generate-form')!
+  const provider = document.querySelector<HTMLSelectElement>('#tts-provider')!
   const voice = document.querySelector<HTMLSelectElement>('#voice')!
+  provider.addEventListener('change', () => {
+    const isFish = provider.value === 'fish'
+    voice.disabled = isFish
+    voice.closest('label')!.hidden = isFish
+    document.querySelector<HTMLParagraphElement>('#fish-voice-note')!.hidden = !isFish
+  })
   const scriptPreset = document.querySelector<HTMLSelectElement>('#script-preset')!
   const script = document.querySelector<HTMLTextAreaElement>('#script')!
   const submit = document.querySelector<HTMLButtonElement>('#generate-submit')!
@@ -347,14 +361,14 @@ const renderGenerate = () => {
     event.preventDefault()
     submit.disabled = true
     submit.textContent = 'Generating…'
-    status.textContent = 'Requesting Google Cloud Gemini TTS…'
+    status.textContent = provider.value === 'fish' ? 'Requesting Fish Audio TTS…' : 'Requesting Google Cloud Gemini TTS…'
     result.hidden = true
 
     try {
       const response = await fetch('/api/test-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: script.value, voice: voice.value }),
+        body: JSON.stringify({ text: script.value, provider: provider.value, ...(provider.value === 'gemini' ? { voice: voice.value } : {}) }),
       })
       const payload = await response.json() as { url?: string; error?: { message: string } }
       if (!response.ok || !payload.url) throw new Error(payload.error?.message ?? 'The server returned an invalid TTS response.')
