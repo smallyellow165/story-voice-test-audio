@@ -1,0 +1,20 @@
+{
+  "id": "index-gap-demo",
+  "title": "森林里的声音",
+  "characters": ["瑞瑞", "小猫"],
+  "tags": ["声音", "森林"],
+  "age": "3-4",
+  "summary": "瑞瑞听见小猫的声音。",
+  "content": "森林里传来一个声音。原来是一只小猫！",
+  "sections": [
+    {
+      "id": "section-1",
+      "content": "森林里传来一个声音。原来是一只小猫！",
+      "items": [
+        { "type": "narration", "text": "森林里传来一个声音。" },
+        { "type": "sound", "sound_id": "cat" },
+        { "type": "narration", "text": "原来是一只小猫！" }
+      ]
+    }
+  ]
+}

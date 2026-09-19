@@ -1,3 +1,4 @@
+import { storyAudioItems } from './story-audio.mjs'
 import './style.css'
 import geminiVoices from './data/gemini-voices.json'
 import testScripts from './data/test-scripts.json'
@@ -47,6 +48,10 @@ import {
 import { getClipRuns } from './video-run-history.mjs'
 
 type AudioRecord = {
+  url?: string
+  story_id?: string
+  section_id?: string
+  item_index?: number
   provider?: 'gemini' | 'fish'
   model?: string
   id: string
@@ -194,7 +199,7 @@ const playRecord = async (record: AudioRecord, button: HTMLButtonElement) => {
   }
 
   stopPlayback()
-  activeAudio = new Audio(audioUrl(record.audioFile))
+  activeAudio = new Audio(record.url ?? audioUrl(record.audioFile))
   activeButton = button
   activeAudio.addEventListener('ended', stopPlayback, { once: true })
   try {
@@ -319,6 +324,9 @@ const renderGenerate = () => {
     <section class="tool-page generate-page" aria-labelledby="page-title">
       <div class="page-heading"><h1 id="page-title">Generate Audio</h1></div>
       <form id="generate-form" class="generate-form">
+        <label><span>Mode</span><select id="audio-mode"><option value="test">Test Audio</option><option value="story">Story Mode</option></select></label>
+        <label id="story-json-field" hidden><span>Complete Story JSON</span><textarea id="story-json" rows="12" placeholder="Paste one complete Story object with id and sections"></textarea></label>
+        <p id="story-output-note" hidden>Generates narration items into generated/story-audio/&lt;story-id&gt;/ with manifest.json. Regenerating an item replaces its audio and history entry. Sound items are skipped.</p>
         <label><span>Provider</span><select id="tts-provider"><option value="gemini">Gemini</option><option value="fish">Fish Audio</option></select></label>
         <p id="fish-voice-note" hidden>Voice: configured Fish Audio reference · Model: s2.1-pro-free</p>
         <label><span>Voice</span><select id="voice" required>${geminiVoices.map((voice) => `<option value="${escapeHtml(voice.name)}"${voice.name === 'Achernar' ? ' selected' : ''}>${escapeHtml(voiceOptionLabel(voice))}</option>`).join('')}</select></label>
@@ -347,6 +355,17 @@ const renderGenerate = () => {
   })
   const scriptPreset = document.querySelector<HTMLSelectElement>('#script-preset')!
   const script = document.querySelector<HTMLTextAreaElement>('#script')!
+  const mode = document.querySelector<HTMLSelectElement>('#audio-mode')!
+  const storyJson = document.querySelector<HTMLTextAreaElement>('#story-json')!
+  mode.addEventListener('change', () => {
+    const isStory = mode.value === 'story'
+    document.querySelector<HTMLElement>('#story-json-field')!.hidden = !isStory
+    document.querySelector<HTMLElement>('#story-output-note')!.hidden = !isStory
+    storyJson.required = isStory
+    script.required = !isStory
+    script.closest('label')!.hidden = isStory
+    scriptPreset.closest('label')!.hidden = isStory
+  })
   const submit = document.querySelector<HTMLButtonElement>('#generate-submit')!
   const status = document.querySelector<HTMLParagraphElement>('#generate-status')!
   const result = document.querySelector<HTMLDivElement>('#generate-result')!
@@ -365,18 +384,31 @@ const renderGenerate = () => {
     result.hidden = true
 
     try {
-      const response = await fetch('/api/test-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: script.value, provider: provider.value, ...(provider.value === 'gemini' ? { voice: voice.value } : {}) }),
-      })
-      const payload = await response.json() as { url?: string; error?: { message: string } }
-      if (!response.ok || !payload.url) throw new Error(payload.error?.message ?? 'The server returned an invalid TTS response.')
+      const story = mode.value === 'story' ? JSON.parse(storyJson.value) : undefined
+      const items = story === undefined ? [undefined] : storyAudioItems(story)
+      const selectedProvider = provider.value
+      const selectedVoice = voice.value
+      let completed = 0
+      for (const item of items) {
+        if (item) status.textContent = `Generating ${completed + 1}/${items.length}: ${item.filename}`
+        const response = await fetch('/api/test-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(item ? { story, section_id: item.section_id, item_index: item.item_index } : { text: script.value }),
+            provider: selectedProvider,
+            ...(selectedProvider === 'gemini' ? { voice: selectedVoice } : {}),
+          }),
+        })
+        const payload = await response.json() as { url?: string; error?: { message: string } }
+        if (!response.ok || !payload.url) throw new Error(`${item ? `${completed}/${items.length} saved; ${item.filename}: ` : ''}${payload.error?.message ?? 'The server returned an invalid TTS response.'}`)
+        completed++
+        player.src = payload.url
+        player.load()
+        result.hidden = false
+      }
+      status.textContent = story === undefined ? 'Audio generated and saved to library.' : `${completed} Story clips saved to generated/story-audio/${story.id}/ with manifest.json. Open Audio to play each clip.`
 
-      player.src = payload.url
-      player.load()
-      result.hidden = false
-      status.textContent = 'Audio generated and saved to library.'
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : 'The TTS request failed.'
     } finally {

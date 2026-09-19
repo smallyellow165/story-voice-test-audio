@@ -1,3 +1,5 @@
+import { storyAudioItems } from './src/story-audio.mjs'
+import { createStoryAudioStore, storyAudioPath } from './server/story-audio.mjs'
 import { generateFishAudio, fishPublicError } from './server/fish-tts.mjs'
 import { createRingHistory } from './server/ring-history.mjs'
 import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
@@ -29,6 +31,7 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
+const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
 const testVideoDirectory = path.join(projectRoot, 'public', 'test-videos')
 const videoLibraryFile = path.join(testVideoDirectory, 'video-library.json')
@@ -102,6 +105,10 @@ let metadataWriteQueue = Promise.resolve()
 const appendMetadataRecord = (record) => {
   const write = metadataWriteQueue.then(async () => {
     const records = await readMetadata()
+    if (record.story_id) {
+      const previous = records.findIndex((row) => row.id === record.id)
+      if (previous !== -1) records.splice(previous, 1)
+    }
     records.unshift(record)
     await writeMetadata(records)
     return record
@@ -220,38 +227,44 @@ const toPublicError = (error) => {
   }
 }
 
-const saveTestAudio = async ({ audioContent, provider, model, voice, text }) => {
-  await mkdir(generatedAudioDirectory, { recursive: true })
-  const timestamp = localTimestamp(new Date())
-  const id = `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
-  const filename = `${id}-${voice.toLowerCase()}.mp3`
-  const audioPath = path.join(generatedAudioDirectory, filename)
-  await writeFile(audioPath, audioContent)
-  let durationSeconds
+const saveMp3 = async (audioPath, audioContent) => {
+  const temporary = `${audioPath}.${crypto.randomUUID()}.tmp`
   try {
-    durationSeconds = await probeAudioDuration(audioPath)
+    await writeFile(temporary, audioContent)
+    const durationSeconds = await probeAudioDuration(temporary)
+    await rename(temporary, audioPath)
+    return durationSeconds
   } catch (error) {
     throw new AudioDurationError(error.message, { cause: error })
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
   }
+}
+const storyAudioStore = createStoryAudioStore(storyAudioDirectory, saveMp3)
 
+const saveTestAudio = async ({ audioContent, provider, model, voice, text, storyAsset }) => {
+  const timestamp = localTimestamp(new Date())
+  const id = storyAsset ? `story:${storyAsset.story_id}:${storyAsset.section_id}:${storyAsset.item_index}` : `${timestamp.idPrefix}-${crypto.randomUUID().slice(0, 8)}`
+  const filename = storyAsset?.filename ?? `${id}-${voice.toLowerCase()}.mp3`
+  let saved
+  if (storyAsset) {
+    saved = await storyAudioStore.save(storyAsset, { audioContent, provider, model, voice })
+  } else {
+    await mkdir(generatedAudioDirectory, { recursive: true })
+    saved = { durationSeconds: await saveMp3(path.join(generatedAudioDirectory, filename), audioContent), url: `/generated/test-audio/${filename}` }
+  }
   const record = await appendMetadataRecord({
-    id,
-    provider,
-    model,
-    voice,
-    script: text,
-    audioFile: filename,
-    durationSeconds,
-    createdAt: timestamp.createdAt,
+    id, provider, model, voice, script: text, audioFile: filename,
+    durationSeconds: saved.durationSeconds, createdAt: timestamp.createdAt,
+    ...(storyAsset ? { story_id: storyAsset.story_id, section_id: storyAsset.section_id, item_index: storyAsset.item_index, url: saved.url } : {}),
   })
-
-  return { record, filename }
+  return { record, filename, url: saved.url }
 }
 
 const handleTestTts = async (request, response) => {
   let body
   try {
-    body = await readJsonBody(request)
+    body = await readJsonBody(request, 1024 * 1024)
   } catch (error) {
     sendJson(response, error.statusCode ?? 400, { error: { code: 'INVALID_REQUEST', message: error.message } })
     return
@@ -266,7 +279,17 @@ const handleTestTts = async (request, response) => {
     sendJson(response, 400, { error: { code: 'INVALID_PROVIDER', message: 'Provider must be gemini or fish.' } })
     return
   }
-  const text = typeof body.text === 'string' ? body.text.trim() : ''
+  let storyAsset
+  if (body.story !== undefined) {
+    try {
+      storyAsset = storyAudioItems(body.story).find((item) => item.section_id === body.section_id && item.item_index === body.item_index)
+      if (!storyAsset) throw new Error('Selected item is not a TTS narration item in this Story.')
+    } catch (error) {
+      sendJson(response, 400, { error: { code: 'INVALID_STORY', message: error.message } })
+      return
+    }
+  }
+  const text = storyAsset ? storyAsset.text : typeof body.text === 'string' ? body.text.trim() : ''
   const voice = typeof body.voice === 'string' && body.voice.trim() ? body.voice.trim() : 'Achernar'
   const style = typeof body.style === 'string' ? body.style.trim() : ''
 
@@ -281,9 +304,9 @@ const handleTestTts = async (request, response) => {
   if (provider === 'fish') {
     try {
       const generated = await generateFishAudio(text)
-      const { record, filename } = await saveTestAudio({ ...generated, provider, text })
+      const { record, url } = await saveTestAudio({ ...generated, provider, text, storyAsset })
       sendJson(response, 201, {
-        url: `/generated/test-audio/${filename}`,
+        url,
         format: 'audio/mpeg', provider, model: generated.model, voice: generated.voice,
         bytes: generated.audioContent.length, record,
       })
@@ -320,10 +343,10 @@ const handleTestTts = async (request, response) => {
     })
     if (!result.audioContent) throw new Error('Cloud Text-to-Speech returned an empty audio response.')
 
-    const { record, filename } = await saveTestAudio({ audioContent: result.audioContent, provider: 'gemini', model: 'gemini-3.1-flash-tts-preview', voice, text })
+    const { record, url } = await saveTestAudio({ audioContent: result.audioContent, provider: 'gemini', model: 'gemini-3.1-flash-tts-preview', voice, text, storyAsset })
 
     sendJson(response, 201, {
-      url: `/generated/test-audio/${filename}`,
+      url,
       format: 'audio/mpeg',
       provider: 'gemini',
       model: 'gemini-3.1-flash-tts-preview',
@@ -835,6 +858,16 @@ const server = createServer(async (request, response) => {
       return
     }
     await handleTestTts(request, response)
+    return
+  }
+  if (url.pathname.startsWith('/generated/story-audio/')) {
+    const audioPath = storyAudioPath(storyAudioDirectory, url.pathname)
+    if (!audioPath) { response.writeHead(404).end(); return }
+    try {
+      const audio = await readFile(audioPath)
+      response.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' })
+      response.end(audio)
+    } catch { response.writeHead(404).end() }
     return
   }
   if (url.pathname.startsWith('/generated/test-audio/')) {
