@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Snapshot</title>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">TEMPORARY DEBUG TOOL</p>
+      <h1>Camera Snapshot</h1>
+      <p class="intro">Capture a full-resolution frame of a real storybook page. Images stay in this browser until you download them.</p>
+
+      <section>
+        <div class="section-heading">
+          <h2>Camera Preview</h2>
+          <div class="camera-controls">
+            <label class="camera-select" for="camera">
+              Camera
+              <select id="camera" disabled>
+                <option value="">Default camera</option>
+              </select>
+            </label>
+            <label class="camera-select" for="resolution">
+              Resolution
+              <select id="resolution">
+                <option value="640x480">640 × 480</option>
+                <option value="1280x720">1280 × 720</option>
+                <option value="1920x1080" selected>1920 × 1080</option>
+                <option value="2560x1440">2560 × 1440</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <video id="preview" autoplay playsinline muted aria-label="Live camera preview"></video>
+        <p id="camera-status" class="status" role="status">Camera is not started.</p>
+        <p id="resolution-status" class="resolution-status" aria-live="polite">Requested: 1920 × 1080<br>Actual: —</p>
+        <button id="start-camera" type="button">Start Camera</button>
+        <button id="capture" type="button" disabled>Capture</button>
+      </section>
+
+      <section>
+        <h2>Captured Image Preview</h2>
+        <img id="captured-image" alt="Captured storybook page preview" hidden>
+        <p id="capture-status" class="status">No image captured yet.</p>
+        <div class="downloads">
+          <button id="download-jpg" type="button" disabled>Download JPG</button>
+          <button id="download-png" type="button" disabled>Download PNG</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/camera-snapshot.ts"></script>
+  </body>
+</html>

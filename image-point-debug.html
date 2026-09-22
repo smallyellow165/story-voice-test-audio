@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Point Debug</title>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">TEMPORARY DEBUG TOOL</p>
+      <h1>Image Point Debug</h1>
+      <p class="intro">Load one local image and click to record original-image pixel coordinates.</p>
+
+      <section class="toolbar">
+        <label for="image-file">Load Image <input id="image-file" type="file" accept="image/jpeg,image/png"></label>
+        <p id="image-size" class="dimensions">Original: —</p>
+        <button id="undo" type="button" disabled>Undo</button>
+        <button id="clear" type="button" disabled>Clear</button>
+        <button id="copy-points" type="button" disabled>Copy Points</button>
+        <p id="status" class="status" role="status">Choose a JPG or PNG to begin.</p>
+      </section>
+
+      <section>
+        <h2>Image</h2>
+        <div id="image-stage" class="image-stage" hidden>
+          <img id="image" alt="Selected local image; click to add a point">
+          <div id="point-layer" class="point-layer" aria-hidden="true"></div>
+        </div>
+        <p id="empty-image">No image loaded.</p>
+      </section>
+
+      <section>
+        <h2>Points</h2>
+        <ol id="points" class="points"></ol>
+      </section>
+    </main>
+    <script type="module" src="/src/image-point-debug.ts"></script>
+  </body>
+</html>
