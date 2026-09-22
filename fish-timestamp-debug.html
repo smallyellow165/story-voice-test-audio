@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fish Timestamp Debug</title>
+  <style>
+    body{font:16px system-ui,sans-serif;max-width:1200px;margin:32px auto;padding:0 20px;color:#202a35;background:#f7f9fb}
+    textarea{display:block;width:100%;box-sizing:border-box;margin:12px 0;font:inherit;padding:12px}
+    button,a{font:inherit}button{cursor:pointer;padding:8px 12px}button:disabled{cursor:wait}
+    audio{display:block;width:100%;margin:20px 0}table{border-collapse:collapse;width:100%;background:white}
+    th,td{padding:9px;border:1px solid #dce1e7;text-align:left}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.active{background:#e0efff}
+    .scroll{overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}#status{min-height:24px}#status.error{color:#b42318}
+    .note{color:#566273;font-size:14px}a{margin-left:16px}
+  </style>
+</head>
+<body>
+  <h1>Fish Timestamp Debug</h1>
+  <p>输入中文，比较实际 alignment 与音频。点击任一行从对应时间开始播放。</p>
+  <form id="generate-form">
+    <label for="text">测试文本</label>
+    <textarea id="text" rows="4" required>到了狸猫叔叔家。狸猫叔叔说：</textarea>
+    <label for="speed">Speed</label>
+    <select id="speed">
+      <option value="1.0" selected>1.0</option>
+      <option value="0.9">0.9</option>
+      <option value="0.8">0.8</option>
+      <option value="0.7">0.7</option>
+    </select>
+    <span class="note">更改后点击 Generate，重新生成音频与 alignment。</span>
+    <button id="generate" type="submit">Generate with Timestamp</button>
+    <a id="download" hidden download="fish-timestamp-alignment.json">下载 alignment JSON</a>
+  </form>
+  <p id="status" role="status">尚未生成。</p>
+  <audio id="audio" controls preload="metadata"></audio>
+  <p id="playback" class="note">播放时间：—</p>
+  <p id="summary"></p>
+  <p class="note">单位：秒。Global = chunk offset + local。字符数按 Unicode code point 统计（包含标点），不将 API segment 自动解释为词或模型 token。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Segment text</th><th>字符数</th><th>Local start</th><th>Local end</th><th>Chunk seq</th><th>Chunk offset</th><th>Global start</th><th>Global end</th></tr></thead>
+    <tbody id="timeline"></tbody>
+  </table></div>
+  <details><summary>逐 SSE event / 最终 chunk alignment（音频仅记录 bytes）</summary><pre id="raw">—</pre></details>
+  <script type="module" src="/src/fish-timestamp-debug.js"></script>
+</body>
+</html>

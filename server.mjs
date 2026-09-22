@@ -1,3 +1,4 @@
+import { generateFishTimestamp } from './server/fish-timestamp-debug.mjs'
 import { storyAudioItems } from './src/story-audio.mjs'
 import { createStoryAudioStore, storyAudioPath } from './server/story-audio.mjs'
 import { generateFishAudio, fishPublicError } from './server/fish-tts.mjs'
@@ -439,6 +440,24 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/api/debug/fish-timestamp') {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: { message: 'Use POST.' } })
+      return
+    }
+    try {
+      const body = await readJsonBody(request)
+      sendJson(response, 200, await generateFishTimestamp(body?.text, body?.speed))
+    } catch (error) {
+      const status = error.statusCode ?? 502
+      const message = error.debugPublic || status === 400 ? error.message
+        : error.name === 'TimeoutError' ? 'Fish timestamp request timed out after 120 seconds.'
+        : 'Fish timestamp request failed; check server connectivity.'
+      sendJson(response, status, { error: { message } })
+    }
+    return
+  }
 
   if (/^\/api\/ring-feet\/history\/[^/]+\/names$/.test(url.pathname)) {
     if (request.method !== 'PUT') { sendJson(response, 405, { error: 'Use PUT' }); return }
