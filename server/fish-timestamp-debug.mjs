@@ -85,18 +85,19 @@ export async function collectTimestampAudio(body) {
   return { audioContent, events, chunks, timeline }
 }
 
-export async function generateFishTimestamp(text, speed = 1) {
+export async function generateFishTimestamp(text, speed = 1, config = {}) {
   if (typeof text !== 'string' || !text.trim()) throw fail('Text is required.', 400)
   if (Buffer.byteLength(text, 'utf8') > 8000) throw fail('Text exceeds 8000 UTF-8 bytes.', 400)
   if (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0.5 || speed > 2) {
     throw fail('Speed must be a number between 0.5 and 2.0.', 400)
   }
   const apiKey = process.env.FISH_AUDIO_API_KEY?.trim()
-  const referenceId = process.env.FISH_AUDIO_MODEL_ID?.trim()
+  const referenceId = config.referenceId ?? process.env.FISH_AUDIO_MODEL_ID?.trim()
+  const model = config.model ?? fishModel
   if (!apiKey || !referenceId) throw fail('Server Fish Audio configuration is missing.', 503)
   const response = await fetch(timestampEndpoint, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, model: fishModel,
+    headers: { Authorization: `Bearer ${apiKey}`, model,
       'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify({ text, reference_id: referenceId, format: 'mp3', prosody: { speed } }),
     signal: AbortSignal.timeout(120_000),
@@ -110,7 +111,7 @@ export async function generateFishTimestamp(text, speed = 1) {
     throw fail('Fish timestamp API did not return text/event-stream.')
   }
   const { audioContent, ...alignment } = await collectTimestampAudio(response.body)
-  return { text, speed, model: fishModel, endpoint: timestampEndpoint, format: 'audio/mpeg',
+  return { text, speed, model, endpoint: timestampEndpoint, format: 'audio/mpeg',
     timestamp_semantics: 'global seconds = chunk-local seconds + chunk_audio_offset_sec',
     bytes: audioContent.length, audio_base64: audioContent.toString('base64'), ...alignment }
 }

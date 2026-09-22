@@ -26,20 +26,43 @@
       <option value="0.8">0.8</option>
       <option value="0.7">0.7</option>
     </select>
-    <span class="note">更改后点击 Generate，重新生成音频与 alignment。</span>
+    <span class="note">Generate 优先复用历史；Regenerate 强制重新生成。</span>
     <button id="generate" type="submit">Generate with Timestamp</button>
-    <a id="download" hidden download="fish-timestamp-alignment.json">下载 alignment JSON</a>
+    <button id="regenerate" type="button">Regenerate</button>
+    <a id="download" hidden download="fish-timestamp-alignment.json">下载原始 Debug JSON</a>
   </form>
   <p id="status" role="status">尚未生成。</p>
   <audio id="audio" controls preload="metadata"></audio>
   <p id="playback" class="note">播放时间：—</p>
   <p id="summary"></p>
+  <section id="exports" hidden>
+    <a id="clean-download">Download Clean Alignment</a>
+    <a id="full-audio-download">Download Full Audio</a>
+    <p>
+      <label for="range-start">Start char</label><select id="range-start"></select>
+      <label for="range-end">End char</label><select id="range-end"></select>
+    </p>
+    <p id="selected-range"></p>
+    <button id="export-clip" type="button">Export Selected Clip</button>
+    <p id="clip-status" role="status"></p>
+    <div id="clip-result" hidden>
+      <a id="clip-audio-download">Download Clip MP3</a>
+      <a id="clip-json-download">Download Clip Alignment</a>
+      <audio id="clip-audio" controls></audio>
+    </div>
+  </section>
   <p class="note">单位：秒。Global = chunk offset + local。字符数按 Unicode code point 统计（包含标点），不将 API segment 自动解释为词或模型 token。</p>
   <div class="scroll"><table>
     <thead><tr><th>Segment text</th><th>字符数</th><th>Local start</th><th>Local end</th><th>Chunk seq</th><th>Chunk offset</th><th>Global start</th><th>Global end</th></tr></thead>
     <tbody id="timeline"></tbody>
   </table></div>
   <details><summary>逐 SSE event / 最终 chunk alignment（音频仅记录 bytes）</summary><pre id="raw">—</pre></details>
+  <section>
+    <h2>History</h2>
+    <button id="refresh-history" type="button">Refresh History</button>
+    <p id="history-status" role="status"></p>
+    <ul id="history-list"></ul>
+  </section>
   <script type="module" src="/src/fish-timestamp-debug.js"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
-import { generateFishTimestamp } from './server/fish-timestamp-debug.mjs'
+import { exportTimestampClip } from './server/fish-timestamp-clip.mjs'
+import { createTimestampHistory } from './server/fish-timestamp-history.mjs'
 import { storyAudioItems } from './src/story-audio.mjs'
 import { createStoryAudioStore, storyAudioPath } from './server/story-audio.mjs'
 import { generateFishAudio, fishPublicError } from './server/fish-tts.mjs'
@@ -30,6 +31,7 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
+const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
@@ -441,6 +443,31 @@ const sourceSiteFromUrl = (sourceUrl) => {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
+  if (url.pathname === '/api/debug/fish-timestamp/history' || url.pathname.startsWith('/api/debug/fish-timestamp/history/')) {
+    try {
+      const suffix = url.pathname.slice('/api/debug/fish-timestamp/history'.length)
+      const match = suffix.match(/^\/([a-f0-9]{64})(\/regenerate)?$/)
+      if (!suffix && request.method === 'GET') sendJson(response, 200, { entries: await timestampHistory.list() })
+      else if (match && !match[2] && request.method === 'GET') sendJson(response, 200, await timestampHistory.load(match[1]))
+      else if (match?.[2] && request.method === 'POST') sendJson(response, 200, await timestampHistory.regenerate(match[1]))
+      else sendJson(response, 400, { error: { message: 'Invalid history route or method.' } })
+    } catch (error) {
+      sendJson(response, error.statusCode ?? 500, { error: { message: error.debugPublic ? error.message : 'History operation failed.' } })
+    }
+    return
+  }
+
+  if (url.pathname === '/api/debug/fish-timestamp/clip') {
+    if (request.method !== 'POST') { sendJson(response, 405, { error: { message: 'Use POST.' } }); return }
+    try {
+      sendJson(response, 200, await exportTimestampClip(await readJsonBody(request, 40 * 1024 * 1024)))
+    } catch (error) {
+      sendJson(response, error.statusCode ?? 500, { error: { message: error.statusCode === 400
+        ? error.message : 'Clip export failed. Check FFmpeg availability and source audio.' } })
+    }
+    return
+  }
+
   if (url.pathname === '/api/debug/fish-timestamp') {
     if (request.method !== 'POST') {
       sendJson(response, 405, { error: { message: 'Use POST.' } })
@@ -448,7 +475,7 @@ const server = createServer(async (request, response) => {
     }
     try {
       const body = await readJsonBody(request)
-      sendJson(response, 200, await generateFishTimestamp(body?.text, body?.speed))
+      sendJson(response, 200, await timestampHistory.generate(body?.text, body?.speed, body?.regenerate ?? false))
     } catch (error) {
       const status = error.statusCode ?? 502
       const message = error.debugPublic || status === 400 ? error.message
