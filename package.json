@@ -16,12 +16,15 @@
     "backfill-duration": "node scripts/backfill-audio-duration.mjs",
     "preview": "vite preview",
     "build:module": "tsc && vite build --config vite.module.config.ts",
-    "watch:module": "vite build --config vite.module.config.ts --watch"
+    "watch:module": "vite build --config vite.module.config.ts --watch",
+    "reading:replay": "node scripts/reading-tracker.mjs",
+    "test:reading": "node --test test/reading-tracker.test.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
     "@google/genai": "2.21.0",
     "@mediapipe/tasks-vision": "1.0.1",
+    "diff": "^9.0.0",
     "fish-audio": "0.1.0",
     "google-auth-library": "^11.0.2",
     "react": "19.2.8",
