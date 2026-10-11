@@ -130,3 +130,35 @@ V1 的三个公开限制：
 程序契约测试与目标满足率分开：77 项专项自动化测试通过，覆盖所有策略的每个事件位置、标记及决策原因，另验证边界、安全和 CLI 一致性；全量 257 项通过；`npm run build` 通过。HTTP 页面及 Vite 转换的页面模块均可读取。当前会话没有可连接的浏览器，尚未进行真实按钮点击和视觉验收。
 
 真实 STT 接入还需要：Provider 专属片段快照适配、seq/epoch 管理、重复/迟到/交叠结果约定，以及包含儿童语音的实际事件日志回放。可先复用 V4 已有 RTVI Transcript，但不能假定每家 Provider 都按本实验 segment 规则输出。真实准确率、端到端延迟及阈值需要另外验证；不需要新增 STT 模型。
+
+## 逐事件可观察性
+
+页面打开及重置后直接显示第 1 条事件；“下一步”推进至第 2 条。
+当前事件展示原始 STT、规范化字符对照、Actual / Expected 字符状态及契约 Pass / Fail。
+全部 Sequence 默认显示为表格（包括尚未播放的事件），点击任意行可选中查看；当前播放步骤高亮。宽屏左侧为 Sequence，右侧为实际字符状态与 Decision Reason。原文保留标点，顶部只显示一次连续文本。Actual / Expected / Pass-Fail、详细 Alignment、三策略比较、索引、参数和 JSON 收入默认折叠的 Debug。
+
+- Actual 来自原有 replay / TrackerState，包含历史接受状态和当前暂定状态，不等同于本次 STT 的逐字映射。
+- Expected 来自 reading-tracker-expectations.ts：从原测试原样迁移的 overrides / contracts，加上原场景 goal。测试、页面和 CLI 共用这些常量，没有从 Actual 生成期望。
+- Pass / Fail 比较原测试的五个状态字段及 action / reason；不表示所有独立不变量测试已在浏览器执行。
+- 理想跟读目标单列显示，已知局限不会因为契约 Pass 而被隐藏。
+- 自定义 V1 参数显示 N/A，默认参数期望仅供参考。Expected 未定义的暂定着色不从 Actual 推导。
+- 核心未暴露候选路径，报告 candidateAlignment 为 null。Reference / STT 字符表是已有 jsdiff 的独立展示对照，不是内部候选，也不是实际接受路径。全篇重复文字可能与 Tracker 选择不同位置。
+- 字符对照使用核心 tokenize 的规范化结果（略去标点）；原文仍显示在上方。缺口显示 —，不自动判为 Skip。额外输入标为字面 Mismatch，不等于孩子读错。
+
+页面（仅 Vite，无 API 服务）：
+
+```bash
+(fuser -k 5189/tcp || true) && cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && npm exec vite -- --host 127.0.0.1 --port 5189 --strictPort
+```
+
+http://localhost:5189/story-voice-test-audio/reading-tracker.html
+
+CLI 保留原有 --json / --trace / --strict；新增 --alignment 展示字符表。
+JSON 保留原始 comparison / rows，并新增 eventReports（与浏览器 eventReport 相同）。
+--strict 仍按理想跟读目标决定退出码，不改为策略契约。
+
+```bash
+cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && npm run reading:replay -- --scenario skip-one --alignment
+```
+
+验收：选择“漏一字”及 V1，第一条“床明月”只接受“床”；下一步“床明月光”暂定接受“床明月光”并 Skip “前”；再次下一步 Final 结算。三条契约应均为 Pass。直接点击 Sequence 任意行回看；切换 B0/B1 检查其不同输出，在 Debug 查看理想目标差异；修改 V1 参数查看 N/A，导出 JSON 核对 eventReports。
