@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Alignment Preview · Story Voice</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; color: #253047; background: #f6f8fb; }
+      body { margin: 0; }
+      main { max-width: 1040px; margin: auto; padding: 28px 20px 60px; }
+      header { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+      h1 { margin: 0 0 8px; font-size: clamp(1.5rem, 3vw, 2rem); }
+      h2 { margin: 0 0 12px; font-size: 1.15rem; }
+      p { line-height: 1.6; }
+      a { color: #2d60ad; }
+      .muted { color: #66748a; font-size: .92rem; }
+      .panel { background: white; border: 1px solid #dbe2ec; border-radius: 12px; padding: 20px; margin-top: 20px; }
+      .inputs { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+      .inputs label { display: grid; gap: 6px; font-size: .9rem; }
+      .inputs input { max-width: 270px; }
+      button, select, input { font: inherit; }
+      .action { padding: 8px 12px; border: 1px solid #b7c5d8; background: #fff; border-radius: 7px; cursor: pointer; }
+      .action:hover { background: #ecf3fc; }
+      audio { width: 100%; margin: 16px 0 8px; }
+      #status { min-height: 1.5em; color: #315a91; }
+      #status.error { color: #b42318; }
+      .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: .88rem; color: #536178; }
+      .swatch { display: inline-block; width: 1em; height: 1em; vertical-align: -.12em; margin-right: 5px; border-radius: 3px; }
+      .unread-swatch { background: #e9edf3; } .current-swatch { background: #ffd45c; }
+      .read-swatch { background: #a9d8ff; } .untimed-swatch { background: #fff; border-bottom: 2px dotted #a16a38; }
+      #poem { white-space: pre-wrap; line-height: 2.1; font-family: serif; font-size: clamp(1.3rem, 2.5vw, 1.75rem); }
+      .character { color: #647187; border: 0; padding: 0 1px; background: transparent; font: inherit; line-height: inherit; border-radius: 3px; }
+      button.character { cursor: pointer; }
+      button.character:hover, button.character:focus-visible { outline: 2px solid #3680d9; outline-offset: 1px; }
+      .character.read { color: #164c83; background: #d5ebff; }
+      .character.current { color: #392400; background: #ffd45c; box-shadow: 0 0 0 2px #e5ae2f; }
+      .character.untimed { color: #81542e; border-bottom: 2px dotted #a16a38; }
+      .character.punctuation { color: #768296; }
+      .details { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin: 0; }
+      .details div { min-width: 0; }
+      .details dt { color: #66748a; font-size: .8rem; }
+      .details dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 1.05rem; }
+      .details .wide { grid-column: 1 / -1; }
+      @media (max-width: 600px) { main { padding: 20px 14px 40px; } .panel { padding: 15px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div><h1>Whisper Alignment Preview</h1><p class="muted">原音频逐字对齐检查 · 时间相对于完整音频</p></div>
+        <a href="./">返回 Audio Test Library</a>
+      </header>
+
+      <section class="panel" aria-label="音频与对齐数据">
+        <div class="inputs">
+          <button class="action" id="load-default" type="button">加载当前测试数据</button>
+          <label>其他音频 <input id="audio-file" type="file" accept="audio/*,.m4a,.mp3,.wav" /></label>
+          <label>其他对齐 JSON <input id="json-file" type="file" accept="application/json,.json" /></label>
+          <label>作品 <select id="work-select" disabled></select></label>
+        </div>
+        <p id="status" role="status">正在加载当前测试数据…</p>
+        <audio id="audio" controls preload="metadata"></audio>
+        <p id="playback" class="muted">音频位置：—</p>
+      </section>
+
+      <section class="panel" aria-label="标准正文逐字高亮">
+        <h2 id="work-title">标准正文</h2>
+        <p id="match-summary" class="muted">—</p>
+        <div class="legend" aria-label="高亮说明">
+          <span><i class="swatch unread-swatch"></i>未读</span>
+          <span><i class="swatch current-swatch"></i>当前</span>
+          <span><i class="swatch read-swatch"></i>已读</span>
+          <span><i class="swatch untimed-swatch"></i>无可靠逐字时间</span>
+        </div>
+        <p id="poem">等待对齐 JSON…</p>
+        <p class="muted">点击有时间戳的汉字可跳转并播放；标点与无时间字不参与逐字计时。</p>
+      </section>
+
+      <section class="panel" aria-label="当前字符详情">
+        <h2 id="detail-title">当前字</h2>
+        <dl class="details">
+          <div><dt>标准文字</dt><dd id="detail-char">—</dd></div>
+          <div><dt>Whisper 原字 / word</dt><dd id="detail-whisper">—</dd></div>
+          <div><dt>start / end</dt><dd id="detail-time">—</dd></div>
+          <div><dt>status</dt><dd id="detail-status">—</dd></div>
+          <div><dt>needsReview</dt><dd id="detail-review">—</dd></div>
+          <div class="wide"><dt>原始 word 索引、概率与区间</dt><dd id="detail-source">—</dd></div>
+        </dl>
+      </section>
+    </main>
+    <script type="module" src="/src/whisper-alignment.ts"></script>
+  </body>
+</html>

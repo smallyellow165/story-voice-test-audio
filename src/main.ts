@@ -219,6 +219,7 @@ const layout = (content: string, activePage: 'audio' | 'video' | 'video-v2' = 'a
         <a href="#/generate"${window.location.hash === '#/generate' ? ' aria-current="page"' : ''}>Generate Audio</a>
         <a href="#/video"${activePage === 'video' ? ' aria-current="page"' : ''}>Video</a>
         <a href="#/video-v2"${activePage === 'video-v2' ? ' aria-current="page"' : ''}>Video V2</a>
+        <a href="./whisper-alignment.html">Whisper Alignment Debug</a>
       </nav>
     </header>
     <main>${content}</main>
