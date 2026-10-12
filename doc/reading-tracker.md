@@ -162,3 +162,33 @@ cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && npm run 
 ```
 
 验收：选择“漏一字”及 V1，第一条“床明月”只接受“床”；下一步“床明月光”暂定接受“床明月光”并 Skip “前”；再次下一步 Final 结算。三条契约应均为 Pass。直接点击 Sequence 任意行回看；切换 B0/B1 检查其不同输出，在 Debug 查看理想目标差异；修改 V1 参数查看 N/A，导出 JSON 核对 eventReports。
+
+## 2026-10-11 真实朗读停滞诊断（截图重建，非原始 STT 录制）
+
+新增 scripts/reading-tracker-diagnose.mjs、test/fixtures/reading-jingyesi-observed.mjs 和 test/reading-tracker-diagnostic.test.mjs。不改核心、默认参数或原有 22 场景期望。
+
+证据：V4 server/.local/logs/server-2026-10-11_16-49-20.log 的 395/409/423/432 行有四句对应的最终聚合文本（床前明月光 / 一世地上霜。 / 举头望明月 / 低头思苦香），但没有完整 Partial、Deepgram start/duration 或 Reading segment。13 条输入及 P/F 按用户截图重建；片段按每个 Final 切分，epoch/seq/时间为明确标注的合成元数据，未把 VAD segment 当作 Deepgram segment。
+
+离线输出为逐事件累计 matched/skipped/uncertain，带原文索引、cursor、confirmed 和 reason。运行：
+
+```bash
+cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && node scripts/reading-tracker-diagnose.mjs
+```
+
+附加 --json 获得完整状态和受控探针；独立测试：
+
+```bash
+cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && node --test test/reading-tracker-diagnostic.test.mjs
+```
+
+结论：
+
+- maxGap=1：13 步 cursor 为 0,1,4,4,4,4,4,4,4,4,4,4,4；第 5–13 步 no-local-match，只有首句匹配。
+- maxGap=2：cursor 为 0,1,4,4,4,4,9,10,12,14,16,18,17；第二句 Final 将疑/是（5/6）标为 Uncertain，地上霜（7/8/9）Match；所有事件 skipped 均为空。
+- 第 6 步虽然有地上霜，但前后 Partial 公共前缀只有“一室”两字：stableLength=2，小于替换后的 h+support=2+2。Final stableLength=5 后才允许跨越；coverage=3/5 正好达到 0.6。
+- maxGap 同时限制 removed 与 added，故当前既限制漏字，也限制替换。Uncertain 的决策 action 仍可能叫 Skip，不能把 action 名称当作 skipped 索引。
+- 第二句失败后 anchor=4，候选 start 只允许 <=next=5；第三句真正起点=10，需要跨 5 字。maxGap=2 仍无法直接从光恢复第三句，lookAhead=64 也不解决。仅作诊断的 maxGap=5 能跳过整句到月，但这不是推荐配置。
+- 第四句 Final 的苦香对应末尾故乡，完整候选缺少 following support，被拒；更短候选匹配低头思、把苦香作为多余输入（2<=maxExtra=3），覆盖率仍为 3/5，最终停思。故的 Partial 高亮撤销，故乡保持 Unread，不自动判错或标 Skip。
+- 仅播放四个 Final：默认 cursor=4/4/4/4，maxGap=2 为 4/9/14/17，committed 与完整 Replay 一致。把第二句 Final 改为准确文本的受控对照，默认策略也能继续第三句。这些验证排除了重建数据中的跨 Final 状态丢失，不能代替缺失的真实 Provider 事件审计。
+
+建议：保留生产默认；下一轮单独评估两字符 substitution 容忍（与纯 Skip 限制分开）、有证据的局部重新定位、尾部不一致展示。没有发现可在不改变策略取舍的前提下直接修复的核心状态缺陷。

@@ -69,6 +69,10 @@
     "./storybook-navigation": {
       "types": "./src/storybook-navigation.ts",
       "import": "./dist-module/storybook-navigation.js"
+    },
+    "./reading-tracker": {
+      "types": "./src/reading-tracker.ts",
+      "import": "./dist-module/reading-tracker.js"
     }
   }
 }
