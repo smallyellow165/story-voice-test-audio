@@ -65,3 +65,23 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; fo
 
 #paste-panel textarea { display: block; width: 100%; min-width: 0; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
 #source:empty, #load-error:empty { display: none; }
+
+/* Viewport-sized work area: content scrolls inside each pane, never clipped. */
+html, body, #app { height: 100%; min-height: 0; }
+.workbench { height: 100dvh; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; padding: 12px; }
+.pane { min-height: 0; min-width: 0; overflow: auto; margin: 0; padding: 12px; scrollbar-gutter: stable; }
+.pane header { padding: 0; gap: 8px; margin-bottom: 8px; }
+h1 { font-size: 18px; }
+.pane h2 { margin: 8px 0; }
+textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.input-pane > label { margin-bottom: 8px; }
+.parameter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 8px; margin-bottom: 10px; }
+.parameter-grid input { width: 100%; }
+#match { width: 100%; margin: 8px 0; }
+.stale { color: #873c00; background: #fff0d2; padding: 6px; font-weight: bold; }
+#format-hint { cursor: help; color: #586660; }
+#load-error, #error { color: #a11; }
+#load-error:empty, #error:empty { display: none; }
+@media (max-width: 700px) {
+  .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); padding: 6px; gap: 6px; }
+}

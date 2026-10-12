@@ -218,3 +218,18 @@ V4：http://localhost:4002/（使用已有 7863 服务端）
 ```
 
 手动验收：真实朗读后复制 → Test Audio 粘贴加载 → 确认 P/F 原文与顺序 → 点击历史行查看实际状态 → 切换策略/修改 maxGap → 导出 JSON 检查 rawSequence 未变。检查非法 JSON 报错且保留上次成功加载结果；回到 skip-one 检查原有模拟回放。实际浏览器剪贴板、布局和真实麦克风未在本轮验证；本轮没有可连接的浏览器，未调用付费 API。
+
+## Matching Experiment Workbench（替代上文自动 Load/Apply 回放流程）
+
+页面改为视口内 40% 输入栏、60% 结果栏，各栏独立纵向滚动；窄屏为上下两个可滚动区域。输入栏含场景、可编辑 Reference/STT、策略、全部 7 个 V1 参数。参数默认值直接显示，解释和 P/F 格式限制用 title 提示。
+
+- 选择场景只填入编辑区；Load STT Sequence 仅校验并加载 Reference 与事件，不匹配。
+- Apply Parameters 只验证并应用编辑参数；Reset Parameters 恢复编辑值及应用值为默认，不匹配。
+- Match 使用已加载输入、当前策略及已应用参数，计算三策略与 22 场景诊断快照。输入编辑未加载时禁用 Match；参数编辑未应用时提示 Match 仍用已应用值。
+- 查看下一步、自动查看、回到第一步、点击行只查看上次结果，不计算。改变当前策略也不偷偷切换旧结果；右栏继续显示上次 Match 的策略。
+- 输入编辑/加载值、策略或已应用参数与上次快照不同，标记 Stale；仅修改尚未应用的参数时显示“未应用”提示。恢复为快照值后不再 stale。JSON 导出始终来自上次 Match 快照。
+- 原样加载内置场景保留完整 epoch/segment/pause/restart 和 Expected。编辑后的自定义输入用 P/F 数组导入，无 Expected；不能把内置特殊事件静默转换成 P/F。旧结果的 Debug 永远使用旧场景契约。
+
+验收：加载《春晓》Reference 与三条 P/P/F 输入 → Match → support=1 Apply → minCoverage=0.4 Apply（均只标记 stale）→ Match（Final 到“不”）→ 查看步骤 → Reset Parameters → Match（Final 回到“春”）。全程无需重复 Load。测试 `test/reading-workbench.test.mjs` 覆盖此流程、22 场景元数据保留及无效输入不覆盖旧快照。
+
+未暴露为参数的固定策略规则保持不变：候选评分 matched×3−edits×2，重读惩罚 0.5 与距离系数 0.05，歧义评分差容差 0.001；精确前缀回退、末尾差异需后续支持等仍为固定规则（src/reading-tracker.ts）。没有新增算法参数。
