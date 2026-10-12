@@ -1,3 +1,4 @@
+import { setupTestCases } from './reading-test-cases.ts'
 import { v2Defaults, v2Hints, requestV2 } from './reading-v2.ts'
 import { v2Chars, v2Point, v2Details } from './reading-v2-view.ts'
 import { ReadingWorkbench } from './reading-workbench.ts'
@@ -14,6 +15,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <header><a href="./index.html">← Test Audio</a><h1>Matching Experiment Workbench</h1></header>
 <h2>Input & Parameters</h2>
 <label>测试场景<select id="scenario"></select></label>
+<div class="controls"><button id="case-save" title="将当前编辑区的输入另存为新 JSON；不加载、不 Match">Save Case · 新建</button><button id="case-overwrite" disabled>覆盖当前 Case</button><button id="case-reload">重新读取 Case</button></div>
+<details id="case-meta"><summary>Case 名称 / 来源说明 ⓘ</summary><label>名称<input id="case-name" maxlength="120" style="width:100%"></label><label title="请区分真实 Copy 导出、截图重建、人工构造；修改输入后请更新来源说明。">来源 / Note<textarea id="case-note" rows="2" maxlength="4000"></textarea></label></details>
+<p id="case-message" class="muted" role="status"></p>
 <label>Reference Text · 编辑值<textarea id="paste-reference" rows="2"></textarea></label>
 <label>STT Sequence · 编辑值 <span id="format-hint" tabindex="0">ⓘ P/F 格式与限制</span><textarea id="paste-input" rows="7" spellcheck="false"></textarea></label>
 <button id="load">Load STT Sequence</button><p id="load-error" role="alert"></p><p id="input-status" class="muted"></p>
@@ -100,6 +104,7 @@ function status() {
   get<HTMLButtonElement>('match').disabled = !work.loaded || work.inputPending
 }
 function chooseScenario() {
+  if (chooseSavedCase()) return
   work.select(scenarios.find(s => s.id === scenarioSelect.value)!)
   get<HTMLTextAreaElement>('paste-reference').value = work.draftReference
   get<HTMLTextAreaElement>('paste-input').value = work.draftSequence
@@ -267,4 +272,10 @@ get('export').onclick = () => {
 }
 for (const id of [...Object.keys(v2Defaults).map(k => `v2-${k}`), 'v2-cursor','v2-mode']) get(id).addEventListener('input', () => { try {syncV2(); get('error').textContent=''} catch {get('error').textContent='近音对需要合法 JSON；尚未应用。'} status() })
 window.addEventListener('pagehide', stop)
+const chooseSavedCase = setupTestCases(scenarioSelect, (reference,sequence) => {
+  work.template = undefined
+  get<HTMLTextAreaElement>('paste-reference').value = reference
+  get<HTMLTextAreaElement>('paste-input').value = sequence
+  syncDraft(); status()
+}, () => ({reference:get<HTMLTextAreaElement>('paste-reference').value, sequence:get<HTMLTextAreaElement>('paste-input').value}))
 chooseScenario(); render()

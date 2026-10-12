@@ -1,0 +1,19 @@
+{
+  "name": "春晓 · STT 错字",
+  "reference": "春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。",
+  "stt_sequence": [
+    [
+      "P",
+      "春"
+    ],
+    [
+      "P",
+      "春年不绝"
+    ],
+    [
+      "F",
+      "春年不绝小"
+    ]
+  ],
+  "note": "根据 V4 实际测试截图重建，并非完整原始 Provider Trace。初始输入取自 V4 server/src/reading_tracker_v2/fixtures/chunxiao.json；该文件仍为算法回归基准，本文件为可编辑 Workbench 用例。"
+}
