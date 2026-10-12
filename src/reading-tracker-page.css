@@ -85,3 +85,5 @@ textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; r
 @media (max-width: 700px) {
   .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); padding: 6px; gap: 6px; }
 }
+[hidden] { display: none !important; }
+.parameter-grid span { overflow-wrap: anywhere; }

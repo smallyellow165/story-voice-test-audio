@@ -233,3 +233,38 @@ V4：http://localhost:4002/（使用已有 7863 服务端）
 验收：加载《春晓》Reference 与三条 P/P/F 输入 → Match → support=1 Apply → minCoverage=0.4 Apply（均只标记 stale）→ Match（Final 到“不”）→ 查看步骤 → Reset Parameters → Match（Final 回到“春”）。全程无需重复 Load。测试 `test/reading-workbench.test.mjs` 覆盖此流程、22 场景元数据保留及无效输入不覆盖旧快照。
 
 未暴露为参数的固定策略规则保持不变：候选评分 matched×3−edits×2，重读惩罚 0.5 与距离系数 0.05，歧义评分差容差 0.001；精确前缀回退、末尾差异需后续支持等仍为固定规则（src/reading-tracker.ts）。没有新增算法参数。
+
+## Python V2 离线 Workbench
+
+Strategy 选择 V2，仍先 Load STT Sequence，再 Match。Apply / Reset 只更新参数；
+Replay 按钮只查看上次结果。V1/V2 参数分别保存，旧结果保留实际输入与参数快照，
+输入、策略或已应用参数变化时显示 Stale。Python 失败保留上次结果，切回 V1 可继续使用。
+
+Vite 开发与 Preview middleware 的 `POST /api/debug/reading-v2/match` 启动相邻
+`story-voice-pipecat-poc-v4/server/.venv-reading-v2/bin/python -B -m src.reading_tracker_v2`，
+通过 stdin/stdout JSON 一次处理完整 Sequence。无新 Python Server，无算法副本。
+依赖两个仓库保持相邻目录及已存在的 V2 实验环境；纯静态托管不提供此接口。
+桥接仅允许 localhost，15 秒超时，最多 256 条事件、256 KB 请求、16 MB 输出。
+
+全部 15 个 Python Matching 参数可编辑，声母/韵母对为 JSON。
+Match 时 Python 执行权威参数校验。初始 Cursor 与 Replay Anchor 模式单独设置；
+Final Candidate 更新的只是离线搜索锚点，不是确认读对。P/F 按 Final 推导片段，
+不还原 Provider 元数据；含 pause/restart 的内置场景会明确拒绝，V1 仍支持它们。
+路径来自 Python traceback，Exact/Phonetic/Replace/Insert/Delete 均可查看字符、拼音与代价。
+歧义不强选位置，可展开等优实际路径；V1 Expected 不套用到 V2。
+
+启动（不会启动 V4）：
+
+```bash
+fuser -k 5189/tcp; cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && npx vite --host 127.0.0.1 --port 5189 --strictPort
+```
+
+页面：http://localhost:5189/story-voice-test-audio/reading-tracker.html
+
+验收：导入《春晓》P 春 / P 春年不绝 / F 春年不绝小，V1 默认 Final 停在春；
+V2 Final 候选晓（4），Range [0,5)，Cost 0.65。调整 near_cost 为 0.5 后 Apply，
+旧结果 Stale 且不计算；Match 后 Cost 0.7。Reset 后仍需 Match。
+重复明月可用《静夜思》Reference、初始 Cursor=4、[["F","明月"]] 检查歧义。
+
+回归：`npm test`、`npm run build`。`test/reading-v2.test.mjs` 直接比较 bridge 与 CLI
+结果，并检查 UI 参数默认值、异常、超时、请求竞态、快照与 V1 回退。

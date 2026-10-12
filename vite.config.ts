@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { readingV2Middleware } from './server/reading-v2.mjs'
 import { screencastMiddleware } from './server/screencast-transcode.mjs'
 import { whisperAlignmentFixtureMiddleware } from './server/whisper-alignment-fixture.mjs'
 
@@ -14,7 +15,7 @@ const ringProxy = {
 export default defineConfig({
   base,
   worker: { format: 'es' },
-  plugins: [{
+  plugins: [{ name: 'reading-v2-cli', configureServer(server) { server.middlewares.use(readingV2Middleware) }, configurePreviewServer(server) { server.middlewares.use(readingV2Middleware) } }, {
     name: 'local-screencast-mp4',
     configureServer(server) { server.middlewares.use(screencastMiddleware) },
     configurePreviewServer(server) { server.middlewares.use(screencastMiddleware) },

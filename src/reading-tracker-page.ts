@@ -1,3 +1,5 @@
+import { v2Defaults, v2Hints, requestV2 } from './reading-v2.ts'
+import { v2Chars, v2Point, v2Details } from './reading-v2-view.ts'
 import { ReadingWorkbench } from './reading-workbench.ts'
 import { importLimitations } from './reading-tracker-import.ts'
 import { eventReport } from './reading-tracker-report.ts'
@@ -15,9 +17,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <label>Reference Text · 编辑值<textarea id="paste-reference" rows="2"></textarea></label>
 <label>STT Sequence · 编辑值 <span id="format-hint" tabindex="0">ⓘ P/F 格式与限制</span><textarea id="paste-input" rows="7" spellcheck="false"></textarea></label>
 <button id="load">Load STT Sequence</button><p id="load-error" role="alert"></p><p id="input-status" class="muted"></p>
-<label>Strategy<select id="strategy"><option>B0</option><option>B1</option><option selected>V1</option></select></label>
-<h3>V1 Parameters <small class="muted">名称 / 编辑值 / 默认值 · 悬停查看说明</small></h3>
-<div id="parameters" class="parameter-grid"></div>
+<label>Strategy<select id="strategy"><option>B0</option><option>B1</option><option selected>V1</option><option>V2</option></select></label>
+<h3><span id="parameter-heading">V1 Parameters</span> <small class="muted">名称 / 编辑值 / 默认值 · 悬停查看说明</small></h3>
+<div id="parameters" class="parameter-grid"></div><div id="v2-parameters" class="parameter-grid" hidden></div>
+<div id="v2-options" hidden><label title="规范化 Reference 索引，-1 表示尚未开始；仅作为搜索锚点。">初始 Cursor<input id="v2-cursor" type="number" value="-1" min="-1" step="1"></label><label title="Final 候选仅更新 Replay 搜索锚点，不是确认朗读位置。">Replay Anchor<select id="v2-mode"><option value="final_candidate">Final Candidate</option><option value="fixed">Fixed</option></select></label><small>仅 P/F 文本 Replay：Final 推导片段边界，不还原 Provider 的 segment/epoch；含 pause/restart 的场景不支持。参数由 Python 在 Match 时最终校验。</small></div>
 <div class="controls"><button id="apply">Apply Parameters</button><button id="defaults">Reset Parameters</button></div>
 <p id="error" role="alert"></p><p id="parameter-status" class="muted"></p>
 <button id="match" class="primary">Match</button>
@@ -60,6 +63,15 @@ for (const [key, value] of Object.entries(defaults)) {
   if (key === 'minCoverage') { input.min = '0.05'; input.max = '1'; input.step = '0.05' }
   label.append(input); get('parameters').append(label)
 }
+for (const [key,value] of Object.entries(v2Defaults)) {
+ const label = document.createElement('label'), span = document.createElement('span')
+ span.textContent = `${key} ⓘ · 默认 ${JSON.stringify(value)}`; span.title = v2Hints[key]; label.append(span)
+ const input = document.createElement(Array.isArray(value) ? 'textarea' : 'input')
+ input.id = `v2-${key}`; input.value = Array.isArray(value) ? JSON.stringify(value) : String(value)
+ if (input instanceof HTMLInputElement) {input.type = 'number'; input.step = 'any'}
+ else input.rows = 2
+ label.append(input); get('v2-parameters').append(label)
+}
 const work = new ReadingWorkbench()
 let selected = scenarios[0], results: ReturnType<typeof import('./reading-tracker-scenarios.ts').compare> = [], position = 0
 let timer: number | undefined
@@ -67,15 +79,24 @@ const stop = () => { window.clearTimeout(timer); timer = undefined; get('play').
 function syncDraft() {
   work.draftReference = get<HTMLTextAreaElement>('paste-reference').value
   work.draftSequence = get<HTMLTextAreaElement>('paste-input').value
-  work.strategy = strategySelect.value as Strategy
+  work.strategy = strategySelect.value as Strategy | 'V2'
   work.draftParameters = Object.fromEntries(Object.keys(defaults).map(key => [key, Number(get<HTMLInputElement>(`param-${key}`).value)])) as unknown as Config
 }
+function syncV2() {
+ work.draftV2 = Object.fromEntries(Object.entries(v2Defaults).map(([key,value]) => [key, Array.isArray(value) ? JSON.parse(get<HTMLTextAreaElement>(`v2-${key}`).value) : Number(get<HTMLInputElement>(`v2-${key}`).value)])) as typeof v2Defaults
+ work.cursor = Number(get<HTMLInputElement>('v2-cursor').value)
+ work.cursorMode = get<HTMLSelectElement>('v2-mode').value as 'fixed' | 'final_candidate'
+}
 function status() {
+ const isV2 = work.strategy === 'V2'
+ get('parameters').hidden = isV2; get('v2-parameters').hidden = !isV2; get('v2-options').hidden = !isV2
+ get('parameter-heading').textContent = isV2 ? 'V2 Parameters' : 'V1 Parameters'
+ get('match').textContent = work.loading ? 'Matching…（可再次 Match）' : 'Match' 
   get('input-status').textContent = work.inputPending ? '输入未加载 / 编辑值未加载' : `已加载 ${work.loaded!.scenario.steps.length} 条事件（未自动 Match）`
   get('parameter-status').textContent = work.parametersPending ? '参数编辑值未应用；Match 使用已应用参数。' : '参数已应用；仅点击 Match 计算。'
   get('status').textContent = !work.last ? '尚未 Match' : work.stale ? 'Stale / 需要重新 Match' : '结果与当前已加载输入、策略及已应用参数一致'
   get('status').className = work.stale ? 'stale' : ''
-  get('loaded').textContent = JSON.stringify({ input: work.loaded, appliedParameters: work.applied }, null, 2)
+  get('loaded').textContent = JSON.stringify({ input: work.loaded, appliedParameters: work.strategy === 'V2' ? work.appliedV2 : work.applied }, null, 2)
   get<HTMLButtonElement>('match').disabled = !work.loaded || work.inputPending
 }
 function chooseScenario() {
@@ -125,6 +146,7 @@ function render() {
   status()
   for (const id of ['step', 'play', 'reset', 'export']) get<HTMLButtonElement>(id).disabled = !work.last
   if (!work.last) return
+  if (work.last.v2) { renderV2(); return }
   const result = results.find(r => r.strategy === work.last!.strategy)!
   const current = result.rows[position], state = current.state, event = current.event
   reference(state)
@@ -164,6 +186,30 @@ function render() {
   get<HTMLButtonElement>('step').disabled = position >= result.rows.length - 1
   get<HTMLButtonElement>('play').disabled = position >= result.rows.length - 1
 }
+function renderV2() {
+ const last = work.last!, replay = last.v2!, rows = replay.rows
+ get('reference').textContent = replay.reference
+ get('snapshot').textContent = `上次 Match：V2 · Cursor ${last.cursor} · ${last.cursorMode} · ${JSON.stringify(last.v2Config)}`
+ get('progress').textContent = `· 选中 ${position+1} / ${rows.length}`
+ get('history').replaceChildren()
+ rows.forEach((entry,index) => {
+  const row = document.createElement('tr'), m = entry.matching, button = document.createElement('button')
+  row.className = index === position ? 'selected' : ''
+  button.textContent = `${index+1} · ${m.stt_type === 'F' ? 'Final' : 'Partial'}`
+  button.onclick = () => {stop(); position=index; render()}; row.insertCell().append(button)
+  cell(row,m.stt_input || '（空假设）'); cell(row,`Exact: ${v2Chars(m,'exact')}；Phonetic: ${v2Chars(m,'phonetic')}`)
+  cell(row,`Delete: ${v2Chars(m,'delete')}（候选）`)
+  cell(row,`${v2Point(m)} · ${m.reason} · Cost ${m.cost}`)
+  row.onclick = event => {if (!(event.target instanceof HTMLButtonElement)) button.click()}
+  get('history').append(row)
+ })
+ get('current').innerHTML = v2Details(rows[position].matching)
+ get('selected-debug').textContent = 'V2 返回 Python 实际路径；无 V1 Expected，Pass/Fail 不适用。'
+ get('comparison').textContent = '切换 Strategy 后点击 Match，使用同一份已加载输入比较 V1 / V2；候选与已接受 Cursor 语义不同。'
+ get('trace').textContent = JSON.stringify(replay,null,2)
+ get<HTMLButtonElement>('step').disabled = position >= rows.length-1
+ get<HTMLButtonElement>('play').disabled = position >= rows.length-1
+}
 function suite() {
   get('suite').replaceChildren()
   for (const { scenario: item, results: comparisons } of work.last?.suite ?? []) {
@@ -192,20 +238,23 @@ get('load').onclick = () => {
   catch (error) { get('load-error').textContent = String(error); status() }
 }
 get('apply').onclick = () => {
-  try { syncDraft(); work.apply(); get('error').textContent = ''; status() }
+  try { syncDraft(); if (work.strategy === 'V2') syncV2(); work.apply(); get('error').textContent = ''; status() }
   catch (error) { get('error').textContent = String(error); status() }
 }
 get('defaults').onclick = () => {
   work.resetParameters()
-  for (const [key, value] of Object.entries(defaults)) get<HTMLInputElement>(`param-${key}`).value = String(value)
+  for (const [key,value] of Object.entries(v2Defaults)) get<HTMLInputElement>(`v2-${key}`).value = Array.isArray(value) ? JSON.stringify(work.draftV2[key as keyof typeof v2Defaults]) : String(work.draftV2[key as keyof typeof v2Defaults])
+  for (const [key, value] of Object.entries(work.draftParameters)) get<HTMLInputElement>(`param-${key}`).value = String(value)
   get('error').textContent = ''; status()
 }
-get('match').onclick = () => {
+get('match').onclick = async () => {
   try {
-    syncDraft(); work.match(scenarios); stop()
+    syncDraft();
+    if (work.strategy === 'V2') { const pending = work.matchV2(requestV2); status(); if (!await pending) return }
+    else work.match(scenarios); stop()
     selected = work.last!.input.scenario; results = work.last!.results; position = 0
     get('load-error').textContent = ''; render(); suite()
-  } catch (error) { get('load-error').textContent = String(error) }
+  } catch (error) { get('load-error').textContent = String(error); status() }
 }
 get('step').onclick = () => { stop(); next() }
 get('play').onclick = () => { if (timer !== undefined) stop(); else { get('play').textContent = '暂停查看'; schedule() } }
@@ -216,5 +265,6 @@ get('export').onclick = () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify({ ...work.last, eventReports: results.map(r => ({ strategy: r.strategy, rows: r.rows.map(row => eventReport(selected.id, row)) })) }, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = `reading-${selected.id}.json`; link.click(); URL.revokeObjectURL(url)
 }
+for (const id of [...Object.keys(v2Defaults).map(k => `v2-${k}`), 'v2-cursor','v2-mode']) get(id).addEventListener('input', () => { try {syncV2(); get('error').textContent=''} catch {get('error').textContent='近音对需要合法 JSON；尚未应用。'} status() })
 window.addEventListener('pagehide', stop)
 chooseScenario(); render()
