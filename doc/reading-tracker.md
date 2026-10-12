@@ -192,3 +192,29 @@ cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && node --t
 - 仅播放四个 Final：默认 cursor=4/4/4/4，maxGap=2 为 4/9/14/17，committed 与完整 Replay 一致。把第二句 Final 改为准确文本的受控对照，默认策略也能继续第三句。这些验证排除了重建数据中的跨 Final 状态丢失，不能代替缺失的真实 Provider 事件审计。
 
 建议：保留生产默认；下一轮单独评估两字符 substitution 容忍（与纯 Skip 限制分开）、有证据的局部重新定位、尾部不一致展示。没有发现可在不改变策略取舍的前提下直接修复的核心状态缺陷。
+
+## V4 Copy → Test Audio Paste Replay
+
+V4 Reading 面板的 **Copy STT Sequence** 复制点击时当前 session.rows 中的原始 P/F 文本，按到达顺序输出二维 JSON 数组；没有任何匹配状态或 Provider 元数据。空历史禁用按钮；剪贴板失败会显示反馈，不影响 Reading。
+
+Test Audio 展开 **Paste STT Sequence**，粘贴 JSON，确认/编辑 Reference，点击 **Load Replay**。全部事件立即进入现有 Sequence Table。策略选择仍为 B0/B1/V1；在 Debug Details → V1 实验参数修改 maxGap 并应用，会用同一份已加载输入重新计算。编辑粘贴区后需再次 Load 才会替换输入。切换回内置场景不会删除已加载序列，可通过场景列表返回。
+
+原始数据仅有 P/F 和文本。Replay 自动推导 epoch=0、seq=1…N、inferred-N segment 和每步 400ms 时间；连续 Partial 替换同一假设，Final 后进入下一片段。最后是 Partial 时保持暂定，不补 Final。无法恢复真实音频范围、重叠、遗漏的 Final、重连或重启边界；请仅复制一个 Reading Session 的完整序列。这些边界是否存在，无法仅从二维数组检测。页面明确提示限制；导入数据没有 Expected，Pass/Fail 为 N/A。JSON 导出分别保留 importedInput.rawSequence、推导 scenario 和各策略实际 results。
+
+13 条截图重建数据的导入测试：默认 maxGap=1 的四个 Final 均停光；maxGap=2 分别为光、霜、月、思。第二句疑/是为 Uncertain，不是 Skip。第四句 Partial 到故、Final 修订回思。未更改核心、默认参数、22 个内置场景或其 Expected。
+
+自动验证：`node --test test/reading-tracker-import.test.mjs`；全量：`npm test`；构建：`npm run build`。浏览器和 CLI 原有 Replay 共用 compare/replay/track；此次无新增 CLI 命令。
+
+页面：http://localhost:5189/story-voice-test-audio/reading-tracker.html
+
+```bash
+(fuser -k 5189/tcp || true) && cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-test-audio && npm exec vite -- --host 127.0.0.1 --port 5189 --strictPort
+```
+
+V4：http://localhost:4002/（使用已有 7863 服务端）
+
+```bash
+(fuser -k 4002/tcp || true) && cd /home/umi/min-wrk/projects/story-voice-lab/story-voice-pipecat-poc-v4/client && BOT_START_URL=http://127.0.0.1:7863/start npm run dev -- -p 4002
+```
+
+手动验收：真实朗读后复制 → Test Audio 粘贴加载 → 确认 P/F 原文与顺序 → 点击历史行查看实际状态 → 切换策略/修改 maxGap → 导出 JSON 检查 rawSequence 未变。检查非法 JSON 报错且保留上次成功加载结果；回到 skip-one 检查原有模拟回放。实际浏览器剪贴板、布局和真实麦克风未在本轮验证；本轮没有可连接的浏览器，未调用付费 API。

@@ -5,7 +5,7 @@ export const poem = '床前明月光，\n疑是地上霜。\n举头望明月，\
 export interface Goal {
   cursor: number; confirmed: number; matched: number[]; skipped: number[]; uncertain: number[]
 }
-export interface ReplayStep { event: ReadingEvent; goal: Goal; note: string }
+export interface ReplayStep { event: ReadingEvent; goal?: Goal; note: string }
 export interface Scenario { id: string; title: string; reference: string; steps: ReplayStep[] }
 // Hand-authored reading targets, independent of any strategy's output. A mismatch is an
 // experimental failure to achieve the target, not automatically a software defect.
@@ -134,7 +134,7 @@ export function replay(scenario: Scenario, strategy: Strategy, config: Partial<C
   let state = createTracker(scenario.reference, strategy, config)
   return scenario.steps.map((step, index) => {
     state = track(state, step.event)
-    return { index, ...step, state, differences: differences(state, step.goal) }
+    return { index, ...step, state, differences: step.goal ? differences(state, step.goal) : [] }
   })
 }
 export function compare(scenario: Scenario, config: Partial<Config> = {}) {

@@ -28,6 +28,12 @@ export function textComparison(reference: string, input: string) {
 export function eventReport(id: string, row: Row) {
   const state: TrackerState = row.state
   const expected = overrides[id]?.[state.strategy]?.[row.index] ?? row.goal
+  if (!expected || !contracts[id]) return {
+    expected: null, expectedDecision: null, verdict: 'N/A', differences: [], targetDifferences: [],
+    candidateAlignment: null,
+    displayComparison: row.event.type === 'stt' ? textComparison(state.reference, row.event.text) : [],
+    actualCharacters: characterStates(state.reference, state), expectedCharacters: [],
+  }
   const [action, code] = (contracts[id][state.strategy] ?? contracts[id].all)!.split(' ')[row.index].split(':')
   const reason = reasonCode[code]
   const delta = differences(state, expected)

@@ -1,3 +1,4 @@
+import { importSequence } from './reading-tracker-import.ts'
 import { eventReport } from './reading-tracker-report.ts'
 import { createTracker, defaults } from './reading-tracker.ts'
 import type { Config, Strategy, TrackerState } from './reading-tracker.ts'
@@ -5,12 +6,18 @@ import { compare, scenarios } from './reading-tracker-scenarios.ts'
 import './reading-tracker-page.css'
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<header><a href="./index.html">← Test Audio</a><h1>Reading Position Tracker</h1><span class="muted">模拟 STT · 点击任意步骤查看实际结果</span></header>
+<header><a href="./index.html">← Test Audio</a><h1>Reading Position Tracker</h1><span class="muted">离线 Replay · 点击任意步骤查看实际结果</span></header>
 <main><section><div class="controls">
 <label>测试场景<select id="scenario"></select></label><label>观察策略<select id="strategy"><option>B0</option><option>B1</option><option selected>V1</option></select></label>
 <label>回放速度<select id="speed"><option value="1">1×</option><option value="4">4×</option><option value="0.5">0.5×</option></select></label>
 <button id="step" class="primary">下一步</button><button id="play">自动回放</button><button id="reset">重置回放</button></div>
 </section>
+<section><details id="paste-panel"><summary>Paste STT Sequence</summary>
+<p class="muted">粘贴 V4 的 P/F 二维数组。Reference 默认使用当前场景，可编辑；加载后可在 Debug → V1 实验参数调整 maxGap。</p>
+<label>原始 STT 输入<textarea id="paste-input" rows="6" placeholder='[["P","床"],["F","床前"]]'></textarea></label>
+<label>Replay Reference<textarea id="paste-reference" rows="2"></textarea></label>
+<button id="load">Load Replay</button><p id="load-error" role="alert"></p>
+</details><p id="source" class="muted" role="status"></p></section>
 <section class="reference-panel"><h2>Reference Text</h2><div id="reference" class="reference"></div></section>
 <div class="workspace">
 <section><h2>Matching Sequence <span id="progress" class="muted"></span></h2>
@@ -35,6 +42,7 @@ for (const [key, value] of Object.entries(defaults)) {
   label.append(input); get('parameters').append(label)
 }
 let config: Config = { ...defaults }, selected = scenarios[0], results = compare(selected, config), position = 0
+let imported: ReturnType<typeof importSequence> | undefined
 let timer: number | undefined
 const stop = () => { window.clearTimeout(timer); timer = undefined; get('play').textContent = '自动回放' }
 function cell(row: HTMLTableRowElement, value: string, className = '') { const td = row.insertCell(); td.textContent = value; td.className = className; return td }
@@ -50,7 +58,7 @@ function eventCard(result: typeof results[number], index: number) {
   const row = result.rows[index], view = eventReport(selected.id, row), state = row.state, event = row.event
   const point = (position: number) => position < 0 ? '尚未定位' : state.tokens[position]?.text ?? '—'
   const strip = (chars: typeof view.actualCharacters, actual: boolean) => chars.map(c =>
-    `<span class="result-char ${c.status.toLowerCase()} ${actual && state.tentativeIndices.includes(c.index) ? 'tentative' : ''} ${c.index === (actual ? state.cursor : view.expected.cursor) ? 'cursor' : ''}"><b>${escape(c.text)}</b><small>${c.status}</small></span>`).join('')
+    `<span class="result-char ${c.status.toLowerCase()} ${actual && state.tentativeIndices.includes(c.index) ? 'tentative' : ''} ${c.index === (actual ? state.cursor : view.expected?.cursor ?? -1) ? 'cursor' : ''}"><b>${escape(c.text)}</b><small>${c.status}</small></span>`).join('')
   const comparison = view.displayComparison
   return `<article class="event-card">
     <h3>#${index + 1} · ${result.strategy} · ${event.type === 'stt' ? event.final ? 'Final' : 'Partial' : escape(event.type)}
@@ -61,12 +69,13 @@ function eventCard(result: typeof results[number], index: number) {
     <h4>Actual Output · 累计接受状态（含本次暂定）</h4>
     <div class="character-row">${strip(view.actualCharacters, true)}</div>
     <p>当前读到「${escape(point(state.cursor))}」 · 已结算到「${escape(point(state.confirmed))}」</p>
-    <h4>Expected Output · 自动化测试契约</h4>
+    ${view.expected ? `<h4>Expected Output · 自动化测试契约</h4>
     <div class="character-row">${strip(view.expectedCharacters, false)}</div>
-    <p>预期读到「${escape(point(view.expected.cursor))}」 · 预期结算到「${escape(point(view.expected.confirmed))}」</p>
+    <p>预期读到「${escape(point(view.expected?.cursor ?? -1))}」 · 预期结算到「${escape(point(view.expected?.confirmed ?? -1))}」</p>
     <p>${view.verdict === 'N/A' ? '自定义 V1 参数：默认参数测试契约不适用，仍列出默认期望供参考。' : `${view.verdict}：比较 cursor、confirmed、matched、skipped、uncertain、action、reason。`}</p>
+    ` : '<p>Expected / Pass-Fail：N/A（导入数据无测试期望）</p>'}
     ${view.differences.length ? `<details><summary>契约差异</summary><pre>${escape(view.differences.join('\n'))}</pre></details>` : ''}
-    <p class="${row.differences.length ? 'fail' : 'pass'}">理想跟读目标：${row.differences.length ? '未达到（与契约 Pass 可同时存在）' : '达到'}</p>
+    ${row.goal ? `<p class="${row.differences.length ? 'fail' : 'pass'}">理想跟读目标：${row.differences.length ? '未达到（与契约 Pass 可同时存在）' : '达到'}</p>` : ''}
     <details><summary>索引 / Decision Reason / 目标差异 / JSON / 完整 Debug</summary>
       <pre>${escape(JSON.stringify({ input: event, actual: state, expected: view.expected, expectedDecision: view.expectedDecision, target: row.goal, targetDifferences: row.differences, note: row.note }, null, 2))}</pre>
     </details>
@@ -77,6 +86,7 @@ function render() {
   const result = results.find(r => r.strategy === strategySelect.value as Strategy)!
   const current = result.rows[position], state = current.state, event = current.event
   reference(state)
+  get('source').textContent = selected.id === 'imported-stt' ? `${imported!.limitations} ${imported!.warning}` : ''
   get('progress').textContent = `· 选中 ${position + 1} / ${result.rows.length}`
   get('history').replaceChildren()
   for (const entry of result.rows) {
@@ -112,7 +122,7 @@ function render() {
   get<HTMLButtonElement>('step').disabled = position >= result.rows.length - 1
   get<HTMLButtonElement>('play').disabled = position >= result.rows.length - 1
 }
-function reset() { stop(); selected = scenarios.find(s => s.id === scenarioSelect.value)!; results = compare(selected, config); position = 0; render() }
+function reset() { stop(); selected = scenarioSelect.value === 'imported-stt' ? imported!.scenario : scenarios.find(s => s.id === scenarioSelect.value)!; get<HTMLTextAreaElement>('paste-reference').value = selected.reference; results = compare(selected, config); position = 0; render() }
 function suite() {
   get('suite').replaceChildren()
   for (const item of scenarios) {
@@ -133,6 +143,17 @@ function schedule() {
   const delay = Math.max(30, selected.steps[position + 1].event.at - before) / Number(get<HTMLSelectElement>('speed').value)
   timer = window.setTimeout(() => { next(); schedule() }, delay)
 }
+get<HTMLTextAreaElement>('paste-reference').value = selected.reference
+get('load').onclick = () => {
+  try {
+    const nextImport = importSequence(get<HTMLTextAreaElement>('paste-input').value, get<HTMLTextAreaElement>('paste-reference').value)
+    imported = nextImport
+    if (!Array.from(scenarioSelect.options).some(option => option.value === 'imported-stt')) {
+      scenarioSelect.add(new Option('粘贴的 STT Sequence', 'imported-stt'))
+    }
+    scenarioSelect.value = 'imported-stt'; get('load-error').textContent = ''; reset()
+  } catch (error) { get('load-error').textContent = String(error) }
+}
 get('step').onclick = () => { stop(); next() }
 get('play').onclick = () => { if (timer !== undefined) stop(); else { get('play').textContent = '暂停回放'; schedule() } }
 get('reset').onclick = reset; scenarioSelect.onchange = reset; strategySelect.onchange = render
@@ -144,7 +165,7 @@ get('apply').onclick = () => {
   } catch (error) { get('error').textContent = String(error) }
 }
 get('export').onclick = () => {
-  const url = URL.createObjectURL(new Blob([JSON.stringify({ scenario: selected.id, config, results, eventReports: results.map(r => ({ strategy: r.strategy, rows: r.rows.map(row => eventReport(selected.id, row)) })) }, null, 2)], { type: 'application/json' }))
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ scenario: selected.id, reference: selected.reference, importedInput: selected.id === 'imported-stt' ? imported : undefined, config, results, eventReports: results.map(r => ({ strategy: r.strategy, rows: r.rows.map(row => eventReport(selected.id, row)) })) }, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = `reading-${selected.id}.json`; link.click(); URL.revokeObjectURL(url)
 }
 window.addEventListener('pagehide', stop)

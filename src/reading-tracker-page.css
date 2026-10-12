@@ -62,3 +62,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; fo
   .sequence button { font-size: 12px; }
   h1 { font-size: 20px; }
 }
+
+#paste-panel textarea { display: block; width: 100%; min-width: 0; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+#source:empty, #load-error:empty { display: none; }
