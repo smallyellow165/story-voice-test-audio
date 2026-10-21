@@ -1,5 +1,33 @@
 # DUPLO Prototype V3 — AI Design Generator
 
+## 模型选择与 MAX_TOKENS 调整（2026-10-20）
+
+原生成配置为 `maxOutputTokens: 8192`，未设置 `thinkingConfig`。JSON Schema 限定 5–12 块和 5–12 步，字段为名称、位置、型号、颜色、旋转和指导；原始可见 JSON 不能代表全部生成 Token。Google 文档明确该上限包含推理与最终输出，因此模型可能在完成 JSON 前耗尽预算。用户报告的小桥请求约 41 秒返回 MAX_TOKENS，说明生成上限终止；不能把它当成网络超时或 Validator 错误。
+
+本轮没有获得该次请求的 `usageMetadata`。项目原来只在浏览器内存保留诊断，检查项目 generated/data/doc 中的积木相关文件未找到这次记录。因此“推理消耗了多少、JSON 消耗了多少”尚不能确认，推理挤占预算是有依据的解释而非已测得的 Token 分解。若旧页面仍保留记录，可下载原诊断 JSON 查看 `thoughtsTokenCount`、`candidatesTokenCount` 和 `totalTokenCount`。
+
+调整：
+
+- Flash `gemini-3.6-flash`、Pro `gemini-3.1-pro-preview` 使用 `maxOutputTokens: 32768` 和 `thinkingConfig: {thinkingLevel: 'MEDIUM'}`。不同时设置 `thinkingBudget`，不关闭推理。两者官方输出上限均为 65536；32768 为本轮实验预算，不保证永不截断。MEDIUM 是相对推理力度，不是严格额度，不能保证为 JSON 硬性预留指定 Token。
+- DUPLO 请求通过同一客户端的请求级 `httpOptions` 设置 180 秒超时、`attempts: 1`；页面等待 195 秒。共享客户端及其他功能配置未改。
+- Schema、Prompt、库存规则、V2 算法及 Viewer 不变，方便相同输入比较模型。未增加“小桥”模板或语义后处理。
+- 模型列表采用项目 `gemini-rings.mjs` 已有的上述两个 ID，并通过官方模型文档核对。未使用账户凭据执行模型发现或生成；Pro 是否对当前 Key 开放、配额和实际延迟需手动验证。
+- `DUPLO_LLM_MODEL` 仍决定默认选项，页面所选 `model` 随 POST 提交。未知客户端模型返回 400 且不发起生成；显式配置的自定义服务端默认模型也会列出，它保留服务商默认推理设置，不假设支持 MEDIUM。
+- 结果展示请求模型、实际 `modelVersion`、服务端耗时、输入/推理/输出/总 Token、结束原因与预算。未返回的统计显示“未返回”，不假造零。诊断 JSON 另保留完整 usageMetadata、responseId、finishMessage、generationSettings、原始文本和 Validator 报告。
+- 非 STOP 结果仍拒绝应用，即使部分 JSON 看似可解析；不自动重试、续写或换模型。
+
+官方依据：[Flash 型号与限制](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash)、[Pro 型号与限制](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview)、[推理与输出共用预算](https://ai.google.dev/gemini-api/docs/generate-content/thinking)、[Pro 的推理级别](https://ai.google.dev/gemini-api/docs/gemini-3)。本地已安装 SDK 的 `ThinkingConfig`、`GenerateContentConfig.httpOptions` 类型也已阅读核对。
+
+### Flash / Pro 小桥对比验收
+
+1. 用户重启 `npm run dev` 并打开 `/brick-test`。沿用同一份库存，描述固定为例如“设计一座容易辨认的小桥，有桥墩、桥面和桥面下方留空；使用库存中的 5–12 块积木，给出简短搭建指导”。
+2. 选 Flash，手动点击一次 Generate。保存该次诊断，记录结束原因、Validator、耗时、四类 Token，以及桥墩/桥面/留空是否可辨认。
+3. 不修改库存和描述，仅选择 Pro，再手动点击一次。分别下载两次记录；历史列表显示请求模型，便于切换。对每个成功设计查看完整场景和搭建步骤，不只比较名称。
+4. Network 中每次 Generate 应恰好一次 POST；页面加载、刷新配置和步骤查看不调用生成。MAX_TOKENS、权限失败或非法设计应保留原场景，无自动切换或补救请求。
+5. **保留规则带来的限制**：先放两个互不连接的地面桥墩、最后架桥面的传统顺序会在第二步被拒绝；本轮不会为桥放宽每个前缀连通的规则。最终 Valid 只证明现有几何/库存/顺序规则成立，不证明造型真的像桥或下方留空足够，这些需人工查看。
+
+本轮仅写代码与模拟测试，没有执行命令、测试、构建或真实 LLM 请求。新增测试覆盖两种模型路由、预算/推理级别、非法模型零调用、截断时诊断保留和无重试、缺失统计处理。用户可手动执行 `npm run test:brick-generator` 和 `npm run build`；尚无 Flash/Pro 实测对比结论。
+
 V3 在现有 Test Audio 服务和 `/brick-test` 上增加 Gemini 自由设计。V1 的真实 LDraw Viewer、V2 的连接算法保持复用；没有新增客户端 SDK、服务、数据库或依赖。V1/V2 已由用户人工验收；本次 V3 只开发代码、测试和文档，未执行任何命令、构建、测试、服务或真实模型请求。
 
 ## 用户启动

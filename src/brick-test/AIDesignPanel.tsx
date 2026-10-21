@@ -4,7 +4,7 @@ import { COLORS, PARTS } from './catalog'
 import type { Brick } from './catalog'
 import type { GenerationResult, InventoryRow } from './design-types'
 
-type Run = { id: string; createdAt: string; request: { description: string; inventory: InventoryRow[] }; httpStatus: number | null; result: GenerationResult }
+type Run = { id: string; createdAt: string; request: { model: string; description: string; inventory: InventoryRow[] }; httpStatus: number | null; result: GenerationResult }
 type Props = {
   disabled: boolean
   manualRevision: number
@@ -16,7 +16,8 @@ const endpoint = '/api/brick-test/generate'
 export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, onApply }: Props) {
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
-  const [status, setStatus] = useState<{ model: string; apiKeyConfigured: boolean } | null>(null)
+  const [status, setStatus] = useState<{ model: string; models: { id: string; label: string }[]; apiKeyConfigured: boolean } | null>(null)
+  const [selectedModel, setSelectedModel] = useState('')
   const [statusError, setStatusError] = useState('')
   const [statusRetry, setStatusRetry] = useState(0)
   const [running, setRunning] = useState(false)
@@ -50,8 +51,8 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
     fetch(endpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('模型 API 不可用，请用 npm run dev 启动现有 Test Audio 服务；dev:brick 只提供本地 Viewer。')
       const value = await response.json()
-      if (typeof value.model !== 'string' || typeof value.apiKeyConfigured !== 'boolean') throw new Error('模型状态响应无效。')
-      if (active) setStatus(value)
+      if (typeof value.model !== 'string' || typeof value.apiKeyConfigured !== 'boolean' || !Array.isArray(value.models) || !value.models.length || !value.models.every((item: { id?: unknown; label?: unknown }) => item && typeof item.id === 'string' && typeof item.label === 'string') || !value.models.some((item: { id: string }) => item.id === value.model)) throw new Error('模型状态响应无效。')
+      if (active) { setStatus(value); setSelectedModel((previous) => value.models.some((item: { id: string }) => item.id === previous) ? previous : value.model) }
     }).catch((error) => { if (active) setStatusError(error.name === 'AbortError' ? '读取模型配置超时，请检查服务后重试。' : error.message) })
       .finally(() => clearTimeout(timeout))
     return () => { active = false; clearTimeout(timeout); controller.abort() }
@@ -81,13 +82,13 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
 
   async function generate(event: FormEvent) {
     event.preventDefault()
-    if (requestLock.current || disabled || !inputValid || !status?.apiKeyConfigured) return
+    if (requestLock.current || disabled || !inputValid || !status?.apiKeyConfigured || !status.models.some((item) => item.id === selectedModel)) return
     requestLock.current = true
     setRunning(true); onGeneratingChange(true); setViewError('')
-    const snapshot = { description, inventory: inventory.map((row) => ({ ...row })) }
+    const snapshot = { model: selectedModel, description, inventory: inventory.map((row) => ({ ...row })) }
     const controller = new AbortController()
     requestController.current = controller
-    const timeout = setTimeout(() => controller.abort(), 105000)
+    const timeout = setTimeout(() => controller.abort(), 195000)
     let responseBody: GenerationResult
     let httpStatus: number | null = null
     try {
@@ -98,7 +99,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
       if (typeof responseBody?.ok !== 'boolean') throw new Error('生成接口返回格式无效。')
       if (!response.ok && responseBody.ok) throw new Error('生成接口状态与结果不一致，拒绝应用。')
     } catch (error) {
-      responseBody = { ok: false, model: status.model, rawOutput: null, error: { code: 'CLIENT_REQUEST', message: error instanceof Error && error.name === 'AbortError' ? '等待生成超时；服务端可能仍在处理。未自动重试，当前场景保留。' : error instanceof Error ? error.message : String(error) } }
+      responseBody = { ok: false, model: snapshot.model, rawOutput: null, error: { code: 'CLIENT_REQUEST', message: error instanceof Error && error.name === 'AbortError' ? '等待生成超时；服务端可能仍在处理。未自动重试，当前场景保留。' : error instanceof Error ? error.message : String(error) } }
     } finally { clearTimeout(timeout) }
     try {
       if (!mounted.current) return
@@ -129,17 +130,21 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
           const row = inventory.find((item) => item.part === part.id && item.color === color.code)!
           return <td key={color.code}><input aria-label={`${part.id} ${color.label} 库存`} type="number" min="0" max="100" step="1" required value={Number.isFinite(row.quantity) ? row.quantity : ''} onChange={(event) => { const quantity = event.target.valueAsNumber; setInventory((items) => items.map((item) => item === row ? { ...item, quantity } : item)) }} /></td>
         })}</tr>)}</tbody></table></div>
+        <label>Gemini 模型<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} disabled={!status}>{status?.models.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}</select></label>
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-        <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !status?.apiKeyConfigured}>{running ? 'Generating…' : 'Generate'}</button></div>
+        <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !status?.apiKeyConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>
     </form>
-    <p className="brick-help" role="status">{running ? '正在等待 Gemini 并验证设计，请勿重复提交。' : status ? `配置模型：${status.model} · ${status.apiKeyConfigured ? 'API Key 已配置' : '缺少服务端 GEMINI_API_KEY'}` : '正在读取服务端配置…'}</p>
+    <p className="brick-help" role="status">{running ? '正在等待 Gemini 并验证设计，请勿重复提交。' : status ? `配置模型：${selectedModel} · ${status.apiKeyConfigured ? 'API Key 已配置' : '缺少服务端 GEMINI_API_KEY'}` : '正在读取服务端配置…'}</p>
     {!inputValid && <p className="brick-help">库存总量需为 5–100 块，每项为非负整数；请填写造型描述。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     {!!runs.length && <div className="brick-ai-result">
-      <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
+      <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
       <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
+      <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
+      <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? '未返回'}</p>
+      {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}
       {!!result?.validation?.issues.length && <ul className="brick-ai-issues">{result.validation.issues.map((issue, index) => <li key={index}><code>{issue.code}</code> {issue.message}</li>)}</ul>}
       {design && <div className="brick-build-steps">
         <p>{shownStep === undefined ? '当前场景未应用这份设计。' : `当前显示：${shownStep} / ${design.steps.length} 步`}</p>

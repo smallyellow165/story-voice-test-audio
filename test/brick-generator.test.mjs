@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadBrickRules, loadTranspiledBrickRules } from '../server/brick-rules.mjs'
-import { generateBrickDesign, validateBrickDesign, validateGeneratorInput } from '../server/brick-generator.mjs'
+import { generateBrickDesign, validateBrickDesign, validateGeneratorInput, brickModelOptions, resolveBrickModel } from '../server/brick-generator.mjs'
 
 // Fixtures only; production generation has no template or fallback design.
 function fixture() {
@@ -180,4 +180,64 @@ test('request failures are sanitized, not retried; configuration failures do not
   const unavailable = await generateBrickDesign(input, { loadRules: async () => { throw new Error('broken') }, createClient: () => { created = true } })
   assert.equal(unavailable.body.error.code, 'VALIDATOR_UNAVAILABLE')
   assert.equal(created, false)
+})
+
+test('Flash and Pro selection reaches the same single request with explicit reasoning/output budget', async () => {
+  const { input, design } = fixture()
+  for (const model of ['gemini-3.6-flash', 'gemini-3.1-pro-preview']) {
+    const response = reply(JSON.stringify(design))
+    response.usageMetadata = { promptTokenCount: 1100, thoughtsTokenCount: 9000, candidatesTokenCount: 2100, totalTokenCount: 12200 }
+    const result = await invoke({ ...input, model }, response)
+    assert.equal(result.status, 200)
+    assert.equal(result.body.model, model)
+    assert.equal(result.body.modelVersion, 'mock-version')
+    assert.equal(result.calls.length, 1)
+    assert.equal(result.calls[0].model, model)
+    assert.equal(result.calls[0].config.maxOutputTokens, 32768)
+    assert.deepEqual(result.calls[0].config.thinkingConfig, { thinkingLevel: 'MEDIUM' })
+    assert.equal(result.calls[0].config.httpOptions.retryOptions.attempts, 1)
+    assert.equal(result.calls[0].config.httpOptions.timeout, 180000)
+    assert.deepEqual(result.body.usageMetadata, response.usageMetadata)
+    assert.equal(result.body.validation.valid, true)
+    // The selected model is routing data, not part of the design prompt.
+    assert.deepEqual(JSON.parse(result.calls[0].contents[0].parts[0].text), input)
+  }
+})
+
+test('unknown requested models are rejected before a model call; server defaults remain explicit', async () => {
+  const { input } = fixture()
+  for (const model of ['invented-model', '', null, 123]) {
+    const result = await invoke({ ...input, model }, reply('{}'))
+    assert.equal(result.status, 400)
+    assert.equal(result.calls.length, 0)
+  }
+  assert.equal(resolveBrickModel(undefined, 'server-custom'), 'server-custom')
+  assert.ok(brickModelOptions('server-custom').some((m) => m.id === 'server-custom'))
+  assert.ok(brickModelOptions().some((m) => m.id === 'gemini-3.1-pro-preview'))
+})
+
+test('MAX_TOKENS retains partial JSON, usage and settings without retries or fallback', async () => {
+  const { input } = fixture()
+  const response = reply('{"name":"小桥","bricks":[', 'MAX_TOKENS')
+  response.responseId = 'mock-response-id'
+  response.candidates[0].finishMessage = 'Output limit reached'
+  response.usageMetadata = { promptTokenCount: 1000, thoughtsTokenCount: 32000, candidatesTokenCount: 768, totalTokenCount: 33768 }
+  const result = await invoke({ ...input, model: 'gemini-3.1-pro-preview' }, response)
+  assert.equal(result.status, 502)
+  assert.equal(result.calls.length, 1)
+  assert.equal(result.body.model, 'gemini-3.1-pro-preview')
+  assert.equal(result.body.finishReason, 'MAX_TOKENS')
+  assert.equal(result.body.rawOutput, response.candidates[0].content.parts[1].text)
+  assert.deepEqual(result.body.usageMetadata, response.usageMetadata)
+  assert.equal(result.body.responseId, response.responseId)
+  assert.equal(result.body.finishMessage, 'Output limit reached')
+  assert.equal(result.body.generationSettings.maxOutputTokens, 32768)
+  assert.equal(result.body.validation, null)
+  assert.equal(result.body.design, undefined)
+})
+
+test('absent usage is retained as null rather than invented zero counts', async () => {
+  const { input, design } = fixture()
+  const result = await invoke(input, reply(JSON.stringify(design)))
+  assert.equal(result.body.usageMetadata, null)
 })

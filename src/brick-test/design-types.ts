@@ -19,6 +19,10 @@ export type GenerationResult = {
   blockReason?: string | null
   promptVersion?: string
   elapsedMs?: number
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number; cachedContentTokenCount?: number; [key: string]: unknown } | null
+  generationSettings?: { maxOutputTokens: number; thinkingConfig?: { thinkingLevel: string }; httpOptions: { timeout: number; retryOptions: { attempts: number } } }
+  responseId?: string | null
+  finishMessage?: string | null
   error?: { code: string; message: string }
   validation?: DesignReport | null
   design?: BrickDesign

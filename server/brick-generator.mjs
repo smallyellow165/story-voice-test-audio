@@ -4,8 +4,29 @@ import { loadBrickRules } from './brick-rules.mjs'
 export const designLimits = Object.freeze({ minBricks: 5, maxBricks: 12, maxLayer: 3, maxCoordinate: 6, minSupportFraction: 0.5 })
 export const promptVersion = 'duplo-design-v3-1'
 export const configuredModel = () => process.env.DUPLO_LLM_MODEL?.trim() || 'gemini-3.6-flash'
+// Existing project IDs, checked against Google's model pages (2026-10-20).
+const supportedModels = [
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+]
+export function brickModelOptions(defaultModel = configuredModel()) {
+  return supportedModels.some((item) => item.id === defaultModel) ? supportedModels : [...supportedModels, { id: defaultModel, label: `${defaultModel} (server default)` }]
+}
+export function resolveBrickModel(requested, defaultModel = configuredModel()) {
+  const selected = requested === undefined ? defaultModel : requested
+  if (!brickModelOptions(defaultModel).some((item) => item.id === selected)) throw new Error('不支持的 Gemini 模型，请从模型列表选择。')
+  return selected
+}
+export function brickGenerationSettings(model) {
+  // Combined thinking + final JSON budget. MEDIUM is an effort level, not a
+  // fixed token reservation. Custom server defaults retain provider thinking defaults.
+  return { maxOutputTokens: 32768,
+    ...(supportedModels.some((item) => item.id === model) ? { thinkingConfig: { thinkingLevel: 'MEDIUM' } } : {}),
+    httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } },
+  }
+}
 export function brickGeneratorStatus() {
-  return { model: configuredModel(), apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY?.trim()), limits: designLimits, promptVersion }
+  return { model: configuredModel(), models: brickModelOptions(), apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY?.trim()), limits: designLimits, promptVersion }
 }
 
 export const designPrompt = `You design recognizable DUPLO constructions for children aged 3–6.
@@ -147,7 +168,12 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
   try { rules = await loadRules() }
   catch { return finish(503, { error: { code: 'VALIDATOR_UNAVAILABLE', message: '无法加载共享 V2 Validator，请检查 Node TypeScript 支持或项目 TypeScript 依赖。' } }) }
   let input
-  try { input = validateGeneratorInput(body, rules) }
+  try {
+    input = validateGeneratorInput(body, rules)
+    model = resolveBrickModel(body.model, model)
+    output.model = model
+    output.generationSettings = brickGenerationSettings(model)
+  }
   catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
   let ai
   try { ai = createClient() }
@@ -157,7 +183,7 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
     response = await ai.models.generateContent({
       model,
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
-      config: { systemInstruction: designPrompt, responseMimeType: 'application/json', responseSchema: designSchema(rules), maxOutputTokens: 8192 },
+      config: { systemInstruction: designPrompt, responseMimeType: 'application/json', responseSchema: designSchema(rules), ...output.generationSettings },
     })
   } catch (error) {
     const status = Number.isInteger(error?.status) ? error.status : null
@@ -168,8 +194,8 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
   output.modelVersion = response.modelVersion || null
   output.finishReason = candidate?.finishReason || null
   output.blockReason = response.promptFeedback?.blockReason || null
-  const metadata = { usageMetadata: response.usageMetadata || null }
-  if (output.finishReason !== 'STOP') return finish(502, { ...metadata, error: { code: 'MODEL_INCOMPLETE', message: `模型未正常完成：${output.finishReason || output.blockReason || '无候选输出'}。` } })
+  const metadata = { usageMetadata: response.usageMetadata || null, responseId: response.responseId || null, finishMessage: candidate?.finishMessage || null }
+  if (output.finishReason !== 'STOP') return finish(502, { ...metadata, error: { code: 'MODEL_INCOMPLETE', message: `模型未正常完成：${output.finishReason || output.blockReason || '无候选输出'}。${output.finishReason === 'MAX_TOKENS' ? '推理与 JSON 共用输出预算，已到达生成上限；请查看 Token 用量及原始输出。' : ''}未自动重试或切换模型。` } })
   let design
   try { design = JSON.parse(output.rawOutput) }
   catch { return finish(422, { ...metadata, error: { code: 'INVALID_JSON', message: '模型输出不是有效 JSON；原始输出已保留。' } }) }
