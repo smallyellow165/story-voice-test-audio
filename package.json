@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env server.mjs",
     "dev:vite": "node --env-file-if-exists=.env server.mjs",
+    "dev:brick": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "test": "node --test",
     "test:star-jump-dataset": "node --test test/star-jump-dataset-exporter.test.mjs",
@@ -29,11 +30,13 @@
     "google-auth-library": "^11.0.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-resizable-panels": "4.12.3"
+    "react-resizable-panels": "4.12.3",
+    "three": "0.180.0"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
+    "@types/three": "0.180.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   },
