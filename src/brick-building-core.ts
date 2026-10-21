@@ -1,54 +1,46 @@
 import { createGameRuntime, type GameDefinition } from './games/game-runtime.ts'
-import { validateAssembly } from './brick-test/assembly.ts'
-import type { BrickDesign } from './brick-test/design-types.ts'
+import { validateAssembly, footprint } from './brick-test/assembly.ts'
+import type { BrickGameArtifact } from './brick-game-contract.ts'
+import { PARTS, COLORS } from './brick-test/catalog.ts'
+import { validateBrickDesign } from './brick-design-validation.mjs'
 import { createActivityBridge } from './activity-bridge.ts'
 import type { ActivityMessage } from './activity-message.ts'
 import type { ScreenGameOptions } from './screen-game-module.ts'
 
-// Design and geometry have one owner: Test Audio. Interaction steps are smaller
-// than assembly steps: finding a brick does not add it to the built structure.
-export const BRICK_DESIGN: BrickDesign = {
-  name: '红蓝小塔',
-  bricks: [
-    { id: 'red', part: '3437', color: '4', x: 0, z: 0, layer: 0, rotation: 0 },
-    { id: 'blue', part: '3437', color: '1', x: 0, z: 0, layer: 1, rotation: 0 },
-  ],
-  steps: [
-    { brickId: 'red', instruction: '把红色积木放在桌上。' },
-    { brickId: 'blue', instruction: '把蓝色积木拼在红色积木正上方。' },
-  ],
-}
-export const BRICK_GAME: GameDefinition = {
-  id: 'duplo-two-bricks-v1', name: '搭积木 · 红蓝小塔', ringSlots: [],
-  tasks: [
-    { id: 'find-red', description: '瑞瑞，找一块红色的、上面有四个小圆点的积木。找到了告诉我。', condition: { type: 'manual' } },
-    { id: 'place-red', description: '把红色积木放在桌上，小圆点朝上。放好了告诉我。', condition: { type: 'manual' } },
-    { id: 'find-blue', description: '找一块蓝色的、上面有四个小圆点的积木。找到了告诉我。', condition: { type: 'manual' } },
-    { id: 'stack-blue', description: '把蓝色积木放在红色积木正上方，轻轻按紧。做好了告诉我。', condition: { type: 'manual' } },
-  ],
-}
-
-export function createBrickBuilding(options: ScreenGameOptions, changed: () => void = () => {}) {
-  // Validate every assembly prefix using V2, never a second geometry algorithm.
-  for (let n = 1; n <= BRICK_DESIGN.bricks.length; n++) {
-    const result = validateAssembly(BRICK_DESIGN.bricks.slice(0, n))
-    if (!result.valid) throw new Error(result.reason)
-  }
-  const runtime = createGameRuntime(BRICK_GAME)
+export function createBrickBuilding(options: ScreenGameOptions & { artifact: BrickGameArtifact }, changed: () => void = () => {}) {
+  const artifact = options.artifact
+  if (!artifact || artifact.schemaVersion !== 1 || !artifact.generation?.ok || !artifact.review?.mapping.valid) throw new Error('validated_design_required')
+  const design = artifact.generation.design
+  const report = validateBrickDesign(design, artifact.generatorInput.inventory, { PARTS, COLORS, validateAssembly, footprint })
+  if (!report.valid) throw new Error('design_validation_failed: ' + report.issues.map((i: { message: string }) => i.message).join('; '))
+  const byId = new Map(design.bricks.map(brick => [brick.id, brick]))
+  const tasks = design.steps.flatMap(step => {
+    const brick = byId.get(step.brickId)!
+    const part = PARTS.find(p => p.id === brick.part)!, color = COLORS.find(c => c.code === brick.color)!
+    return [
+      { id: 'find-' + brick.id, description: '找一块' + color.label + '的 ' + part.label + ' 积木。找到了告诉我。', condition: { type: 'manual' as const } },
+      { id: 'place-' + brick.id, description: step.instruction, condition: { type: 'manual' as const } },
+    ]
+  })
+  const definition: GameDefinition = { id: 'brick:' + artifact.id, name: design.name, ringSlots: [], tasks }
+  const total = tasks.length
+  const runtime = createGameRuntime(definition)
   let completed = 0, revision = 1, closed = false, enabled = true
   let runId: string = crypto.randomUUID(), taskAttemptId: string = crypto.randomUUID()
   let modelError = '模型正在加载，请稍等。'
   const canWrite = () => enabled && !closed && (options.canInteract?.() ?? true)
   function snapshot() {
     const state = runtime.read()
-    return { activityType: 'brick-building', gameId: BRICK_GAME.id, gameName: BRICK_GAME.name,
-      runId, taskAttemptId, revision, index: state.index, total: BRICK_GAME.tasks.length,
+    return { activityType: 'brick-building', gameId: definition.id, gameName: definition.name,
+      brickBuilding: { artifactId: artifact.id, designHash: artifact.designHash,
+        brickId: design.steps[Math.floor(state.index / 2)].brickId, phase: state.index % 2 === 0 ? 'find' : 'place' },
+      runId, taskAttemptId, revision, index: state.index, total: definition.tasks.length,
       taskId: state.task.id, taskDescription: state.task.description,
-      lifecycle: closed ? 'closed' : completed === 4 ? 'finished' : 'running',
-      taskStatus: completed === 4 ? 'succeeded' : 'not_yet',
-      progress: { completed, total: 4 }, capabilities: ['get_snapshot', 'reset', 'exit'],
-      taskSequence: BRICK_GAME.tasks.map(task => task.id),
-      succeededTaskIds: BRICK_GAME.tasks.slice(0, completed).map(task => task.id), skippedTaskIds: [],
+      lifecycle: closed ? 'closed' : completed === total ? 'finished' : 'running',
+      taskStatus: completed === total ? 'succeeded' : 'not_yet',
+      progress: { completed, total }, capabilities: ['get_snapshot', 'reset', 'exit'],
+      taskSequence: definition.tasks.map(task => task.id),
+      succeededTaskIds: definition.tasks.slice(0, completed).map(task => task.id), skippedTaskIds: [],
     }
   }
   const bridge = createActivityBridge(() => { closed = true; changed() }, snapshot, () => {
@@ -56,16 +48,16 @@ export function createBrickBuilding(options: ScreenGameOptions, changed: () => v
     runtime.reset(); completed = 0; runId = crypto.randomUUID(); taskAttemptId = crypto.randomUUID(); revision++
     changed(); bridge.send('task_changed')
   }, { instanceId: options.instanceId, send: options.onMessage }, name => {
-    if (!canWrite() || completed === 4) return false
+    if (!canWrite() || completed === total) return false
     if (name === 'repeat_task') { bridge.send('task_repeated'); return true }
     if (name !== 'confirm_task') return false
     if (modelError) throw new Error(modelError)
     runtime.confirm()
     if (runtime.read().result !== 'SUCCESS') return false
     completed++
-    if (completed < 4) runtime.next()
+    if (completed < total) runtime.next()
     revision++; taskAttemptId = crypto.randomUUID()
-    changed(); bridge.send(completed === 4 ? 'game_finished' : 'task_changed')
+    changed(); bridge.send(completed === total ? 'game_finished' : 'task_changed')
     return true
   })
   return {
@@ -86,15 +78,18 @@ export function createBrickBuilding(options: ScreenGameOptions, changed: () => v
     },
     restore(value: Record<string, any>) {
       const n = value.progress?.completed
-      const sequence = BRICK_GAME.tasks.map(task => task.id)
-      if (value.activityType !== 'brick-building' || value.gameId !== BRICK_GAME.id
-        || !Number.isInteger(n) || n < 0 || n > 4 || value.total !== 4 || value.progress?.total !== 4
-        || value.index !== Math.min(n, 3) || value.taskId !== sequence[value.index]
+      const sequence = definition.tasks.map(task => task.id)
+      if (value.brickBuilding?.artifactId !== artifact.id || value.brickBuilding?.designHash !== artifact.designHash
+        || value.brickBuilding?.brickId !== design.steps[Math.floor(Math.min(n, total - 1) / 2)]?.brickId
+        || value.brickBuilding?.phase !== (Math.min(n, total - 1) % 2 === 0 ? 'find' : 'place')
+        || value.activityType !== 'brick-building' || value.gameId !== definition.id
+        || !Number.isInteger(n) || n < 0 || n > total || value.total !== total || value.progress?.total !== total
+        || value.index !== Math.min(n, total - 1) || value.taskId !== sequence[value.index]
         || !Number.isInteger(value.revision) || value.revision < 0
         || ![value.runId, value.taskAttemptId].every(id => typeof id === 'string' && id.length > 0 && id.length <= 128)
         || !['running', 'finished', 'closed'].includes(value.lifecycle)
-        || (value.lifecycle !== 'closed' && (value.lifecycle === 'finished') !== (n === 4))
-        || value.taskStatus !== (n === 4 ? 'succeeded' : 'not_yet')
+        || (value.lifecycle !== 'closed' && (value.lifecycle === 'finished') !== (n === total))
+        || value.taskStatus !== (n === total ? 'succeeded' : 'not_yet')
         || JSON.stringify(value.taskSequence) !== JSON.stringify(sequence)
         || JSON.stringify(value.succeededTaskIds) !== JSON.stringify(sequence.slice(0, n))
         || JSON.stringify(value.skippedTaskIds) !== '[]') throw new Error('game_snapshot_mismatch')

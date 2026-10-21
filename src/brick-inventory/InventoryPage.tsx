@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { addItem, itemKey, MAX_QUANTITY, newSessionId, parseSession, setQuantity } from './inventory'
 import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
+import { GamePreparation } from './GamePreparation'
 import './inventory.css'
 
 type Color = { id: number; name: string; rgb: string }
@@ -170,7 +171,7 @@ export function InventoryPage() {
       <section className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
         <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setQuery(search.trim()); setPage(1) }}>
-          <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="例如 3437、Duplo Brick、Animal" onChange={e => setSearch(e.target.value)} /></label>
+          <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
           <button type="submit">搜索</button>
           <label>分类<select value={category} onChange={e => { setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <label>颜色筛选<select value={colorFilter} onChange={e => { setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -215,5 +216,6 @@ export function InventoryPage() {
         })}</ul>
       </aside>
     </div>
+    <GamePreparation />
   </main>
 }

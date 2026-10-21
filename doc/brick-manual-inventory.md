@@ -1,5 +1,8 @@
 # DUPLO Catalog / Manual Session Inventory
 
+后续正式游戏接入、最新启动与验收见 [Session Inventory → Brick Building](brick-session-game.md)。
+本文其余内容记录 Catalog 初版；“不接 V4 / Generator”等说明仅适用于该初版。
+
 独立页面：`http://localhost:5173/story-voice-test-audio/brick-inventory.html`。
 现有 `/brick-test` 标题栏新增“手动库存 Catalog”链接，便于进入。
 本阶段不修改 V4、Pipecat、Brick Building Runtime 或 V3 Generator。

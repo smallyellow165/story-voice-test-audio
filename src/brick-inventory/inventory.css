@@ -9,6 +9,9 @@ body { margin: 0; }
 .brick-inventory-page a { color: #235f6c; }
 .inventory-eyebrow { font-size: 12px; letter-spacing: .12em; }
 .inventory-navigation { display: grid; gap: 12px; flex-shrink: 0; font-size: 13px; }
+.inventory-catalog table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.inventory-catalog th, .inventory-catalog td { text-align: left; padding: 10px; border-bottom: 1px solid #dce5df; vertical-align: top; }
+.inventory-catalog details { margin: 16px 0; }
 .inventory-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: start; gap: 24px; }
 .inventory-catalog, .inventory-session { min-width: 0; background: #fffefa; border: 1px solid #dce5df; border-radius: 16px; padding: 20px; }
 .inventory-session { position: sticky; top: 16px; }

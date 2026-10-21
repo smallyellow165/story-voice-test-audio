@@ -9,6 +9,7 @@ import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
 import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-rings.mjs'
 import { brickGeneratorStatus, generateBrickDesign } from './server/brick-generator.mjs'
 import { proxyBrickCatalog } from './server/brick-catalog.mjs'
+import { createBrickGames } from './server/brick-games.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -35,6 +36,7 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
+const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -445,6 +447,29 @@ const sourceSiteFromUrl = (sourceUrl) => {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
   if (await proxyBrickCatalog(request, response, url)) return
+  if (url.pathname === '/api/brick-games' || url.pathname.startsWith('/api/brick-games/')) {
+    try {
+      const suffix = url.pathname.slice('/api/brick-games'.length)
+      if (request.method === 'POST') {
+        if (request.headers['sec-fetch-site'] === 'cross-site'
+          || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+          sendJson(response, 403, { error: '仅接受同源操作。' }); return
+        }
+        const body = await readJsonBody(request, 256 * 1024)
+        if (suffix === '/review') sendJson(response, 200, await brickGames.review(body))
+        else if (suffix === '/generate') sendJson(response, 200, await brickGames.generate(body))
+        else sendJson(response, 404, { error: '未知操作。' })
+      } else if (request.method === 'GET') {
+        sendJson(response, 200, suffix === '' ? await brickGames.list() : await brickGames.artifact(suffix.slice(1)))
+      } else sendJson(response, 405, { error: '不支持的请求方法。' })
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, {
+        stage: url.pathname === '/api/brick-games/review' ? 'Inventory Review' : 'Game Generation / Design',
+        error: error.statusCode ? error.message : 'Test Audio 处理库存或设计请求失败；请检查服务端日志。',
+      })
+    }
+    return
+  }
 
   if (url.pathname === '/api/debug/fish-timestamp/history' || url.pathname.startsWith('/api/debug/fish-timestamp/history/')) {
     try {

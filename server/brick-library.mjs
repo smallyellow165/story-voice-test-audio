@@ -3,6 +3,70 @@ import path from 'node:path'
 
 const defaultLibrary = '/home/umi/Documents/pg/gaming/lego-brick/complete/ldraw'
 
+export const brickLibraryRoot = () => process.env.LDRAW_LIBRARY_PATH || defaultLibrary
+
+export function validLibraryPath(relative) {
+  return !!relative && !relative.split('/').some(s => !s || s === '.' || s === '..')
+    && /^[a-z0-9_./ -]+\.(dat|ldr)$/i.test(relative)
+}
+
+// Shared by HTTP serving and Mapping dependency inspection.
+export async function resolveLibraryFile(root, relative) {
+  if (!validLibraryPath(relative)) return null
+  const names = [relative]
+  let bare = relative
+  while (/^(parts|p|models)\//i.test(bare)) {
+    bare = bare.slice(bare.indexOf('/') + 1)
+    names.push(bare)
+  }
+  for (const candidate of new Set(names.flatMap(name => [name, `parts/${name}`, `p/${name}`, `models/${name}`]))) {
+    try { const file = await resolveFile(root, candidate); if (file) return file }
+    catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error }
+  }
+  return null
+}
+
+// Follow type-1 references without changing candidate identity or resolving aliases
+// to different Part IDs. Results are scoped to one Review, never cached globally.
+export async function inspectBrickModel(part, library = brickLibraryRoot()) {
+  const files = new Set(), active = new Set()
+  let entryAvailable = false, geometry = false
+  try {
+    if (typeof part !== 'string' || !/^[a-z0-9_-]+$/i.test(part)) throw new Error('候选型号不是有效的 LDraw 文件编号')
+    const root = await realpath(library)
+    async function visit(relative) {
+      if (!validLibraryPath(relative)) throw new Error(`非法模型引用：${relative}`)
+      const file = await resolveLibraryFile(root, relative)
+      if (!file) throw new Error(`模型或依赖不存在：${relative}`)
+      if (active.has(file)) throw new Error(`模型依赖循环：${relative}`)
+      if (files.has(file)) return
+      if (active.size >= 128 || files.size >= 10000) throw new Error('模型依赖超过检查上限')
+      let source
+      try { source = await readFile(file, 'utf8') }
+      catch { throw new Error(`模型或依赖不可读取：${relative}`) }
+      if (!files.size) entryAvailable = true
+      files.add(file); active.add(file)
+      for (const line of source.split(/\r?\n/)) {
+        const tokens = line.trim().split(/\s+/)
+        if (tokens[0] === '1') {
+          if (tokens.length < 15 || !tokens.slice(2, 14).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的模型引用：${relative}`)
+          await visit(tokens.slice(14).join(' ').replaceAll('\\', '/'))
+        } else if (tokens[0] === '3' || tokens[0] === '4') {
+          if (tokens.length !== (tokens[0] === '3' ? 11 : 14) || !tokens.slice(2).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的几何记录：${relative}`)
+          geometry = true
+        }
+      }
+      active.delete(file)
+    }
+    await visit(`${part}.dat`)
+    if (!geometry) throw new Error('模型及依赖没有可显示的面')
+    return { available: true, entryAvailable, checkedFiles: files.size, errors: [] }
+  } catch (error) {
+    return { available: false, entryAvailable, checkedFiles: files.size,
+      errors: [error.code ? `本地 LDraw 库读取失败（${error.code}）` : error.message] }
+  }
+}
+
 // Read-only, narrowly scoped access. Never expose the surrounding filesystem.
 async function resolveFile(root, relative) {
   let current = root
@@ -38,20 +102,13 @@ export function brickLibraryPlugin() {
     let relative
     try { relative = decodeURIComponent(pathname.slice(prefix.length)).replaceAll('\\', '/') }
     catch { return send(400, 'Invalid LDraw filename encoding.') }
-    if (!relative || relative.split('/').some((s) => !s || s === '.' || s === '..') || !/^[a-z0-9_./ -]+\.(dat|ldr)$/i.test(relative)) {
+    if (!validLibraryPath(relative)) {
       return send(400, 'Invalid LDraw path; only .dat and .ldr files within the library are available.')
     }
     try {
       const root = await realpath(library)
       // LDrawLoader tries parts/, p/, models/ before the literal name. Resolve
       // those probes here, so a 404 denotes a genuinely missing dependency.
-      const names = [relative]
-      let bare = relative
-      while (/^(parts|p|models)\//i.test(bare)) {
-        bare = bare.slice(bare.indexOf('/') + 1)
-        names.push(bare)
-      }
-      const candidates = [...new Set(names.flatMap((name) => [name, `parts/${name}`, `p/${name}`, `models/${name}`]))]
       const key = `${root}:${relative}`
       let filename = paths.get(key)
       if (filename) {
@@ -59,11 +116,7 @@ export function brickLibraryPlugin() {
         filename = await realpath(filename)
         if (!filename.startsWith(root + path.sep)) return send(403, 'LDraw file is outside the configured library.')
       } else {
-        for (const candidate of candidates) {
-          try { filename = await resolveFile(root, candidate) }
-          catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error }
-          if (filename) break
-        }
+        filename = await resolveLibraryFile(root, relative)
       }
       if (!filename) return send(404, `LDraw file not found: ${relative}. Check LDRAW_LIBRARY_PATH and the complete official library.`)
       paths.set(key, filename)

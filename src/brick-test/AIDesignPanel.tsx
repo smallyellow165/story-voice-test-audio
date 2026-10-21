@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { COLORS, PARTS } from './catalog'
+import { designLimits } from '../brick-design-validation.mjs'
 import type { Brick } from './catalog'
 import type { GenerationResult, InventoryRow } from './design-types'
 
@@ -36,7 +37,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
   const design = result?.ok && result.validation?.valid ? result.design : undefined
   const shownStep = applied?.runId === run?.id ? applied?.step : undefined
   const total = inventory.reduce((sum, row) => sum + row.quantity, 0)
-  const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= 5 && total <= 100 && description.trim().length > 0 && description.length <= 500
+  const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
 
   useEffect(() => {
     mounted.current = true
@@ -123,7 +124,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
 
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
     <h2>AI Design · 虚拟库存 → 造型</h2>
-    <p className="brick-help">每次生成自由设计一个 5–12 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
+    <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
     <form onSubmit={generate}>
       <fieldset disabled={disabled || running}>
         <div className="brick-inventory-editor"><table><caption>可用库存 · 共 {Number.isFinite(total) ? total : '—'} 块</caption><thead><tr><th>型号</th>{COLORS.map((color) => <th key={color.code}>{color.label}</th>)}</tr></thead><tbody>{PARTS.map((part) => <tr key={part.id}><th>{part.label}<small> {part.id}</small></th>{COLORS.map((color) => {
@@ -136,7 +137,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
       </fieldset>
     </form>
     <p className="brick-help" role="status">{running ? '正在等待 Gemini 并验证设计，请勿重复提交。' : status ? `配置模型：${selectedModel} · ${status.apiKeyConfigured ? 'API Key 已配置' : '缺少服务端 GEMINI_API_KEY'}` : '正在读取服务端配置…'}</p>
-    {!inputValid && <p className="brick-help">库存总量需为 5–100 块，每项为非负整数；请填写造型描述。</p>}
+    {!inputValid && <p className="brick-help">库存总量需为 {designLimits.minBricks}–100 块，每项为非负整数；请填写造型描述。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     {!!runs.length && <div className="brick-ai-result">

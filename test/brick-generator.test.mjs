@@ -22,6 +22,25 @@ function fixture() {
   return { design, input }
 }
 const reply = (text, finishReason = 'STOP') => ({ modelVersion: 'mock-version', candidates: [{ finishReason, content: { parts: [{ thought: true, text: 'private reasoning' }, { text }] } }] })
+test('two-brick minimum applies to every supported part without weakening validation', async () => {
+  const rules = await loadBrickRules()
+  for (const part of rules.PARTS) {
+    const color = rules.COLORS[0].code
+    const inventory = [{ part: part.id, color, quantity: 2 }]
+    assert.deepEqual(validateGeneratorInput({ description: '数量边界检查', inventory }, rules).inventory, inventory)
+    const bricks = [0, 1].map(layer => ({ id: `b${layer}`, part: part.id, color, x: 0, z: 0, layer, rotation: 0 }))
+    const design = { name: '数量边界检查', bricks, steps: bricks.map(b => ({ brickId: b.id, instruction: '按图放好积木。' })) }
+    assert.equal(validateBrickDesign(design, inventory, rules).valid, true)
+    const collision = structuredClone(design)
+    collision.bricks[1].layer = 0
+    assert.equal(validateBrickDesign(collision, inventory, rules).valid, false)
+    const disconnected = structuredClone(design)
+    disconnected.bricks[1].layer = 2
+    assert.equal(validateBrickDesign(disconnected, inventory, rules).valid, false)
+    assert.equal(validateBrickDesign(design, [{ ...inventory[0], quantity: 1 }], rules).valid, false)
+    assert.equal(validateBrickDesign({ ...design, steps: [...design.steps].reverse() }, inventory, rules).valid, false)
+  }
+})
 async function invoke(input, response) {
   const calls = []
   const result = await generateBrickDesign(input, {
@@ -64,7 +83,7 @@ test('valid output is preserved; one request uses configured model and structure
   assert.equal(calls.length, 1)
   assert.equal(calls[0].model, 'mock-model')
   assert.equal(calls[0].config.responseMimeType, 'application/json')
-  assert.equal(calls[0].config.responseSchema.properties.bricks.minItems, '5')
+  assert.equal(calls[0].config.responseSchema.properties.bricks.minItems, '2')
   assert.deepEqual(JSON.parse(calls[0].contents[0].parts[0].text), input)
 })
 
@@ -74,7 +93,7 @@ test('invalid inputs do not call model', async () => {
   for (const invalid of [null, { ...input, description: '' }, { ...input, inventory: [] },
     { ...input, inventory: [...input.inventory, input.inventory[0]] },
     { ...input, inventory: [{ part: 'fake', color: '4', quantity: 5 }] },
-    { ...input, inventory: [{ part: '3437', color: '4', quantity: 4 }] },
+    { ...input, inventory: [{ part: '3437', color: '4', quantity: 1 }] },
     { ...input, inventory: [{ part: '3437', color: '4', quantity: 5.5 }] },
     { ...input, inventory: [{ part: '3437', color: 'unknown', quantity: 5 }] },
   ]) {
@@ -101,7 +120,7 @@ test('reject invalid designs without repairs and preserve original output', asyn
     ['STEP_SCHEMA', (d) => { d.steps[1].brickId = 'base' }],
     ['STEP_SCHEMA', (d) => { d.steps[1].instruction = '' }],
     ['MISSING_STEPS', (d) => { d.steps.pop() }],
-    ['BRICK_COUNT', (d) => { d.bricks.pop(); d.steps.pop() }],
+    ['BRICK_COUNT', (d) => { d.bricks = d.bricks.slice(0, 1); d.steps = d.steps.slice(0, 1) }],
     ['BRICK_COUNT', (d) => { d.bricks = Array.from({ length: 13 }, () => d.bricks[0]) }],
   ]
   for (const [code, mutate] of cases) {

@@ -12,6 +12,7 @@ export type DesignReport = {
 }
 export type GenerationResult = {
   ok: boolean
+  requestInput?: { description: string; inventory: InventoryRow[] }
   model?: string
   modelVersion?: string | null
   rawOutput?: string | null
