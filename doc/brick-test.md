@@ -1,5 +1,7 @@
 # DUPLO Assembly Validator V2
 
+V3 已增加 Gemini 库存设计与逐步搭建，见 [V3 启动、规则和验收说明](./brick-design-v3.md)。V3 请使用 `npm run dev`；下文 `dev:brick` 仅用于独立 Viewer/V2 验收。
+
 ## 当前实现
 
 `/brick-test` 保留官方 Three.js LDrawLoader 渲染、OrbitControls、汇总清单、Reset、阶梯示例与单块删除，新增纯函数连接验证、候选位置、点击吸附预览和提交验证。实际积木与半透明预览均使用原始 LDraw 模型；蓝/橙圆点只是位置选择控件。

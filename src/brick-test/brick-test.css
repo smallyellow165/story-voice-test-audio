@@ -53,4 +53,17 @@ body { margin: 0; }
 .brick-manual summary { margin-bottom: 16px; }
 .brick-candidate-pages { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; padding: 0 12px; font-size: 11px; color: #65738a; }
 .brick-error button { display: block; margin-top: 12px; }
+.brick-ai { margin-bottom: 20px; }
+.brick-inventory-editor { overflow-x: auto; margin-bottom: 18px; }
+.brick-inventory-editor table { min-width: 560px; }
+.brick-inventory-editor input { min-width: 55px; max-width: 90px; }
+.brick-inventory-editor caption { text-align: left; padding: 0 0 10px; font-weight: 650; }
+.brick-page textarea { width: 100%; resize: vertical; border: 1px solid #d7dfea; border-radius: 8px; padding: 12px; font: inherit; line-height: 1.7; }
+.brick-ai-result { margin-top: 24px; padding-top: 20px; border-top: 1px solid #dfe5ed; }
+.brick-ai pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; background: #f3f5f8; padding: 16px; border-radius: 8px; font-size: 11px; }
+.brick-build-steps .brick-actions { flex-wrap: wrap; }
+.brick-build-steps li { padding: 10px; font-size: 13px; line-height: 1.8; }
+.brick-build-steps .is-current { background: #e8f0ff; border-radius: 8px; }
+.brick-ai-issues { color: #963d29; font-size: 13px; line-height: 1.8; }
+.brick-ai-mode { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 14px; margin-bottom: 18px; border-radius: 8px; background: #e8f0ff; font-size: 13px; }
 @media (max-width: 780px) { .brick-page { padding: 18px; } .brick-header { align-items: flex-start; } .brick-badge { display: none; } .brick-layout { grid-template-columns: minmax(0, 1fr); } .brick-stage-panel { grid-row: 1; } .brick-stage { height: 420px; } .brick-panel { padding: 20px; } }

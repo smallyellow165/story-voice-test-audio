@@ -7,6 +7,7 @@ import { createRingHistory } from './server/ring-history.mjs'
 import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
 import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
 import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-rings.mjs'
+import { brickGeneratorStatus, generateBrickDesign } from './server/brick-generator.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -504,6 +505,18 @@ const server = createServer(async (request, response) => {
         ? { runs: await ringHistory.list() } : await ringHistory.load(id))
     } catch (error) {
       sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Cannot read Ring History.' })
+    }
+    return
+  }
+
+  if (url.pathname === '/api/brick-test/generate') {
+    if (request.method === 'GET') { sendJson(response, 200, brickGeneratorStatus()); return }
+    if (request.method !== 'POST') { sendJson(response, 405, { ok: false, error: { code: 'METHOD', message: 'Use GET or POST.' } }); return }
+    try {
+      const result = await generateBrickDesign(await readJsonBody(request, 64 * 1024))
+      sendJson(response, result.status, result.body)
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { ok: false, error: { code: 'GENERATOR_ERROR', message: error.statusCode ? error.message : 'DUPLO Generator failed before producing a validated design.' } })
     }
     return
   }
