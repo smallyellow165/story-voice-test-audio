@@ -188,6 +188,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     <header className="brick-header">
       <div><span className="brick-eyebrow">PLAY LAB / 03</span><h1>DUPLO AI Design Lab</h1><p>从你的库存出发，生成造型，再一步一步搭起来。</p></div>
       <span className="brick-badge">LDraw · AI Generator V3</span>
+      <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>手动库存 Catalog ↗</a>
     </header>
     <AIDesignPanel disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next) => commit(next, true)} />
     {aiMode && <div className="brick-ai-mode">正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}

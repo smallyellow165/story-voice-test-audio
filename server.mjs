@@ -8,6 +8,7 @@ import { detectRingsWithLlm, ringModelOptions } from './server/ring-llm.mjs'
 import { baselineStatus, runGeminiBaseline } from './server/gemini-baseline.mjs'
 import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-rings.mjs'
 import { brickGeneratorStatus, generateBrickDesign } from './server/brick-generator.mjs'
+import { proxyBrickCatalog } from './server/brick-catalog.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -443,6 +444,7 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if (await proxyBrickCatalog(request, response, url)) return
 
   if (url.pathname === '/api/debug/fish-timestamp/history' || url.pathname.startsWith('/api/debug/fish-timestamp/history/')) {
     try {

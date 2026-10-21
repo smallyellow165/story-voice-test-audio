@@ -1,0 +1,56 @@
+:root { font-family: system-ui, sans-serif; color: #243c38; background: #edf1f5; }
+body { margin: 0; }
+.brick-inventory-page { max-width: 1500px; margin: auto; padding: 24px; }
+.brick-inventory-page * { box-sizing: border-box; }
+.brick-inventory-page header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+.brick-inventory-page h1 { margin: 6px 0; font-size: clamp(24px, 4vw, 36px); }
+.brick-inventory-page h2 { margin-top: 0; font-size: 22px; }
+.brick-inventory-page h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.brick-inventory-page a { color: #235f6c; }
+.inventory-eyebrow { font-size: 12px; letter-spacing: .12em; }
+.inventory-navigation { display: grid; gap: 12px; flex-shrink: 0; font-size: 13px; }
+.inventory-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: start; gap: 24px; }
+.inventory-catalog, .inventory-session { min-width: 0; background: #fffefa; border: 1px solid #dce5df; border-radius: 16px; padding: 20px; }
+.inventory-session { position: sticky; top: 16px; }
+.inventory-session h2 { display: flex; justify-content: space-between; gap: 8px; }
+.inventory-session h2 span { color: #357261; }
+.brick-inventory-page label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.brick-inventory-page input, .brick-inventory-page select { min-width: 0; width: 100%; padding: 10px; min-height: 44px; border: 1px solid #c6d4ce; border-radius: 8px; background: white; color: #243c38; font: inherit; }
+.brick-inventory-page button { min-height: 44px; border: 1px solid #2e5c50; border-radius: 8px; background: #2e5c50; color: white; padding: 8px 12px; font: inherit; cursor: pointer; }
+.brick-inventory-page button:disabled { opacity: .5; cursor: default; }
+.brick-inventory-page .inventory-secondary { background: #f0f5ee; color: #2e5c50; border-color: #d7e4d7; }
+.brick-inventory-page :focus-visible { outline: 3px solid #e6a628; outline-offset: 3px; }
+.inventory-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.inventory-filters label { flex: 1 1 180px; }
+.inventory-filters .inventory-search { flex: 2 1 250px; }
+.inventory-note, .brick-inventory-page small, .brick-inventory-page footer { color: #62726b; font-size: 12px; line-height: 1.6; }
+.inventory-pagination, .inventory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
+.inventory-pagination span { margin-right: auto; }
+.inventory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.inventory-card { display: flex; flex-direction: column; gap: 10px; border: 1px solid #dce5df; border-radius: 12px; padding: 12px; min-width: 0; background: white; }
+.inventory-card > label { margin-top: auto; }
+.inventory-photo { height: 170px; position: relative; display: grid; place-items: center; background: #f5f7f4; border-radius: 8px; overflow: hidden; }
+.inventory-photo span { font-size: 13px; color: #6a756e; text-align: center; padding: 12px; }
+.inventory-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: white; }
+.inventory-color-select { display: flex; align-items: center; gap: 8px; }
+.inventory-swatch { display: inline-block; width: 20px; height: 20px; border: 1px solid #a4aea8; border-radius: 50%; vertical-align: middle; flex-shrink: 0; }
+.inventory-add { display: flex; gap: 8px; align-items: end; }
+.inventory-add label { flex: 1; }
+.inventory-add input { width: 100%; }
+.inventory-error { color: #a22d29; overflow-wrap: anywhere; }
+.inventory-empty { padding: 24px 0; color: #687971; }
+.inventory-items { list-style: none; padding: 0; margin: 0; }
+.inventory-items li { border-top: 1px solid #dce5df; padding: 16px 0; display: grid; gap: 8px; overflow-wrap: anywhere; }
+.inventory-quantity { display: flex; gap: 8px; align-items: center; }
+.inventory-quantity output { min-width: 32px; text-align: center; }
+.brick-inventory-page footer { margin-top: 24px; }
+@media (max-width: 850px) {
+  .brick-inventory-page { padding: 12px; }
+  .inventory-workspace { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .inventory-session { position: static; }
+  .inventory-catalog, .inventory-session { padding: 14px; }
+  .brick-inventory-page header { align-items: start; }
+  .inventory-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .inventory-add { flex-wrap: wrap; }
+  .inventory-add label { min-width: 64px; }
+}

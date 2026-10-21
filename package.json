@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "test": "node --test",
     "test:brick": "node --experimental-strip-types --test test/brick-assembly.test.mjs",
+    "test:brick-inventory": "node --experimental-strip-types --test test/brick-inventory.test.mjs",
     "test:brick-generator": "node --test test/brick-generator.test.mjs",
     "test:star-jump-dataset": "node --test test/star-jump-dataset-exporter.test.mjs",
     "test:star-jump:unseen": "node scripts/run-star-jump-unseen.mjs",

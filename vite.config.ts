@@ -28,5 +28,5 @@ export default defineConfig({
   }],
   server: { proxy: ringProxy },
   preview: { proxy: ringProxy },
-  build: { rollupOptions: { input: { main: 'index.html', brickTest: 'brick-test.html', readingTracker: 'reading-tracker.html', fishTimestampDebug: 'fish-timestamp-debug.html', whisperAlignment: 'whisper-alignment.html', storybookMarker: 'storybook-marker.html', cameraSnapshot: 'camera-snapshot.html', imagePointDebug: 'image-point-debug.html', hopscotch: 'hopscotch.html', touchColor: 'touch-color.html', ringFeet: 'ring-feet.html', ringLlm: 'ring-llm.html', geminiBaseline: 'gemini-baseline.html', geminiOfficial: 'gemini-official.html', layoutBaseline: 'layout-baseline.html' } } },
+  build: { rollupOptions: { input: { main: 'index.html', brickInventory: 'brick-inventory.html', brickTest: 'brick-test.html', readingTracker: 'reading-tracker.html', fishTimestampDebug: 'fish-timestamp-debug.html', whisperAlignment: 'whisper-alignment.html', storybookMarker: 'storybook-marker.html', cameraSnapshot: 'camera-snapshot.html', imagePointDebug: 'image-point-debug.html', hopscotch: 'hopscotch.html', touchColor: 'touch-color.html', ringFeet: 'ring-feet.html', ringLlm: 'ring-llm.html', geminiBaseline: 'gemini-baseline.html', geminiOfficial: 'gemini-official.html', layoutBaseline: 'layout-baseline.html' } } },
 })
