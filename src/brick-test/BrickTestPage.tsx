@@ -1,55 +1,102 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { COLORS, PARTS, exampleBricks } from './catalog'
 import type { Brick } from './catalog'
+import { connectionCandidates, validateAssembly } from './assembly'
+import type { Candidate, Validation } from './assembly'
 import { BrickViewer } from './viewer'
 import './brick-test.css'
+
+const PAGE_SIZE = 24
+const initialBrick = (): Brick => ({ id: crypto.randomUUID(), part: '3437', color: '4', x: 0, z: 0, layer: 0, rotation: 0 })
+const batchAt = (brick: Brick, quantity: number): Brick[] => Array.from({ length: quantity }, (_, i) => ({ ...brick, id: `${brick.id}:${i}`, layer: brick.layer + i }))
+const inWorkspace = (brick: Brick) => Math.abs(brick.x) <= 20 && Math.abs(brick.z) <= 20 && brick.layer <= 20
+const inputError = (reason: string): Validation => ({ valid: false, code: 'INPUT', reason, brickIds: [], connections: [] })
 
 export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-ldraw/` }: { libraryUrl?: string }) {
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<BrickViewer | null>(null)
   const operation = useRef(0)
+  const locked = useRef(false)
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [previewError, setPreviewError] = useState('')
+  const [attempt, setAttempt] = useState<Validation | null>(null)
   const [bricks, setBricks] = useState<Brick[]>([])
   const [part, setPart] = useState('3437')
   const [color, setColor] = useState('4')
   const [quantity, setQuantity] = useState(1)
   const [x, setX] = useState(0)
   const [z, setZ] = useState(0)
-  const [layer, setLayer] = useState(0)
+  const [layer, setLayer] = useState(1)
   const [rotation, setRotation] = useState(0)
-  const [arrangement, setArrangement] = useState('stack')
+  const [page, setPage] = useState(0)
+  const [previewRetry, setPreviewRetry] = useState(0)
+  const draft = useMemo<Brick>(() => ({ id: '__preview__', part, color, x, z, layer, rotation }), [part, color, x, z, layer, rotation])
+  const quantityOK = Number.isInteger(quantity) && quantity >= 1 && quantity <= 20 && bricks.length + quantity <= 100
+  const proposed = useMemo(() => quantityOK ? batchAt(draft, quantity) : [], [draft, quantity, quantityOK])
+  const currentValidation = useMemo(() => validateAssembly(bricks), [bricks])
+  const proposedValidation = useMemo(() => {
+    if (!quantityOK) return inputError('每次添加 1–20 块，场景最多 100 块')
+    if (!proposed.every(inWorkspace)) return inputError('此页面范围为 X/Z −20…20，层高 0…20')
+    return validateAssembly([...bricks, ...proposed])
+  }, [bricks, proposed, quantityOK])
+
+  // All candidates represent the entire requested stack, not only its first brick.
+  const candidates = useMemo(() => {
+    if (!quantityOK) return []
+    const seed = { id: '__candidate__', part, color, rotation, x: 0, z: 0, layer: 0 }
+    return connectionCandidates(bricks, seed).filter((candidate) => {
+      const batch = batchAt(candidate.brick, quantity)
+      return batch.every(inWorkspace) && validateAssembly([...bricks, ...batch]).valid
+    })
+  }, [bricks, part, color, rotation, quantity, quantityOK])
+
+  // A changed assembly/model/orientation gets a fresh legal suggestion.
+  // Manual edits do not change candidates and can intentionally show Invalid.
+  useEffect(() => {
+    setPage(0)
+    setAttempt(null)
+    const first = candidates[0]
+    if (first) { setX(first.brick.x); setZ(first.brick.z); setLayer(first.brick.layer) }
+  }, [candidates])
+
+  const selected = candidates.find((candidate) => candidate.brick.x === x && candidate.brick.z === z && candidate.brick.layer === layer)
+  const pages = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE))
+  const pageIndex = Math.min(page, pages - 1)
+  const visibleCandidates = useMemo(() => candidates.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE), [candidates, pageIndex])
+  function selectCandidate(candidate: Candidate) {
+    setX(candidate.brick.x); setZ(candidate.brick.z); setLayer(candidate.brick.layer)
+    setAttempt(null)
+  }
 
   useEffect(() => {
     if (!host.current) return
     const token = ++operation.current
-    let engine: BrickViewer
-    setBusy(true)
-    setReady(false)
-    setError('')
-    setBricks([])
+    let engine: BrickViewer | undefined
+    locked.current = true
+    setBusy(true); setReady(false); setError(''); setBricks([])
     try {
       engine = new BrickViewer(host.current, libraryUrl, (message) => {
         ++operation.current
-        setError(message)
-        setReady(false)
-        setBusy(false)
+        locked.current = false
+        engine?.clearPreview(); engine?.clearCandidates()
+        setError(message); setReady(false); setBusy(false)
       })
       viewer.current = engine
-      const initial: Brick[] = [{ id: crypto.randomUUID(), part: '3437', color: '4', x: 0, z: 0, layer: 0, rotation: 0 }]
+      const initial = [initialBrick()]
       engine.replace(initial).then((applied) => {
-        if (operation.current === token && applied) { setBricks(initial); setLayer(1) }
+        if (operation.current === token && applied) setBricks(initial)
       }).catch((reason) => {
         if (operation.current === token) setError(String(reason.message || reason))
       }).finally(() => {
-        if (operation.current === token) { setBusy(false); setReady(true) }
+        if (operation.current === token) { locked.current = false; setBusy(false); setReady(true) }
       })
     } catch (reason) {
-      setError(`无法初始化 3D Viewer，请确认浏览器支持 WebGL 2。${String(reason)}`)
+      setError(`无法初始化 WebGL 2 Viewer：${String(reason)}`)
+      locked.current = false
       setBusy(false)
-      setReady(false)
     }
     return () => {
       ++operation.current
@@ -58,11 +105,41 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     }
   }, [libraryUrl])
 
+  useEffect(() => {
+    const engine = viewer.current
+    if (!engine) return
+    if (!ready || busy) { engine.clearCandidates(); engine.clearPreview(); return }
+    engine.showCandidates(visibleCandidates, selected?.key || null, (key) => {
+      const candidate = visibleCandidates.find((item) => item.key === key)
+      if (candidate) selectCandidate(candidate)
+    })
+    return () => engine.clearCandidates()
+  }, [visibleCandidates, selected?.key, ready, busy])
+
+  useEffect(() => {
+    const engine = viewer.current
+    if (!engine) return
+    let active = true
+    setPreviewError('')
+    engine.clearPreview()
+    if (ready && !busy && proposedValidation.valid) {
+      engine.showPreview(proposed).catch((reason) => {
+        if (active) setPreviewError(`预览模型加载失败：${String(reason.message || reason)}`)
+      })
+    }
+    return () => { active = false; engine.clearPreview() }
+  }, [proposed, proposedValidation.valid, ready, busy, previewRetry])
+
   async function commit(next: Brick[]) {
-    if (!viewer.current || busy || !ready) return false
+    if (!viewer.current || locked.current || !ready) return false
+    const validation = validateAssembly(next)
+    setAttempt(validation)
+    if (!validation.valid) return false
+    if (next.length > 100) { setAttempt(inputError('场景最多 100 块')); return false }
     const token = ++operation.current
-    setBusy(true)
-    setError('')
+    locked.current = true
+    setBusy(true); setError('')
+    viewer.current.clearPreview(); viewer.current.clearCandidates()
     try {
       const applied = await viewer.current.replace(next)
       if (token !== operation.current || !applied) return false
@@ -72,39 +149,21 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       if (token === operation.current) setError(reason instanceof Error ? reason.message : String(reason))
       return false
     } finally {
-      if (token === operation.current) setBusy(false)
+      if (token === operation.current) { locked.current = false; setBusy(false) }
     }
   }
 
   async function add(event: FormEvent) {
     event.preventDefault()
-    if (![x, z, layer, quantity].every(Number.isFinite) || !Number.isInteger(quantity) || quantity < 1 || quantity > 20 || !Number.isInteger(layer) || layer < 0 || layer > 20 || Math.abs(x) > 20 || Math.abs(z) > 20) {
-      setError('请输入有效位置：X/Z 为 −20 到 20，层高为 0–20 的整数，数量为 1–20 的整数。')
-      return
-    }
-    if (bricks.length + quantity > 100) { setError('此原型最多显示 100 块积木。'); return }
-    const length = PARTS.find((item) => item.id === part)!.length
-    const added = Array.from({ length: quantity }, (_, index): Brick => ({
-      id: crypto.randomUUID(), part, color, rotation,
-      x: x + (arrangement === 'row' ? index * (rotation % 180 === 0 ? length : 2) : 0),
-      z,
-      layer: layer + (arrangement === 'stack' ? index : 0),
-    }))
-    if (added.some((brick) => brick.layer > 20 || Math.abs(brick.x) > 20)) {
-      setError('整批积木超出位置范围，请减少数量或调整起点。')
-      return
-    }
-    if (await commit([...bricks, ...added])) {
-      if (arrangement === 'stack') setLayer(Math.min(20, layer + quantity))
-    }
+    if (!proposedValidation.valid) { setAttempt(proposedValidation); return }
+    await commit([...bricks, ...proposed.map((brick) => ({ ...brick, id: crypto.randomUUID() }))])
   }
 
   function reset() {
     ++operation.current
+    locked.current = false
     viewer.current?.reset()
-    setBricks([])
-    setError('')
-    setBusy(false)
+    setBricks([]); setError(''); setAttempt(null); setPreviewError(''); setBusy(false)
     setX(0); setZ(0); setLayer(0); setRotation(0); setQuantity(1)
   }
 
@@ -115,11 +174,12 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     map.set(key, row)
     return map
   }, new Map<string, { part: string; color: string; count: number }>()).values()]
+  const numberValue = (value: number) => Number.isFinite(value) ? value : ''
 
   return <main className="brick-page">
     <header className="brick-header">
-      <div><span className="brick-eyebrow">PLAY LAB / 01</span><h1>DUPLO Brick Test</h1><p>真实零件，自由搭建。用三个基础形状探索你的下一个小作品。</p></div>
-      <span className="brick-badge">LDraw · 3D Prototype</span>
+      <div><span className="brick-eyebrow">PLAY LAB / 02</span><h1>DUPLO Assembly Validator</h1><p>选择连接位置，吸附预览，再确认添加。</p></div>
+      <span className="brick-badge">LDraw · Validator V2</span>
     </header>
     <div className="brick-layout">
       <aside className="brick-panel">
@@ -128,28 +188,50 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
           <fieldset disabled={!ready || busy}>
             <label>Brick 型号<select value={part} onChange={(event) => setPart(event.target.value)}>{PARTS.map((item) => <option key={item.id} value={item.id}>{item.label} — {item.id}.dat</option>)}</select></label>
             <label>颜色<select value={color} onChange={(event) => setColor(event.target.value)}>{COLORS.map((item) => <option key={item.code} value={item.code}>{item.label} · LDraw {item.code}</option>)}</select></label>
-            <div className="brick-fields"><label>数量<input type="number" required min="1" max="20" step="1" value={quantity} onChange={(event) => setQuantity(event.target.valueAsNumber)} /></label><label>排列<select value={arrangement} onChange={(event) => setArrangement(event.target.value)}><option value="stack">向上堆叠</option><option value="row">沿 X 并排</option></select></label></div>
-            <div className="brick-fields"><label>X · 凸点间距<input type="number" required min="-20" max="20" step="0.5" value={x} onChange={(event) => setX(event.target.valueAsNumber)} /></label><label>Z · 凸点间距<input type="number" required min="-20" max="20" step="0.5" value={z} onChange={(event) => setZ(event.target.valueAsNumber)} /></label></div>
-            <div className="brick-fields"><label>底部层高<input type="number" required min="0" max="20" step="1" value={layer} onChange={(event) => setLayer(event.target.valueAsNumber)} /></label><label>旋转<select value={rotation} onChange={(event) => setRotation(Number(event.target.value))}>{[0, 90, 180, 270].map((value) => <option key={value} value={value}>{value}°</option>)}</select></label></div>
-            <p className="brick-help">位置以砖体中心为准。每格 16 mm，每层 19.2 mm。批量堆叠后，起始层高会自动上移。位置由你指定，积木可能重叠或悬空。</p>
-            <button className="brick-primary" type="submit">＋ 添加到场景</button>
+            <div className="brick-fields">
+              <label>向上堆叠数量<input type="number" required min="1" max="20" step="1" value={numberValue(quantity)} onChange={(event) => setQuantity(event.target.valueAsNumber)} /></label>
+              <label>旋转<select value={rotation} onChange={(event) => setRotation(Number(event.target.value))}>{[0, 90, 180, 270].map((value) => <option key={value} value={value}>{value}°</option>)}</select></label>
+            </div>
+            <label>合法候选 · {candidates.length} 个<select value={selected?.key || ''} onChange={(event) => {
+              const index = candidates.findIndex((candidate) => candidate.key === event.target.value)
+              if (index >= 0) { selectCandidate(candidates[index]); setPage(Math.floor(index / PAGE_SIZE)) }
+            }}><option value="" disabled>{candidates.length ? '手动位置 / 请选择候选' : '没有可用位置'}</option>{candidates.map((candidate, index) => <option key={candidate.key} value={candidate.key}>#{index + 1} X {candidate.brick.x} / Z {candidate.brick.z} / 层 {candidate.brick.layer} · {candidate.contactCount} 点</option>)}</select></label>
+            <p className="brick-help">点击场景蓝点选择，橙点为当前选择。半透明积木为真实模型的吸附预览，未计入清单。候选按首块接合点数排序。</p>
+            <details className="brick-manual"><summary>手动坐标 / 验证非法位置</summary>
+              <div className="brick-fields">
+                <label>X · 16 mm<input type="number" required step="any" value={numberValue(x)} onChange={(event) => { setX(event.target.valueAsNumber); setAttempt(null) }} /></label>
+                <label>Z · 16 mm<input type="number" required step="any" value={numberValue(z)} onChange={(event) => { setZ(event.target.valueAsNumber); setAttempt(null) }} /></label>
+              </div>
+              <label>底部层高 · 19.2 mm<input type="number" required step="any" value={numberValue(layer)} onChange={(event) => { setLayer(event.target.valueAsNumber); setAttempt(null) }} /></label>
+            </details>
+            <div className={`brick-validation ${proposedValidation.valid ? 'is-valid' : 'is-invalid'}`} role="status">
+              <strong>待添加：{proposedValidation.valid ? 'Valid' : 'Invalid'}</strong><p>{proposedValidation.reason}</p>
+            </div>
+            <button className="brick-primary" type="submit" disabled={!proposedValidation.valid}>确认添加 {numberValue(quantity)} 块</button>
           </fieldset>
         </form>
-        <div className="brick-actions"><button disabled={!ready || busy} onClick={async () => { if (await commit(exampleBricks())) { setX(-2); setZ(0); setLayer(3) } }}>载入阶梯示例</button><button disabled={!ready} onClick={reset}>Reset</button></div>
-        <p className="brick-help">示例替换当前组合；Reset 清空场景。</p>
+        <div className="brick-actions"><button disabled={!ready || busy} onClick={() => void commit(exampleBricks())}>载入阶梯示例</button><button disabled={!ready} onClick={reset}>Reset</button></div>
+        <p className="brick-help">Reset 清空已提交组合，保留第一块的地面候选预览。本轮仅正放、整格、从下向上拼装；不保证抗倾倒。</p>
       </aside>
       <section className="brick-stage-panel" aria-label="积木场景">
-        <div className="brick-stage-toolbar"><span>{bricks.length} 块积木</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
+        <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
         <div className="brick-stage" ref={host} />
-        <div className="brick-status" role="status" aria-live="polite">{busy ? '正在读取 LDraw 模型及子文件…' : bricks.length ? '左键旋转 · 滚轮缩放 · 右键平移' : '场景为空 · 添加积木或载入示例'}</div>
-        {error && <div className="brick-error" role="alert"><strong>模型未能完成加载</strong><p>{error}</p><small>检查本地零件库路径和浏览器 Network 请求。修复后重新添加或载入示例；失败操作不会写入清单。</small></div>}
+        <div className="brick-candidate-pages">
+          <button disabled={!ready || busy || pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一组位置</button>
+          <span>场景候选 {pageIndex + 1} / {pages} · 每组最多 {PAGE_SIZE} 点</span>
+          <button disabled={!ready || busy || pageIndex + 1 >= pages} onClick={() => setPage(pageIndex + 1)}>下一组位置</button>
+        </div>
+        <div className="brick-status" role="status" aria-live="polite">{busy ? '正在读取真实模型及子文件…' : '点击蓝点吸附预览 · 拖动旋转 · 滚轮缩放 · 右键平移'}</div>
+        {(error || previewError) && <div className="brick-error" role="alert"><strong>模型加载失败</strong><p>{error || previewError}</p><small>检查本地 LDraw 库和 Network 请求。几何规则 Valid 不代表模型已加载；失败不会写入清单。</small><button disabled={!ready || busy} onClick={() => { setError(''); setPreviewRetry((value) => value + 1) }}>重试预览</button></div>}
+        {attempt && !attempt.valid && <div className="brick-error" role="alert"><strong>操作被拒绝 · Invalid</strong><p>{attempt.reason}</p><small>已保留原组合。</small></div>}
       </section>
       <section className="brick-panel brick-inventory">
         <div className="brick-inventory-title"><h2>当前 Brick 清单</h2><span>{bricks.length} / 100</span></div>
-        {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">成功加载的积木会显示在这里。</p>}
+        <div className={`brick-validation ${currentValidation.valid ? 'is-valid' : 'is-invalid'}`}><strong>当前组合：{currentValidation.valid ? 'Valid' : 'Invalid'}</strong><p>{currentValidation.reason}</p></div>
+        {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">确认添加后，成功加载的积木显示在这里。</p>}
         {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={busy || !ready} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>
     </div>
-    <footer className="brick-footer">几何数据：LDraw.org 官方零件库 · 模型作者与许可见原始 .dat 文件及库内 CAreadme.txt。场景仅保留在当前页面，刷新后重置。</footer>
+    <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。刷新后重置。</footer>
   </main>
 }

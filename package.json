@@ -9,6 +9,7 @@
     "dev:brick": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "test": "node --test",
+    "test:brick": "node --experimental-strip-types --test test/brick-assembly.test.mjs",
     "test:star-jump-dataset": "node --test test/star-jump-dataset-exporter.test.mjs",
     "test:star-jump:unseen": "node scripts/run-star-jump-unseen.mjs",
     "test:star-jump:unseen:verify": "node --test test/star-jump-unseen.test.mjs",

@@ -4,6 +4,7 @@ import { LDrawLoader } from 'three/addons/loaders/LDrawLoader.js'
 import { LDrawConditionalLineMaterial } from 'three/addons/materials/LDrawConditionalLineMaterial.js'
 import { BODY_LDU, MM_PER_LDU, STUD_LDU } from './catalog'
 import type { Brick } from './catalog'
+import type { Candidate } from './assembly'
 
 // No React, routing, or app-service dependency: mount in any sized DOM element.
 export class BrickViewer {
@@ -22,6 +23,15 @@ export class BrickViewer {
   private host: HTMLElement
   private libraryUrl: string
   private onFatal: (message: string) => void
+  private markers = new THREE.Group()
+  private preview = new THREE.Group()
+  private previewRevision = 0
+  private previewMaterials = new Set<THREE.Material>()
+  private markerGeometry = new THREE.SphereGeometry(2.4, 12, 8)
+  private markerMaterial = new THREE.MeshBasicMaterial({ color: 0x207cbb, transparent: true, depthTest: false, depthWrite: false })
+  private selectedMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xe08316, transparent: true, depthTest: false, depthWrite: false })
+  private pickCandidate: ((key: string) => void) | null = null
+  private pointerStart: { id: number; x: number; y: number; dragged: boolean } | null = null
 
   constructor(host: HTMLElement, libraryUrl: string, onFatal: (message: string) => void) {
     this.host = host
@@ -40,7 +50,11 @@ export class BrickViewer {
     this.scene.add(key)
     const fill = new THREE.DirectionalLight(0xffffff, 1.5)
     fill.position.set(-160, 80, -100)
-    this.scene.add(fill, this.assembly)
+    this.scene.add(fill, this.assembly, this.markers, this.preview)
+    this.renderer.domElement.addEventListener('pointerdown', this.pointerDown)
+    this.renderer.domElement.addEventListener('pointermove', this.pointerMove)
+    this.renderer.domElement.addEventListener('pointerup', this.pointerUp)
+    this.renderer.domElement.addEventListener('pointercancel', this.pointerCancel)
     const grid = new THREE.GridHelper(640, 40, 0x9aaabe, 0xd2dae4)
     grid.position.y = -0.15
     this.scene.add(grid)
@@ -60,6 +74,86 @@ export class BrickViewer {
   private contextLost = (event: Event) => {
     event.preventDefault()
     this.onFatal('WebGL 上下文已丢失，请刷新页面重新加载模型。')
+  }
+
+  private pointerDown = (event: PointerEvent) => {
+    if (event.button === 0 && event.isPrimary) this.pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, dragged: false }
+    else this.pointerStart = null
+  }
+
+  private pointerMove = (event: PointerEvent) => {
+    const start = this.pointerStart
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) start.dragged = true
+  }
+
+  private pointerCancel = () => { this.pointerStart = null }
+
+  private pointerUp = (event: PointerEvent) => {
+    const start = this.pointerStart
+    this.pointerStart = null
+    if (!start || start.id !== event.pointerId || start.dragged || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const ray = new THREE.Raycaster()
+    this.camera.updateMatrixWorld()
+    this.markers.updateMatrixWorld(true)
+    ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), this.camera)
+    const hit = ray.intersectObjects(this.markers.children, false)[0]
+    if (hit) this.pickCandidate?.(hit.object.userData.candidateKey)
+  }
+
+  // Markers are UI handles, never replacement brick geometry.
+  showCandidates(candidates: Candidate[], selected: string | null, onPick: (key: string) => void) {
+    this.markers.clear()
+    this.pickCandidate = onPick
+    for (const candidate of candidates) {
+      const marker = new THREE.Mesh(this.markerGeometry, candidate.key === selected ? this.selectedMarkerMaterial : this.markerMaterial)
+      marker.position.set(candidate.brick.x * STUD_LDU * MM_PER_LDU, candidate.brick.layer * BODY_LDU * MM_PER_LDU + 10, candidate.brick.z * STUD_LDU * MM_PER_LDU)
+      marker.userData.candidateKey = candidate.key
+      marker.renderOrder = 10
+      this.markers.add(marker)
+    }
+  }
+
+  clearCandidates() {
+    this.markers.clear()
+    this.pickCandidate = null
+  }
+
+  clearPreview() {
+    ++this.previewRevision
+    this.preview.clear()
+    this.previewMaterials.forEach((material) => material.dispose())
+    this.previewMaterials.clear()
+  }
+
+  async showPreview(bricks: Brick[]): Promise<void> {
+    this.clearPreview()
+    const revision = this.previewRevision
+    const models = await Promise.all(bricks.map((brick) => this.template(brick.part, brick.color)))
+    if (this.disposed || revision !== this.previewRevision) return
+    const clones = new Map<THREE.Material, THREE.Material>()
+    const ghostMaterial = (material: THREE.Material) => {
+      let clone = clones.get(material)
+      if (!clone) {
+        clone = material.clone()
+        clone.transparent = true
+        clone.opacity = 0.35
+        clone.depthWrite = false
+        clones.set(material, clone)
+        this.previewMaterials.add(clone)
+      }
+      return clone
+    }
+    bricks.forEach((brick, index) => {
+      const object = models[index].clone(true)
+      object.traverse((node) => {
+        const renderable = node as THREE.Mesh
+        if (renderable.material) renderable.material = Array.isArray(renderable.material) ? renderable.material.map(ghostMaterial) : ghostMaterial(renderable.material)
+      })
+      object.position.set(brick.x * STUD_LDU * MM_PER_LDU, brick.layer * BODY_LDU * MM_PER_LDU, brick.z * STUD_LDU * MM_PER_LDU)
+      object.rotation.y = THREE.MathUtils.degToRad(brick.rotation)
+      this.preview.add(object)
+    })
   }
 
   private resize = () => {
@@ -162,6 +256,8 @@ export class BrickViewer {
 
   reset() {
     ++this.revision
+    this.clearCandidates()
+    this.clearPreview()
     this.assembly.clear()
     this.home()
   }
@@ -173,8 +269,9 @@ export class BrickViewer {
   }
 
   fit() {
-    if (!this.assembly.children.length) return this.home()
+    if (!this.assembly.children.length && !this.preview.children.length) return this.home()
     const box = new THREE.Box3().setFromObject(this.assembly)
+    if (this.preview.children.length) box.union(new THREE.Box3().setFromObject(this.preview))
     const sphere = box.getBoundingSphere(new THREE.Sphere())
     const vertical = THREE.MathUtils.degToRad(this.camera.fov) / 2
     const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect)
@@ -190,6 +287,15 @@ export class BrickViewer {
     cancelAnimationFrame(this.frame)
     this.observer.disconnect()
     this.controls.dispose()
+    this.clearPreview()
+    this.clearCandidates()
+    this.markerGeometry.dispose()
+    this.markerMaterial.dispose()
+    this.selectedMarkerMaterial.dispose()
+    this.renderer.domElement.removeEventListener('pointerdown', this.pointerDown)
+    this.renderer.domElement.removeEventListener('pointermove', this.pointerMove)
+    this.renderer.domElement.removeEventListener('pointerup', this.pointerUp)
+    this.renderer.domElement.removeEventListener('pointercancel', this.pointerCancel)
     this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost)
     this.scene.clear()
     this.templates.clear()

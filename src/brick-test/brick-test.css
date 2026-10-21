@@ -45,4 +45,12 @@ body { margin: 0; }
 .brick-instance-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf0f5; }
 .brick-instance-list small { display: block; color: #718096; margin-top: 5px; }
 .brick-footer { font-size: 11px; color: #718096; line-height: 1.7; margin: 24px 0 0; }
+.brick-validation { border: 1px solid; border-radius: 8px; padding: 12px; margin: 14px 0; font-size: 12px; }
+.brick-validation p { line-height: 1.6; margin: 6px 0 0; overflow-wrap: anywhere; }
+.brick-validation.is-valid { background: #edf8f1; border-color: #bdddc9; color: #256440; }
+.brick-validation.is-invalid { background: #fff1ed; border-color: #edc4b8; color: #963d29; }
+.brick-page .brick-manual { margin: 8px 0 16px; }
+.brick-manual summary { margin-bottom: 16px; }
+.brick-candidate-pages { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; padding: 0 12px; font-size: 11px; color: #65738a; }
+.brick-error button { display: block; margin-top: 12px; }
 @media (max-width: 780px) { .brick-page { padding: 18px; } .brick-header { align-items: flex-start; } .brick-badge { display: none; } .brick-layout { grid-template-columns: minmax(0, 1fr); } .brick-stage-panel { grid-row: 1; } .brick-stage { height: 420px; } .brick-panel { padding: 20px; } }
