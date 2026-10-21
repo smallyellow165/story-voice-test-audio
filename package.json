@@ -21,7 +21,8 @@
     "build:module": "tsc && vite build --config vite.module.config.ts",
     "watch:module": "vite build --config vite.module.config.ts --watch",
     "reading:replay": "node scripts/reading-tracker.mjs",
-    "test:reading": "node --test test/reading-tracker.test.mjs"
+    "test:reading": "node --test test/reading-tracker.test.mjs",
+    "test:brick-building": "node --experimental-strip-types --test test/brick-building.test.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
@@ -78,6 +79,10 @@
     "./reading-tracker": {
       "types": "./src/reading-tracker.ts",
       "import": "./dist-module/reading-tracker.js"
+    },
+    "./brick-building": {
+      "types": "./src/brick-building-module.d.ts",
+      "import": "./dist-module/brick-building.js"
     }
   }
 }
