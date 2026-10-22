@@ -9,9 +9,14 @@ import './inventory.css'
 import './workbench.css'
 
 type Color = { id: number; name: string; rgb: string }
-type Part = { part_num: string; name: string; part_cat_id: number; colors: Color[] }
+type FeatureCheck = { feature: string; expected: unknown; actual: unknown; status: 'matched' | 'mismatched' | 'unknown'; source: string; evidence: string }
+type Part = { part_num: string; name: string; part_cat_id: number; colors: Color[];
+  category_name?: string; features?: Record<string, unknown>; checks?: FeatureCheck[];
+  counts?: { matched: number; mismatched: number; unknown: number }; eligible?: boolean }
 type Media = { status: string; url: string | null; cached?: boolean; cache_warning?: string }
-type Results = { items: Part[]; total: number; page: number; page_size: number }
+type Results = { items: Part[]; total: number; page: number; page_size: number;
+  matched_total?: number; fully_matched_total?: number; eligible_total?: number; excluded_total?: number;
+  criteria?: Record<string, unknown>; schema?: { database: string; source: string; used_columns: unknown[] } }
 const imageMessages: Record<string, string> = {
   loading: '图片信息加载中…', missing: 'Rebrickable 暂无图片', not_configured: '未配置 Rebrickable 图片 API Key',
   unauthorized: '图片 API Key 无效', forbidden: '图片 API 无访问权限', rate_limited: '图片 API 限流，请稍后再试',
@@ -22,6 +27,9 @@ const errors: Record<string, string> = {
   rebrickable_catalog_unavailable: 'Catalog 数据不可用，请检查 Application Server 的 MySQL 配置和 rb_ 表。',
   application_server_unavailable: '无法连接 Application Server，请检查服务和 APPLICATION_SERVER_URL。',
   unknown_duplo_part_or_color: '数据库中没有这个 DUPLO 型号或颜色组合。',
+  invalid_feature_size: '尺寸请填写 2x4 或 2×4 这样的两项正整数。',
+  invalid_feature_shape: '请选择支持的名称形状特征。',
+  invalid_feature_print: '印花请选择未知、有或无。',
 }
 async function api<T>(route: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/brick-catalog/${route}?${new URLSearchParams(params)}`, { signal })
@@ -66,6 +74,16 @@ function PartRow({ part, image, initialColor, onAdd }: {
     <Photo media={specific ? specificImage : image} name={part.name} />
     <div className="inventory-part-identity"><small title={specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}>{specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}</small>
     <h3 title={part.name}>{part.name}</h3><a title={`${part.part_num} · Rebrickable`} href={`https://rebrickable.com/parts/${encodeURIComponent(part.part_num)}/`} target="_blank" rel="noreferrer">{part.part_num} · Rebrickable ↗</a>
+      {part.checks && <details className="inventory-feature-evidence"><summary>匹配 {part.counts?.matched} · 不匹配 {part.counts?.mismatched} · 未知 {part.counts?.unknown}</summary>
+        <p>类别：{part.category_name || '未知'}（数据库）</p>
+        <ul>{part.checks.map(check => <li key={check.feature}>
+          <strong>{check.feature}</strong>：{check.status === 'matched' ? '匹配' : check.status === 'mismatched' ? '不匹配' : '未知'}；
+          要求 {JSON.stringify(check.expected)}，记录 {JSON.stringify(check.actual)}；
+          来源 {check.source === 'database' ? '数据库明确记录' : check.source === 'name' ? '名称解析' : '未知'}。
+          <div>{check.evidence}</div>
+        </li>)}</ul>
+        <details><summary>全部特征与来源</summary><pre>{JSON.stringify(part.features, null, 2)}</pre></details>
+      </details>}
       {error && <p role="alert" className="inventory-error" title={error}>{error}</p>}
       {(image?.cache_warning || specificImage?.cache_warning) && <small title="图片元数据未能写入缓存。">图片元数据未能写入缓存。</small>}
     </div>
@@ -89,6 +107,9 @@ export function InventoryPage() {
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
+  const [featureQuery, setFeatureQuery] = useState<Record<string, string> | null>(null)
+  const [featureSize, setFeatureSize] = useState(''), [featureShape, setFeatureShape] = useState('')
+  const [featurePrint, setFeaturePrint] = useState('unknown'), [includeMismatches, setIncludeMismatches] = useState(false)
   const [category, setCategory] = useState('')
   const [colorFilter, setColorFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -127,12 +148,12 @@ export function InventoryPage() {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true); setCatalogError(''); setImageError(''); setResult(null); setImages({})
-    const params: Record<string, string> = { search: query, page: String(page), page_size: '24' }
+    const params: Record<string, string> = { ...(featureQuery || { search: query }), page: String(page), page_size: '24' }
     if (category) params.category = category
     if (colorFilter) params.color = colorFilter
     void (async () => {
       try {
-        const data = await api<Results>('parts', params, controller.signal)
+        const data = await api<Results>(featureQuery ? 'candidates' : 'parts', params, controller.signal)
         if (controller.signal.aborted) return
         setResult(data); setLoading(false)
         setNames(old => ({ ...old, ...Object.fromEntries(data.items.map(p => [p.part_num, p.name])) }))
@@ -148,7 +169,7 @@ export function InventoryPage() {
       } catch (e) { if (!controller.signal.aborted) { setCatalogError(message(e)); setLoading(false) } }
     })()
     return () => controller.abort()
-  }, [query, category, colorFilter, page, refresh])
+  }, [query, featureQuery, category, colorFilter, page, refresh])
 
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
@@ -187,18 +208,37 @@ export function InventoryPage() {
           </section>
       <section className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
-        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setQuery(search.trim()); setPage(1) }}>
+        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
           <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
           <button type="submit">搜索</button>
           <label>分类<select value={category} onChange={e => { setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <label>颜色筛选<select value={colorFilter} onChange={e => { setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         </form>
+        <details className="inventory-feature-search"><summary>按物理特征检索候选（本地 Catalog，不调用模型）</summary>
+          <form className="inventory-filters" onSubmit={e => {
+            e.preventDefault(); setPage(1)
+            setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint, include_mismatches: String(includeMismatches) })
+          }}>
+            <label>名称中的尺寸<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
+            <label>名称形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
+              <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
+            </select></label>
+            <label>印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确 Print 标记</option><option value="no">明确 Plain / Unprinted</option></select></label>
+            <label className="inventory-feature-checkbox"><input type="checkbox" checked={includeMismatches} onChange={e => setIncludeMismatches(e.target.checked)} />包含明确不匹配项（排末）</label>
+            <button type="submit">检索候选</button>
+            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
+          </form>
+          <p className="inventory-note">颜色和类别复用上方筛选。尺寸、形状及印花从名称解析，未知不会被硬性排除；尺寸不等于凸点数量，未写 Print 不等于无印花。仅做候选检索，不代表游戏支持。</p>
+        </details>
         <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
         {imageError && <p role="alert" className="inventory-error">{imageError}</p>}
         {loading && <p role="status">正在读取 Catalog…</p>}
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
           <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
+          {result.criteria && <div className="inventory-feature-summary"><p>全部条件明确匹配 {result.fully_matched_total}；至少一项明确匹配 {result.matched_total}；无明确冲突（含未知）{result.eligible_total}；明确不匹配 {result.excluded_total}。不自动选择型号。</p>
+            <details><summary>查询条件 / 实际 MySQL 字段</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema }, null, 2)}</pre></details>
+          </div>}
           {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter}
             onAdd={item => { const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
         </>}

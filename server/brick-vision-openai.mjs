@@ -1,11 +1,29 @@
 // Test Audio has no existing OpenAI Node client. Keep this adapter limited to
 // native Responses transport; all recognition and Catalog rules remain shared.
 export const openaiVisionModel = 'gpt-4.1' // Already configured in V4; official image-input model.
+// Exact IDs and image/Responses support checked in official OpenAI model docs
+// 2026-10-21. Account access is verified only by the user's actual request.
+const models = [
+  { id: openaiVisionModel, label: 'OpenAI GPT-4.1' },
+  { id: 'gpt-6.1-sol', label: 'OpenAI GPT-6.1 Sol', reasoning: { effort: 'medium' } },
+  { id: 'gpt-6-luna', label: 'OpenAI GPT-6 Luna', reasoning: { effort: 'medium' } },
+  { id: 'gpt-6-astra', label: 'OpenAI GPT-6 Astra', reasoning: { effort: 'medium' } },
+]
+export function openaiVisionModelOptions() { return models.map(({ id, label }) => ({ id, label, provider: 'openai' })) }
+export function resolveOpenaiVisionModel(model) {
+  if (!models.some(m => m.id === model)) throw Object.assign(new Error('不支持的 OpenAI Vision 模型'), { statusCode: 400 })
+  return model
+}
 export const openaiVisionEndpoint = 'https://api.openai.com/v1/responses'
 export function openaiVisionConfigured() { return !!process.env.OPENAI_API_KEY?.trim() }
 
 export function buildOpenaiVisionRequest({ model, image, colors, prompt, schema }) {
+  const resolved = resolveOpenaiVisionModel(model)
+  const selected = models.find(m => m.id === resolved)
   return { model, store: false, text: { format: { type: 'json_object' } },
+    // GPT-4.1 remains unchanged. GPT-6 reasoning uses a level documented for
+    // each model; do not send GPT-4 sampling settings or reasoning="none".
+    ...(selected.reasoning ? { reasoning: { ...selected.reasoning } } : {}),
     instructions: `${prompt}\nReturn a JSON object only, no markdown. Follow this business output contract (type names describe fields, not output values):\n${JSON.stringify(schema)}`,
     input: [{ role: 'user', content: [
       // JSON mode checks input messages, not just top-level instructions.

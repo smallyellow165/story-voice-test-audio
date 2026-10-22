@@ -7,7 +7,7 @@ export async function proxyBrickCatalog(request, response, url) {
   }
   const route = url.pathname.slice('/api/brick-catalog/'.length)
   if (request.method !== 'GET') { send(405, { detail: 'get_only' }); return true }
-  if (!['parts', 'filters', 'images', 'color-image', 'selection'].includes(route)) { send(404, { detail: 'not_found' }); return true }
+  if (!['parts', 'filters', 'images', 'color-image', 'selection', 'schema', 'candidates'].includes(route)) { send(404, { detail: 'not_found' }); return true }
   // LAN/mobile same-origin access is supported; cross-site requests must not
   // spend the owner's Rebrickable quota. Keys never reach the browser.
   let foreignOrigin = false

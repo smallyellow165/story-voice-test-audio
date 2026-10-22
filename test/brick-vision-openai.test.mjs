@@ -4,8 +4,70 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { createBrickVision, visionPrompt, visionSchema } from '../server/brick-vision.mjs'
-import { buildOpenaiVisionRequest, requestOpenaiVision, openaiVisionModel, openaiVisionEndpoint } from '../server/brick-vision-openai.mjs'
+import { createBrickVision, visionPrompt, visionSchema, visionStatus } from '../server/brick-vision.mjs'
+import { buildOpenaiVisionRequest, requestOpenaiVision, openaiVisionModel, openaiVisionModelOptions, resolveOpenaiVisionModel, openaiVisionEndpoint } from '../server/brick-vision-openai.mjs'
+
+test('UI receives all confirmed OpenAI IDs and existing Gemini options', () => {
+  assert.deepEqual(openaiVisionModelOptions().map(m => m.id), ['gpt-4.1', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'])
+  assert.deepEqual(visionStatus().models.filter(m => m.provider === 'openai'), openaiVisionModelOptions())
+  assert.ok(visionStatus().models.some(m => m.provider === 'gemini' && m.id === 'gemini-3.6-flash'))
+  assert.ok(visionStatus().models.some(m => m.provider === 'gemini' && m.id === 'gemini-3.1-pro-preview'))
+  assert.throws(() => resolveOpenaiVisionModel('unconfirmed-alias'), /不支持/)
+})
+
+test('each selected model is present in final HTTP body with compatible reasoning settings', async t => {
+  const old = process.env.OPENAI_API_KEY
+  process.env.OPENAI_API_KEY = 'test-only'
+  t.after(() => { if (old === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old })
+  for (const { id } of openaiVisionModelOptions()) {
+    const request = buildOpenaiVisionRequest({ model: id, image: { mimeType: 'image/jpeg', imageBase64: 'unchanged-image' }, colors: [], prompt: visionPrompt, schema: visionSchema })
+    let calls = 0
+    const stop = new Error('Captured before network, no fabricated response')
+    await assert.rejects(requestOpenaiVision(request, {}, async (url, options) => {
+      calls++
+      const body = JSON.parse(options.body)
+      assert.equal(url, openaiVisionEndpoint)
+      assert.equal(body.model, id)
+      assert.equal(body.text.format.type, 'json_object')
+      assert.equal(body.input[0].content[1].image_url, 'data:image/jpeg;base64,unchanged-image')
+      assert.deepEqual(body.reasoning, id === 'gpt-4.1' ? undefined : { effort: 'medium' })
+      assert.equal(body.temperature, undefined)
+      assert.equal(body.top_p, undefined)
+      throw stop
+    }), error => error === stop)
+    assert.equal(calls, 1)
+  }
+})
+
+test('new model selection reaches inventory route and failed diagnostics without fallback', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'brick-openai-models-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const selected = []
+  const service = createBrickVision(directory, {
+    createClient: () => { throw new Error('Gemini must not be called') },
+    loadRules: async () => ({}), getMetadata: async () => ({ colors: [] }),
+    requestOpenai: async request => {
+      selected.push(request.model)
+      throw Object.assign(new Error('Test-only permission denial'), { providerDiagnostic: {
+        httpStatus: 403, rawErrorBody: '{"error":{"code":"permission_denied"}}', errorBody: { error: { code: 'permission_denied' } },
+      } })
+    },
+  })
+  for (const { id } of openaiVisionModelOptions().filter(m => m.id !== 'gpt-4.1')) {
+    const body = { requestId: randomUUID(), provider: 'openai', model: id, mode: 'inventory', mimeType: 'image/png',
+      imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+    const result = await service.recognize(body)
+    assert.equal(result.status, 'failed')
+    assert.equal(result.provider, 'openai')
+    assert.equal(result.request.model, id)
+    assert.equal(result.model, id)
+    assert.equal(result.httpStatus, 403)
+    const saved = JSON.parse(await readFile(path.join(directory, `${body.requestId}.json`), 'utf8'))
+    assert.deepEqual(await service.recognize(body), saved)
+    assert.match(saved.error.rawErrorBody, /permission_denied/)
+  }
+  assert.deepEqual(selected, ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'])
+})
 
 test('OpenAI uses native image input and JSON mode, not Gemini configuration', () => {
   const r = buildOpenaiVisionRequest({ model: openaiVisionModel, image: { mimeType: 'image/jpeg', imageBase64: 'original' }, colors: [], prompt: visionPrompt, schema: visionSchema })

@@ -86,3 +86,9 @@
 .inventory-review-table td:first-child label { display: flex; align-items: center; }
 .inventory-review-table td input:not([type="checkbox"]) { min-width: 58px; }
 .inventory-workbench footer { margin-top: 12px; }
+.inventory-feature-search { padding: 8px 0; border-bottom: 1px solid #dce5df; }
+.inventory-feature-search form { margin-top: 8px; }
+.inventory-workbench .inventory-feature-checkbox { display: flex; align-items: center; gap: 5px; }
+.inventory-feature-evidence { font-size: 11px; }
+.inventory-feature-evidence ul { padding-left: 16px; margin: 6px 0; }
+.inventory-feature-evidence li { margin-bottom: 6px; overflow-wrap: anywhere; }
