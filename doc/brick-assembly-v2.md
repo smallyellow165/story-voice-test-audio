@@ -124,3 +124,8 @@ but automated physical-attribute extraction and a general connector metadata imp
 Not verified: compilation, test results, browser rendering, latency, actual generated output,
 physical clutch fit/stability. Curves, sideways building, hinges, arbitrary rotations, exact
 triangle collision and automatic LDraw connector inference remain out of scope.
+
+
+## New part onboarding
+
+87084 (2×3) is now registered via source-reviewed rectangular geometry. See [geometry onboarding](brick-geometry-onboarding.md) for source evidence, local extraction, restrictions and manual acceptance. The three original profiles remain unchanged; 98223 remains unsupported.

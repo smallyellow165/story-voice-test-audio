@@ -70,3 +70,26 @@ test('half-grid placement is not permission for half-grid mating', () => {
   assert.equal(rules.validateAssembly([brick('ground', PARTS[0].id, { x: 0.5 })]).valid, true)
   assert.equal(rules.validateAssembly([brick('base', PARTS[0].id), brick('shifted', PARTS[0].id, { x: 0.5, layer: 1 })]).valid, false)
 })
+
+// Real newly registered dimensions; inventory is still supplied by each caller.
+test('87084 has six interfaces and uses half-stud alignment with even-length bricks', () => {
+  const rules = createAssemblyRules(PARTS), g = geometrySupport('87084')
+  assert.equal(g.supported, true)
+  assert.deepEqual(g.geometry.bodySizeLdu, { x: 120, y: 48, z: 80 })
+  assert.equal(g.geometry.top.length, 6)
+  assert.equal(g.geometry.bottom.length, 6)
+  const base = brick('base', '3437')
+  const upper = brick('upper', '87084', { x: 0.5, layer: 1 })
+  assert.equal(rules.validateAssembly([base, upper]).valid, true)
+  assert.equal(rules.validateAssembly([base, { ...upper, x: 0 }]).valid, false)
+  assert.equal(rules.validateAssembly([base, { ...upper, layer: 0 }]).code, 'COLLISION')
+  assert.equal(rules.validateAssembly([base, { ...upper, layer: 2 }]).code, 'UNSUPPORTED')
+  assert.deepEqual(rules.dimensions('87084', 90), { width: 2, depth: 3 })
+  const design = { name: 'reviewed geometry', bricks: [base, upper],
+    steps: [base, upper].map(b => ({ brickId: b.id, instruction: 'place' })) }
+  const inventory = [{ part: '3437', color: '4', quantity: 1 }, { part: '87084', color: '4', quantity: 1 }]
+  assert.equal(validateBrickDesign(design, inventory, { ...rules, PARTS, COLORS, validPosition }).valid, true)
+  assert.equal(validateBrickDesign(design, inventory.slice(0, 1), { ...rules, PARTS, COLORS, validPosition }).valid, false)
+  assert.equal(geometrySupport('98223').supported, false)
+  assert.equal(geometrySupport('98223b').supported, false)
+})

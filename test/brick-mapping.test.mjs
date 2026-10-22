@@ -117,3 +117,33 @@ test('entry alias matrices are retained; snap metadata is never treated as verif
   assert.deepEqual(inspected.entryReferences[0].matrix, [0, 0, 1, 0, 1, 0, -1, 0, 0])
   assert.deepEqual(inspected.connectionMetadata, { files: ['a.dat'], interpreted: false })
 })
+
+test('geometry extraction composes aliases and repeated instances without inventing sockets', async t => {
+  const root = await library(t, {
+    'parts/a.dat': "0 ~Moved to b\n1 16 10 0 0 0 0 1 0 1 0 -1 0 0 b.dat\n",
+    'parts/b.dat': "1 16 0 0 20 1 0 0 0 1 0 0 0 1 stud7.dat\n1 16 0 0 -20 1 0 0 0 1 0 0 0 1 stud7.dat\n",
+    'p/stud7.dat': "0 !LDCAD SNAP_CLEAR\n" + face,
+  })
+  const result = await inspectBrickModel('a', root, { extractGeometry: true })
+  assert.equal(result.available, true)
+  assert.equal(result.checkedFiles, 3)
+  assert.deepEqual(result.extraction.primitives.map(p => p.origin), [[30, 0, 0], [-10, 0, 0]])
+  assert.deepEqual(result.extraction.meshBounds, { min: [-10, 0, -1], max: [30, 1, 0] })
+  assert.equal(result.extraction.snapping.length, 2)
+  assert.ok(result.extraction.snapping.every(s => s.interpreted === false))
+  assert.equal(result.extraction.status, 'needs-review')
+  assert.equal(result.extraction.bottom, undefined)
+  assert.ok(result.sourceFiles.every(f => /^[a-f0-9]{64}$/.test(f.sha256)))
+})
+
+test('source-bound capability is excluded if reviewed geometry files change', async t => {
+  const root = await library(t, { 'parts/a.dat': face })
+  const inspected = await inspectBrickModel('a', root)
+  const { session, metadata, rules } = input(['a'])
+  rules.geometrySupport = () => ({ supported: true, reasons: [], geometry: { sourceFiles: inspected.sourceFiles } })
+  assert.equal((await resolveInventoryMapping(session, metadata, rules, p => inspectBrickModel(p, root))).valid, true)
+  await writeFile(path.join(root, 'parts/a.dat'), face + "0 source changed\n")
+  const result = await resolveInventoryMapping(session, metadata, rules, p => inspectBrickModel(p, root))
+  assert.equal(result.valid, false)
+  assert.match(result.rows[0].partCandidateChecks[0].reasons.join(';'), /重新审核/)
+})

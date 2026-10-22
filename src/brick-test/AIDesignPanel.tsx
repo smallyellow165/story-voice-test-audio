@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { COLORS, PARTS } from './catalog'
 import { designLimits } from '../brick-design-validation.mjs'
 import type { Brick } from './catalog'
@@ -7,6 +8,7 @@ import type { GenerationResult, InventoryRow } from './design-types'
 
 type Run = { id: string; createdAt: string; request: { model: string; description: string; inventory: InventoryRow[] }; httpStatus: number | null; result: GenerationResult }
 type Props = {
+  stepsHost: HTMLDivElement | null
   disabled: boolean
   manualRevision: number
   onGeneratingChange: (busy: boolean) => void
@@ -14,7 +16,7 @@ type Props = {
 }
 const endpoint = '/api/brick-test/generate'
 
-export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, onApply }: Props) {
+export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string }[]; apiKeyConfigured: boolean } | null>(null)
@@ -147,7 +149,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
       <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? '未返回'}</p>
       {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}
       {!!result?.validation?.issues.length && <ul className="brick-ai-issues">{result.validation.issues.map((issue, index) => <li key={index}><code>{issue.code}</code> {issue.message}</li>)}</ul>}
-      {design && <div className="brick-build-steps">
+      {design && stepsHost && createPortal(<div className="brick-build-steps">
         <p>{shownStep === undefined ? '当前场景未应用这份设计。' : `当前显示：${shownStep} / ${design.steps.length} 步`}</p>
         <div className="brick-actions">
           <button disabled={disabled || running} onClick={() => void applyRun(run, 0)}>从空场景开始</button>
@@ -156,7 +158,7 @@ export function AIDesignPanel({ disabled, manualRevision, onGeneratingChange, on
           <button disabled={disabled || running} onClick={() => void applyRun(run, design.steps.length)}>显示完整造型</button>
         </div>
         <ol>{design.steps.map((step, index) => <li key={step.brickId} className={shownStep === index + 1 ? 'is-current' : ''}><button disabled={disabled || running} onClick={() => void applyRun(run, index + 1)}>查看第 {index + 1} 步</button> <strong>{step.brickId}</strong>：{step.instruction}</li>)}</ol>
-      </div>}
+      </div>, stepsHost)}
       {viewError && <div className="brick-error" role="alert">{viewError}</div>}
       {!!result?.validation?.usage.length && <details open><summary>完整设计的库存消耗（生成时快照）</summary><table><thead><tr><th>型号 / 颜色</th><th>可用</th><th>使用</th><th>剩余</th></tr></thead><tbody>{result.validation.usage.filter((row) => row.available || row.used).map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part} / {COLORS.find((color) => color.code === row.color)?.label || row.color}</td><td>{row.available}</td><td>{row.used}</td><td>{row.remaining}</td></tr>)}</tbody></table></details>}
       <details><summary>原始输出与完整诊断</summary><p className="brick-help">记录在当前页面内保留，刷新后消失；可下载保存。失败结果不应用到场景。</p><button onClick={download}>下载本次诊断 JSON</button><h3>LLM 原始可见输出</h3><pre>{result?.rawOutput ?? '本次没有取得模型输出。'}</pre><h3>请求快照、模型信息与 Validator 报告</h3><pre>{JSON.stringify(run, null, 2)}</pre></details>

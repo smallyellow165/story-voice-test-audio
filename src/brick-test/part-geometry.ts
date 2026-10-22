@@ -18,6 +18,7 @@ export type PartGeometry = {
   placement: 'upright'
   // Apply Rx(PI), then this translation, to the original referenced LDraw entry.
   ldraw: { rotationX: number; offsetLdu: Point3 }
+  sourceFiles?: readonly { path: string; sha256: string }[] // Reviewed source bindings, checked during Mapping
   evidence: string[]
   unknown: string[]
 }
@@ -75,4 +76,19 @@ export function onGrid(value: number, units: number) {
 }
 export function validPosition(b: { x: number; z: number; layer: number }) {
   return onGrid(b.x, 2) && onGrid(b.z, 2) && onGrid(b.layer, BODY_LDU) && b.layer >= 0
+}
+
+// Data registration only. Assembly, Schema and Viewer consume the resulting profile.
+export function reviewedRectangularPart(data: {
+  id: string; label: string; width: number; depth: number; heightLdu: number;
+  evidence: string[]; sourceFiles: readonly { path: string; sha256: string }[];
+}): PartDefinition {
+  if (!/^[a-z0-9_-]+$/i.test(data.id) || !data.sourceFiles.length
+    || data.sourceFiles.some(f => !/^(parts|p)\/[a-z0-9_./-]+\.dat$/i.test(f.path)
+      || f.path.split('/').includes('..') || !/^[a-f0-9]{64}$/.test(f.sha256))) throw new Error('Invalid reviewed source binding')
+  const geometry = rectangularGeometry(data.width, data.depth, data.heightLdu, data.evidence)
+  geometry.sourceFiles = data.sourceFiles
+  const errors = geometryIssues(geometry)
+  if (errors.length) throw new Error(errors.join('; '))
+  return { id: data.id, label: data.label, length: data.width, depth: data.depth, geometry }
 }

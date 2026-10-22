@@ -6,6 +6,7 @@ import { connectionCandidates, validateAssembly } from './assembly'
 import type { Candidate, Validation } from './assembly'
 import { BrickViewer } from './viewer'
 import { AIDesignPanel } from './AIDesignPanel'
+import { ThreeColumnLayout } from '../three-column-layout'
 import './brick-test.css'
 
 const PAGE_SIZE = 24
@@ -15,6 +16,7 @@ const inWorkspace = (brick: Brick) => Math.abs(brick.x) <= 20 && Math.abs(brick.
 const inputError = (reason: string): Validation => ({ valid: false, code: 'INPUT', reason, brickIds: [], connections: [] })
 
 export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-ldraw/` }: { libraryUrl?: string }) {
+  const [stepsHost, setStepsHost] = useState<HTMLDivElement | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<BrickViewer | null>(null)
   const operation = useRef(0)
@@ -185,14 +187,32 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   const numberValue = (value: number) => Number.isFinite(value) ? value : ''
 
   return <main className="brick-page">
+    <ThreeColumnLayout className="brick-workbench" defaultSizes={['25%', '48%', '27%']}
+      left={<>
     <header className="brick-header">
       <div><span className="brick-eyebrow">PLAY LAB / 03</span><h1>DUPLO AI Design Lab</h1><p>从你的库存出发，生成造型，再一步一步搭起来。</p></div>
       <span className="brick-badge">LDraw · AI Generator V3</span>
       <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>手动库存 Catalog ↗</a>
     </header>
-    <AIDesignPanel disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next) => commit(next, true)} />
+    <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next) => commit(next, true)} />
+      </>}
+      center={<>
     {aiMode && <div className="brick-ai-mode">正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
-    <div className="brick-layout">
+      <section className="brick-stage-panel" aria-label="积木场景">
+        <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
+        <div className="brick-stage" ref={host} />
+        {!aiMode && !generating && <div className="brick-candidate-pages">
+          <button disabled={!ready || busy || pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一组位置</button>
+          <span>场景候选 {pageIndex + 1} / {pages} · 每组最多 {PAGE_SIZE} 点</span>
+          <button disabled={!ready || busy || pageIndex + 1 >= pages} onClick={() => setPage(pageIndex + 1)}>下一组位置</button>
+        </div>}
+        <div className="brick-status" role="status" aria-live="polite">{busy ? '正在读取真实模型及子文件…' : aiMode ? 'AI 设计查看 · 拖动旋转 · 滚轮缩放 · 右键平移' : generating ? '正在生成新设计，当前场景保留' : '点击蓝点吸附预览 · 拖动旋转 · 滚轮缩放 · 右键平移'}</div>
+        {(error || previewError) && <div className="brick-error" role="alert"><strong>模型加载失败</strong><p>{error || previewError}</p><small>检查本地 LDraw 库和 Network 请求。几何规则 Valid 不代表模型已加载；失败不会写入清单。</small><button disabled={!ready || busy} onClick={() => { setError(''); setPreviewRetry((value) => value + 1) }}>重试预览</button></div>}
+        {attempt && !attempt.valid && <div className="brick-error" role="alert"><strong>操作被拒绝 · Invalid</strong><p>{attempt.reason}</p><small>已保留原组合。</small></div>}
+      </section>
+        <div className="brick-steps-host" ref={setStepsHost} />
+      </>}
+      right={<>
       <aside className="brick-panel">
         <h2>添加积木</h2>
         <form onSubmit={add}>
@@ -224,25 +244,14 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
         <div className="brick-actions"><button disabled={!ready || busy || generating} onClick={() => void commit(exampleBricks())}>载入阶梯示例</button><button disabled={!ready || generating} onClick={reset}>Reset</button></div>
         <p className="brick-help">Reset 清空已提交组合，保留第一块的地面候选预览。本轮仅正放、整格、从下向上拼装；不保证抗倾倒。</p>
       </aside>
-      <section className="brick-stage-panel" aria-label="积木场景">
-        <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
-        <div className="brick-stage" ref={host} />
-        {!aiMode && !generating && <div className="brick-candidate-pages">
-          <button disabled={!ready || busy || pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一组位置</button>
-          <span>场景候选 {pageIndex + 1} / {pages} · 每组最多 {PAGE_SIZE} 点</span>
-          <button disabled={!ready || busy || pageIndex + 1 >= pages} onClick={() => setPage(pageIndex + 1)}>下一组位置</button>
-        </div>}
-        <div className="brick-status" role="status" aria-live="polite">{busy ? '正在读取真实模型及子文件…' : aiMode ? 'AI 设计查看 · 拖动旋转 · 滚轮缩放 · 右键平移' : generating ? '正在生成新设计，当前场景保留' : '点击蓝点吸附预览 · 拖动旋转 · 滚轮缩放 · 右键平移'}</div>
-        {(error || previewError) && <div className="brick-error" role="alert"><strong>模型加载失败</strong><p>{error || previewError}</p><small>检查本地 LDraw 库和 Network 请求。几何规则 Valid 不代表模型已加载；失败不会写入清单。</small><button disabled={!ready || busy} onClick={() => { setError(''); setPreviewRetry((value) => value + 1) }}>重试预览</button></div>}
-        {attempt && !attempt.valid && <div className="brick-error" role="alert"><strong>操作被拒绝 · Invalid</strong><p>{attempt.reason}</p><small>已保留原组合。</small></div>}
-      </section>
       <section className="brick-panel brick-inventory">
         <div className="brick-inventory-title"><h2>当前 Brick 清单</h2><span>{bricks.length} / 100</span></div>
         <div className={`brick-validation ${currentValidation.valid ? 'is-valid' : 'is-invalid'}`}><strong>当前组合：{currentValidation.valid ? 'Valid' : 'Invalid'}</strong><p>{currentValidation.reason}</p></div>
         {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">确认添加后，成功加载的积木显示在这里。</p>}
         {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>
-    </div>
     <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。刷新后重置。</footer>
+      </>}
+    />
   </main>
 }

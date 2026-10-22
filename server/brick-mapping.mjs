@@ -21,7 +21,11 @@ export async function resolveInventoryMapping(session, metadata, rules, inspectM
       if (!checked.has(part)) checked.set(part, await inspectModel(part))
       const local = checked.get(part)
       const reasons = [...capability.reasons, ...local.errors]
-      partCandidateChecks.push({ part, supported, capability, local, eligible: supported && local.available, reasons })
+      for (const expected of capability.geometry?.sourceFiles || []) {
+        if (!local.sourceFiles?.some(actual => actual.path === expected.path && actual.sha256 === expected.sha256))
+          reasons.push('已审核几何的本地来源文件缺失或已变化，需重新审核：' + expected.path)
+      }
+      partCandidateChecks.push({ part, supported, capability, local, eligible: supported && local.available && reasons.length === 0, reasons })
     }
     const eligible = partCandidateChecks.filter(candidate => candidate.eligible)
     if (!eligible.length) errors.push('没有有效的 LDraw 零件候选；请查看候选检查原因')
