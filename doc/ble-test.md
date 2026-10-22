@@ -127,3 +127,7 @@ V2 离线测试另覆盖精确字节及 UUID、重复点击、发现/写入失�
 API 参考：[writeValueWithResponse](https://developer.mozilla.org/en-US/docs/Web/API/BluetoothRemoteGATTCharacteristic/writeValueWithResponse)。
 
 V4 自动化测试补充六条命令的精确字节、相同命令重复发送、跨按钮写入锁、断开保护、错误日志与失败后的锁释放；测试替身仅用于离线测试。
+
+## Pipecat 语音控制接入
+
+新增 Activity 模块复用本页 BleConnection 和六条命令，独立测试页行为保持不变。语音验收在 V4 内的 WZKJ01 活动面板手动连接，不能复用另一个标签页的连接。架构、启动与验收见 [BLE Voice Control](./ble-voice-control.md)。本轮只编写代码和测试，未执行验证。

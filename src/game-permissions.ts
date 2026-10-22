@@ -20,6 +20,7 @@ export function readGamePermissions(value: unknown): GamePermissions {
   return Object.fromEntries(Object.keys(NO_GAME_PERMISSIONS).map(key => [key, record?.[key as keyof GamePermissions] === true])) as GamePermissions
 }
 export const GAME_ACTION_PERMISSIONS = {
+  ble_control: 'canControlGame',
   submit_answer: 'canAnswerGame', confirm_task: 'canControlGame', repeat_task: 'canControlGame',
   skip_task: 'canControlGame', reset: 'canControlGame', next_task: 'canControlGame', exit: 'canAdminGame',
 } as const satisfies Record<string, keyof GamePermissions>

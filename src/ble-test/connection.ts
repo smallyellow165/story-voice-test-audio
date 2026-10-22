@@ -51,6 +51,8 @@ function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error)
 }
 
+export type BleWriteResult = { status: 'applied' | 'rejected'; gattWrite: 'completed' | 'unconfirmed'; physicalAction: 'unconfirmed'; error?: string }
+
 export class BleConnection {
   state: ConnectionState = { status: 'Disconnected', name: '', id: '', error: '', logs: [], writing: false }
   private generation = 0
@@ -185,8 +187,8 @@ export class BleConnection {
     return this.writeCommand('Action B', ACTION_B_HEX)
   }
 
-  private async writeCommand(operation: string, hex: string) {
-    if (this.disposed || this.state.writing) return
+  private async writeCommand(operation: string, hex: string): Promise<BleWriteResult> {
+    if (this.disposed || this.state.writing) return { status: 'rejected', gattWrite: 'unconfirmed', physicalAction: 'unconfirmed', error: this.disposed ? 'ble_disposed' : 'ble_write_busy' }
     const details = `Operation=${operation} HEX=${hex} Service=${SERVICE_UUID} Characteristic=${WRITE_UUID}`
     const device = this.device
     const generation = this.generation
@@ -206,10 +208,12 @@ export class BleConnection {
       const bytes = Uint8Array.from(hex.match(/.{2}/g)!, (byte) => parseInt(byte, 16))
       await characteristic.writeValueWithResponse(bytes)
       this.update({ writing: false }, `BLE Write Response 完成：${details}；仅确认 GATT 写入完成，设备定时状态未确认，实际动作需现场观察。`)
+      return { status: 'applied', gattWrite: 'completed', physicalAction: 'unconfirmed' }
     } catch (error) {
       const message = `BLE Write 失败：${details}；${errorText(error)}；设备定时状态未确认，实际动作需现场观察。`
       // A late result from an old connection must not overwrite a new session's error.
       this.update({ writing: false, ...(generation === this.generation ? { error: message } : {}) }, message)
+      return { status: 'rejected', gattWrite: 'unconfirmed', physicalAction: 'unconfirmed', error: errorText(error) }
     }
   }
 

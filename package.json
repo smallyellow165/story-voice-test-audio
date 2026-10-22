@@ -82,6 +82,10 @@
       "types": "./src/reading-tracker.ts",
       "import": "./dist-module/reading-tracker.js"
     },
+    "./ble-switch": {
+      "types": "./src/ble-switch-module.d.ts",
+      "import": "./dist-module/ble-switch.js"
+    },
     "./brick-building": {
       "types": "./src/brick-building-module.d.ts",
       "import": "./dist-module/brick-building.js"
