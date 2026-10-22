@@ -25,7 +25,7 @@ function BleTestPage() {
 
   return <main className="ble-test">
     <h1>WZKJ01 BLE Test</h1>
-    <p>V2 · 蓝牙 GATT 连接与 30min Toggle</p>
+    <p>V4 · 机械臂动作与定时控制测试</p>
     <dl>
       <dt>Secure Context</dt><dd>{window.isSecureContext ? 'Yes' : 'No'}</dd>
       <dt>Web Bluetooth API</dt><dd>{bluetooth ? 'Available' : 'Unavailable'}</dd>
@@ -37,9 +37,22 @@ function BleTestPage() {
     <div className="ble-actions">
       <button disabled={!!unavailable || state.status !== 'Disconnected'} onClick={() => { void connection.connect() }}>Connect</button>
       <button disabled={state.status !== 'Connected'} onClick={() => connection.disconnect()}>Disconnect</button>
-      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.toggle30min() }}>30min Toggle</button>
     </div>
-    <p className="ble-hint" role="status">{state.writing ? '正在写入… ' : ''}Write Response 仅代表 GATT 写入完成，设备定时状态未确认；请观察设备 LED。</p>
+    <h2>Actions</h2>
+    <p className="ble-hint">Action A：机械臂向方向 A 旋转；Action B：向相反方向 B 旋转。实际安装方向决定用途。</p>
+    <div className="ble-actions" role="group" aria-label="机械臂动作">
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.actionA() }}>Action A</button>
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.actionB() }}>Action B</button>
+    </div>
+    <h2>Timers</h2>
+    <p className="ble-hint">预期 LED：30min 青色、60min 绿色、90min 红色、120min 紫色。相同按钮使用同一命令开启或取消；请观察设备确认，页面不推断真实定时状态。</p>
+    <div className="ble-actions" role="group" aria-label="定时控制">
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.toggle30min() }}>30min Toggle</button>
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.toggle60min() }}>60min Toggle</button>
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.toggle90min() }}>90min Toggle</button>
+      <button disabled={state.status !== 'Connected' || state.writing} onClick={() => { void connection.toggle120min() }}>120min Toggle</button>
+    </div>
+    <p className="ble-hint" role="status">{state.writing ? '正在写入… ' : ''}Write Response 仅代表 GATT 写入完成，不代表设备动作成功；请现场观察动作及 LED。</p>
     {(unavailable || state.error) && <p className="ble-error" role="alert">{unavailable || state.error}</p>}
     <h2>事件日志</h2>
     <ol role="log" aria-label="BLE 事件日志" aria-live="polite">

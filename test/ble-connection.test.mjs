@@ -144,6 +144,67 @@ function writeFixture() {
   return { ...f, writes, characteristic, service }
 }
 
+const controls = [
+  ['actionA', 'Action A', 'fe01000632010100ff46'],
+  ['actionB', 'Action B', 'fe01000632010100ff47'],
+  ['toggle30min', '30min Toggle', 'fe01000632010100ff08'],
+  ['toggle60min', '60min Toggle', 'fe01000632010100ff1c'],
+  ['toggle90min', '90min Toggle', 'fe01000632010100ff5a'],
+  ['toggle120min', '120min Toggle', 'fe01000632010100ff4a'],
+]
+
+for (const [method, operation, hex] of controls) {
+  test(`${operation}: exact payload on each click, full logs, and no write after disconnect`, async () => {
+    const f = writeFixture()
+    await f.connection.connect()
+    for (let count = 1; count <= 2; count++) {
+      await f.connection[method]()
+      assert.equal(f.writes.length, count)
+      assert.ok(f.writes.at(-1) instanceof Uint8Array)
+      assert.equal(Buffer.from(f.writes.at(-1)).toString('hex'), hex)
+      assert.equal(f.connection.state.writing, false)
+      const log = f.connection.state.logs.at(-1)
+      for (const value of [operation, hex, SERVICE_UUID, WRITE_UUID, 'BLE Write Response 完成']) assert.ok(log.includes(value))
+      assert.match(log, /^.+ — /)
+    }
+    assert.equal(f.calls(), 1)
+    f.connection.disconnect()
+    await f.connection[method]()
+    assert.equal(f.writes.length, 2)
+    assert.equal(f.connection.state.status, 'Disconnected')
+  })
+
+  test(`${operation}: lock blocks all other controls and releases after a write error`, async () => {
+    const f = writeFixture()
+    await f.connection.connect()
+    let rejectWrite
+    let started
+    const writing = new Promise((resolve) => { started = resolve })
+    f.characteristic.writeValueWithResponse = (bytes) => {
+      f.writes.push(bytes)
+      started()
+      return new Promise((_, reject) => { rejectWrite = reject })
+    }
+    const pending = f.connection[method]()
+    assert.equal(f.connection.state.writing, true)
+    for (const [other] of controls) await f.connection[other]()
+    await writing
+    for (const [other] of controls) await f.connection[other]()
+    assert.equal(f.writes.length, 1, 'no queued or concurrent writes')
+    rejectWrite(new DOMException('write rejected', 'NetworkError'))
+    await pending
+    assert.equal(f.connection.state.writing, false)
+    const log = f.connection.state.logs.at(-1)
+    for (const value of [operation, hex, WRITE_UUID, SERVICE_UUID, 'NetworkError: write rejected']) assert.ok(log.includes(value))
+    assert.match(log, /^.+ — BLE Write 失败/)
+    f.characteristic.writeValueWithResponse = async (bytes) => { f.writes.push(bytes) }
+    await f.connection[method]()
+    assert.equal(f.writes.length, 2)
+    assert.equal(f.connection.state.error, '')
+    f.connection.dispose()
+  })
+}
+
 test('two toggles write identical exact bytes with response using the existing connection', async () => {
   const f = writeFixture()
   await f.connection.connect()

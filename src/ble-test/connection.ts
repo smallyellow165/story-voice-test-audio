@@ -1,6 +1,12 @@
 export const SERVICE_UUID = 'fa879af4-d601-420c-b2b4-07ffb528dde3'
 export const WRITE_UUID = 'b02eaeaa-f6bc-4a7e-bc94-f7b7fc8ded0b'
 export const TOGGLE_30MIN_HEX = 'fe01000632010100ff08'
+export const TOGGLE_60MIN_HEX = 'fe01000632010100ff1c'
+export const TOGGLE_90MIN_HEX = 'fe01000632010100ff5a'
+export const TOGGLE_120MIN_HEX = 'fe01000632010100ff4a'
+// User confirmed opposite rotation directions; installation determines their meaning.
+export const ACTION_A_HEX = 'fe01000632010100ff46'
+export const ACTION_B_HEX = 'fe01000632010100ff47'
 
 // Minimal native API surface; no BLE library or global DOM type augmentation.
 export interface BleDevice extends EventTarget {
@@ -109,8 +115,32 @@ export class BleConnection {
   }
 
   async toggle30min() {
+    return this.writeCommand('30min Toggle', TOGGLE_30MIN_HEX)
+  }
+
+  async toggle60min() {
+    return this.writeCommand('60min Toggle', TOGGLE_60MIN_HEX)
+  }
+
+  async toggle90min() {
+    return this.writeCommand('90min Toggle', TOGGLE_90MIN_HEX)
+  }
+
+  async toggle120min() {
+    return this.writeCommand('120min Toggle', TOGGLE_120MIN_HEX)
+  }
+
+  async actionA() {
+    return this.writeCommand('Action A', ACTION_A_HEX)
+  }
+
+  async actionB() {
+    return this.writeCommand('Action B', ACTION_B_HEX)
+  }
+
+  private async writeCommand(operation: string, hex: string) {
     if (this.disposed || this.state.writing) return
-    const details = `HEX=${TOGGLE_30MIN_HEX} Service=${SERVICE_UUID} Characteristic=${WRITE_UUID}`
+    const details = `Operation=${operation} HEX=${hex} Service=${SERVICE_UUID} Characteristic=${WRITE_UUID}`
     const device = this.device
     const generation = this.generation
     const assertConnected = () => {
@@ -126,11 +156,11 @@ export class BleConnection {
       assertConnected()
       const characteristic = await service.getCharacteristic(WRITE_UUID)
       assertConnected()
-      const bytes = Uint8Array.from(TOGGLE_30MIN_HEX.match(/.{2}/g)!, (byte) => parseInt(byte, 16))
+      const bytes = Uint8Array.from(hex.match(/.{2}/g)!, (byte) => parseInt(byte, 16))
       await characteristic.writeValueWithResponse(bytes)
-      this.update({ writing: false }, `BLE Write Response 完成：${details}；仅确认 GATT 写入完成，设备定时状态未确认。`)
+      this.update({ writing: false }, `BLE Write Response 完成：${details}；仅确认 GATT 写入完成，设备定时状态未确认，实际动作需现场观察。`)
     } catch (error) {
-      const message = `BLE Write 失败：${details}；${errorText(error)}；设备定时状态未确认。`
+      const message = `BLE Write 失败：${details}；${errorText(error)}；设备定时状态未确认，实际动作需现场观察。`
       // A late result from an old connection must not overwrite a new session's error.
       this.update({ writing: false, ...(generation === this.generation ? { error: message } : {}) }, message)
     }

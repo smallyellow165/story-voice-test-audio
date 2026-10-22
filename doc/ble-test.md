@@ -1,14 +1,43 @@
-# Web Bluetooth V2 — WZKJ01 / 30min Toggle
+# Web Bluetooth V4 — WZKJ01 控制测试
 
-独立 React 页面：`/story-voice-test-audio/ble-test.html`，遵循项目现有多 HTML 入口方式。
-复用 V1 连接/断开 GATT，增加固定的 30min Toggle 写入，不订阅 Notify，不调用后端或模型 API。
-名称精确过滤 `WZKJ01`；在 `optionalServices` 声明 `fa879af4-d601-420c-b2b4-07ffb528dde3`。
-点击 `30min Toggle` 时，复用当前 GATT 连接获取上述 Service 和 Write Characteristic
-`b02eaeaa-f6bc-4a7e-bc94-f7b7fc8ded0b`，将 `fe01000632010100ff08` 转换为 10 字节 Uint8Array，调用 `writeValueWithResponse()`。
-仅 Connected 且没有待完成写入时可发送；服务发现到响应完成期间均防止重复点击，不排队、不自动重试。
-成功/失败日志包含时间、HEX、Service UUID、Characteristic UUID 和失败时的错误信息。
-Write Response 仅代表 GATT 写入完成，不确认设备定时状态；页面不按点击次数推断开启/关闭。写入失败也可能已影响设备，请观察 LED 后再决定是否重试。
-Notify UUID 本阶段不使用。
+页面：`/story-voice-test-audio/ble-test.html`。复用现有连接与 `writeCommand()`，不调用后端或模型 API。
+
+- Device Name：`WZKJ01`（精确名称过滤）
+- Service UUID：`fa879af4-d601-420c-b2b4-07ffb528dde3`（在 optionalServices 声明）
+- Write Characteristic UUID：`b02eaeaa-f6bc-4a7e-bc94-f7b7fc8ded0b`
+- Write Method：`writeValueWithResponse()`，HEX 转为 10 字节 Uint8Array。
+
+六个控制按钮共用当前 GATT 连接、Service、Characteristic 和同一个 `writing` 锁。仅 Connected 且无待完成写入时可发送；服务发现到响应完成期间全部控制按钮禁用。每次有效点击只写一次，不排队、不重试、不循环或自动触发。
+日志记录时间、操作名称、完整 HEX、两个 UUID，以及 Write Response 或错误信息。
+Write Response 仅证明 GATT 写入完成，不代表实际动作成功。写入失败也不能证明设备没有执行；现场观察后再决定是否重试。
+不实现 Notify、State Query、初始化或时间同步。
+
+## 六条协议命令与验证状态
+
+| 操作 | 完整 HEX | 行为及验证状态 |
+| --- | --- | --- |
+| Action A | `fe01000632010100ff46` | 用户最新实测确认：机械臂向方向 A 旋转。 |
+| Action B | `fe01000632010100ff47` | 用户最新实测确认：机械臂向相反方向 B 旋转。 |
+| 30min Toggle | `fe01000632010100ff08` | 预期青色 LED、30 分钟定时；用户已验证 Web Bluetooth 写入及 LED 变化。 |
+| 60min Toggle | `fe01000632010100ff1c` | 预期绿色 LED、60 分钟定时；用户提供此前 HCI Log / Wireshark / nRF Connect 逆向记录，React UI 实物验收待完成。 |
+| 90min Toggle | `fe01000632010100ff5a` | 预期红色 LED、90 分钟定时；来源同上，React UI 实物验收待完成。 |
+| 120min Toggle | `fe01000632010100ff4a` | 预期紫色 LED、120 分钟定时；来源同上，React UI 实物验收待完成。 |
+
+命令来源为用户提供的协议调查记录及后续实测反馈，未猜测或扫描其他命令。
+Action A/B 不命名为 Open/Close，实际安装方向可能不同；也不据此断言发声功能。
+四个 Timer 均为 Toggle：首次开启，再次按相同按钮取消，两次发送完全相同的 HEX。
+由于没有可靠 State Query，页面不按点击次数推断或显示设备真实定时状态。不同 Timer 间的切换关系和完整到期行为尚未在本轮验证。
+
+## V4 手动验收
+
+1. 在原 HTTPS 页面连接 WZKJ01，确认 Connected。
+2. 分别单击 Action A / B，观察机械臂向相反方向旋转并核对日志。
+3. 单击 30min，观察青色 LED；再次点击同一按钮，观察取消效果。
+4. 分别对 60min、90min、120min 重复上述操作，依次观察绿色、红色、紫色 LED 及取消效果。
+5. 每次等待写入及设备动作结束，核对操作名称、完整 HEX、Characteristic、时间及 Write Response 或错误。写入期间六个控制按钮应同时禁用。
+6. Disconnect 后确认六个控制按钮全部禁用；回归重连和意外断线行为。
+
+本轮不启动服务或操作真实设备。新定时命令在 Android Chrome 上的实际效果、取消行为及定时到期动作需用户手动验收。
 
 ## 启动（由用户手动执行）
 
@@ -43,7 +72,7 @@ npm exec vite -- --host 0.0.0.0 --port 5174 --strictPort
 4. 点击 Disconnect，确认发送按钮禁用；意外断线后同样应禁用。
 5. 写入期间按钮禁用，失败时应显示错误并记录失败日志，不自动补发。设备状态始终由人工观察 LED 确认。
 
-V1 已由用户验证真实设备连接；V2 的 LED 行为尚需真实设备手动验证。
+V1 连接与 V2 Web Bluetooth 写入、LED 状态变化已由用户实物验证。
 
 ## V1 连接回归验收
 
@@ -70,3 +99,5 @@ API 行为参考：[Chrome Web Bluetooth 文档](https://developer.chrome.com/do
 
 V2 离线测试另覆盖精确字节及 UUID、重复点击、发现/写入失败、断线重连竞态、迟到响应与卸载清理。
 API 参考：[writeValueWithResponse](https://developer.mozilla.org/en-US/docs/Web/API/BluetoothRemoteGATTCharacteristic/writeValueWithResponse)。
+
+V4 自动化测试补充六条命令的精确字节、相同命令重复发送、跨按钮写入锁、断开保护、错误日志与失败后的锁释放；测试替身仅用于离线测试。
