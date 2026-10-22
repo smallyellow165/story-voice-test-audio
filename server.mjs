@@ -457,10 +457,12 @@ const server = createServer(async (request, response) => {
         sendJson(response, 403, { error: '仅接受同源 Reverse 操作。' }); return
       }
       if (request.method === 'GET') {
-        if (action.startsWith('record/')) sendJson(response, 200, await brickReverse.read(action.slice(7)))
+        if (action === 'history') sendJson(response, 200, await brickReverse.history())
+        else if (action.startsWith('restore/')) sendJson(response, 200, await brickReverse.restore(action.slice(8)))
+        else if (action.startsWith('record/')) sendJson(response, 200, await brickReverse.read(action.slice(7)))
         else if (action.startsWith('attempt/')) sendJson(response, 200, await brickReverse.attempt(action.slice(8)))
         else sendJson(response, 404, { error: '未知 Reverse 路由。' })
-      } else if (request.method === 'POST' && ['analyze', 'search', 'generate'].includes(action)) {
+      } else if (request.method === 'POST' && ['analyze', 'search', 'generate', 'saveReview'].includes(action)) {
         const body = await readJsonBody(request, action === 'analyze' ? 18 * 1024 * 1024 : 256 * 1024)
         sendJson(response, 200, await brickReverse[action](body))
       } else sendJson(response, 405, { error: '不支持的 Reverse 操作。' })

@@ -1,15 +1,17 @@
 .vision-bbox-toggle { display: flex !important; align-items: center; gap: 6px; margin: 8px 0; }
 .vision-preview-frame { position: relative; width: 100%; padding: 0; line-height: 0; }
 .vision-preview-frame img { display: block; width: 100%; height: auto; image-orientation: from-image; }
-.inventory-workbench .vision-bbox {
+.vision-preview .vision-preview-frame .vision-bbox,
+.vision-preview .vision-preview-frame .vision-bbox:hover:not(:disabled) {
   position: absolute; box-sizing: border-box; margin: 0; padding: 0;
-  min-width: 0; min-height: 0; border: 2px solid #147c98; border-radius: 0;
+  min-width: 0; min-height: 0; line-height: normal; box-shadow: none; border: 2px solid #147c98; border-radius: 0;
   background: transparent; color: white; cursor: pointer;
 }
 .vision-bbox span { position: absolute; top: 0; left: 0; padding: 1px 3px; background: #147c98; color: white; font-size: 11px; line-height: 1.4; white-space: nowrap; }
-.inventory-workbench .vision-bbox.is-active { border-color: #db8d0a; background: #e6a62826; z-index: 1; }
+.vision-preview .vision-preview-frame .vision-bbox.is-active,
+.vision-preview .vision-preview-frame .vision-bbox.is-active:hover:not(:disabled) { border-color: #db8d0a; background: transparent; z-index: 1; }
 .vision-bbox.is-active span { background: #9a5b00; }
-.inventory-workbench .vision-observation-id { background: transparent; color: #235f6c; border-color: transparent; padding: 0 3px; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-id { background: transparent; color: #235f6c; border-color: transparent; padding: 0 3px; }
 .vision-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .vision-detail-modal {
   box-sizing: border-box; width: min(900px, 94vw); max-width: 94vw; max-height: 88vh; max-height: 88dvh;
@@ -28,15 +30,15 @@
 
 
 .inventory-vision-review { min-width: 0; overflow-wrap: anywhere; }
-.vision-observation-scroll { width: 100%; min-width: 0; overflow-x: auto; margin: 8px 0; }
-.inventory-workbench .vision-observation-table { width: 100%; min-width: 1106px; table-layout: fixed; border-collapse: collapse; }
-.inventory-workbench .vision-observation-table th,
-.inventory-workbench .vision-observation-table td { height: 36px; padding: 3px 4px; white-space: nowrap; vertical-align: middle; text-align: left; border-bottom: 1px solid #dce5df; font-size: 11px; }
-.inventory-workbench .vision-observation-table input:not([type="checkbox"]),
-.inventory-workbench .vision-observation-table select { box-sizing: border-box; width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 3px 4px; font-size: 12px; }
-.inventory-workbench .vision-observation-table button { height: 28px; min-height: 28px; padding: 2px 5px; white-space: nowrap; }
+.vision-observation-scroll { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; margin: 8px 0; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table { width: 100%; min-width: 1106px; table-layout: fixed; border-collapse: collapse; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table th,
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table td { height: 36px; padding: 3px 4px; white-space: nowrap; vertical-align: middle; text-align: left; border-bottom: 1px solid #dce5df; font-size: 11px; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table input:not([type="checkbox"]),
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table select { box-sizing: border-box; width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 3px 4px; font-size: 12px; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table button { height: 28px; min-height: 28px; padding: 2px 5px; white-space: nowrap; }
 .vision-observation-table tr.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
-.inventory-workbench .vision-observation-table .vision-observation-id { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-table .vision-observation-id { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .vision-review-badge { font-size: 10px; color: #235f6c; }
 .vision-observation-menu {
   position: fixed; inset: auto; margin: 0; box-sizing: border-box;
@@ -44,8 +46,8 @@
   padding: 4px; border: 1px solid #c6d4ce; border-radius: 5px; background: #fffefa;
   box-shadow: 0 4px 16px #152d2933; color: #243c38;
 }
-.inventory-workbench .vision-observation-menu button { display: block; width: 100%; height: auto; min-height: 32px; text-align: left; margin: 0; background: transparent; color: #243c38; border: 0; }
-.inventory-workbench .vision-observation-menu button:hover { background: #e7f2ed; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-menu button { display: block; width: 100%; height: auto; min-height: 32px; text-align: left; margin: 0; background: transparent; color: #243c38; border: 0; }
+:is(.inventory-workbench, .brick-reverse) .vision-observation-menu button:hover { background: #e7f2ed; }
 .vision-observation-menu button:focus-visible { outline: 2px solid #db8d0a; outline-offset: -2px; }
 
 .inventory-workbench .vision-observation-table td:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }

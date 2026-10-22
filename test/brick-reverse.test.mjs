@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -123,5 +123,79 @@ test('analysis request IDs prevent duplicate billing; search uses strict feature
     assert.equal(result.rows.length, 0)
     assert.equal(calls, 1)
     assert.deepEqual(queries.at(-1), { route: 'candidates', params: { color: '25', shape: 'curved_top', page: '1', page_size: '6' } })
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('history discovers existing analysis files, sorts newest first, and never calls providers', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'reverse-history-'))
+  try {
+    const older = randomUUID(), newer = randomUUID()
+    for (const [id, createdAt] of [[older, '2026-10-20T00:00:00Z'], [newer, '2026-10-22T00:00:00Z']]) {
+      await writeFile(path.join(directory, id + '.json'), JSON.stringify({
+        id, kind: 'reverse-analysis', createdAt, status: 'complete', provider: 'openai', model: 'gpt-4.1',
+        source: { kind: 'full' }, analysis: { appearance: 'yellow animal', observations: [observation('a')], relations: [], unknowns: [] },
+      }))
+    }
+    await writeFile(path.join(directory, newer + '.request.json'), '{"model":"gpt-4.1"}')
+    const service = createBrickReverse(directory, { callModel: () => assert.fail('History must not call a model'), generate: () => assert.fail('No generation') })
+    const history = await service.history()
+    assert.deepEqual(history.items.map(r => r.id), [newer, older])
+    assert.equal(history.items[0].count, 1)
+    const restored = await service.restore(newer)
+    assert.equal(restored.analysis.id, newer)
+    assert.equal(restored.generationStatus, 'none')
+    assert.ok(restored.warnings.some(w => w.includes('缺少参考图片')))
+    assert.equal(restored.rows.a.index, undefined)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('saved review restores edits, exclusions and candidates without rewriting raw analysis or trace', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'reverse-review-'))
+  try {
+    const id = randomUUID(), searchId = randomUUID()
+    const original = JSON.stringify({ id, kind: 'reverse-analysis', status: 'complete', source: { kind: 'full' },
+      image: { mimeType: 'image/jpeg', imageBase64: 'fixture' },
+      analysis: { appearance: 'animal', observations: [observation('a'), observation('b')], relations: [], unknowns: ['rear'] } })
+    await writeFile(path.join(directory, id + '.json'), original)
+    await writeFile(path.join(directory, id + '.response.txt'), 'original provider response')
+    const features = { color_id: 25, size: '2x4', shape: 'brick', print: 'no' }
+    await writeFile(path.join(directory, searchId + '.json'), JSON.stringify({
+      id: searchId, kind: 'reverse-search', analysisId: id, observationId: 'a', features,
+      rows: [{ eligible: true, source: { part_num: 'catalog-part', color_id: 25 }, target: { part: 'geometry-part', color: 'orange' } }],
+    }))
+    const service = createBrickReverse(directory, { callModel: () => assert.fail('No model'), getCatalog: () => assert.fail('No Catalog request') })
+    const rows = {
+      a: { features: { color: '25', size: '2x4', shape: 'brick', print: 'no' }, quantity: '2', excluded: false, reason: '', searchId, index: 0 },
+      b: { features: { color: '', size: '', shape: '', print: 'unknown' }, quantity: '1', excluded: true, reason: 'occluded' },
+    }
+    await service.saveReview({ analysisId: id, rows })
+    const restored = await service.restore(id)
+    assert.equal(restored.rows.a.search.id, searchId)
+    assert.equal(restored.rows.a.index, 0)
+    assert.equal(restored.rows.a.quantity, '2')
+    assert.equal(restored.rows.b.reason, 'occluded')
+    assert.equal(restored.rows.b.excluded, true)
+    assert.equal(await readFile(path.join(directory, id + '.json'), 'utf8'), original)
+    assert.equal(await readFile(path.join(directory, id + '.response.txt'), 'utf8'), 'original provider response')
+    await assert.rejects(() => service.saveReview({ analysisId: id, rows: { ...rows, a: { ...rows.a, features: { ...rows.a.features, size: '2x2' } } } }), /不一致/)
+    assert.equal((await service.restore(id)).rows.a.features.size, '2x4')
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('restore does not apply a corrupt complete artifact or repeat a submitted generation', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'reverse-artifact-'))
+  try {
+    const id = randomUUID(), artifactId = randomUUID()
+    await writeFile(path.join(directory, id + '.json'), JSON.stringify({ id, kind: 'reverse-analysis', status: 'complete',
+      source: { kind: 'full' }, analysis: { appearance: '', observations: [observation('a')], relations: [], unknowns: [] } }))
+    await writeFile(path.join(directory, id + '.generation.json'), JSON.stringify({ artifactId }))
+    await writeFile(path.join(directory, artifactId + '.json'), JSON.stringify({
+      id: artifactId, kind: 'reverse-design', status: 'complete', generation: { ok: false },
+    }))
+    const service = createBrickReverse(directory, { loadRules: async () => ({}), generate: () => assert.fail('No generation') })
+    const restored = await service.restore(id)
+    assert.equal(restored.artifact, null)
+    assert.equal(restored.generationStatus, 'unavailable')
+    assert.ok(restored.warnings.some(w => w.includes('Artifact 无法恢复')))
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

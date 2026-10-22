@@ -1,10 +1,13 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../model-selector'
 import { CatalogPhoto } from '../catalog-photo'
 import type { Media } from '../catalog-photo'
 import { prepareInventoryImage } from '../brick-vision/upload'
-import { bboxStyle } from '../brick-vision/observation-view.mjs'
-import { catalogShapes, featureEditor, readFeatureEditor } from '../brick-vision/catalog-features.mjs'
+import { ObservationPreview } from '../brick-vision/ObservationPreview'
+import { ObservationTable, ObservationFeatureCells } from '../brick-vision/ObservationTable'
+import { ObservationActions } from '../brick-vision/ObservationActions'
+import { ObservationModal } from '../brick-vision/ObservationModal'
+import { featureEditor, readFeatureEditor } from '../brick-vision/catalog-features.mjs'
 import type { CatalogFeatures, FeatureEditor } from '../brick-vision/catalog-features.mjs'
 import { requestJson } from '../brick-inventory/api.mjs'
 import { loadSessions } from '../brick-inventory/storage'
@@ -15,12 +18,17 @@ import type { GenerationResult, InventoryRow } from './design-types'
 import './reverse.css'
 
 type Observation = CatalogFeatures & { id: string; quantity: number; confidence: number; bbox: number[] | null; evidence: string; occlusion: string; visible_studs: number | null }
-type Analysis = { id: string; kind: string; status: string; model: string; provider: string; modelVersion?: string; source: { kind: string }; image: { mimeType: string; imageBase64: string };
+type Analysis = { id: string; kind: string; status: string; model: string; provider: string; modelVersion?: string; source: { kind: string; inventory?: InventoryRow[]; session?: SessionInventory }; image: { mimeType: string; imageBase64: string };
   error?: { message: string }; analysis: { appearance: string; unknowns: string[]; observations: Observation[]; relations: unknown[] } | null }
 type Candidate = { partCandidates: string[]; colorCandidates: string[]; partCandidateChecks: { part: string; supported: boolean; local: { available: boolean } }[]; source: { part_num: string; color_id: number }; name: string; eligible: boolean; sourceAllowed: boolean; target: { part: string; color: string } | null; errors: string[] }
 type Search = { id: string; features: CatalogFeatures; page: number; pageSize: number; catalogTotal: number; rows: Candidate[]; images: Record<string, Media>; imageError: string | null }
 type Draft = { features: FeatureEditor; quantity: string; excluded: boolean; reason: string; search?: Search; index?: number }
 type Artifact = { id: string; status: string; generation: GenerationResult | null; error?: string; designHash: string | null }
+
+type HistoryItem = { id: string; createdAt: string; provider: string; model: string; status: string; appearance: string; count: number }
+type History = { items: HistoryItem[]; warnings: string[] }
+type Restored = { analysis: Analysis; rows: Record<string, Draft>; artifact: Artifact | null; generationStatus: string; updatedAt: string | null; warnings: string[] }
+
 type Model = { id: string; label: string; provider: 'gemini' | 'openai' }
 type Props = { inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
   onModel(model: string): void; disabled: boolean; onBusy(busy: boolean): void; onComplete(result: GenerationResult): Promise<void> }
@@ -36,12 +44,51 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
   const [recordId, setRecordId] = useState(''), [submitted, setSubmitted] = useState(false)
   const [confirmed, setConfirmed] = useState(false), [artifact, setArtifact] = useState<Artifact | null>(null)
   const [generationSubmitted, setGenerationSubmitted] = useState(false)
+  const [detailId, setDetailId] = useState('')
+  const [history, setHistory] = useState<HistoryItem[]>([]), [historyWarning, setHistoryWarning] = useState('')
+  const [dirty, setDirty] = useState(false), [savedAt, setSavedAt] = useState(''), [restoreWarning, setRestoreWarning] = useState('')
+  const tableHost = useRef<HTMLDivElement>(null), previewHost = useRef<HTMLDivElement>(null), candidateHost = useRef<HTMLDivElement>(null)
   const gate = useRef(false)
   const requestId = useRef(newSessionId())
   const locked = disabled || !!busy
-  const observation = record?.analysis?.observations.find(o => o.id === active)
   const draft = rows[active], search = draft?.search
+
+  async function refreshHistory() {
+    const value = await requestJson<History>('/api/brick-reverse/history', {}, '历史 Reverse Analysis')
+    setHistory(value.items); setHistoryWarning(value.warnings.join('；'))
+  }
+  useEffect(() => {
+    let cancelled = false
+    void requestJson<History>('/api/brick-reverse/history', {}, '历史 Reverse Analysis').then(value => {
+      if (!cancelled) { setHistory(value.items); setHistoryWarning(value.warnings.join('；')) }
+    }).catch(e => { if (!cancelled) setHistoryWarning(String(e)) })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  async function saveReview() {
+    if (!record) return
+    const value = await post<{ updatedAt: string }>('saveReview', { analysisId: record.id,
+      rows: Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, {
+        features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason,
+        searchId: r.search?.id, index: r.index,
+      }])) })
+    setDirty(false); setSavedAt(value.updatedAt)
+  }
+
+  function selectBox(id: string) {
+    setActive(id)
+    const row = [...(tableHost.current?.querySelectorAll<HTMLElement>('[data-observation-id]') || [])].find(r => r.dataset.observationId === id)
+    row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
   function reset() {
+    if (dirty && !window.confirm('存在未保存的审核修改。确定放弃并新建分析？')) return
+    setDirty(false); setSavedAt(''); setRestoreWarning('')
+    setDetailId('')
     requestId.current = newSessionId(); setRecordId(''); setSubmitted(false); setRecord(null); setRows({}); setArtifact(null)
     setGenerationSubmitted(false); setConfirmed(false); setError('')
   }
@@ -52,6 +99,8 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
     finally { gate.current = false; setBusy(''); onBusy(false) }
   }
   function acceptAnalysis(value: Analysis) {
+    setDetailId(''); setDirty(false); setSavedAt(''); setRestoreWarning('')
+    setSource(value.source.kind)
     if (value.kind !== 'reverse-analysis') throw new Error('请选择 Reverse Analysis 记录 ID。')
     setRecord(value); setRecordId(value.id); setSubmitted(true); setArtifact(null); setGenerationSubmitted(false); setConfirmed(false)
     setRows(Object.fromEntries((value.analysis?.observations || []).map(o => [o.id, { features: featureEditor(o), quantity: String(o.quantity), excluded: false, reason: '' }])))
@@ -59,7 +108,7 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
     if (value.status !== 'complete') setError(value.error?.message || '分析尚未完成；可稍后读取相同记录，不会再次调用模型。')
   }
   function edit(id: string, patch: Partial<Draft>) {
-    setConfirmed(false)
+    setConfirmed(false); setDirty(true)
     setRows(old => ({ ...old, [id]: { ...old[id], ...patch } }))
   }
   async function find(id: string, page = 1) {
@@ -77,7 +126,8 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
     const r = rows[o.id]
     return r && (r.excluded ? !!r.reason.trim() : r.index !== undefined && !!r.search?.rows[r.index]?.eligible && Number.isInteger(Number(r.quantity)) && Number(r.quantity) > 0 && Number(r.quantity) <= 100)
   })
-  const preview = record?.image || image
+  const displayedInventory = record?.source.kind === 'virtual' ? record.source.inventory : inventory
+  const preview = record ? record.image?.imageBase64 ? record.image : null : image
   return <section className="brick-reverse" aria-label="Reverse Assembly">
     <h2>Reverse · Reference → Approximation</h2>
     <p className="brick-help">分析照片和生成方案分别由你点击，各调用一次模型。候选检索不调用模型。单张照片不能保证精确复原；隐藏结构保持 Unknown。</p>
@@ -85,13 +135,13 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
       <label>Part Source<select value={source} onChange={e => { setSource(e.target.value); reset() }}>
         <option value="virtual">Virtual Inventory · 当前虚拟库存</option><option value="today">Today's Inventory · 已保存真实库存</option><option value="full">Full Catalog · 全部 DUPLO</option>
       </select></label>
-      {source === 'virtual' && <AvailableInventory inventory={inventory} total={inventory.reduce((n, r) => n + r.quantity, 0)} onQuantity={onQuantity} />}
-      {source === 'today' && <>
+      {source === 'virtual' && (displayedInventory ? <AvailableInventory inventory={displayedInventory} total={displayedInventory.reduce((n, r) => n + r.quantity, 0)} onQuantity={onQuantity} /> : <p>记录缺少虚拟库存快照。</p>)}
+      {source === 'today' && (record ? <pre>{record.source.session ? JSON.stringify(record.source.session, null, 2) : '记录缺少真实库存快照。'}</pre> : <>
         <button type="button" onClick={() => { try { setSessions(loadSessions(localStorage)); setError('') } catch (e) { setError(String(e)) } }}>读取保存库存（不调用模型）</button>
         <label>已保存库存<select value={sessionId} onChange={e => setSessionId(e.target.value)}><option value="">请选择</option>
           {sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at} · {s.id}</option>)}</select></label>
-      </>}
-      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
+      </>)}
+      <ModelSelector models={models} value={{ id: record?.model || model, provider: record?.provider || models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
       <label>成品图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => {
         const file = e.target.files?.[0]; setImage(null)
         if (file) void action('压缩图片', async () => { setImage(await prepareInventoryImage(file)) })
@@ -103,47 +153,91 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
         setSubmitted(true); setRecordId(requestId.current)
         acceptAnalysis(await post<Analysis>('analyze', { ...image, model, requestId: requestId.current,
           source: source === 'virtual' ? { kind: source, inventory } : source === 'today' ? { kind: source, session: selected } : { kind: source } }))
+        await refreshHistory()
       })}>1. 分析照片（调用模型）</button>
     </fieldset>
     <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button>
+
     <div className="brick-reverse-recovery">
-      <label>Analysis ID<input value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)} /></label>
-      <button type="button" disabled={locked || !recordId} onClick={() => void action('读取分析', async () => acceptAnalysis(await requestJson<Analysis>('/api/brick-reverse/record/' + recordId, {}, '读取 Reverse 分析')))}>读取记录（不调用模型）</button>
+      <label>历史 Reverse Analysis<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
+        <option value="">选择历史分析</option>
+        {history.map(r => <option key={r.id} value={r.id}>
+          {r.createdAt} · {r.provider} / {r.model} · {r.appearance || r.status} · {r.count} Observations
+        </option>)}
+      </select></label>
+      <div className="brick-actions">
+        <button type="button" disabled={locked} onClick={() => void action('刷新历史', refreshHistory)}>刷新</button>
+        <button type="button" disabled={locked || !recordId || dirty} onClick={() => void action('加载分析', async () => {
+          const value = await requestJson<Restored>('/api/brick-reverse/restore/' + recordId, {}, '恢复 Reverse 分析')
+          acceptAnalysis(value.analysis)
+          setImage(null); setRows(value.rows); setSavedAt(value.updatedAt || '')
+          setArtifact(value.artifact); setGenerationSubmitted(value.generationStatus !== 'none')
+          setRestoreWarning(['生成状态：' + value.generationStatus, ...value.warnings].join('；'))
+        })}>加载分析（不调用模型）</button>
+      </div>
+      {historyWarning && <p role="status">{historyWarning}</p>}
     </div>
-    {preview && <div className="brick-reverse-photo">
-      <img src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="Reverse 实际发送图片" />
-      {record?.analysis?.observations.map(o => {
-        const style = bboxStyle(o.bbox)
-        return style && <button type="button" key={o.id} style={style} className={active === o.id ? 'is-active' : ''} onClick={() => setActive(o.id)}>{o.id}</button>
-      })}
-    </div>}
+    {preview && <div ref={previewHost}><ObservationPreview
+      src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="Reverse 实际发送图片及 Observation 标注"
+      observations={record?.analysis?.observations || []} activeId={active} onSelect={selectBox} /></div>}
     {record && <>
       <p>{record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
       <button type="button" onClick={() => download(record, 'reverse-analysis-' + record.id)}>下载完整分析诊断 / Raw Trace 路径</button>
-      <details><summary>原始分析、关系与 Unknown</summary><pre>{JSON.stringify(record.analysis || record.error, null, 2)}</pre></details>
+      <details><summary>Analysis ID、库存快照、原始分析、关系与 Unknown</summary><pre>{JSON.stringify({ id: record.id, source: record.source, analysis: record.analysis, error: record.error }, null, 2)}</pre></details>
     </>}
+    {restoreWarning && <p role="status">{restoreWarning}</p>}
     {record?.analysis && <>
+      <div className="brick-actions"><button type="button" disabled={locked || !dirty} onClick={() => void action('保存审核', saveReview)}>保存审核（不调用模型）</button>
+        <small>{dirty ? '审核有未保存修改；请保存后再加载其他记录。' : savedAt ? '审核已保存：' + savedAt : '尚未保存审核草稿'}</small></div>
       <p>{record.analysis.appearance}</p>
-      <label>Observation<select disabled={locked} value={active} onChange={e => setActive(e.target.value)}>{record.analysis.observations.map(o =>
-        <option key={o.id} value={o.id}>{o.id} · {rows[o.id]?.excluded ? '已排除' : rows[o.id]?.index !== undefined ? '已确认候选' : '待确认'} · {o.confidence}</option>)}</select></label>
-      {observation && draft && <fieldset disabled={locked || generationSubmitted}>
-        <p>{observation.id} · 可见凸点 {observation.visible_studs ?? 'Unknown'} · {observation.occlusion}</p>
-        <div className="brick-reverse-fields">
-          <label>RB Color ID<input value={draft.features.color} placeholder="Unknown" onChange={e => edit(active, { features: { ...draft.features, color: e.target.value }, search: undefined, index: undefined })} /></label>
-          <label>整体尺寸<input value={draft.features.size} placeholder="Unknown / 2x4" onChange={e => edit(active, { features: { ...draft.features, size: e.target.value }, search: undefined, index: undefined })} /></label>
-          <label>Shape<select value={draft.features.shape} onChange={e => edit(active, { features: { ...draft.features, shape: e.target.value }, search: undefined, index: undefined })}><option value="">Unknown</option>{catalogShapes.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
-          <label>Print<select value={draft.features.print} onChange={e => edit(active, { features: { ...draft.features, print: e.target.value }, search: undefined, index: undefined })}><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></label>
-          <label>确认可见数量<input type="number" min="1" max="100" value={draft.quantity} onChange={e => edit(active, { quantity: e.target.value })} /></label>
-        </div>
-        <button type="button" onClick={() => void action('Catalog / Geometry 检查', () => find(active))}>2. 检索候选并检查能力</button>
-        <label><input type="checkbox" checked={draft.excluded} onChange={e => edit(active, { excluded: e.target.checked })} />明确排除此 Observation</label>
-        {draft.excluded && <label>排除原因<input value={draft.reason} onChange={e => edit(active, { reason: e.target.value })} /></label>}
-        {draft.index !== undefined && search && <p>已确认：RB {search.rows[draft.index].source.part_num} / {search.rows[draft.index].source.color_id} → LDraw {search.rows[draft.index].target?.part} / {search.rows[draft.index].target?.color}</p>}
-      </fieldset>}
-      {search && <div className="brick-reverse-candidates">
+      <ObservationTable hostRef={tableHost} columns={[
+        { label: 'ID', width: 90 }, { label: 'Confidence', width: 82 },
+        { label: '特征颜色 ID', width: 88 }, { label: '整体尺寸', width: 86 }, { label: 'Shape', width: 120 }, { label: 'Print', width: 90 },
+        { label: '数量', width: 68 }, { label: '确认型号', width: 110 }, { label: '确认颜色 ID', width: 88 },
+        { label: 'Candidate / Resolution', width: 150 }, { label: '可见凸点 / 遮挡', width: 180 },
+        { label: '排除', width: 44 }, { label: '排除原因', width: 180 }, { label: '操作', width: 64 },
+      ]}>
+        {record.analysis.observations.map(o => {
+          const row = rows[o.id]
+          if (!row) return null
+          const chosen = row.index === undefined ? undefined : row.search?.rows[row.index]
+          const available = row.search?.rows.filter(r => r.eligible).length
+          const status = row.excluded ? '已排除' : chosen ? '已确认候选' : row.search ? available ? '待人工确认' : '本页无可用组合' : '待检索'
+          return <tr key={o.id} data-observation-id={o.id} className={active === o.id ? 'is-active' : ''} onClick={event => {
+            if (event.target instanceof Element && event.target.closest('input, select, button, [popover], a, summary')) return
+            setActive(o.id)
+          }}>
+            <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
+              onClick={() => { setActive(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button></td>
+            <td>{o.confidence}</td>
+            <ObservationFeatureCells id={o.id} features={row.features} disabled={locked}
+              onChange={features => edit(o.id, { features, search: undefined, index: undefined })} />
+            <td><input aria-label={o.id + ' 确认可见数量'} type="number" min="1" max="100" value={row.quantity}
+              disabled={locked || generationSubmitted} onChange={e => edit(o.id, { quantity: e.target.value })} /></td>
+            <td className="vision-cell-ellipsis" title={chosen?.source.part_num}>{chosen?.source.part_num || '—'}</td>
+            <td>{chosen?.source.color_id ?? '—'}</td>
+            <td className="vision-cell-ellipsis" title={chosen ? 'RB ' + chosen.source.part_num + ' / ' + chosen.source.color_id + ' → LDraw ' + chosen.target?.part + ' / ' + chosen.target?.color
+              : row.search ? '本页可用 ' + available + '；Catalog 全局匹配 ' + row.search.catalogTotal + '，可继续翻页检查。' : status}>
+              <span className="vision-review-badge">{status}</span>
+            </td>
+            <td className="vision-cell-ellipsis" title={'可见凸点 ' + (o.visible_studs ?? 'Unknown') + ' · ' + o.occlusion}>{o.visible_studs ?? 'Unknown'} · {o.occlusion}</td>
+            <td><input type="checkbox" aria-label={o.id + ' 明确排除'} checked={row.excluded} disabled={locked || generationSubmitted}
+              onChange={e => edit(o.id, { excluded: e.target.checked })} /></td>
+            <td><input aria-label={o.id + ' 排除原因'} title={row.reason} value={row.reason} placeholder={row.excluded ? '请填写排除原因' : '—'}
+              disabled={locked || !row.excluded} onChange={e => edit(o.id, { reason: e.target.value })} /></td>
+            <td><ObservationActions observationId={o.id} actions={[
+              { label: '检索候选并检查能力', disabled: locked, run: () => { void action('Catalog / Geometry 检查', () => find(o.id)) } },
+              { label: '查看候选 / Geometry', disabled: !row.search, run: () => { setActive(o.id); candidateHost.current?.scrollIntoView({ block: 'nearest' }) } },
+              { label: '查看详情', run: () => setDetailId(o.id) },
+            ]} /></td>
+          </tr>
+        })}
+      </ObservationTable>
+      {search && <div className="brick-reverse-candidates" ref={candidateHost}>
+        <h3>{active} · Catalog 候选 / Geometry Capability</h3>
         <p>Catalog 全局匹配 {search.catalogTotal} · 第 {search.page} 页 · 本页源范围内可用组合 {search.rows.filter(r => r.eligible).length}。0 个可用不代表后续页为空。</p>
-        <div className="brick-actions"><button disabled={locked || search.page <= 1 || generationSubmitted} onClick={() => void action('上一页', () => find(active, search.page - 1))}>上一页</button>
-          <button disabled={locked || search.page * search.pageSize >= search.catalogTotal || generationSubmitted} onClick={() => void action('下一页', () => find(active, search.page + 1))}>下一页</button></div>
+        <div className="brick-actions"><button disabled={locked || search.page <= 1} onClick={() => void action('上一页', () => find(active, search.page - 1))}>上一页</button>
+          <button disabled={locked || search.page * search.pageSize >= search.catalogTotal} onClick={() => void action('下一页', () => find(active, search.page + 1))}>下一页</button></div>
         {search.imageError && <p>{search.imageError}</p>}
         {search.rows.map((r, index) => <div className="brick-reverse-candidate" key={r.source.part_num + ':' + r.source.color_id}>
           <CatalogPhoto media={search.images[r.source.part_num]} name={r.name} />
@@ -152,7 +246,7 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
             <div>{r.target ? 'LDraw ' + r.target.part + ' / ' + r.target.color : 'Mapping / Geometry 未通过'}</div>
             {!r.sourceAllowed && <small>未证明属于当前虚拟库存，不可选择。</small>}
             {r.errors.length > 0 && <small>{r.errors.join('；')}</small>}
-            <button type="button" disabled={locked || generationSubmitted || !r.eligible} onClick={() => edit(active, { index, excluded: false })}>人工确认此组合</button>
+            <button type="button" disabled={locked || !r.eligible} onClick={() => edit(active, { index, excluded: false })}>人工确认此组合</button>
             <details><summary>Catalog / Mapping / 本地资源 / 几何证据</summary><pre>{JSON.stringify(r, null, 2)}</pre></details>
           </div>
         </div>)}
@@ -160,6 +254,7 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
       <fieldset disabled={locked || generationSubmitted}>
         <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />确认所有候选、数量与排除项；允许生成 Approximation，不能保证原作品一致。</label>
         <button type="button" disabled={!confirmed || !allReviewed} onClick={() => void action('生成近似方案', async () => {
+          await saveReview()
           const choices = record.analysis!.observations.filter(o => !rows[o.id].excluded).map(o => ({ observationId: o.id, searchId: rows[o.id].search!.id, index: rows[o.id].index, quantity: Number(rows[o.id].quantity) }))
           const excluded = record.analysis!.observations.filter(o => rows[o.id].excluded).map(o => ({ observationId: o.id, reason: rows[o.id].reason }))
           const value = await post<Artifact>('generate', { analysisId: record.id, model: record.model, choices, excluded, confirmApproximation: true })
@@ -173,9 +268,15 @@ export function ReverseAssemblyPanel({ inventory, onQuantity, models, model, onM
         if (value.generation) await onComplete(value.generation)
       })}>读取已提交生成结果（不调用模型）</button>
     </>}
+    {generationSubmitted && <p className="brick-help">此 Analysis 已提交生成；可以继续保存审核或读取已有方案。原有防重复生成保护仍生效，不覆盖 Artifact。</p>}
     {artifact && <div role="status"><p>Approximation · {artifact.status} · {artifact.error || artifact.generation?.error?.message || '请在 Viewer 与原图对比；Validator 不验证外观相似度。'}</p>
       <button onClick={() => download(artifact, 'reverse-design-' + artifact.id)}>下载 Reverse Artifact</button>
       <details><summary>确认、Geometry Snapshot、Design Hash 与诊断</summary><pre>{JSON.stringify(artifact, null, 2)}</pre></details></div>}
+    {detailId && <ObservationModal title={'Reverse Observation ' + detailId} data={{
+      observation: record?.analysis?.observations.find(o => o.id === detailId),
+      review: rows[detailId],
+      relations: record?.analysis?.relations,
+    }} onClose={() => setDetailId('')} />}
     {busy && <p role="status">{busy}… 不自动重试。</p>}
     {error && <p className="brick-error" role="alert">{error}</p>}
   </section>

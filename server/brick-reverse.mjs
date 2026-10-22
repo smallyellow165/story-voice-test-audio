@@ -1,9 +1,9 @@
 // Reverse orchestration only; Catalog, Mapping, geometry and validation stay shared.
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
-import { catalogFeatureParams, validateCatalogFeatures, visionFeatureProperties } from '../src/brick-vision/catalog-features.mjs'
+import { catalogFeatureParams, validateCatalogFeatures, visionFeatureProperties, featureEditor, readFeatureEditor } from '../src/brick-vision/catalog-features.mjs'
 import { catalog } from './brick-games.mjs'
 import { loadBrickRules, geometrySnapshot } from './brick-rules.mjs'
 import { validateImage, visionErrorDiagnostic } from './brick-vision.mjs'
@@ -105,6 +105,106 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
   }
   return {
     read,
+
+    async history() {
+      let names
+      try { names = await readdir(directory) } catch (e) { if (e.code === 'ENOENT') return { items: [], warnings: [] }; throw e }
+      const items = [], warnings = []
+      for (const name of names.filter(n => /^[a-f0-9-]{36}\.json$/.test(n))) {
+        try {
+          const r = JSON.parse(await readFile(path.join(directory, name), 'utf8'))
+          if (r.kind !== 'reverse-analysis') continue
+          items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model,
+            status: r.status, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
+        } catch { warnings.push(name + ' 无法读取；原文件保留。') }
+      }
+      items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))
+      return { items, warnings }
+    },
+    async saveReview(body) {
+      const analysis = await analyzed(body.analysisId)
+      const rows = {}
+      for (const o of analysis.analysis.observations) {
+        const r = body.rows?.[o.id]
+        if (!r || typeof r.quantity !== 'string' || typeof r.excluded !== 'boolean' || typeof r.reason !== 'string'
+          || !r.features || ['color', 'size', 'shape', 'print'].some(k => typeof r.features[k] !== 'string')
+          || JSON.stringify(r).length > 10000) fail('审核草稿字段无效。')
+        const row = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
+        if (r.searchId) {
+          const search = await read(r.searchId)
+          if (search.kind !== 'reverse-search' || search.analysisId !== analysis.id || search.observationId !== o.id
+            || hash(readFeatureEditor(r.features)) !== hash(search.features)) fail('候选与当前审核特征不一致。')
+          row.searchId = search.id
+          if (r.index !== undefined) {
+            if (!Number.isSafeInteger(r.index) || !search.rows[r.index]?.eligible) fail('确认候选无效。')
+            row.index = r.index
+          }
+        } else if (r.index !== undefined) fail('确认项缺少候选记录。')
+        rows[o.id] = row
+      }
+      const review = { analysisId: analysis.id, updatedAt: new Date().toISOString(), rows }
+      const target = file(analysis.id) + '.review', temp = target + '.' + randomUUID() + '.tmp'
+      await writeFile(temp, JSON.stringify(review), { flag: 'wx', mode: 0o600 })
+      await rename(temp, target)
+      return { updatedAt: review.updatedAt }
+    },
+    async restore(analysisId) {
+      const analysis = await read(analysisId)
+      if (analysis.kind !== 'reverse-analysis') fail('请选择 Analysis。')
+      if (!analysis.source || !['full', 'today', 'virtual'].includes(analysis.source.kind)) fail('记录缺少有效 Part Source，无法安全恢复。', 422)
+      if (analysis.analysis) validateReverseAnalysis(analysis.analysis)
+      const warnings = [], rows = {}
+      if (!analysis.image?.imageBase64) warnings.push('记录缺少参考图片，无法恢复图片或 BBox。')
+      if (!analysis.analysis) warnings.push('记录没有可恢复的完整分析；请查看原始诊断。')
+      for (const o of analysis.analysis?.observations || []) rows[o.id] = {
+        features: featureEditor(o), quantity: String(o.quantity), excluded: false, reason: '',
+      }
+      let artifact = null, generationStatus = 'none'
+      try {
+        const link = JSON.parse(await readFile(path.join(directory, analysisId + '.generation.json'), 'utf8'))
+        generationStatus = 'saved'
+        artifact = await read(link.artifactId) // Existing hash, geometry and Validator checks.
+        generationStatus = artifact.status
+      } catch (e) {
+        if (e.code !== 'ENOENT') { generationStatus = 'unavailable'; warnings.push('Artifact 无法恢复：' + e.message) }
+        else {
+          try { await readFile(path.join(directory, analysisId + '.generation.lock')); generationStatus = 'submitted'; warnings.push('生成已提交但 Artifact 尚不可读；不会重复调用模型。') }
+          catch (lockError) { if (lockError.code !== 'ENOENT') throw lockError }
+        }
+      }
+      // Artifact confirmations are saved facts, not inferred from model guesses.
+      for (const c of artifact?.confirmations || []) {
+        const row = rows[c.observationId]
+        if (!row) continue
+        try {
+          const search = await read(c.searchId)
+          const index = search.rows.findIndex(r => r.source.part_num === c.item.part_num && r.source.color_id === c.item.color_id)
+          if (index < 0) throw new Error('确认组合不在已保存候选中')
+          Object.assign(row, { features: featureEditor(c.features), quantity: String(c.item.quantity), search, index })
+        } catch (e) { warnings.push(c.observationId + ' 确认恢复失败：' + e.message) }
+      }
+      for (const e of artifact?.excluded || []) if (rows[e.observationId]) Object.assign(rows[e.observationId], { excluded: true, reason: e.reason })
+      let updatedAt = null
+      try {
+        const review = JSON.parse(await readFile(file(analysisId) + '.review', 'utf8'))
+        updatedAt = review.updatedAt
+        for (const [id, r] of Object.entries(review.rows)) {
+          if (!rows[id]) continue
+          rows[id] = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
+          if (r.searchId) try {
+            const search = await read(r.searchId)
+            if (search.kind !== 'reverse-search' || search.analysisId !== analysisId || search.observationId !== id
+              || hash(readFeatureEditor(r.features)) !== hash(search.features)) throw new Error('候选与草稿不一致')
+            rows[id].search = search
+            if (r.index !== undefined && search.rows[r.index]?.eligible) rows[id].index = r.index
+          } catch (e) { warnings.push(id + ' 候选恢复失败：' + e.message) }
+        }
+      } catch (e) {
+        if (e.code === 'ENOENT') warnings.push('没有已保存审核草稿；仅恢复原始分析及已有 Artifact 确认，未保存的编辑无法恢复。')
+        else throw e
+      }
+      return { analysis, rows, artifact, generationStatus, updatedAt, warnings }
+    },
     async analyze(body) {
       const definition = resolveModel(body.model, 'reverse'), image = validateImage(body)
       const rules = await loadRules()
