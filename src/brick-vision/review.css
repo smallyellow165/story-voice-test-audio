@@ -9,10 +9,6 @@
 .vision-bbox span { position: absolute; top: 0; left: 0; padding: 1px 3px; background: #147c98; color: white; font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .inventory-workbench .vision-bbox.is-active { border-color: #db8d0a; background: #e6a62826; z-index: 1; }
 .vision-bbox.is-active span { background: #9a5b00; }
-.inventory-workbench .vision-observation-table { min-width: 1050px; table-layout: fixed; }
-.vision-observation-table td { vertical-align: middle; }
-.vision-observation-table td small { display: block; line-height: 1.4; }
-.vision-observation-table tr.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
 .inventory-workbench .vision-observation-id { background: transparent; color: #235f6c; border-color: transparent; padding: 0 3px; }
 .vision-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .vision-detail-modal {
@@ -28,6 +24,17 @@
 .vision-detail-modal :focus-visible { outline: 3px solid #e6a628; outline-offset: 2px; }
 .vision-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; font-size: 12px; }
 .vision-detail-content pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
-/* Feature editing remains inside the existing horizontally scrollable table. */
-.vision-feature-editor { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 4px; min-width: 220px; }
-.vision-feature-editor label { min-width: 0; }
+
+
+.inventory-workbench .vision-observation-list { min-width: 0; }
+.inventory-workbench .vision-observation-row { min-width: 0; padding: 8px 4px; border-bottom: 1px solid #dce5df; overflow-wrap: anywhere; }
+.inventory-workbench .vision-observation-row.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
+.vision-observation-heading, .vision-observation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; min-width: 0; }
+.inventory-workbench .vision-select { display: flex; flex-direction: row; align-items: center; gap: 4px; }
+.inventory-workbench .vision-feature-editor, .inventory-workbench .vision-confirm-editor {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 5px 8px; margin: 6px 0; min-width: 0;
+}
+.inventory-workbench .vision-observation-row label { min-width: 0; }
+.inventory-workbench .vision-observation-row input:not([type="checkbox"]), .inventory-workbench .vision-observation-row select { box-sizing: border-box; width: 100%; min-width: 0; }
+.inventory-workbench .vision-observation-row button { max-width: 100%; overflow-wrap: anywhere; }
+.inventory-vision-review { min-width: 0; overflow-wrap: anywhere; }

@@ -257,3 +257,35 @@ test('structured features are required and invalid feature values cannot become 
   }
   assert.throws(() => validateRecognition({ ...value, observations: [{ ...observation(), shape: 'unsupported' }] }))
 })
+
+
+test('manual inventory validates Catalog identity independently of game support', async () => {
+  const calls = []
+  const service = createBrickVision('unused-no-record-write', {
+    loadRules: async () => { throw new Error('Inventory must not load game rules') },
+    getMetadata: async (route, params) => {
+      calls.push({ route, params })
+      return { items: [{ part_num: '98223', name: 'Duplo Brick 2 x 4 Curved Top', colors: [{ id: 25 }] }] }
+    },
+  })
+  const item = { part_num: '98223', color_id: 25, quantity: 2 }
+  const result = await service.validateDraft({ items: [item] })
+  assert.equal(result.valid, true)
+  assert.deepEqual(result.items, [item])
+  assert.equal(result.gameSupport, 'not_checked')
+  assert.deepEqual(calls, [{ route: 'parts', params: { search: '98223,', color: '25', page: '1', page_size: '1' } }])
+  assert.equal((await service.validateDraft({ items: [{ ...item, color_id: 4 }] })).valid, false)
+  assert.equal((await service.validateDraft({ items: [{ ...item, part_num: 'absent' }] })).valid, false)
+  const count = calls.length
+  await assert.rejects(service.validateDraft({ items: [{ ...item, quantity: 0 }] }))
+  await assert.rejects(service.validateDraft({ items: [] }))
+  assert.equal(calls.length, count)
+})
+
+test('manual inventory cannot pass a malformed or unavailable Catalog', async () => {
+  const item = { part_num: 'catalog-part', color_id: 25, quantity: 1 }
+  const invalid = createBrickVision('unused', { getMetadata: async () => ({}) })
+  await assert.rejects(invalid.validateDraft({ items: [item] }), /Catalog/)
+  const unavailable = createBrickVision('unused', { getMetadata: async () => { throw new Error('Catalog unavailable') } })
+  await assert.rejects(unavailable.validateDraft({ items: [item] }), /Catalog unavailable/)
+})

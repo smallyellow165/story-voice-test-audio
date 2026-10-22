@@ -213,10 +213,21 @@ export function createBrickVision(directory, { artifacts, createClient = createG
       return r
     },
     async validateDraft(body) {
-      const items = validateItems(body?.items), rules = await loadRules()
-      const matches = await matchObservations(items.map((item, i) => ({ id: `manual-${i}`, candidates: [{ part_num: item.part_num, color_id: item.color_id }],
-        quantity: item.quantity, confidence: 1, status: 'certain', evidence: '家长人工选择；这里只校验 Catalog 与 Mapping', occlusion: '', bbox: [0,0,1,1] })), { getMetadata, rules, checkOverlap: false })
-      return { valid: matches.every(m => m.status === 'matched'), items, matches }
+      const items = validateItems(body?.items)
+      if (!items.length) fail('请选择至少一项库存。')
+      const matches = []
+      for (const item of items) {
+        // Existing Catalog comma search is exact; color is checked against the
+        // imported element/inventory associations. No LDraw or game dependency.
+        const result = await getMetadata('parts', { search: item.part_num + ',', color: String(item.color_id), page: '1', page_size: '1' })
+        if (!Array.isArray(result?.items)) fail('Catalog 返回了无效的零件列表。', 502)
+        const part = result.items.find(p => p.part_num === item.part_num &&
+          Array.isArray(p.colors) && p.colors.some(c => c.id === item.color_id))
+        matches.push({ item, valid: !!part, source: 'Rebrickable Catalog',
+          name: part?.name ?? null, reason: part ? '型号与颜色组合存在于本地 Catalog' : 'Catalog 未确认此 DUPLO 型号与颜色组合' })
+      }
+      return { valid: matches.every(m => m.valid), items, matches,
+        inventoryValidation: 'passed', gameSupport: 'not_checked' }
     },
     async recognize(body) {
       if (!uuid.test(body?.requestId || '') || !['inventory', 'step'].includes(body.mode)) fail('识别请求 ID 或模式无效')
