@@ -8,12 +8,13 @@ import type { ObservationCatalogSearch, VisionResult } from './types'
 import { ObservationPreview } from './ObservationPreview'
 import { ObservationModal } from './ObservationModal'
 import { bboxStyle } from './observation-view.mjs'
-import { catalogShapes, catalogPrints, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
+import { catalogFeatureParams, catalogShapes, catalogPrints, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
+import { uniqueCatalogIdentity, hasConfirmedIdentity } from './catalog-autofill.mjs'
 import type { FeatureEditor } from './catalog-features.mjs'
 import './review.css'
 
 type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
-  features: FeatureEditor; confirmation: unknown }
+  features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual' }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
 export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }: {
   onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null
@@ -37,16 +38,24 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
   const [modelError, setModelError] = useState(''), [configRevision, setConfigRevision] = useState(0)
   const lock = useRef(false), requestId = useRef('')
   const catalogEpoch = useRef(0)
+  const autoCache = useRef(new Map<string, { expires: number; data: unknown }>())
+  const [autoNotes, setAutoNotes] = useState<Record<string, string>>({})
+  const [autoSummary, setAutoSummary] = useState('')
   useEffect(() => () => { catalogEpoch.current++ }, [])
   function restoreResult(next: VisionResult) {
     catalogEpoch.current++
+    autoCache.current.clear(); setAutoNotes({}); setAutoSummary('')
     setResult(next); setApplied(false); setValidation(null)
     setRows((next.matches || []).map(m => createObservationDraft(m.observation)))
   }
   function editRow(id: string, changes: Partial<DraftRow>) {
     catalogEpoch.current++
+    if (changes.features) autoCache.current.clear()
+    setAutoNotes(previous => ({ ...previous, [id]: '' })); setAutoSummary('')
     setValidation(null)
-    setRows(previous => previous.map(r => r.id === id ? { ...r, selected: false, confirmation: null, ...changes } : r))
+    setRows(previous => previous.map(r => r.id === id ? { ...r, selected: false, confirmation: null,
+      ...(changes.features && r.identityOrigin === 'auto' ? { part: '', color: '', identityOrigin: undefined } : {}),
+      ...('part' in changes || 'color' in changes ? { identityOrigin: 'manual' as const } : {}), ...changes } : r))
   }
   function searchObservation(row: DraftRow) {
     if (!onSearchCatalog || !result || lock.current || applied) return
@@ -63,11 +72,51 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
           catalogEpoch.current++
           setValidation(null)
           setRows(previous => previous.map(r => r.id === row.id ? { ...r, selected: true, part: item.part_num,
-            color: String(item.color_id), quantity: String(item.quantity), confirmation: { features, item, evidence } } : r))
+            color: String(item.color_id), quantity: String(item.quantity), identityOrigin: 'manual' as const, confirmation: { features, item, evidence } } : r))
           setActiveId(row.id)
         },
       })
     } catch (e) { setError(String(e)) }
+  }
+  async function autofill(requested: DraftRow[]) {
+    if (lock.current || applied || !result) return
+    const epoch = ++catalogEpoch.current
+    lock.current = true; setBusy(true); setAutoSummary('')
+    const counts = { filled: 0, multiple: 0, none: 0, failed: 0, skipped: 0 }
+    try {
+      // Serial requests bound concurrency and share identical feature results.
+      for (const row of requested) {
+        if (catalogEpoch.current !== epoch) return
+        const note = (text: string) => setAutoNotes(previous => ({ ...previous, [row.id]: text }))
+        if (hasConfirmedIdentity(row)) { counts.skipped++; note('跳过：已有确认值或人工填写值。'); continue }
+        try {
+          const features = readFeatureEditor(row.features)
+          const params = catalogFeatureParams(features)
+          if (!Object.keys(params).length) throw new Error('没有已知特征，请先填写特征。')
+          const key = JSON.stringify(params)
+          const cached = autoCache.current.get(key)
+          const data = cached && cached.expires > Date.now() ? cached.data : await requestJson<unknown>(
+            '/api/brick-catalog/candidates?' + new URLSearchParams({ ...params, page: '1', page_size: '2' }), {}, 'Observation Catalog 检索')
+          if (catalogEpoch.current !== epoch) return
+          const decision = uniqueCatalogIdentity(data, features.color_id)
+          autoCache.current.set(key, { data, expires: cached && cached.expires > Date.now() ? cached.expires : Date.now() + 60000 })
+          counts[decision.status]++
+          if (decision.status === 'filled') {
+            setValidation(null)
+            setRows(previous => previous.map(current => current.id === row.id && !hasConfirmedIdentity(current)
+              && JSON.stringify(current.features) === JSON.stringify(row.features)
+              ? { ...current, part: decision.part, color: decision.color, selected: false, identityOrigin: 'auto' as const,
+                  confirmation: { method: 'catalog_unique', features, evidence: data } } : current))
+            note('唯一型号与颜色已回填；请人工勾选并校验。')
+          } else note(decision.status === 'none' ? '未匹配，未修改确认值。' : '存在多个型号或颜色组合，请检索候选并人工选择。')
+        } catch (e) {
+          if (catalogEpoch.current !== epoch) return
+          counts.failed++; note(e instanceof Error ? e.message : String(e))
+        }
+      }
+      if (catalogEpoch.current === epoch) setAutoSummary(
+        `总数 ${requested.length} · 成功回填 ${counts.filled} · 多个候选 ${counts.multiple} · 无候选 ${counts.none} · 失败 ${counts.failed} · 跳过 ${counts.skipped}`)
+    } finally { lock.current = false; setBusy(false) }
   }
   async function refreshHistory() {
     try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '历史识别')).records) }
@@ -123,6 +172,8 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
         <p>编辑视觉特征后，逐行检索下方 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
+        <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
+        {autoSummary && <p role="status">{autoSummary}</p>}
         <div className="vision-observation-list" ref={tableHost}>
           {rows.map(row => {
             const match = matches.get(row.id)
@@ -150,10 +201,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
               </div>
               <div className="vision-observation-actions">
                 <button disabled={busy || applied || !onSearchCatalog} onClick={() => searchObservation(row)}>检索 {row.id} 候选</button>
-                <span>{row.confirmation ? '已人工选择 Catalog 候选' : '待人工确认'}</span>
+                <button disabled={busy || applied} onClick={() => void autofill([row])}>检索并回填</button>
+                <span>{row.confirmation ? '已有 Catalog 确认值（详情可查看来源）' : '待人工确认'}</span>
                 <button onClick={() => setDetail({ kind: 'observation', id: row.id })}>详情</button>
                 <button disabled={busy || applied} onClick={e => { e.stopPropagation(); catalogEpoch.current++; setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') }}>删除</button>
               </div>
+              {autoNotes[row.id] && <p role="status">{autoNotes[row.id]}</p>}
             </section>
           })}
         </div>
