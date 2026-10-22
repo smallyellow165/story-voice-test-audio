@@ -1,0 +1,88 @@
+/* Inventory entry only. Other pages importing inventory.css keep their layout. */
+.brick-inventory-shell { height: 100vh; height: 100dvh; overflow: hidden; }
+.brick-inventory-shell #brick-inventory-root { height: 100%; min-height: 0; overflow: hidden; }
+.brick-inventory-page.inventory-workbench {
+  box-sizing: border-box;
+  width: 100%; max-width: none; height: 100%; min-height: 0;
+  margin: 0; padding: 0; overflow: hidden;
+}
+.inventory-workbench .inventory-source-header { display: block; margin: 0 0 12px; min-width: 0; overflow-wrap: anywhere; }
+.inventory-workbench .inventory-source-header h1 { font-size: 21px; margin: 3px 0; }
+.inventory-workbench .inventory-source-header p { margin: 3px 0; font-size: 12px; }
+.inventory-workbench .inventory-source-header .inventory-navigation { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
+.inventory-workbench .inventory-source-header a { min-width: 0; overflow-wrap: anywhere; }
+.inventory-workbench .three-column-layout__panel {
+  min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable;
+  background: #fffefa; overscroll-behavior: contain;
+}
+.inventory-workbench .three-column-layout__content { padding: 10px; min-width: 0; }
+.inventory-workbench .three-column-layout__handle { width: 7px; background: #dce5df; }
+.inventory-workbench .three-column-layout__handle:hover,
+.inventory-workbench .three-column-layout__handle:focus-visible { background: #357261; }
+.inventory-workbench .inventory-panel-title {
+  margin: 0 0 10px; padding-bottom: 7px; border-bottom: 1px solid #c6d4ce;
+  color: #357261; font-size: 13px; letter-spacing: .06em;
+}
+.inventory-workbench .inventory-catalog,
+.inventory-workbench .inventory-session,
+.inventory-workbench .inventory-vision-workspace {
+  position: static; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
+}
+.inventory-workbench .inventory-catalog + .inventory-catalog,
+.inventory-workbench .inventory-session + .inventory-game-preparation,
+.inventory-workbench .inventory-vision-workspace + .inventory-catalog {
+  border-top: 1px solid #dce5df; padding-top: 12px; margin-top: 14px;
+}
+.inventory-workbench h2 { font-size: 17px; margin: 0 0 9px; }
+.inventory-workbench h3 { font-size: 13px; }
+.inventory-workbench p { margin: 8px 0; font-size: 12px; line-height: 1.5; }
+.inventory-workbench label { gap: 3px; font-size: 12px; }
+.inventory-workbench input, .inventory-workbench select {
+  min-height: 34px; padding: 6px 8px; border-radius: 5px; max-width: 100%;
+}
+.inventory-workbench input[type="checkbox"] { width: auto; min-height: 0; }
+.inventory-workbench button { min-height: 34px; padding: 5px 8px; border-radius: 5px; font-size: 12px; white-space: normal; }
+.inventory-workbench .inventory-filters { gap: 7px; }
+.inventory-workbench .inventory-filters label { flex: 1 1 130px; }
+.inventory-workbench .inventory-filters .inventory-search { flex-basis: 220px; }
+.inventory-workbench .inventory-pagination, .inventory-workbench .inventory-actions { margin: 9px 0; gap: 6px; }
+.inventory-workbench .inventory-grid { display: block; width: 100%; min-width: 0; overflow-x: auto; }
+.inventory-workbench .inventory-part-row {
+  display: grid;
+  grid-template-columns: 48px minmax(140px, 1fr) 148px max-content 64px max-content;
+  align-items: center; column-gap: 8px;
+  min-width: 680px; padding: 6px 0; border-bottom: 1px solid #dce5df;
+}
+.inventory-workbench .inventory-photo { height: 48px; border-radius: 4px; }
+.inventory-workbench .inventory-photo span { padding: 2px; font-size: 10px; }
+.inventory-part-identity { min-width: 0; align-self: center; }
+.inventory-part-identity small, .inventory-part-identity h3, .inventory-part-identity a {
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.inventory-workbench .inventory-part-identity small { font-size: 10px; }
+.inventory-part-identity a { font-size: 11px; }
+.inventory-workbench .inventory-part-identity .inventory-error { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Existing controls remain owned by PartRow; only their visual grid placement changes. */
+.inventory-workbench .inventory-part-controls,
+.inventory-workbench .inventory-part-controls .inventory-add { display: contents; }
+.inventory-workbench .inventory-part-controls label { min-width: 0; }
+.inventory-workbench .inventory-part-controls button { white-space: nowrap; }
+.inventory-workbench .inventory-part-controls .inventory-color-select { gap: 5px; }
+.inventory-workbench .inventory-part-controls .inventory-swatch { width: 16px; height: 16px; }
+.inventory-workbench .inventory-items li { padding: 9px 0; gap: 4px; }
+.inventory-workbench .inventory-quantity { flex-wrap: wrap; gap: 5px; }
+.inventory-workbench .inventory-empty { padding: 10px 0; }
+.inventory-workbench .inventory-history { margin: 12px 0; }
+.inventory-history > button { margin: 6px 6px 0 0; }
+.inventory-workbench .inventory-source > label { margin: 8px 0; }
+.inventory-workbench .inventory-source > img { display: block; object-fit: contain; }
+.inventory-workbench details { margin: 8px 0; }
+.inventory-workbench summary { cursor: pointer; font-size: 12px; }
+.inventory-workbench pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.inventory-workbench th, .inventory-workbench td { padding: 6px; font-size: 12px; }
+.inventory-review-table { overflow-x: auto; }
+.inventory-review-table table { width: 100%; min-width: 440px; border-collapse: collapse; }
+.inventory-review-table th, .inventory-review-table td { text-align: left; border-bottom: 1px solid #dce5df; }
+.inventory-review-table td:first-child label { display: flex; align-items: center; }
+.inventory-review-table td input:not([type="checkbox"]) { min-width: 58px; }
+.inventory-workbench footer { margin-top: 12px; }

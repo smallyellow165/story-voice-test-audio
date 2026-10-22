@@ -35,7 +35,7 @@ export function GamePreparation() {
       window.open(url.href, '_blank', 'noopener,noreferrer')
     } catch (e) { setError(String(e)) }
   }
-  return <section className="inventory-catalog" style={{ marginTop: 24 }} aria-label="生成正式积木游戏">
+  return <section className="inventory-catalog inventory-game-preparation" aria-label="生成正式积木游戏">
     <h2>从已保存库存生成游戏</h2>
     <p>仅读取你明确选择并保存的库存。修改库存后请先保存，再刷新列表并重新检查。</p>
     <div className="inventory-filters">
@@ -82,7 +82,7 @@ export function GamePreparation() {
     {attempt && <>
       <p>Validator：{attempt.generation.validation?.valid ? 'Valid' : 'Invalid'} · 请求模型 {attempt.generation.model} · 返回模型 {attempt.generation.modelVersion} · {attempt.generation.elapsedMs} ms · {attempt.generation.finishReason}</p>
       {attempt.generation.error && <p role="alert">{attempt.generation.error.message}</p>}
-      <details open><summary>实际模型输入 / Design / Steps / 库存消耗 / 原始输出</summary><pre style={{ maxHeight: 500, overflow: 'auto' }}>{JSON.stringify(attempt, null, 2)}</pre></details>
+      <details open><summary>实际模型输入 / Design / Steps / 库存消耗 / 原始输出</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(attempt, null, 2)}</pre></details>
       {attempt.artifact && <><p>已验证设计：{attempt.artifact.generation.design.name} · ID {attempt.artifact.id} · SHA-256 {attempt.artifact.designHash}</p>
         <label>V4 页面地址<input value={v4Url} onChange={e => setV4Url(e.target.value)} /></label><button onClick={start}>在 V4 启动这个游戏</button></>}
       <p>如需再次生成，明确点击“查看库存与映射”建立新检查记录后再提交。</p>

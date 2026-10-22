@@ -1,0 +1,30 @@
+.vision-bbox-toggle { display: flex !important; align-items: center; gap: 6px; margin: 8px 0; }
+.vision-preview-frame { position: relative; width: 100%; padding: 0; line-height: 0; }
+.vision-preview-frame img { display: block; width: 100%; height: auto; image-orientation: from-image; }
+.inventory-workbench .vision-bbox {
+  position: absolute; box-sizing: border-box; margin: 0; padding: 0;
+  min-width: 0; min-height: 0; border: 2px solid #147c98; border-radius: 0;
+  background: transparent; color: white; cursor: pointer;
+}
+.vision-bbox span { position: absolute; top: 0; left: 0; padding: 1px 3px; background: #147c98; color: white; font-size: 11px; line-height: 1.4; white-space: nowrap; }
+.inventory-workbench .vision-bbox.is-active { border-color: #db8d0a; background: #e6a62826; z-index: 1; }
+.vision-bbox.is-active span { background: #9a5b00; }
+.inventory-workbench .vision-observation-table { min-width: 1050px; table-layout: fixed; }
+.vision-observation-table td { vertical-align: middle; }
+.vision-observation-table td small { display: block; line-height: 1.4; }
+.vision-observation-table tr.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
+.inventory-workbench .vision-observation-id { background: transparent; color: #235f6c; border-color: transparent; padding: 0 3px; }
+.vision-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.vision-detail-modal {
+  box-sizing: border-box; width: min(900px, 94vw); max-width: 94vw; max-height: 88vh; max-height: 88dvh;
+  padding: 0; border: 1px solid #c6d4ce; border-radius: 8px;
+  background: #fffefa; color: #243c38; font-family: system-ui, sans-serif; overflow: auto;
+}
+.vision-detail-modal::backdrop { background: #152d2980; }
+.vision-detail-content { padding: 14px; min-width: 0; }
+.vision-detail-content header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.vision-detail-content h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
+.vision-detail-modal button { padding: 6px 10px; min-height: 34px; border: 1px solid #2e5c50; border-radius: 5px; background: #2e5c50; color: white; cursor: pointer; }
+.vision-detail-modal :focus-visible { outline: 3px solid #e6a628; outline-offset: 2px; }
+.vision-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; font-size: 12px; }
+.vision-detail-content pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }

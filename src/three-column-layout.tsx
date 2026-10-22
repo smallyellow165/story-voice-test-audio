@@ -7,12 +7,13 @@ type ThreeColumnLayoutProps = {
   center: ReactNode
   right: ReactNode
   defaultSizes?: [string, string, string]
+  className?: string
 }
 
 // Fill the parent's bounded width/height; each column owns its scrolling.
-export function ThreeColumnLayout({ left, center, right, defaultSizes = ['22%', '58%', '20%'] }: ThreeColumnLayoutProps) {
+export function ThreeColumnLayout({ left, center, right, defaultSizes = ['22%', '58%', '20%'], className }: ThreeColumnLayoutProps) {
   return (
-    <Group className="three-column-layout" orientation="horizontal">
+    <Group className={['three-column-layout', className].filter(Boolean).join(' ')} orientation="horizontal">
       <Panel className="three-column-layout__panel" defaultSize={defaultSizes[0]} minSize="15%" aria-label="Left panel">
         <div className="three-column-layout__content">{left}</div>
       </Panel>

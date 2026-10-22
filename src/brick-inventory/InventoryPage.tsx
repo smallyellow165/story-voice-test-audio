@@ -4,7 +4,9 @@ import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
 import { InventoryImagePanel } from '../brick-vision/InventoryImagePanel'
+import { ThreeColumnLayout } from '../three-column-layout'
 import './inventory.css'
+import './workbench.css'
 
 type Color = { id: number; name: string; rgb: string }
 type Part = { part_num: string; name: string; part_cat_id: number; colors: Color[] }
@@ -42,7 +44,7 @@ function Photo({ media, name }: { media?: Media; name: string }) {
     </> : <span>{failed ? '图片加载失败' : imageMessages[media?.status || 'loading'] || '图片不可用'}</span>}
   </div>
 }
-function PartCard({ part, image, initialColor, onAdd }: {
+function PartRow({ part, image, initialColor, onAdd }: {
   part: Part; image?: Media; initialColor: string; onAdd: (item: InventoryItem) => void
 }) {
   const [color, setColor] = useState(part.colors.find(c => String(c.id) === initialColor)?.id ?? part.colors[0]?.id)
@@ -60,29 +62,31 @@ function PartCard({ part, image, initialColor, onAdd }: {
     try { setSpecificImage(await api<Media>('color-image', { part_num: part.part_num, color_id: String(color) }, controller.signal)) }
     catch (e) { if (!controller.signal.aborted) { setError(message(e)); setSpecificImage({ status: 'api_error', url: null }) } }
   }
-  return <article className="inventory-card">
+  return <article className="inventory-part-row">
     <Photo media={specific ? specificImage : image} name={part.name} />
-    <small>{specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}</small>
-    <h3>{part.name}</h3><a href={`https://rebrickable.com/parts/${encodeURIComponent(part.part_num)}/`} target="_blank" rel="noreferrer">{part.part_num} · Rebrickable ↗</a>
-    <label>颜色 <span className="inventory-color-select"><Swatch color={part.colors.find(c => c.id === color)} />
+    <div className="inventory-part-identity"><small title={specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}>{specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}</small>
+    <h3 title={part.name}>{part.name}</h3><a title={`${part.part_num} · Rebrickable`} href={`https://rebrickable.com/parts/${encodeURIComponent(part.part_num)}/`} target="_blank" rel="noreferrer">{part.part_num} · Rebrickable ↗</a>
+      {error && <p role="alert" className="inventory-error" title={error}>{error}</p>}
+      {(image?.cache_warning || specificImage?.cache_warning) && <small title="图片元数据未能写入缓存。">图片元数据未能写入缓存。</small>}
+    </div>
+    <div className="inventory-part-controls"><label>颜色 <span className="inventory-color-select"><Swatch color={part.colors.find(c => c.id === color)} />
       <select value={color ?? ''} disabled={!part.colors.length} onChange={event => {
         request.current?.abort(); setColor(Number(event.target.value)); setSpecific(false); setSpecificImage(undefined); setError('')
       }}>
         {!part.colors.length && <option value="">没有已知颜色记录</option>}
         {part.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select></span></label>
-    <button type="button" className="inventory-secondary" disabled={color === undefined || specificImage?.status === 'loading'} onClick={() => void showColor()}>查看所选颜色图片</button>
+    <button type="button" className="inventory-secondary" title="查看所选颜色图片" disabled={color === undefined || specificImage?.status === 'loading'} onClick={() => void showColor()}>查看图片</button>
     <div className="inventory-add"><label>数量<input type="number" min="1" max={MAX_QUANTITY} step="1" value={quantity} onChange={event => setAmount(event.target.value)} /></label>
       <button type="button" disabled={color === undefined} onClick={() => {
         try { if (color !== undefined) { onAdd({ part_num: part.part_num, color_id: color, quantity: Number(quantity) }); setError('') } }
         catch (e) { setError(message(e)) }
-      }}>加入库存</button></div>
-    {error && <p role="alert" className="inventory-error">{error}</p>}
-    {(image?.cache_warning || specificImage?.cache_warning) && <small>图片元数据未能写入缓存。</small>}
+      }}>加入库存</button></div></div>
   </article>
 }
 
 export function InventoryPage() {
+  const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
@@ -165,15 +169,22 @@ export function InventoryPage() {
     } catch (e) { setStorageError(message(e)) }
   }
   const snapshot = (): SessionInventory => parseSession({ schema_version: 1, id: id || newSessionId(), name, updated_at: new Date().toISOString(), items })
-  return <main className="brick-inventory-page">
-    <header><div><p className="inventory-eyebrow">DUPLO · MANUAL SELECTION</p><h1>今天玩哪些积木？</h1><p>选择拿出来的积木、颜色和数量，保存为今天的搭建库存。</p></div>
-      <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>Brick Test ↗</a></nav></header>
-    <InventoryImagePanel onApply={recognized => {
+  return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
+        left={<>
+          <header className="inventory-source-header"><div><p className="inventory-eyebrow">DUPLO · MANUAL SELECTION</p><h1>今天玩哪些积木？</h1><p>选择拿出来的积木、颜色和数量，保存为今天的搭建库存。</p></div>
+            <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>Brick Test ↗</a></nav></header>
+          <h2 className="inventory-panel-title">Source</h2>
+    <InventoryImagePanel workspaceHost={visionWorkspaceHost} onApply={recognized => {
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
       changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
     }} />
     <a href={`${import.meta.env.BASE_URL}brick-vision.html`}>打开独立 Step Image Confirmation 测试页 ↗</a>
-    <div className="inventory-workspace">
+        </>}
+        center={<><h2 className="inventory-panel-title">Workspace</h2>
+          <section className="inventory-vision-workspace" aria-label="图片识别审核"><h2>图片识别 · 审核与编辑</h2>
+            <p className="inventory-note">从左栏上传或加载历史结果，在此审核；也可直接使用下方 Catalog。</p>
+            <div ref={setVisionWorkspaceHost} />
+          </section>
       <section className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
         <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setQuery(search.trim()); setPage(1) }}>
@@ -188,11 +199,13 @@ export function InventoryPage() {
         {loading && <p role="status">正在读取 Catalog…</p>}
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
           <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
-          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartCard key={`${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter}
+          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter}
             onAdd={item => { const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
         </>}
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>
+        </>}
+        right={<><h2 className="inventory-panel-title">Inventory &amp; Game</h2>
       <aside id="session-inventory" className="inventory-session" aria-label="Session Inventory">
         <h2>今天的库存 <span>{total} 块</span></h2>
         <label>库存名称<input value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true) }} /></label>
@@ -221,7 +234,7 @@ export function InventoryPage() {
               <button className="inventory-secondary" onClick={() => changeItems(setQuantity(items, key, 0))}>删除</button></div></li>
         })}</ul>
       </aside>
-    </div>
-    <GamePreparation />
-  </main>
+          <GamePreparation />
+        </>}
+      />
 }
