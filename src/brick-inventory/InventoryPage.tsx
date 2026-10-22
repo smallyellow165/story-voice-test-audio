@@ -15,6 +15,7 @@ type Part = { part_num: string; name: string; part_cat_id: number; colors: Color
   counts?: { matched: number; mismatched: number; unknown: number }; eligible?: boolean }
 type Media = { status: string; url: string | null; cached?: boolean; cache_warning?: string }
 type Results = { items: Part[]; total: number; page: number; page_size: number;
+  prefilter_total?: number; performance?: Record<string, number>;
   matched_total?: number; fully_matched_total?: number; eligible_total?: number; excluded_total?: number;
   criteria?: Record<string, unknown>; schema?: { database: string; source: string; used_columns: unknown[] } }
 const imageMessages: Record<string, string> = {
@@ -24,17 +25,38 @@ const imageMessages: Record<string, string> = {
 }
 const errors: Record<string, string> = {
   rebrickable_catalog_disabled: '请在 Application Server 启用 REBRICKABLE_CATALOG_LOCAL=1。',
-  rebrickable_catalog_unavailable: 'Catalog 数据不可用，请检查 Application Server 的 MySQL 配置和 rb_ 表。',
+  rebrickable_catalog_unavailable: 'Backend Catalog 处理失败，请查看 Backend 日志中的异常类型。',
+  rebrickable_catalog_database_connection_failed: 'Backend 无法建立 MySQL 连接，请查看 Backend 数据库错误日志。',
+  rebrickable_catalog_database_query_failed: 'Backend 的 MySQL 查询失败，请查看 Backend 数据库错误日志。',
   application_server_unavailable: '无法连接 Application Server，请检查服务和 APPLICATION_SERVER_URL。',
+  application_server_configuration_error: 'APPLICATION_SERVER_URL 格式或目标地址不符合本地 Catalog 要求。',
+  application_server_timeout: '等待 Application Server 超过 25 秒；尚不能判定是数据库慢查询还是其他 Backend 处理耗时。未自动重试。',
+  application_server_network_error: 'Test Audio 到 Application Server 的网络请求失败，请查看下方传输错误码。',
+  application_server_response_interrupted: 'Application Server 响应读取中断，未收到完整内容。',
+  application_server_empty_response: 'Application Server 返回了空响应。',
+  application_server_invalid_json: 'Application Server 返回的响应不是完整有效的 JSON。',
+  application_server_invalid_response: 'Application Server 返回的 JSON 格式错误，需要对象。',
+  catalog_request_failed: 'Backend API 返回错误，请核对请求参数、HTTP 状态及 Backend 日志。',
   unknown_duplo_part_or_color: '数据库中没有这个 DUPLO 型号或颜色组合。',
   invalid_feature_size: '尺寸请填写 2x4 或 2×4 这样的两项正整数。',
   invalid_feature_shape: '请选择支持的名称形状特征。',
   invalid_feature_print: '印花请选择未知、有或无。',
 }
 async function api<T>(route: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/brick-catalog/${route}?${new URLSearchParams(params)}`, { signal })
-  const data = await response.json().catch(() => { throw new Error('Catalog API 未返回 JSON；请通过 Test Audio 的 npm run dev 打开此页。') })
-  if (!response.ok) throw new Error(errors[data.detail] || `Catalog 请求失败（${response.status}）。`)
+  let response: Response
+  try { response = await fetch(`/api/brick-catalog/${route}?${new URLSearchParams(params)}`, { signal }) }
+  catch (error) {
+    if (signal?.aborted) throw error
+    throw new Error(`Catalog /${route} · 浏览器未收到 Test Audio 响应；请检查页面与 Test Audio 服务之间的连接。`)
+  }
+  const data = await response.json().catch(() => { throw new Error(`Catalog /${route} · HTTP ${response.status}：Test Audio 未返回完整 JSON；请确认使用 npm run dev 的入口。`) })
+  if (!response.ok) {
+    const diagnostics = data?.diagnostics
+    const stage = typeof diagnostics?.stage === 'string' && /^[a-z_]+$/.test(diagnostics.stage) ? diagnostics.stage : 'catalog_api'
+    const upstream = Number.isInteger(diagnostics?.upstreamStatus) ? ` · Backend HTTP ${diagnostics.upstreamStatus}` : ''
+    const code = typeof diagnostics?.errorCode === 'string' && /^[A-Z0-9_]{1,60}$/.test(diagnostics.errorCode) ? ` · ${diagnostics.errorCode}` : ''
+    throw new Error(`Catalog /${route} · ${stage} · HTTP ${response.status}${upstream}${code}：${errors[data?.detail] || 'Catalog 请求失败。'}`)
+  }
   return data
 }
 function message(error: unknown) { return error instanceof Error ? error.message : '操作失败，请重试。' }
@@ -109,7 +131,7 @@ export function InventoryPage() {
   const [query, setQuery] = useState('')
   const [featureQuery, setFeatureQuery] = useState<Record<string, string> | null>(null)
   const [featureSize, setFeatureSize] = useState(''), [featureShape, setFeatureShape] = useState('')
-  const [featurePrint, setFeaturePrint] = useState('unknown'), [includeMismatches, setIncludeMismatches] = useState(false)
+  const [featurePrint, setFeaturePrint] = useState('unknown')
   const [category, setCategory] = useState('')
   const [colorFilter, setColorFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -217,18 +239,17 @@ export function InventoryPage() {
         <details className="inventory-feature-search"><summary>按物理特征检索候选（本地 Catalog，不调用模型）</summary>
           <form className="inventory-filters" onSubmit={e => {
             e.preventDefault(); setPage(1)
-            setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint, include_mismatches: String(includeMismatches) })
+            setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint })
           }}>
             <label>名称中的尺寸<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
             <label>名称形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
               <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
             </select></label>
             <label>印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确 Print 标记</option><option value="no">明确 Plain / Unprinted</option></select></label>
-            <label className="inventory-feature-checkbox"><input type="checkbox" checked={includeMismatches} onChange={e => setIncludeMismatches(e.target.checked)} />包含明确不匹配项（排末）</label>
             <button type="submit">检索候选</button>
             {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
           </form>
-          <p className="inventory-note">颜色和类别复用上方筛选。尺寸、形状及印花从名称解析，未知不会被硬性排除；尺寸不等于凸点数量，未写 Print 不等于无印花。仅做候选检索，不代表游戏支持。</p>
+          <p className="inventory-note">颜色和类别复用上方筛选。所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。尺寸、形状及印花从名称解析，尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
         </details>
         <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
@@ -236,8 +257,8 @@ export function InventoryPage() {
         {loading && <p role="status">正在读取 Catalog…</p>}
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
           <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
-          {result.criteria && <div className="inventory-feature-summary"><p>全部条件明确匹配 {result.fully_matched_total}；至少一项明确匹配 {result.matched_total}；无明确冲突（含未知）{result.eligible_total}；明确不匹配 {result.excluded_total}。不自动选择型号。</p>
-            <details><summary>查询条件 / 实际 MySQL 字段</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema }, null, 2)}</pre></details>
+          {result.criteria && <div className="inventory-feature-summary"><p>SQL 预筛选 {result.prefilter_total}；严格匹配 {result.eligible_total}；解析复核排除（不匹配或未知）{result.excluded_total}。未填写条件不参与筛选；无结果时不自动放宽条件，不自动选择型号。</p>
+            <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}
           {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter}
             onAdd={item => { const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
