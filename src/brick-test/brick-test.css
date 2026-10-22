@@ -79,3 +79,19 @@ body { margin: 0; }
 .brick-steps-host:empty { display: none; }
 .brick-build-steps { margin-top: 16px; border-top: 1px solid #dfe5ed; }
 .brick-build-steps ol { padding-left: 24px; }
+
+/* One part per row; all six quantities remain visible and directly editable. */
+.brick-available-inventory { margin-bottom: 18px; overflow-x: auto; }
+.brick-available-inventory table { min-width: 340px; table-layout: fixed; }
+.brick-available-inventory caption { text-align: left; padding-bottom: 10px; font-weight: 650; }
+.brick-available-inventory th:first-child { width: 44%; }
+.brick-available-inventory td, .brick-available-inventory th { vertical-align: middle; }
+.brick-stock-part { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brick-stock-part .inventory-photo { flex: 0 0 48px; width: 48px; height: 56px; border-radius: 4px; }
+.brick-stock-part .inventory-photo span { font-size: 10px; padding: 2px; }
+.brick-stock-identity { min-width: 0; display: grid; gap: 4px; font-weight: 400; }
+.brick-stock-identity strong { color: #243248; }
+.brick-stock-identity small { font-size: 10px; }
+.brick-stock-colors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.brick-page .brick-stock-colors label { font-size: 11px; margin: 0; gap: 3px; }
+.brick-page .brick-stock-colors input { padding: 6px 3px; font-size: 12px; }

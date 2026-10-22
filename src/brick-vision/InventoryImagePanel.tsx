@@ -1,3 +1,4 @@
+import { ModelSelector } from '../model-selector'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addItem, newSessionId } from '../brick-inventory/inventory'
@@ -268,12 +269,11 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
       }}>加载结果（不调用模型）</button>
       <p>加载恢复原始识别，未加入库存的草稿编辑会被替换；修改和加入库存不会覆盖服务端原始记录。</p>
     </div>
-    <label>Provider / 模型<select value={`${provider}:${model}`} disabled={busy || !models.length} onChange={e => {
-      const chosen = models.find(m => `${m.provider}:${m.id}` === e.target.value)
-      if (lock.current || !chosen || (chosen.id === model && chosen.provider === provider)) return
+    <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
+      if (lock.current || (chosen.id === model && chosen.provider === provider)) return
       catalogEpoch.current++
       setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
-    }}>{!models.length && <option value="gemini:">正在读取模型配置…</option>}{models.map(m => <option key={`${m.provider}:${m.id}`} value={`${m.provider}:${m.id}`}>{m.provider} · {m.label} · {m.id}</option>)}</select></label>
+    }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}
     <button disabled={!file || !prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : '识别照片'}</button>

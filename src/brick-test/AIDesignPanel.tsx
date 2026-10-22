@@ -1,3 +1,5 @@
+import { ModelSelector } from '../model-selector'
+import { AvailableInventory } from './AvailableInventory'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -129,11 +131,11 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
     <form onSubmit={generate}>
       <fieldset disabled={disabled || running}>
-        <div className="brick-inventory-editor"><table><caption>可用库存 · 共 {Number.isFinite(total) ? total : '—'} 块</caption><thead><tr><th>型号</th>{COLORS.map((color) => <th key={color.code}>{color.label}</th>)}</tr></thead><tbody>{PARTS.map((part) => <tr key={part.id}><th>{part.label}<small> {part.id}</small></th>{COLORS.map((color) => {
-          const row = inventory.find((item) => item.part === part.id && item.color === color.code)!
-          return <td key={color.code}><input aria-label={`${part.id} ${color.label} 库存`} type="number" min="0" max="100" step="1" required value={Number.isFinite(row.quantity) ? row.quantity : ''} onChange={(event) => { const quantity = event.target.valueAsNumber; setInventory((items) => items.map((item) => item === row ? { ...item, quantity } : item)) }} /></td>
-        })}</tr>)}</tbody></table></div>
-        <label>Gemini 模型<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} disabled={!status}>{status?.models.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}</select></label>
+        <AvailableInventory inventory={inventory} total={total} onQuantity={(row, quantity) => {
+          setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))
+        }} />
+        <ModelSelector label="Gemini 模型" models={(status?.models || []).map(item => ({ ...item, provider: 'gemini' }))}
+          value={{ provider: 'gemini', id: selectedModel }} disabled={!status} onChange={chosen => setSelectedModel(chosen.id)} />
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !status?.apiKeyConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>
