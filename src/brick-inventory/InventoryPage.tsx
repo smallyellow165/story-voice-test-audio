@@ -3,6 +3,8 @@ import { addItem, itemKey, MAX_QUANTITY, newSessionId, parseSession, setQuantity
 import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
+import { catalogFeatureParams } from '../brick-vision/catalog-features.mjs'
+import type { ObservationCatalogSearch } from '../brick-vision/types'
 import { InventoryImagePanel } from '../brick-vision/InventoryImagePanel'
 import { ThreeColumnLayout } from '../three-column-layout'
 import './inventory.css'
@@ -74,11 +76,11 @@ function Photo({ media, name }: { media?: Media; name: string }) {
     </> : <span>{failed ? '图片加载失败' : imageMessages[media?.status || 'loading'] || '图片不可用'}</span>}
   </div>
 }
-function PartRow({ part, image, initialColor, onAdd }: {
-  part: Part; image?: Media; initialColor: string; onAdd: (item: InventoryItem) => void
+function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing = false, onAdd }: {
+  part: Part; image?: Media; initialColor: string; initialQuantity?: string; reviewing?: boolean; onAdd: (item: InventoryItem) => void
 }) {
-  const [color, setColor] = useState(part.colors.find(c => String(c.id) === initialColor)?.id ?? part.colors[0]?.id)
-  const [quantity, setAmount] = useState('1')
+  const [color, setColor] = useState(part.colors.find(c => String(c.id) === initialColor)?.id ?? (reviewing ? undefined : part.colors[0]?.id))
+  const [quantity, setAmount] = useState(initialQuantity)
   const [specificImage, setSpecificImage] = useState<Media | undefined>()
   const [specific, setSpecific] = useState(false)
   const [error, setError] = useState('')
@@ -113,6 +115,7 @@ function PartRow({ part, image, initialColor, onAdd }: {
       <select value={color ?? ''} disabled={!part.colors.length} onChange={event => {
         request.current?.abort(); setColor(Number(event.target.value)); setSpecific(false); setSpecificImage(undefined); setError('')
       }}>
+        {reviewing && part.colors.length > 0 && <option value="" disabled>请选择颜色</option>}
         {!part.colors.length && <option value="">没有已知颜色记录</option>}
         {part.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select></span></label>
@@ -121,12 +124,16 @@ function PartRow({ part, image, initialColor, onAdd }: {
       <button type="button" disabled={color === undefined} onClick={() => {
         try { if (color !== undefined) { onAdd({ part_num: part.part_num, color_id: color, quantity: Number(quantity) }); setError('') } }
         catch (e) { setError(message(e)) }
-      }}>加入库存</button></div></div>
+      }}>{reviewing ? '确认候选' : '加入库存'}</button></div></div>
   </article>
 }
 
 export function InventoryPage() {
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
+  const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
+  const [catalogRequestKey, setCatalogRequestKey] = useState('')
+  const [resultReviewKey, setResultReviewKey] = useState('')
+  const catalogHost = useRef<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [featureQuery, setFeatureQuery] = useState<Record<string, string> | null>(null)
@@ -169,7 +176,7 @@ export function InventoryPage() {
   }, [refresh])
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true); setCatalogError(''); setImageError(''); setResult(null); setImages({})
+    setResultReviewKey(''); setLoading(true); setCatalogError(''); setImageError(''); setResult(null); setImages({})
     const params: Record<string, string> = { ...(featureQuery || { search: query }), page: String(page), page_size: '24' }
     if (category) params.category = category
     if (colorFilter) params.color = colorFilter
@@ -177,7 +184,7 @@ export function InventoryPage() {
       try {
         const data = await api<Results>(featureQuery ? 'candidates' : 'parts', params, controller.signal)
         if (controller.signal.aborted) return
-        setResult(data); setLoading(false)
+        setResult(data); setResultReviewKey(catalogRequestKey); setLoading(false)
         setNames(old => ({ ...old, ...Object.fromEntries(data.items.map(p => [p.part_num, p.name])) }))
         if (!data.items.length) return
         try {
@@ -191,7 +198,7 @@ export function InventoryPage() {
       } catch (e) { if (!controller.signal.aborted) { setCatalogError(message(e)); setLoading(false) } }
     })()
     return () => controller.abort()
-  }, [query, featureQuery, category, colorFilter, page, refresh])
+  }, [query, featureQuery, category, colorFilter, page, refresh, catalogRequestKey])
 
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
@@ -217,7 +224,14 @@ export function InventoryPage() {
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">DUPLO · MANUAL SELECTION</p><h1>今天玩哪些积木？</h1><p>选择拿出来的积木、颜色和数量，保存为今天的搭建库存。</p></div>
             <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>Brick Test ↗</a></nav></header>
           <h2 className="inventory-panel-title">Source</h2>
-    <InventoryImagePanel workspaceHost={visionWorkspaceHost} onApply={recognized => {
+    <InventoryImagePanel workspaceHost={visionWorkspaceHost} onSearchCatalog={request => {
+      const params = catalogFeatureParams(request.features)
+      setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
+      const { color: requestedColor, ...featureParams } = params
+      setFeatureQuery(featureParams); setFeatureSize(request.features.size ?? ''); setFeatureShape(request.features.shape ?? '')
+      setFeaturePrint(request.features.print); setColorFilter(requestedColor ?? ''); setCategory(''); setPage(1)
+      catalogHost.current?.scrollIntoView({ block: 'start' })
+    }} onApply={recognized => {
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
       changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
     }} />
@@ -228,17 +242,19 @@ export function InventoryPage() {
             <p className="inventory-note">从左栏上传或加载历史结果，在此审核；也可直接使用下方 Catalog。</p>
             <div ref={setVisionWorkspaceHost} />
           </section>
-      <section className="inventory-catalog" aria-label="DUPLO Catalog">
+      <section ref={catalogHost} className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
-        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
+        {catalogReview && <p role="status">为 {catalogReview.observationId} 选择候选：确认后填写审核行，不直接加入库存。
+          <button type="button" onClick={() => setCatalogReview(null)}>退出候选选择</button></p>}
+        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setCatalogReview(null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
           <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
           <button type="submit">搜索</button>
-          <label>分类<select value={category} onChange={e => { setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-          <label>颜色筛选<select value={colorFilter} onChange={e => { setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>分类<select value={category} onChange={e => { setCatalogReview(null); setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>颜色筛选<select value={colorFilter} onChange={e => { setCatalogReview(null); setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         </form>
         <details className="inventory-feature-search"><summary>按物理特征检索候选（本地 Catalog，不调用模型）</summary>
           <form className="inventory-filters" onSubmit={e => {
-            e.preventDefault(); setPage(1)
+            e.preventDefault(); setCatalogReview(null); setPage(1)
             setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint })
           }}>
             <label>名称中的尺寸<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
@@ -247,7 +263,7 @@ export function InventoryPage() {
             </select></label>
             <label>印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确 Print 标记</option><option value="no">明确 Plain / Unprinted</option></select></label>
             <button type="submit">检索候选</button>
-            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
+            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setCatalogReview(null); setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
           </form>
           <p className="inventory-note">颜色和类别复用上方筛选。所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。尺寸、形状及印花从名称解析，尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
         </details>
@@ -260,8 +276,16 @@ export function InventoryPage() {
           {result.criteria && <div className="inventory-feature-summary"><p>SQL 预筛选 {result.prefilter_total}；严格匹配 {result.eligible_total}；解析复核排除（不匹配或未知）{result.excluded_total}。未填写条件不参与筛选；无结果时不自动放宽条件，不自动选择型号。</p>
             <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}
-          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter}
-            onAdd={item => { const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
+          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
+            onAdd={item => {
+              if (catalogReview) {
+                if (resultReviewKey !== catalogReview.key || part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
+                if (!part.colors.some(c => c.id === item.color_id) || (catalogReview.features.color_id !== null && item.color_id !== catalogReview.features.color_id)) throw new Error('所选颜色不符合本次检索条件；请修改 Observation 特征后重新检索。')
+                addItem([], item)
+                catalogReview.onChoose(item, { part, criteria: result.criteria })
+                setCatalogReview(null); visionWorkspaceHost?.scrollIntoView({ block: 'start' }); return
+              }
+              const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
         </>}
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>

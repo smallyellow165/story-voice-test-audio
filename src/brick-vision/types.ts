@@ -1,13 +1,19 @@
 import type { InventoryItem } from '../brick-inventory/inventory'
 import type { MappingRow } from '../brick-game-contract'
+import type { CatalogFeatures } from './catalog-features.mjs'
 
 export type StepReference = {
   artifactId: string; designHash: string; instanceId: string; runId: string; taskAttemptId: string
   revision: number; index: number; taskId: string
 }
-export type Observation = {
+export type Observation = CatalogFeatures & {
   id: string; status: 'certain' | 'uncertain'; candidates: { part_num: string; color_id: number }[]
   quantity: number; confidence: number; evidence: string; occlusion: string; bbox: number[]
+}
+
+export type ObservationCatalogSearch = {
+  key: string; observationId: string; features: CatalogFeatures; quantity: string
+  onChoose(item: InventoryItem, evidence: unknown): void
 }
 export type VisionMatch = {
   observation: Observation; status: 'matched' | 'uncertain'; reason: string; item: InventoryItem | null

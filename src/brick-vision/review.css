@@ -28,3 +28,6 @@
 .vision-detail-modal :focus-visible { outline: 3px solid #e6a628; outline-offset: 2px; }
 .vision-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; font-size: 12px; }
 .vision-detail-content pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+/* Feature editing remains inside the existing horizontally scrollable table. */
+.vision-feature-editor { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 4px; min-width: 220px; }
+.vision-feature-editor label { min-width: 0; }

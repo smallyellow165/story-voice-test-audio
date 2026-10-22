@@ -12,7 +12,7 @@ import { canApplyVision } from '../src/brick-vision/step-fence.mjs'
 // Test doubles only. Production always calls the shared Gemini client and Resolver.
 const evaluation = () => ({ verdict: 'uncertain', confidence: 0, reason: '未确认', targetObservationId: '',
   placementMatches: false, groundVisible: false, uncertainties: [], observed: [], relations: [] })
-const observation = () => ({ id: 'o', status: 'certain', confidence: 0.99, quantity: 1, evidence: '可见形状和颜色', occlusion: '',
+const observation = () => ({ color_id: null, size: null, shape: null, print: 'unknown', id: 'o', status: 'certain', confidence: 0.99, quantity: 1, evidence: '可见形状和颜色', occlusion: '',
   candidates: [{ part_num: 'catalog-part', color_id: 123 }], bbox: [0, 0, 0.5, 0.5] })
 const reference = () => ({ artifactId: 'design', designHash: 'hash', instanceId: 'activity', runId: 'run', taskAttemptId: 'attempt', revision: 2, index: 1, taskId: 'place-target' })
 
@@ -217,4 +217,43 @@ test('concurrent duplicate upload and changed payload cannot trigger a second ca
   assert.equal(result.rawOutput, 'invalid json')
   await assert.rejects(service.recognize({ ...body, mode: 'step', reference: { artifactId: 'different' } }), /不能用于另一张图片或步骤/)
   assert.equal(calls, 1)
+})
+
+
+test('inventory features work without guessed IDs and do not invoke automatic Mapping', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'brick-vision-features-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const observed = { ...observation(), color_id: 123, size: '2x4', shape: 'curved_top', candidates: [] }
+  const output = JSON.stringify({ observations: [observed], evaluation: evaluation() })
+  let calls = 0
+  const service = createBrickVision(directory, {
+    loadRules: async () => { throw new Error('Inventory recognition must not load runtime rules') },
+    getMetadata: async route => { assert.equal(route, 'filters'); return { colors: [{ id: 123, name: 'Test palette color' }] } },
+    createClient: () => ({ models: { generateContent: async () => {
+      calls++; return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: output }] } }] }
+    } } }),
+  })
+  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const result = await service.recognize(body)
+  assert.equal(result.status, 'complete')
+  assert.deepEqual(result.matches[0].observation, observed)
+  assert.equal(result.matches[0].item, null)
+  assert.deepEqual(result.draft, [])
+  assert.equal(result.rawOutput, output)
+  const persisted = JSON.parse(await readFile(path.join(directory, body.requestId + '.json'), 'utf8'))
+  assert.deepEqual(persisted.matches, result.matches)
+  assert.deepEqual(await service.recognize(body), persisted)
+  assert.equal(calls, 1)
+})
+
+
+test('structured features are required and invalid feature values cannot become guesses', () => {
+  const value = { observations: [{ ...observation(), candidates: [] }], evaluation: evaluation() }
+  assert.deepEqual(validateRecognition(value).observations[0].candidates, [])
+  for (const field of ['color_id', 'size', 'shape', 'print']) {
+    const invalid = { ...observation() }; delete invalid[field]
+    assert.throws(() => validateRecognition({ ...value, observations: [invalid] }))
+    assert.ok(visionSchema.properties.observations.items.required.includes(field))
+  }
+  assert.throws(() => validateRecognition({ ...value, observations: [{ ...observation(), shape: 'unsupported' }] }))
 })

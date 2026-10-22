@@ -10,6 +10,7 @@ import { loadBrickRules } from './brick-rules.mjs'
 import { validateItems, addItem } from '../src/brick-inventory/inventory.ts'
 import { openaiVisionModelOptions, resolveOpenaiVisionModel, openaiVisionConfigured, buildOpenaiVisionRequest, requestOpenaiVision } from './brick-vision-openai.mjs'
 import { captureVisionWire } from './brick-vision-wire.mjs'
+import { validateCatalogFeatures, visionFeatureProperties } from '../src/brick-vision/catalog-features.mjs'
 
 const uuid = /^[a-f0-9-]{36}$/
 const partId = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/
@@ -27,6 +28,12 @@ export const visionPrompt = `Inspect the supplied real photograph of DUPLO brick
 Inventory mode: cover ALL visible bricks, not just those supported by the runtime. Do not invent hidden bricks or quantities.
 Return separate observations for distinct objects or clearly countable identical groups; never double count overlapping regions.
 Give candidate Rebrickable part_num and Rebrickable color_id pairs, NOT LDraw IDs. Candidate IDs are hypotheses; server catalog validation follows.
+Your primary inventory task is to describe visible physical features, not identify a part number. Candidate IDs are optional reference hypotheses: return candidates [] when unknown; never invent an ID to complete an observation.
+For every observation return color_id (official Rebrickable palette ID or null), size (overall footprint dimensions in DUPLO grid units such as "2x4", or null), shape ("brick", "curved_top", "arch", "slope", or null), and print ("yes", "no", "unknown").
+size is the WHOLE piece's footprint, never the visible top stud arrangement or stud count. Curves, overhangs, perspective and occlusion may hide the footprint: return null unless its overall dimensions are supported by the photograph. Do not infer size from a guessed part number.
+Choose the specific visible shape (curved_top/arch/slope) over generic brick when applicable. Use null if no supported shape can be reliably established. color_id must come from the supplied palette, and must be null when lighting or similar shades prevents identification.
+print=yes needs visible print; print=no needs enough visible surface to establish absence of print; otherwise unknown. Do not invent features to obtain Catalog matches. Unknown fields will be omitted from local search; all supplied fields are strict AND conditions.
+Keep evidence concise and visual; do not put additional matching requirements only in prose. Human review chooses the final identity. Feature fields and part-number hypotheses are independent.
 Use the supplied official color palette and (in step mode) source inventory as reference. If identity/color is ambiguous, give multiple candidates or none and status uncertain.
 quantity is the exact visible count (0 if unknown). confidence is your uncalibrated estimate, not proof. Include concise Chinese visible evidence, occlusion notes and bbox [left,top,right,bottom] in 0..1.
 Step mode: judge ONLY the supplied current phase and target from the validated design; do not assume the photograph matches it.
@@ -45,6 +52,7 @@ const obj = properties => ({ type: 'OBJECT', properties, required: Object.keys(p
 const arr = (items, maxItems) => ({ type: 'ARRAY', items, maxItems: String(maxItems) })
 export const visionSchema = obj({
   observations: arr(obj({ id: str, status: { type: 'STRING', enum: ['certain', 'uncertain'] },
+    ...visionFeatureProperties,
     candidates: arr(obj({ part_num: str, color_id: { type: 'INTEGER' } }), 5),
     quantity: { type: 'INTEGER' }, confidence: num, evidence: str, occlusion: str, bbox: arr(num, 4) }), 100),
   evaluation: obj({ verdict: { type: 'STRING', enum: ['confirm', 'retry', 'uncertain'] }, confidence: num, reason: str,
@@ -80,6 +88,7 @@ export function validateRecognition(value) {
       || !Array.isArray(o.bbox) || o.bbox.length !== 4 || !o.bbox.every(unit) || o.bbox[0] >= o.bbox[2] || o.bbox[1] >= o.bbox[3]
       || !Array.isArray(o.candidates) || o.candidates.length > 5 || o.candidates.some(c => !c || !partId.test(c.part_num) || typeof c.part_num !== 'string' || !Number.isSafeInteger(c.color_id) || c.color_id < 0)) fail('Vision 积木候选格式错误', 422)
     seen.add(o.id)
+    try { validateCatalogFeatures(o) } catch (error) { fail(error.message, 422) }
   }
   const e = value.evaluation
   if (!e || !['confirm', 'retry', 'uncertain'].includes(e.verdict) || !unit(e.confidence) || !text(e.reason) || !text(e.targetObservationId)
@@ -229,7 +238,7 @@ export function createBrickVision(directory, { artifacts, createClient = createG
       if (saved && (saved.mode !== body.mode || saved.model !== model || saved.provider !== provider || saved.image.sha256 !== image.sha256
         || JSON.stringify(saved.reference) !== JSON.stringify(body.reference ?? null))) fail('同一请求 ID 不能用于另一张图片或步骤，或不同模型', 409)
       if (saved?.status === 'processing') fail('请求仍在处理或结果未知；未重复调用模型', 409)
-      const rules = await loadRules()
+      const rules = body.mode === 'step' ? await loadRules() : null
       const context = body.mode === 'step' ? stepContext(await artifacts.artifact(body.reference?.artifactId), body.reference, rules) : null
       const palette = await getMetadata('filters', {})
       const request = provider === 'openai'
@@ -273,8 +282,13 @@ export function createBrickVision(directory, { artifacts, createClient = createG
         let decoded
         try { decoded = JSON.parse(record.rawOutput) } catch { fail('模型未返回完整 JSON', 422) }
         record.recognition = validateRecognition(decoded)
+        if (record.recognition.observations.some(o => o.color_id !== null && !palette.colors.some(c => c.id === o.color_id))) {
+          fail('结构化 color_id 不在提供的 Rebrickable 调色板中；请查看原始输出。', 422)
+        }
         phase = 'Catalog / Mapping'
-        record.matches = await matchObservations(record.recognition.observations, { getMetadata, rules })
+        record.matches = context ? await matchObservations(record.recognition.observations, { getMetadata, rules })
+          : record.recognition.observations.map(observation => ({ observation, candidates: [], status: 'uncertain',
+            reason: '待人工按结构化特征检索 Catalog；模型编号仅供参考，尚未确认。', target: null, item: null }))
         record.draft = record.matches.filter(m => m.item).reduce((items, m) => addItem(items, m.item), [])
         record.evaluation = context ? evaluateStep(context, record.recognition, record.matches) : null
         record.status = 'complete'

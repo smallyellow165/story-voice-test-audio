@@ -4,15 +4,21 @@ import { addItem, newSessionId } from '../brick-inventory/inventory'
 import type { InventoryItem } from '../brick-inventory/inventory'
 import { requestJson } from '../brick-inventory/api.mjs'
 import { prepareInventoryImage, recognizeImage, downloadVision } from './upload'
-import type { VisionResult } from './types'
+import type { ObservationCatalogSearch, VisionResult } from './types'
 import { ObservationPreview } from './ObservationPreview'
 import { ObservationModal } from './ObservationModal'
-import { bboxStyle, observationDescription } from './observation-view.mjs'
+import { bboxStyle } from './observation-view.mjs'
+import { catalogShapes, catalogPrints, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
+import type { FeatureEditor } from './catalog-features.mjs'
 import './review.css'
 
-type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string }
+type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
+  features: FeatureEditor; confirmation: unknown }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
-export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null }) {
+export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }: {
+  onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null
+  onSearchCatalog?(request: ObservationCatalogSearch): void
+}) {
   const [file, setFile] = useState<File | null>(null), [preview, setPreview] = useState('')
   const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareInventoryImage>> | null>(null)
   const [imageInfo, setImageInfo] = useState<VisionResult['compression']>(null)
@@ -30,11 +36,38 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
   const [openaiConfigured, setOpenaiConfigured] = useState(false)
   const [modelError, setModelError] = useState(''), [configRevision, setConfigRevision] = useState(0)
   const lock = useRef(false), requestId = useRef('')
+  const catalogEpoch = useRef(0)
+  useEffect(() => () => { catalogEpoch.current++ }, [])
   function restoreResult(next: VisionResult) {
+    catalogEpoch.current++
     setResult(next); setApplied(false); setValidation(null)
-    setRows((next.matches || []).map(m => ({ id: m.observation.id, selected: m.status === 'matched',
-      part: m.item?.part_num ?? m.observation.candidates[0]?.part_num ?? '',
-      color: String(m.item?.color_id ?? m.observation.candidates[0]?.color_id ?? ''), quantity: String(m.observation.quantity || 1) })))
+    setRows((next.matches || []).map(m => createObservationDraft(m.observation)))
+  }
+  function editRow(id: string, changes: Partial<DraftRow>) {
+    catalogEpoch.current++
+    setValidation(null)
+    setRows(previous => previous.map(r => r.id === id ? { ...r, selected: false, confirmation: null, ...changes } : r))
+  }
+  function searchObservation(row: DraftRow) {
+    if (!onSearchCatalog || !result || lock.current || applied) return
+    try {
+      const features = readFeatureEditor(row.features)
+      if (features.color_id === null && features.size === null && features.shape === null && features.print === 'unknown') {
+        throw new Error('没有可检索的已知特征，请先人工填写至少一项；不会使用模型猜测编号代替检索。')
+      }
+      const epoch = ++catalogEpoch.current
+      setError('')
+      onSearchCatalog({ key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity,
+        onChoose(item, evidence) {
+          if (catalogEpoch.current !== epoch || lock.current) throw new Error('Observation 或人工草稿已改变，请重新点击该行的检索候选。')
+          catalogEpoch.current++
+          setValidation(null)
+          setRows(previous => previous.map(r => r.id === row.id ? { ...r, selected: true, part: item.part_num,
+            color: String(item.color_id), quantity: String(item.quantity), confirmation: { features, item, evidence } } : r))
+          setActiveId(row.id)
+        },
+      })
+    } catch (e) { setError(String(e)) }
   }
   async function refreshHistory() {
     try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '历史识别')).records) }
@@ -53,6 +86,7 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
   }, [configRevision])
   async function recognize() {
     if (!file || !prepared || lock.current || !models.some(m => m.id === model && m.provider === provider)) return
+    catalogEpoch.current++
     lock.current = true; setBusy(true); setError(''); setResult(null); setRows([]); setValidation(null)
     try {
       const next = await recognizeImage(prepared, requestId.current, undefined, model, provider)
@@ -61,6 +95,7 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
   }
   async function apply() {
     if (lock.current || applied) return
+    catalogEpoch.current++
     lock.current = true; setBusy(true); setError('')
     try {
       const items = rows.filter(r => r.selected).reduce<InventoryItem[]>((items, r) => {
@@ -87,25 +122,36 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
       <p>{result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
-        <p>短描述来自原始 Evidence；编辑字段是人工草稿，Mapping 状态对应原始识别。修改后仍需校验，遗漏积木可通过下方 Catalog 添加。</p>
+        <p>编辑视觉特征后，逐行检索下方 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
         <div className="inventory-review-table" ref={tableHost}><table className="vision-observation-table"><thead><tr>
-          <th>选择</th><th>ID / 模型状态</th><th>形状 / 颜色</th><th>Part Number</th><th>RB Color ID</th><th>数量</th><th>Confidence</th><th>Mapping Status</th><th>详情</th><th>删除</th>
+          <th>选择</th><th>ID / 模型状态</th><th>视觉特征 / 人工修正</th><th>确认 Part Number</th><th>确认 RB Color ID</th><th>数量</th><th>Confidence</th><th>确认状态</th><th>详情</th><th>删除</th>
         </tr></thead><tbody>
           {rows.map(row => {
             const match = matches.get(row.id)
             if (!match) return null
             const observation = match.observation
-            const modified = row.part !== (match.item?.part_num ?? observation.candidates[0]?.part_num ?? '')
-              || row.color !== String(match.item?.color_id ?? observation.candidates[0]?.color_id ?? '') || row.quantity !== String(observation.quantity || 1)
             return <tr key={row.id} data-observation-id={row.id} className={activeId === row.id ? 'is-active' : ''} onClick={() => setActiveId(row.id)}>
               <td><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied} onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} /></td>
               <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id} onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button><small>模型 {observation.status}</small>{!bboxStyle(observation.bbox) && <small>无有效 BBox</small>}</td>
-              <td title={observation.evidence}>{observationDescription(observation.evidence)}</td>
-              {(['part', 'color', 'quantity'] as const).map(key => <td key={key}><input aria-label={row.id + ' ' + (key === 'part' ? 'Part Number' : key === 'color' ? 'RB Color ID' : '数量')} value={row[key]} disabled={busy || applied} onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, [key]: e.target.value } : r))} /></td>)}
+              <td><div className="vision-feature-editor">
+                <label>特征 RB Color ID<input aria-label={`${row.id} 特征颜色`} inputMode="numeric" placeholder="未知" value={row.features.color} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, color: e.target.value } })} /></label>
+                <label>整体尺寸<input aria-label={`${row.id} 整体尺寸`} placeholder="未知 / 2x4" value={row.features.size} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, size: e.target.value } })} /></label>
+                <label>形状<select aria-label={`${row.id} 形状`} value={row.features.shape} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, shape: e.target.value } })}>
+                  <option value="">未知</option>{catalogShapes.map(shape => <option key={shape} value={shape}>{shape}</option>)}
+                </select></label>
+                <label>印花<select aria-label={`${row.id} 印花`} value={row.features.print} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, print: e.target.value } })}>
+                  {catalogPrints.map(print => <option key={print} value={print}>{print === 'yes' ? '有印花' : print === 'no' ? '无印花' : '未知'}</option>)}
+                </select></label>
+              </div><button disabled={busy || applied || !onSearchCatalog} onClick={() => searchObservation(row)}>检索候选</button></td>
+              {(['part', 'color', 'quantity'] as const).map(key => <td key={key}><input aria-label={row.id + ' ' + (key === 'part' ? 'Part Number' : key === 'color' ? 'RB Color ID' : '数量')} value={row[key]} disabled={busy || applied} onChange={e => editRow(row.id, { [key]: e.target.value })} /></td>)}
               <td>{observation.confidence}</td>
-              <td title={match.reason}>{match.status}<small>原始匹配{modified ? ' · 草稿已修改，待校验' : ''}</small></td>
+              <td>{row.confirmation ? '已人工选择 Catalog 候选' : '待人工确认'}<small>加入库存前仍需 Catalog / Mapping 校验</small></td>
               <td><button onClick={() => setDetail({ kind: 'observation', id: row.id })}>详情</button></td>
-              <td><button disabled={busy || applied} onClick={e => { e.stopPropagation(); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') }}>删除</button></td>
+              <td><button disabled={busy || applied} onClick={e => { e.stopPropagation(); catalogEpoch.current++; setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') }}>删除</button></td>
             </tr>
           })}
         </tbody></table></div>
@@ -123,6 +169,7 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
     <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
     <input aria-label="选择库存照片" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={async e => {
       const selected = e.target.files?.[0] || null
+      catalogEpoch.current++
       setFile(selected); setPrepared(null); setImageInfo(null); requestId.current = newSessionId(); setResult(null); setPreview(''); setRows([]); setApplied(false); setValidation(null); setError('')
       if (!selected) return
       lock.current = true; setBusy(true)
@@ -154,6 +201,7 @@ export function InventoryImagePanel({ onApply, workspaceHost }: { onApply(items:
     <label>Provider / 模型<select value={`${provider}:${model}`} disabled={busy || !models.length} onChange={e => {
       const chosen = models.find(m => `${m.provider}:${m.id}` === e.target.value)
       if (lock.current || !chosen || (chosen.id === model && chosen.provider === provider)) return
+      catalogEpoch.current++
       setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
     }}>{!models.length && <option value="gemini:">正在读取模型配置…</option>}{models.map(m => <option key={`${m.provider}:${m.id}`} value={`${m.provider}:${m.id}`}>{m.provider} · {m.label} · {m.id}</option>)}</select></label>
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
