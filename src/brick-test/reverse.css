@@ -1,0 +1,19 @@
+.brick-reverse { min-width: 0; }
+.brick-reverse fieldset { min-width: 0; padding: 0; border: 0; margin: 12px 0; }
+.brick-reverse label { display: block; margin: 6px 0; }
+.brick-reverse input:not([type=checkbox]), .brick-reverse select { width: 100%; min-width: 0; box-sizing: border-box; }
+.brick-reverse input[type=checkbox] { width: auto; }
+.brick-reverse-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; }
+.brick-reverse-photo { position: relative; width: 100%; margin: 10px 0; line-height: 0; }
+.brick-reverse-photo > img { display: block; width: 100%; height: auto; }
+.brick-reverse-photo > button { position: absolute; border: 2px solid #0085a8; background: transparent; color: #00455d; padding: 0; display: flex; align-items: flex-start; font-size: 11px; }
+.brick-reverse-photo > button.is-active { border-color: #e6a000; background: #ffc40022; }
+.brick-reverse-candidate { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; border-bottom: 1px solid #ccd7df; padding: 8px 0; }
+.brick-reverse-candidate .inventory-photo { width: 52px; height: 52px; }
+.brick-reverse small { display: block; overflow-wrap: anywhere; }
+.brick-reverse pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.brick-reverse button { max-width: 100%; white-space: normal; }
+
+.brick-reverse-photo > button { line-height: 1.2; border-radius: 0; box-sizing: border-box; }
+
+.brick-reverse-candidate > div, .brick-reverse-fields > label { min-width: 0; overflow-wrap: anywhere; }

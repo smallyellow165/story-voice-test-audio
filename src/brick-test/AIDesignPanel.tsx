@@ -1,3 +1,4 @@
+import { ReverseAssemblyPanel } from './ReverseAssemblyPanel'
 import { ModelSelector } from '../model-selector'
 import { AvailableInventory } from './AvailableInventory'
 import { useEffect, useRef, useState } from 'react'
@@ -19,6 +20,8 @@ type Props = {
 const endpoint = '/api/brick-test/generate'
 
 export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
+  const [mode, setMode] = useState<'creative' | 'reverse'>('creative')
+  const [reverseOpened, setReverseOpened] = useState(false)
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
@@ -129,6 +132,21 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   }
 
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
+    <div className="brick-actions" aria-label="Design mode">
+      <button type="button" disabled={disabled || running} aria-pressed={mode === 'creative'} onClick={() => setMode('creative')}>Creative</button>
+      <button type="button" disabled={disabled || running} aria-pressed={mode === 'reverse'} onClick={() => { setReverseOpened(true); setMode('reverse') }}>Reverse</button>
+    </div>
+    {reverseOpened && <div hidden={mode !== 'reverse'}><ReverseAssemblyPanel inventory={inventory}
+      onQuantity={(row, quantity) => setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))}
+      models={status?.models || []} model={selectedModel} onModel={setSelectedModel} disabled={disabled}
+      onBusy={value => { setRunning(value); onGeneratingChange(value) }} onComplete={async value => {
+        const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
+          request: { model: value.model || selectedModel, description: value.requestInput?.description || 'Reverse Approximation', inventory: value.requestInput?.inventory || [] },
+          httpStatus: value.httpStatus ?? null, result: value }
+        setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
+        if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
+      }} /></div>}
+    <div hidden={mode !== 'creative'}>
     <h2>AI Design · 虚拟库存 → 造型</h2>
     <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
     <form onSubmit={generate}>
@@ -146,9 +164,10 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     {!inputValid && <p className="brick-help">库存总量需为 {designLimits.minBricks}–100 块，每项为非负整数；请填写造型描述。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
+    </div>
     {!!runs.length && <div className="brick-ai-result">
       <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
-      <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
+      <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${result.approximation ? 'Approximation · ' : ''}${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
       <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
       <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? result?.usageMetadata?.input_tokens ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? result?.usageMetadata?.output_tokens_details?.reasoning_tokens ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? result?.usageMetadata?.output_tokens ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? result?.usageMetadata?.total_tokens ?? '未返回'}</p>
       {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens ?? 'Provider 默认'} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || result.generationSettings.reasoning?.effort || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}

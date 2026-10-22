@@ -101,17 +101,21 @@ export function validateGeneratorInput(body, rules) {
   return { description: body.description, inventory: body.inventory.map(({ part, color, quantity }) => ({ part, color, quantity })) }
 }
 
-export function buildDesignRequest(model, input, rules) {
+export function buildDesignRequest(model, input, rules, reference) {
   const prompt = buildDesignPrompt(rules, input.inventory), schema = designSchema(rules, input.inventory)
+  // Internal Reverse extension only; Creative requests retain the exact input and prompt.
+  const taskInput = reference ? { ...input, reference: reference.context } : input
   if (resolveModel(model, 'design').provider === 'openai') return buildOpenaiRequest({ model, task: 'design', prompt, schema,
-    content: [{ type: 'input_text', text: 'Return a JSON object only, following the business output contract in the instructions. No markdown.\n' + JSON.stringify(input) }] })
-  return { model, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
+    content: [{ type: 'input_text', text: 'Return a JSON object only, following the business output contract in the instructions. No markdown.\n' + JSON.stringify(taskInput) },
+      ...(reference ? [{ type: 'input_image', image_url: 'data:' + reference.image.mimeType + ';base64,' + reference.image.imageBase64 }] : [])] })
+  return { model, contents: [{ role: 'user', parts: [{ text: JSON.stringify(taskInput) },
+    ...(reference ? [{ inlineData: { mimeType: reference.image.mimeType, data: reference.image.imageBase64 } }] : [])] }],
     config: { systemInstruction: prompt, responseMimeType: 'application/json', responseSchema: schema, ...brickGenerationSettings(model) } }
 }
 
 // Same raw-wire recorder as Vision; no new HTTP or trace implementation.
 export async function generateBrickDesign(body, { createClient = createGeminiClient, loadRules = loadBrickRules, model = configuredModel(),
-  requestOpenai, traceDirectory = fileURLToPath(new URL('../generated/brick-design-traces/', import.meta.url)) } = {}) {
+  requestOpenai, reference, traceDirectory = fileURLToPath(new URL('../generated/brick-design-traces/', import.meta.url)) } = {}) {
   const started = performance.now()
   const output = { ok: false, model, modelVersion: null, promptVersion, rawOutput: null, finishReason: null, blockReason: null, validation: null }
   let persist
@@ -132,7 +136,8 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
     model = resolveBrickModel(body.model, model)
     output.model = model; output.provider = resolveModel(model, 'design').provider
     output.generationSettings = brickGenerationSettings(model)
-    output.request = buildDesignRequest(model, input, rules)
+    output.request = buildDesignRequest(model, input, rules, reference)
+    if (reference) { output.reference = reference.context; output.approximation = true }
   } catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
   const id = randomUUID()
   output.id = id; output.createdAt = new Date().toISOString(); output.task = 'design'

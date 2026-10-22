@@ -3,12 +3,12 @@
 const geminiSettings = { maxOutputTokens: 32768, thinkingConfig: { thinkingLevel: 'MEDIUM' },
   httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } } }
 export const brickModels = [
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', provider: 'gemini', tasks: ['inventory', 'step', 'design'], settings: geminiSettings },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)', provider: 'gemini', tasks: ['inventory', 'step', 'design'], settings: geminiSettings },
-  { id: 'gpt-4.1', label: 'OpenAI GPT-4.1', provider: 'openai', tasks: ['inventory', 'design'], settings: {} },
-  { id: 'gpt-6.1-sol', label: 'OpenAI GPT-6.1 Sol', provider: 'openai', tasks: ['inventory', 'design'], settings: { reasoning: { effort: 'medium' } } },
-  { id: 'gpt-6-luna', label: 'OpenAI GPT-6 Luna', provider: 'openai', tasks: ['inventory', 'design'], settings: { reasoning: { effort: 'medium' } } },
-  { id: 'gpt-6-astra', label: 'OpenAI GPT-6 Astra', provider: 'openai', tasks: ['inventory', 'design'], settings: { reasoning: { effort: 'medium' } } },
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', provider: 'gemini', tasks: ['inventory', 'step', 'design', 'reverse'], settings: geminiSettings },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)', provider: 'gemini', tasks: ['inventory', 'step', 'design', 'reverse'], settings: geminiSettings },
+  { id: 'gpt-4.1', label: 'OpenAI GPT-4.1', provider: 'openai', tasks: ['inventory', 'design', 'reverse'], settings: {} },
+  { id: 'gpt-6.1-sol', label: 'OpenAI GPT-6.1 Sol', provider: 'openai', tasks: ['inventory', 'design', 'reverse'], settings: { reasoning: { effort: 'medium' } } },
+  { id: 'gpt-6-luna', label: 'OpenAI GPT-6 Luna', provider: 'openai', tasks: ['inventory', 'design', 'reverse'], settings: { reasoning: { effort: 'medium' } } },
+  { id: 'gpt-6-astra', label: 'OpenAI GPT-6 Astra', provider: 'openai', tasks: ['inventory', 'design', 'reverse'], settings: { reasoning: { effort: 'medium' } } },
 ]
 export const defaultBrickModel = brickModels[0].id
 export function resolveModel(id, task) {

@@ -1,3 +1,4 @@
+import { createBrickReverse } from './server/brick-reverse.mjs'
 import { exportTimestampClip } from './server/fish-timestamp-clip.mjs'
 import { createTimestampHistory } from './server/fish-timestamp-history.mjs'
 import { storyAudioItems } from './src/story-audio.mjs'
@@ -38,6 +39,7 @@ const generatedDirectory = path.join(projectRoot, 'generated')
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
+const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
@@ -448,6 +450,25 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if (url.pathname.startsWith('/api/brick-reverse/')) {
+    try {
+      const action = url.pathname.slice('/api/brick-reverse/'.length)
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, { error: '仅接受同源 Reverse 操作。' }); return
+      }
+      if (request.method === 'GET') {
+        if (action.startsWith('record/')) sendJson(response, 200, await brickReverse.read(action.slice(7)))
+        else if (action.startsWith('attempt/')) sendJson(response, 200, await brickReverse.attempt(action.slice(8)))
+        else sendJson(response, 404, { error: '未知 Reverse 路由。' })
+      } else if (request.method === 'POST' && ['analyze', 'search', 'generate'].includes(action)) {
+        const body = await readJsonBody(request, action === 'analyze' ? 18 * 1024 * 1024 : 256 * 1024)
+        sendJson(response, 200, await brickReverse[action](body))
+      } else sendJson(response, 405, { error: '不支持的 Reverse 操作。' })
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Reverse 处理失败；请检查已有诊断。未自动重试。' })
+    }
+    return
+  }
   if (url.pathname === '/api/brick-vision' || url.pathname.startsWith('/api/brick-vision/')) {
     try {
       if (request.method === 'GET' && url.pathname === '/api/brick-vision') { sendJson(response, 200, visionStatus()); return }
