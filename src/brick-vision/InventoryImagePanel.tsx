@@ -6,6 +6,7 @@ import { requestJson } from '../brick-inventory/api.mjs'
 import { prepareInventoryImage, recognizeImage, downloadVision } from './upload'
 import type { ObservationCatalogSearch, VisionResult } from './types'
 import { ObservationPreview } from './ObservationPreview'
+import { ObservationActions } from './ObservationActions'
 import { ObservationModal } from './ObservationModal'
 import { bboxStyle } from './observation-view.mjs'
 import { catalogFeatureParams, catalogShapes, catalogPrints, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
@@ -180,41 +181,49 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
         <p>编辑视觉特征后，逐行检索下方 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
         <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
         {autoSummary && <p role="status">{autoSummary}</p>}
-        <div className="vision-observation-list" ref={tableHost}>
-          {rows.map(row => {
-            const match = matches.get(row.id)
-            if (!match) return null
-            const observation = match.observation
-            return <section aria-label={`Observation ${row.id}`} key={row.id} data-observation-id={row.id} className={`vision-observation-row ${activeId === row.id ? 'is-active' : ''}`} onClick={() => setActiveId(row.id)}>
-              <div className="vision-observation-heading"><label className="vision-select"><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied} onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} />加入库存</label>
-              <button type="button" className="vision-observation-id" aria-pressed={activeId === row.id} onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button><small>模型 {observation.status}</small>{!bboxStyle(observation.bbox) && <small>无有效 BBox</small>}<small>置信度 {observation.confidence}</small></div>
-              <div className="vision-feature-editor">
-                <label>特征 RB Color ID<input aria-label={`${row.id} 特征颜色`} inputMode="numeric" placeholder="未知" value={row.features.color} disabled={busy || applied}
-                  onChange={e => editRow(row.id, { features: { ...row.features, color: e.target.value } })} /></label>
-                <label>整体尺寸<input aria-label={`${row.id} 整体尺寸`} placeholder="未知 / 2x4" value={row.features.size} disabled={busy || applied}
-                  onChange={e => editRow(row.id, { features: { ...row.features, size: e.target.value } })} /></label>
-                <label>形状<select aria-label={`${row.id} 形状`} value={row.features.shape} disabled={busy || applied}
+        <div className="vision-observation-scroll" ref={tableHost} tabIndex={0} role="region" aria-label="Observation 审核表，可横向滚动">
+          <table className="vision-observation-table">
+            <colgroup>{[40, 90, 230, 88, 86, 120, 90, 130, 90, 68, 64].map((width, i) => <col key={i} style={{ width }} />)}</colgroup>
+            <thead><tr>{['选择', 'ID', 'Vision / 置信度 · 审核', '特征颜色 ID', '整体尺寸', 'Shape', 'Print', '确认型号', '确认颜色 ID', '数量', '操作'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+            <tbody>{rows.map(row => {
+              const match = matches.get(row.id)
+              if (!match) return null
+              const observation = match.observation
+              const note = autoNotes[row.id] || ''
+              const reviewStatus = row.part.trim() && row.color.trim() ? (row.confirmation ? (row.identityOrigin === 'manual' ? '已确认' : '已回填') : '待校验')
+                : note && !note.startsWith('跳过') ? (note.startsWith('存在多个') ? '多候选' : '未匹配/失败') : '待确认'
+              return <tr key={row.id} data-observation-id={row.id} className={activeId === row.id ? 'is-active' : ''}
+                onClick={event => {
+                  if (event.target instanceof Element && event.target.closest('input, select, button, [popover]')) return
+                  setActiveId(row.id)
+                }}>
+                <td><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied}
+                  onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} /></td>
+                <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id}
+                  title={row.id + (!bboxStyle(observation.bbox) ? ' · 无有效 BBox' : '')}
+                  onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button></td>
+                <td title={note || reviewStatus}><span>{observation.status} / {observation.confidence}</span> <span className="vision-review-badge">{reviewStatus}</span></td>
+                <td><input aria-label={row.id + ' 特征 RB Color ID'} inputMode="numeric" placeholder="未知" value={row.features.color} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, color: e.target.value } })} /></td>
+                <td><input aria-label={row.id + ' 整体尺寸'} placeholder="未知" value={row.features.size} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { features: { ...row.features, size: e.target.value } })} /></td>
+                <td><select aria-label={row.id + ' Shape'} value={row.features.shape} disabled={busy || applied}
                   onChange={e => editRow(row.id, { features: { ...row.features, shape: e.target.value } })}>
-                  <option value="">未知</option>{catalogShapes.map(shape => <option key={shape} value={shape}>{shape}</option>)}
-                </select></label>
-                <label>印花<select aria-label={`${row.id} 印花`} value={row.features.print} disabled={busy || applied}
+                  <option value="">未知</option>{catalogShapes.map(shape => <option key={shape} value={shape}>{shape}</option>)}</select></td>
+                <td><select aria-label={row.id + ' Print'} value={row.features.print} disabled={busy || applied}
                   onChange={e => editRow(row.id, { features: { ...row.features, print: e.target.value } })}>
-                  {catalogPrints.map(print => <option key={print} value={print}>{print === 'yes' ? '有印花' : print === 'no' ? '无印花' : '未知'}</option>)}
-                </select></label>
-              </div>
-              <div className="vision-confirm-editor">
-                {(['part', 'color', 'quantity'] as const).map(key => <label key={key}>{key === 'part' ? '确认型号' : key === 'color' ? '确认 RB Color ID' : '数量'}<input aria-label={row.id + ' ' + key} value={row[key]} disabled={busy || applied} onChange={e => editRow(row.id, { [key]: e.target.value })} /></label>)}
-              </div>
-              <div className="vision-observation-actions">
-                <button disabled={busy || applied || !onSearchCatalog} onClick={() => searchObservation(row)}>检索 {row.id} 候选</button>
-                <button disabled={busy || applied} onClick={() => void autofill([row])}>检索并回填</button>
-                <span>{row.confirmation ? '已有 Catalog 确认值（详情可查看来源）' : '待人工确认'}</span>
-                <button onClick={() => setDetail({ kind: 'observation', id: row.id })}>详情</button>
-                <button disabled={busy || applied} onClick={e => { e.stopPropagation(); catalogEpoch.current++; setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') }}>删除</button>
-              </div>
-              {autoNotes[row.id] && <p role="status">{autoNotes[row.id]}</p>}
-            </section>
-          })}
+                  {catalogPrints.map(print => <option key={print} value={print}>{print === 'yes' ? '有印花' : print === 'no' ? '无印花' : '未知'}</option>)}</select></td>
+                {(['part', 'color', 'quantity'] as const).map(key => <td key={key}><input aria-label={row.id + ' ' + (key === 'part' ? '确认 Part Number' : key === 'color' ? '确认 RB Color ID' : 'Quantity')}
+                  title={row[key]} value={row[key]} disabled={busy || applied} onChange={e => editRow(row.id, { [key]: e.target.value })} /></td>)}
+                <td><ObservationActions observationId={row.id} actions={[
+                  { label: '检索候选', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
+                  { label: '检索并回填', disabled: busy || applied, run: () => { void autofill([row]) } },
+                  { label: '查看详情', run: () => setDetail({ kind: 'observation', id: row.id }) },
+                  { label: '删除', disabled: busy || applied, run: () => { catalogEpoch.current++; setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') } },
+                ]} /></td>
+              </tr>
+            })}</tbody>
+          </table>
         </div>
         <button disabled={busy || applied} onClick={() => void apply()}>{applied ? '已加入；请在库存编辑器保存' : '校验并确认加入库存编辑器（不调用模型）'}</button>
       </>}
@@ -275,7 +284,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     {result && <p role="status">{result.status} · {result.provider} · {result.model} · {result.elapsedMs} ms</p>}
     {workspaceHost ? createPortal(review, workspaceHost) : review}
     {detail && <ObservationModal title={detail.kind === 'observation' ? 'Observation ' + detail.id : detail.kind === 'validation' ? '人工草稿校验结果' : '完整识别诊断'}
-      data={detail.kind === 'observation' ? { original: matches.get(detail.id), reviewDraft: rows.find(r => r.id === detail.id), draftValidation: validation } : detail.kind === 'validation' ? validation : result}
+      data={detail.kind === 'observation' ? { original: matches.get(detail.id), reviewDraft: rows.find(r => r.id === detail.id), catalogSearchNote: autoNotes[detail.id] || null, draftValidation: validation } : detail.kind === 'validation' ? validation : result}
       onClose={() => setDetail(null)} />}
   </section>
 }

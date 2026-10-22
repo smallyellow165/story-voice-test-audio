@@ -26,15 +26,26 @@
 .vision-detail-content pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 
 
-.inventory-workbench .vision-observation-list { min-width: 0; }
-.inventory-workbench .vision-observation-row { min-width: 0; padding: 8px 4px; border-bottom: 1px solid #dce5df; overflow-wrap: anywhere; }
-.inventory-workbench .vision-observation-row.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
-.vision-observation-heading, .vision-observation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; min-width: 0; }
-.inventory-workbench .vision-select { display: flex; flex-direction: row; align-items: center; gap: 4px; }
-.inventory-workbench .vision-feature-editor, .inventory-workbench .vision-confirm-editor {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 5px 8px; margin: 6px 0; min-width: 0;
-}
-.inventory-workbench .vision-observation-row label { min-width: 0; }
-.inventory-workbench .vision-observation-row input:not([type="checkbox"]), .inventory-workbench .vision-observation-row select { box-sizing: border-box; width: 100%; min-width: 0; }
-.inventory-workbench .vision-observation-row button { max-width: 100%; overflow-wrap: anywhere; }
+
 .inventory-vision-review { min-width: 0; overflow-wrap: anywhere; }
+.vision-observation-scroll { width: 100%; min-width: 0; overflow-x: auto; margin: 8px 0; }
+.inventory-workbench .vision-observation-table { width: 100%; min-width: 1106px; table-layout: fixed; border-collapse: collapse; }
+.inventory-workbench .vision-observation-table th,
+.inventory-workbench .vision-observation-table td { height: 36px; padding: 3px 4px; white-space: nowrap; vertical-align: middle; text-align: left; border-bottom: 1px solid #dce5df; font-size: 11px; }
+.inventory-workbench .vision-observation-table input:not([type="checkbox"]),
+.inventory-workbench .vision-observation-table select { box-sizing: border-box; width: 100%; min-width: 0; height: 28px; min-height: 28px; padding: 3px 4px; font-size: 12px; }
+.inventory-workbench .vision-observation-table button { height: 28px; min-height: 28px; padding: 2px 5px; white-space: nowrap; }
+.vision-observation-table tr.is-active { background: #e7f2ed; box-shadow: inset 3px 0 #db8d0a; }
+.inventory-workbench .vision-observation-table .vision-observation-id { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.vision-review-badge { font-size: 10px; color: #235f6c; }
+.vision-observation-menu {
+  position: fixed; inset: auto; margin: 0; box-sizing: border-box;
+  width: 156px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto;
+  padding: 4px; border: 1px solid #c6d4ce; border-radius: 5px; background: #fffefa;
+  box-shadow: 0 4px 16px #152d2933; color: #243c38;
+}
+.inventory-workbench .vision-observation-menu button { display: block; width: 100%; height: auto; min-height: 32px; text-align: left; margin: 0; background: transparent; color: #243c38; border: 0; }
+.inventory-workbench .vision-observation-menu button:hover { background: #e7f2ed; }
+.vision-observation-menu button:focus-visible { outline: 2px solid #db8d0a; outline-offset: -2px; }
+
+.inventory-workbench .vision-observation-table td:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }
