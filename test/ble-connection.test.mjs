@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { BleConnection, environmentError, SERVICE_UUID, WRITE_UUID, TOGGLE_30MIN_HEX } from '../src/ble-test/connection.ts'
 
 // Native API doubles exist only in tests; no hardware or server is used.
-function fixture(connect) {
+function fixture(connect, preference) {
   const device = new EventTarget()
   device.name = 'WZKJ01'
   device.id = 'browser-device-id'
@@ -26,7 +26,7 @@ function fixture(connect) {
     return device
   } }
   const states = []
-  const connection = new BleConnection(api, true, (state) => states.push(state.status))
+  const connection = new BleConnection(api, true, (state) => states.push(state.status), preference)
   return { device, api, connection, states, calls: () => calls }
 }
 
@@ -152,6 +152,158 @@ const controls = [
   ['toggle90min', '90min Toggle', 'fe01000632010100ff5a'],
   ['toggle120min', '120min Toggle', 'fe01000632010100ff4a'],
 ]
+
+test('auto connects unique authorized device once and supports all controls', async () => {
+  const f = writeFixture()
+  let checks = 0
+  f.api.getDevices = async () => { checks++; return [f.device] }
+  await f.connection.autoConnect()
+  assert.equal(f.calls(), 0)
+  assert.equal(f.connection.state.status, 'Connected')
+  for (const [method] of controls) await f.connection[method]()
+  assert.equal(f.writes.length, 6)
+  f.connection.disconnect()
+  await f.connection.autoConnect()
+  assert.equal(checks, 1)
+  assert.equal(f.connection.state.status, 'Disconnected')
+  await f.connection.connect()
+  assert.equal(f.connection.state.status, 'Connected')
+  assert.ok(f.connection.state.logs.some((line) => line.includes('Manual Connect：GATT Connected')))
+  f.device.gatt.disconnect()
+  await f.connection.autoConnect()
+  assert.equal(checks, 1)
+  assert.equal(f.connection.state.status, 'Disconnected')
+})
+
+test('successful manual ID persists across managers and selects matching authorized device', async () => {
+  let saved = null
+  const preference = { read: () => saved, save: (id) => { saved = id } }
+  const first = fixture(undefined, preference)
+  await first.connection.connect()
+  assert.equal(saved, first.device.id)
+  first.connection.dispose()
+  const next = fixture(undefined, preference)
+  const other = fixture()
+  other.device.id = 'another-id'
+  next.api.getDevices = async () => [other.device, next.device]
+  await next.connection.autoConnect()
+  assert.equal(next.device.gatt.connected, true)
+  assert.equal(other.device.gatt.connected, false)
+  assert.equal(next.calls(), 0)
+  next.connection.dispose()
+})
+
+test('unsupported, empty, unrelated and ambiguous device lists leave manual connect available', async () => {
+  for (const kind of ['unsupported', 'empty', 'unrelated', 'ambiguous', 'stale-id']) {
+    const f = fixture(undefined, { read: () => 'missing-id', save() {} })
+    const other = fixture()
+    other.device.id = 'another-id'
+    if (kind === 'unrelated') other.device.name = 'Other'
+    if (kind !== 'unsupported') f.api.getDevices = async () => kind === 'empty' ? [] : kind === 'unrelated' ? [other.device] : [f.device, other.device]
+    await f.connection.autoConnect()
+    assert.equal(f.calls(), 0)
+    assert.equal(f.connection.state.status, 'Disconnected')
+    assert.equal(other.device.gatt.connected, false)
+    await f.connection.connect()
+    assert.equal(f.connection.state.status, 'Connected')
+    f.connection.dispose()
+  }
+})
+
+test('getDevices rejection and GATT failure are logged and allow manual recovery', async () => {
+  for (const stage of ['devices', 'gatt']) {
+    let fail = true
+    const f = fixture(() => { if (stage === 'gatt' && fail) throw new DOMException('offline', 'NetworkError') })
+    f.api.getDevices = async () => {
+      if (stage === 'devices') throw new DOMException('blocked', 'SecurityError')
+      return [f.device]
+    }
+    await f.connection.autoConnect()
+    assert.equal(f.connection.state.status, 'Disconnected')
+    assert.match(f.connection.state.error, /Auto Connect.*(SecurityError|NetworkError)/)
+    fail = false
+    await f.connection.connect()
+    assert.equal(f.connection.state.status, 'Connected')
+    f.connection.dispose()
+  }
+})
+
+test('initialization and manual connect cannot race during discovery or GATT connect', async () => {
+  let list
+  let finish
+  const gate = new Promise((resolve) => { finish = resolve })
+  const f = fixture(() => gate)
+  f.api.getDevices = () => new Promise((resolve) => { list = resolve })
+  const pending = f.connection.autoConnect()
+  assert.equal(f.connection.state.status, 'Checking')
+  await f.connection.connect()
+  await f.connection.autoConnect()
+  assert.equal(f.calls(), 0)
+  list([f.device])
+  await Promise.resolve()
+  assert.equal(f.connection.state.status, 'Connecting')
+  await f.connection.connect()
+  assert.equal(f.calls(), 0)
+  finish()
+  await pending
+  assert.equal(f.connection.state.status, 'Connected')
+  f.connection.dispose()
+})
+
+test('manual chooser starting first suppresses delayed initialization', async () => {
+  const f = fixture()
+  f.api.getDevices = () => { assert.fail('auto must not run after manual intent') }
+  const pending = f.connection.connect()
+  await f.connection.autoConnect()
+  await pending
+  assert.equal(f.calls(), 1)
+  f.connection.dispose()
+})
+
+test('storage errors do not prevent connection and are logged', async () => {
+  const f = fixture(undefined, {
+    read() { throw new Error('read denied') },
+    save() { throw new Error('save denied') },
+  })
+  f.api.getDevices = async () => [f.device]
+  await f.connection.autoConnect()
+  assert.equal(f.connection.state.status, 'Connected')
+  assert.ok(f.connection.state.logs.some((line) => line.includes('read denied')))
+  assert.ok(f.connection.state.logs.some((line) => line.includes('save denied')))
+  f.connection.dispose()
+})
+
+test('unmount during authorized-device lookup does not connect or update UI', async () => {
+  const f = fixture()
+  let list
+  f.api.getDevices = () => new Promise((resolve) => { list = resolve })
+  const pending = f.connection.autoConnect()
+  f.connection.dispose()
+  const before = f.connection.state
+  list([f.device])
+  await pending
+  assert.equal(f.device.gatt.connected, false)
+  assert.equal(f.connection.state, before)
+})
+
+test('disconnect event during auto GATT connect prevents stale success and permits recovery', async () => {
+  let finish
+  const gate = new Promise((resolve) => { finish = resolve })
+  const f = fixture(() => gate)
+  f.api.getDevices = async () => [f.device]
+  const pending = f.connection.autoConnect()
+  await Promise.resolve()
+  f.device.gatt.disconnect()
+  await f.connection.connect()
+  assert.equal(f.calls(), 0)
+  finish()
+  await pending
+  assert.equal(f.connection.state.status, 'Disconnected')
+  assert.equal(f.device.gatt.connected, false)
+  await f.connection.connect()
+  assert.equal(f.connection.state.status, 'Connected')
+  f.connection.dispose()
+})
 
 for (const [method, operation, hex] of controls) {
   test(`${operation}: exact payload on each click, full logs, and no write after disconnect`, async () => {

@@ -23,11 +23,17 @@ export interface BleDevice extends EventTarget {
     }>
   }
 }
+export interface DevicePreference {
+  read(): string | null
+  save(id: string): void
+}
+
 export interface BleApi {
+  getDevices?(): Promise<BleDevice[]>
   requestDevice(options: { filters: { name: string }[]; optionalServices: string[] }): Promise<BleDevice>
 }
 export type ConnectionState = {
-  status: 'Disconnected' | 'Selecting' | 'Connecting' | 'Connected'
+  status: 'Disconnected' | 'Checking' | 'Selecting' | 'Connecting' | 'Connected'
   name: string
   id: string
   error: string
@@ -50,15 +56,18 @@ export class BleConnection {
   private generation = 0
   private device?: BleDevice
   private busy = false
+  private autoAttempted = false
+  private preference?: DevicePreference
   private disposed = false
   private onChange: (state: ConnectionState) => void
   private bluetooth?: BleApi
   private secure: boolean
 
-  constructor(bluetooth: BleApi | undefined, secure: boolean, onChange: (state: ConnectionState) => void) {
+  constructor(bluetooth: BleApi | undefined, secure: boolean, onChange: (state: ConnectionState) => void, preference?: DevicePreference) {
     this.bluetooth = bluetooth
     this.secure = secure
     this.onChange = onChange
+    this.preference = preference
   }
 
   private update(patch: Partial<ConnectionState>, message: string) {
@@ -69,7 +78,7 @@ export class BleConnection {
 
   private onDisconnected = () => {
     this.release()
-    this.update({ status: 'Disconnected', error: '设备连接已意外断开。请检查设备电源、距离和系统蓝牙状态，再点击 Connect。' }, '收到 gattserverdisconnected：设备已断开。')
+    this.update({ status: 'Disconnected', error: '设备连接已意外断开。请检查设备电源、距离和系统蓝牙状态，再点击 Connect。' }, 'Unexpected Disconnect：收到 gattserverdisconnected；浏览器未提供具体断线原因，请检查电源、距离和系统蓝牙。')
   }
 
   private release() {
@@ -78,34 +87,72 @@ export class BleConnection {
     this.device = undefined
   }
 
-  // Called directly from the click handler: requestDevice retains user activation.
+  // One attempt per page lifetime, never from a disconnect event.
+  async autoConnect() {
+    if (this.autoAttempted || this.disposed) return
+    this.autoAttempted = true
+    return this.connectDevice('Auto Connect')
+  }
+
+  // No await before requestDevice: preserve click user activation.
   async connect() {
+    this.autoAttempted = true
+    return this.connectDevice('Manual Connect')
+  }
+
+  private async connectDevice(mode: 'Auto Connect' | 'Manual Connect') {
     if (this.disposed || this.busy || this.state.status === 'Connected') return
     const unavailable = environmentError(this.secure, this.bluetooth)
     if (unavailable) {
-      this.update({ error: unavailable }, unavailable)
+      this.update({ error: unavailable }, `${mode}：${unavailable}`)
       return
     }
     this.busy = true
     let selected: BleDevice | undefined
     try {
-      this.update({ status: 'Selecting', error: '', name: '', id: '' }, '正在选择 WZKJ01…')
-      selected = await this.bluetooth!.requestDevice({ filters: [{ name: 'WZKJ01' }], optionalServices: [SERVICE_UUID] })
+      if (mode === 'Auto Connect') {
+        if (typeof this.bluetooth!.getDevices !== 'function') {
+          this.update({}, 'Auto Connect：浏览器不支持 getDevices()，请点击 Connect 手动选择。')
+          return
+        }
+        this.update({ status: 'Checking', error: '' }, 'Auto Connect：正在检查已授权设备…')
+        const devices = await this.bluetooth!.getDevices!()
+        if (this.disposed) return
+        const candidates = devices.filter((device) => device.name === 'WZKJ01')
+        let lastId: string | null = null
+        try { lastId = this.preference?.read() ?? null } catch (error) {
+          this.update({}, `Auto Connect：读取上次 Device ID 失败：${errorText(error)}`)
+        }
+        const preferred = candidates.filter((device) => device.id === lastId)
+        selected = preferred.length === 1 ? preferred[0] : candidates.length === 1 ? candidates[0] : undefined
+        if (!selected) {
+          this.update({ status: 'Disconnected' }, candidates.length
+            ? 'Auto Connect：多个 WZKJ01 且无法确定上次设备，请点击 Connect 手动选择。'
+            : 'Auto Connect：没有已授权的 WZKJ01，请点击 Connect 首次授权。')
+          return
+        }
+      } else {
+        this.update({ status: 'Selecting', error: '', name: '', id: '' }, 'Manual Connect：正在选择 WZKJ01…')
+        selected = await this.bluetooth!.requestDevice({ filters: [{ name: 'WZKJ01' }], optionalServices: [SERVICE_UUID] })
+      }
       if (this.disposed) return
       if (!selected.gatt) throw new Error('所选设备没有可用的 GATT Server。')
       this.device = selected
       selected.addEventListener('gattserverdisconnected', this.onDisconnected)
-      this.update({ status: 'Connecting', name: selected.name ?? '未知设备', id: selected.id }, '正在建立 GATT 连接…')
+      this.update({ status: 'Connecting', name: selected.name ?? '未知设备', id: selected.id }, `${mode}：正在建立 GATT 连接…`)
       await selected.gatt.connect()
       if (this.disposed) {
         selected.gatt.disconnect()
         return
       }
       if (this.device !== selected || !selected.gatt.connected) throw new Error('GATT 连接未建立或已断开。')
-      this.update({ status: 'Connected', error: '' }, 'GATT Connected。')
+      this.update({ status: 'Connected', error: '' }, `${mode}：GATT Connected。`)
+      try { this.preference?.save(selected.id) } catch (error) {
+        this.update({}, `${mode}：保存 Device ID 失败：${errorText(error)}；连接仍可使用。`)
+      }
     } catch (error) {
-      const cancelled = !selected && error instanceof Error && error.name === 'NotFoundError'
-      const message = cancelled ? '已取消选择，或没有可选择的 WZKJ01 设备。' : `连接失败：${errorText(error)}`
+      const cancelled = mode === 'Manual Connect' && !selected && error instanceof Error && error.name === 'NotFoundError'
+      const message = `${mode}：${cancelled ? '已取消选择，或没有可选择的 WZKJ01 设备。' : '连接失败'}；${errorText(error)}`
       this.release()
       try { selected?.gatt?.disconnect() } catch { /* Preserve the original connection error. */ }
       this.update({ status: 'Disconnected', error: message }, message)
@@ -174,7 +221,7 @@ export class BleConnection {
     try {
       device.gatt?.disconnect()
       this.release()
-      this.update({ status: 'Disconnected', error: '' }, '主动断开：Disconnected。')
+      this.update({ status: 'Disconnected', error: '' }, 'Manual Disconnect：用户主动断开，Disconnected；本页不自动重连。')
     } catch (error) {
       if (device.gatt?.connected) device.addEventListener('gattserverdisconnected', this.onDisconnected)
       else this.release()

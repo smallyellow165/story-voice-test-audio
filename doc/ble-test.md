@@ -1,4 +1,4 @@
-# Web Bluetooth V4 — WZKJ01 控制测试
+# Web Bluetooth V5 — WZKJ01 自动连接与控制测试
 
 页面：`/story-voice-test-audio/ble-test.html`。复用现有连接与 `writeCommand()`，不调用后端或模型 API。
 
@@ -11,6 +11,32 @@
 日志记录时间、操作名称、完整 HEX、两个 UUID，以及 Write Response 或错误信息。
 Write Response 仅证明 GATT 写入完成，不代表实际动作成功。写入失败也不能证明设备没有执行；现场观察后再决定是否重试。
 不实现 Notify、State Query、初始化或时间同步。
+
+## V5 自动连接
+
+页面初始化时调用原生 `navigator.bluetooth.getDevices()`，只检查当前 origin 已授权且名称精确为 WZKJ01 的设备。
+优先选择与上次成功连接的 Browser Device ID 唯一匹配的设备；否则仅在列表中只有一个 WZKJ01 时自动连接。多个目标无法明确区分时，保持 Disconnected 并提示点击 Connect 手动选择。不会自动打开授权选择器。
+自动与手动连接共用 `connectDevice()`、同一个连接锁及原有 GATT / 断线监听逻辑；Checking、Selecting、Connecting 期间禁用 Connect，避免并发。手动流程仍直接从点击调用 requestDevice，保留用户手势。
+不支持 getDevices、没有授权设备、权限错误或 GATT 失败时保留手动流程；若 Web Bluetooth 本身不可用或非安全上下文，显示原有环境错误。
+
+成功连接后将 ID 保存到 localStorage 的 `ble-test:last-device-id`。仅保存浏览器 ID，不是 MAC，也不授予权限。存储读写失败会记录日志，不中断连接；无法读取 ID 且有多个目标时交给用户选择。
+授权和存储受浏览器 profile / origin 限制：请保持相同协议、域名和端口。清除站点数据、撤销授权或切换浏览器可能需要再次授权。
+每次页面生命周期只尝试一次自动连接；主动 Disconnect 和意外断线均不自动重连，用户可点击 Connect 恢复。刷新或重新打开页面会开始一次新的自动尝试。
+日志区分 Auto Connect、Manual Connect、Manual Disconnect、Unexpected Disconnect，失败保留错误名称与信息。断线事件本身不提供具体原因，不把电源关闭或超出范围当作已知事实。
+getDevices 返回已授权设备，不保证设备已开机或在范围内；自动连接仍可能失败。没有后台扫描、重试循环或自动控制写入。
+API 依据：[MDN getDevices](https://developer.mozilla.org/en-US/docs/Web/API/Bluetooth/getDevices)。
+
+## V5 手动验收
+
+1. 首次进入同一 HTTPS 页面，点击 Connect 授权并连接 WZKJ01，确认 Manual Connect 成功日志。
+2. 刷新，再关闭并重新打开页面，分别确认 Auto Connect 成功，且不出现选择器。
+3. 点击 Disconnect，确认保持 Disconnected、不自动重连；点击 Connect 可手动恢复。
+4. 关闭设备电源，确认意外断线日志和状态；设备关闭时刷新，检查自动连接失败后可以手动 Connect。
+5. 自动连接成功后逐个验证 Action A/B 和四个 Timer，检查写入日志；断开后全部控制按钮禁用。
+6. 若授权了多个 WZKJ01，确认优先连接上次成功设备；无有效记录时应提示手动选择。
+7. 检查 getDevices 不支持或无授权时的回退说明，以及连接失败的具体错误日志。
+
+离线测试覆盖自动/手动互斥、一次性尝试、多个设备筛选、ID 保存与存储失败、连接失败回退、断线与卸载竞态，以及自动连接后的六条控制命令。Android Chrome 的授权保留、getDevices 可用性及刷新/重开实际连接效果仍需实测；本轮不启动服务或操作设备。
 
 ## 六条协议命令与验证状态
 
@@ -85,7 +111,7 @@ V1 连接与 V2 Web Bluetooth 写入、LED 状态变化已由用户实物验证�
 7. 拒绝权限或让设备在连接期间不可用，确认错误可见且没有未处理 Promise 异常。HTTP 局域网页面应禁用 Connect 并提示 HTTPS；不支持 API 的浏览器应给出明确提示。
 8. 在原入口手动回归 Test Audio；此页不导入或更改 Story、Pipecat、STT、TTS 链路。
 
-连接期间按钮禁用以避免重复请求；不会自动连接或重连。离开页面或 HMR 卸载时移除监听并尽力断开，迟到的连接成功也会断开。日志仅保留内存中最近 100 条。
+连接期间按钮禁用以避免重复请求；V5 仅在初始化时尝试自动连接，断线后不自动重连。离开页面或 HMR 卸载时移除监听并尽力断开，迟到的连接成功也会断开。日志仅保留内存中最近 100 条。
 
 ## 离线检查
 

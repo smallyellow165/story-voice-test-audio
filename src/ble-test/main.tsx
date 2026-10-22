@@ -5,12 +5,17 @@ import type { BleApi } from './connection'
 import './style.css'
 
 const bluetooth = (navigator as Navigator & { bluetooth?: BleApi }).bluetooth
+const preference = {
+  read: () => window.localStorage.getItem('ble-test:last-device-id'),
+  save: (id: string) => window.localStorage.setItem('ble-test:last-device-id', id),
+}
 const unavailable = environmentError(window.isSecureContext, bluetooth)
 
 function BleTestPage() {
-  const [connection] = useState(() => new BleConnection(bluetooth, window.isSecureContext, (next) => setState(next)))
+  const [connection] = useState(() => new BleConnection(bluetooth, window.isSecureContext, (next) => setState(next), preference))
   const [state, setState] = useState(connection.state)
   useEffect(() => {
+    void connection.autoConnect()
     const leave = () => connection.dispose()
     // A bfcache restore needs a fresh controller after pagehide cleanup.
     const restore = (event: PageTransitionEvent) => { if (event.persisted) location.reload() }
@@ -25,7 +30,7 @@ function BleTestPage() {
 
   return <main className="ble-test">
     <h1>WZKJ01 BLE Test</h1>
-    <p>V4 · 机械臂动作与定时控制测试</p>
+    <p>V5 · 已授权设备自动连接与控制测试</p>
     <dl>
       <dt>Secure Context</dt><dd>{window.isSecureContext ? 'Yes' : 'No'}</dd>
       <dt>Web Bluetooth API</dt><dd>{bluetooth ? 'Available' : 'Unavailable'}</dd>
@@ -38,6 +43,7 @@ function BleTestPage() {
       <button disabled={!!unavailable || state.status !== 'Disconnected'} onClick={() => { void connection.connect() }}>Connect</button>
       <button disabled={state.status !== 'Connected'} onClick={() => connection.disconnect()}>Disconnect</button>
     </div>
+    <p className="ble-hint">打开页面时仅尝试一次自动连接已授权设备；无法确定设备或连接失败时，请点击 Connect 手动选择。断开后不自动重试。</p>
     <h2>Actions</h2>
     <p className="ble-hint">Action A：机械臂向方向 A 旋转；Action B：向相反方向 B 旋转。实际安装方向决定用途。</p>
     <div className="ble-actions" role="group" aria-label="机械臂动作">
