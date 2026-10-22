@@ -9,7 +9,7 @@ import { ObservationPreview } from './ObservationPreview'
 import { ObservationModal } from './ObservationModal'
 import { bboxStyle } from './observation-view.mjs'
 import { catalogFeatureParams, catalogShapes, catalogPrints, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
-import { uniqueCatalogIdentity, hasConfirmedIdentity } from './catalog-autofill.mjs'
+import { uniqueCatalogIdentity, hasConfirmedIdentity, completeCatalogIdentity } from './catalog-autofill.mjs'
 import type { FeatureEditor } from './catalog-features.mjs'
 import './review.css'
 
@@ -88,7 +88,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
       for (const row of requested) {
         if (catalogEpoch.current !== epoch) return
         const note = (text: string) => setAutoNotes(previous => ({ ...previous, [row.id]: text }))
-        if (hasConfirmedIdentity(row)) { counts.skipped++; note('跳过：已有确认值或人工填写值。'); continue }
+        if (hasConfirmedIdentity(row)) { counts.skipped++; note('跳过：确认型号和颜色均已填写。'); continue }
         try {
           const features = readFeatureEditor(row.features)
           const params = catalogFeatureParams(features)
@@ -100,15 +100,21 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
           if (catalogEpoch.current !== epoch) return
           const decision = uniqueCatalogIdentity(data, features.color_id)
           autoCache.current.set(key, { data, expires: cached && cached.expires > Date.now() ? cached.expires : Date.now() + 60000 })
-          counts[decision.status]++
           if (decision.status === 'filled') {
+            const completed = completeCatalogIdentity(row, decision)
+            counts.filled++
             setValidation(null)
             setRows(previous => previous.map(current => current.id === row.id && !hasConfirmedIdentity(current)
               && JSON.stringify(current.features) === JSON.stringify(row.features)
-              ? { ...current, part: decision.part, color: decision.color, selected: false, identityOrigin: 'auto' as const,
+              && current.part === row.part && current.color === row.color
+              ? { ...current, ...completed, selected: false,
+                  identityOrigin: row.part.trim() || row.color.trim() ? 'manual' as const : 'auto' as const,
                   confirmation: { method: 'catalog_unique', features, evidence: data } } : current))
-            note('唯一型号与颜色已回填；请人工勾选并校验。')
-          } else note(decision.status === 'none' ? '未匹配，未修改确认值。' : '存在多个型号或颜色组合，请检索候选并人工选择。')
+            note('已补齐空字段，原有非空值保留；请人工勾选并校验。')
+          } else {
+            counts[decision.status]++
+            note(decision.status === 'none' ? '未匹配，未修改确认值。' : '存在多个型号或颜色组合，请检索候选并人工选择。')
+          }
         } catch (e) {
           if (catalogEpoch.current !== epoch) return
           counts.failed++; note(e instanceof Error ? e.message : String(e))

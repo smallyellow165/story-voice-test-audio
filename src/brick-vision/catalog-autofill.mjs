@@ -15,6 +15,16 @@ export function uniqueCatalogIdentity(result, colorId) {
 }
 
 export function hasConfirmedIdentity(row) {
-  // Protect partial manual edits too. Existing filled values need no repeat query.
-  return !!(row.confirmation || row.part.trim() || row.color.trim())
+  // Only current field values matter, never their origin or confirmation history.
+  return !!(row.part.trim() && row.color.trim())
+}
+
+export function completeCatalogIdentity(row, identity) {
+  const part = row.part.trim(), color = row.color.trim()
+  if ((part && part !== identity.part)
+    || (color && (!/^\d+$/.test(color) || Number(color) !== Number(identity.color)))) {
+    throw new Error('唯一候选与已有确认型号或颜色不一致；未修改任何字段，请人工选择。')
+  }
+  // Preserve nonempty input exactly, including its formatting.
+  return { part: part ? row.part : identity.part, color: color ? row.color : identity.color }
 }
