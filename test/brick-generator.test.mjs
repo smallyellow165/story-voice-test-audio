@@ -1,4 +1,9 @@
-import test from 'node:test'
+import test, { after } from 'node:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+const traceDirectory = await mkdtemp(path.join(tmpdir(), 'brick-design-test-'))
+after(() => rm(traceDirectory, { recursive: true, force: true }))
 import assert from 'node:assert/strict'
 import { loadBrickRules, loadTranspiledBrickRules } from '../server/brick-rules.mjs'
 import { generateBrickDesign, validateBrickDesign, validateGeneratorInput, brickModelOptions, resolveBrickModel } from '../server/brick-generator.mjs'
@@ -44,7 +49,7 @@ test('two-brick minimum applies to every supported part without weakening valida
 async function invoke(input, response) {
   const calls = []
   const result = await generateBrickDesign(input, {
-    model: 'mock-model',
+    model: 'gemini-3.6-flash', traceDirectory,
     createClient: () => ({ models: { generateContent: async (request) => {
       calls.push(request)
       if (response instanceof Error) throw response
@@ -76,12 +81,12 @@ test('valid output is preserved; one request uses configured model and structure
   assert.equal(body.validation.steps.length, 5)
   assert.equal(body.validation.usage.reduce((sum, r) => sum + r.used, 0), 5)
   assert.equal(body.rawOutput, raw)
-  assert.equal(body.model, 'mock-model')
+  assert.equal(body.model, 'gemini-3.6-flash')
   assert.equal(body.modelVersion, 'mock-version')
   assert.deepEqual(body.design, design)
   assert.deepEqual({ design, input }, before)
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].model, 'mock-model')
+  assert.equal(calls[0].model, 'gemini-3.6-flash')
   assert.equal(calls[0].config.responseMimeType, 'application/json')
   assert.equal(calls[0].config.responseSchema.properties.bricks.minItems, '2')
   assert.deepEqual(JSON.parse(calls[0].contents[0].parts[0].text), input)
@@ -190,11 +195,11 @@ test('request failures are sanitized, not retried; configuration failures do not
   const result = await invoke(input, Object.assign(new Error('secret API key example'), { status: 429 }))
   assert.equal(result.status, 502)
   assert.equal(result.calls.length, 1)
-  assert.equal(result.body.error.code, 'GEMINI_REQUEST')
+  assert.equal(result.body.error.code, 'PROVIDER_REQUEST')
   assert.ok(!JSON.stringify(result.body).includes('secret'))
-  const missing = await generateBrickDesign(input, { createClient: () => { throw new Error('missing') } })
+  const missing = await generateBrickDesign(input, { traceDirectory, createClient: () => { throw new Error('missing') } })
   assert.equal(missing.status, 503)
-  assert.equal(missing.body.error.code, 'GEMINI_CONFIG')
+  assert.equal(missing.body.error.code, 'PROVIDER_CONFIG')
   let created = false
   const unavailable = await generateBrickDesign(input, { loadRules: async () => { throw new Error('broken') }, createClient: () => { created = true } })
   assert.equal(unavailable.body.error.code, 'VALIDATOR_UNAVAILABLE')
@@ -230,8 +235,8 @@ test('unknown requested models are rejected before a model call; server defaults
     assert.equal(result.status, 400)
     assert.equal(result.calls.length, 0)
   }
-  assert.equal(resolveBrickModel(undefined, 'server-custom'), 'server-custom')
-  assert.ok(brickModelOptions('server-custom').some((m) => m.id === 'server-custom'))
+  assert.throws(() => resolveBrickModel(undefined, 'server-custom'))
+  assert.ok(!brickModelOptions().some((m) => m.id === 'server-custom'))
   assert.ok(brickModelOptions().some((m) => m.id === 'gemini-3.1-pro-preview'))
 })
 
@@ -259,4 +264,33 @@ test('absent usage is retained as null rather than invented zero counts', async 
   const { input, design } = fixture()
   const result = await invoke(input, reply(JSON.stringify(design)))
   assert.equal(result.body.usageMetadata, null)
+})
+
+// Transport substitution is confined to this test; production uses Responses API.
+test('OpenAI design uses the shared adapter and the same inventory/geometry validator', async () => {
+  const { input, design } = fixture()
+  for (const valid of [true, false]) {
+    const value = structuredClone(design)
+    if (!valid) value.bricks[0].color = '0'
+    let calls = 0
+    const result = await generateBrickDesign({ ...input, model: 'gpt-4.1' }, {
+      traceDirectory,
+      createClient: () => { throw new Error('Gemini must not be constructed') },
+      requestOpenai: async (request, record) => {
+        calls++
+        assert.equal(request.model, 'gpt-4.1')
+        assert.equal(request.text.format.type, 'json_object')
+        Object.assign(record, { response: { model: 'gpt-4.1-test', status: 'completed' },
+          modelVersion: 'gpt-4.1-test', httpStatus: 200, finishReason: 'completed',
+          usageMetadata: { input_tokens: 10, output_tokens: 20, total_tokens: 30 }, rawOutput: JSON.stringify(value) })
+      },
+    })
+    assert.equal(calls, 1)
+    assert.equal(result.status, valid ? 200 : 422)
+    assert.equal(result.body.validation.valid, valid)
+    assert.equal(result.body.provider, 'openai')
+    assert.equal(result.body.modelVersion, 'gpt-4.1-test')
+    assert.equal(result.body.usageMetadata.total_tokens, 30)
+    if (!valid) assert.equal(result.body.design, undefined)
+  }
 })

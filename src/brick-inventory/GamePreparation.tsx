@@ -1,3 +1,4 @@
+import { ModelSelector } from '../model-selector'
 import { useEffect, useState } from 'react'
 import { loadSessions } from './storage'
 import { postBrickGame, requestJson } from './api.mjs'
@@ -5,7 +6,7 @@ import type { GenerationAttempt } from './api.mjs'
 import type { SessionInventory } from './inventory'
 import type { InventoryReview } from '../brick-game-contract'
 const sourceKey = (row: { part_num: string; color_id: number }) => JSON.stringify([row.part_num, row.color_id])
-type ModelStatus = { model: string; models: { id: string; label: string }[] }
+type ModelStatus = { model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
 
 export function GamePreparation() {
   const [sessions, setSessions] = useState<SessionInventory[]>([])
@@ -18,13 +19,13 @@ export function GamePreparation() {
   const [error, setError] = useState('')
   const [description, setDescription] = useState('')
   const [model, setModel] = useState('')
-  const [models, setModels] = useState<{ id: string; label: string }[]>([])
+  const [models, setModels] = useState<{ id: string; label: string; provider: 'gemini' | 'openai' }[]>([])
   const [v4Url, setV4Url] = useState(() => { const url = new URL(location.href); url.port = '4000'; url.pathname = '/'; url.search = ''; url.hash = ''; return url.href })
   const refresh = () => { try { setSessions(loadSessions(localStorage)); setError('') } catch (e) { setError(String(e)) } }
   useEffect(() => {
     refresh()
     let disposed = false
-    void requestJson<ModelStatus>('/api/brick-test/generate', {}, 'Gemini 配置').then(result => {
+    void requestJson<ModelStatus>('/api/brick-test/generate', {}, '模型配置').then(result => {
       if (!disposed) { setModels(result.models); setModel(result.model) }
     }).catch(e => { if (!disposed) setError(String(e)) })
     return () => { disposed = true }
@@ -89,9 +90,9 @@ export function GamePreparation() {
       <details><summary>映射原始证据 / 可用性检查</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review.mapping, null, 2)}</pre></details>
     </>}
     <div className="inventory-filters"><label>想搭什么<input maxLength={500} value={description} disabled={!!busy || !!attempt} onChange={e => setDescription(e.target.value)} placeholder="请输入造型描述" /></label>
-      <label>Gemini 模型<select disabled={!!busy || !!attempt} value={model} onChange={e => setModel(e.target.value)}>{models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} disabled={!!busy || !!attempt} onChange={chosen => setModel(chosen.id)} />
       <button disabled={!review?.mapping.valid || !selectionValid || !confirmed || !description.trim() || !model || !!busy || !!attempt} onClick={async () => {
-        setBusy('Gemini 生成及 Validator 验证中；不会自动重试…'); setError('')
+        setBusy('所选模型生成及 Validator 验证中；不会自动重试…'); setError('')
         try { setAttempt(await postBrickGame('generate', { reviewId: review!.id, description, model, selection, confirmSelection: true })) }
         catch (e) { setError(String(e)) } finally { setBusy('') }
       }}>确认库存并生成游戏</button></div>

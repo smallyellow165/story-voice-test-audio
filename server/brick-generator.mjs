@@ -1,33 +1,28 @@
+import { ApiError } from '@google/genai'
+import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { mkdir, writeFile, rename } from 'node:fs/promises'
+import path from 'node:path'
+import { modelOptions, resolveModel, defaultBrickModel, modelSettings, providerStatus, providerConfigured } from './brick-model-registry.mjs'
+import { callBrickModel } from './brick-model-call.mjs'
+import { buildOpenaiRequest } from './openai-responses.mjs'
+import { captureVisionWire } from './brick-vision-wire.mjs'
 import { createGeminiClient } from './gemini-client.mjs'
 import { loadBrickRules } from './brick-rules.mjs'
 
 import { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
 export { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
 export const promptVersion = 'duplo-design-v3-2'
-export const configuredModel = () => process.env.DUPLO_LLM_MODEL?.trim() || 'gemini-3.6-flash'
-// Existing project IDs, checked against Google's model pages (2026-10-20).
-const supportedModels = [
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
-]
-export function brickModelOptions(defaultModel = configuredModel()) {
-  return supportedModels.some((item) => item.id === defaultModel) ? supportedModels : [...supportedModels, { id: defaultModel, label: `${defaultModel} (server default)` }]
-}
+export const configuredModel = () => process.env.DUPLO_LLM_MODEL?.trim() || defaultBrickModel
+export function brickModelOptions() { return modelOptions('design') }
 export function resolveBrickModel(requested, defaultModel = configuredModel()) {
-  const selected = requested === undefined ? defaultModel : requested
-  if (!brickModelOptions(defaultModel).some((item) => item.id === selected)) throw new Error('不支持的 Gemini 模型，请从模型列表选择。')
-  return selected
+  return resolveModel(requested === undefined ? defaultModel : requested, 'design').id
 }
-export function brickGenerationSettings(model) {
-  // Combined thinking + final JSON budget. MEDIUM is an effort level, not a
-  // fixed token reservation. Custom server defaults retain provider thinking defaults.
-  return { maxOutputTokens: 32768,
-    ...(supportedModels.some((item) => item.id === model) ? { thinkingConfig: { thinkingLevel: 'MEDIUM' } } : {}),
-    httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } },
-  }
-}
+export function brickGenerationSettings(model) { return modelSettings(model, 'design') }
 export function brickGeneratorStatus() {
-  return { model: configuredModel(), models: brickModelOptions(), apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY?.trim()), limits: designLimits, promptVersion }
+  const model = configuredModel(), definition = resolveModel(model, 'design')
+  return { model, provider: definition.provider, models: brickModelOptions(), providers: providerStatus(),
+    apiKeyConfigured: providerConfigured(definition.provider), limits: designLimits, promptVersion }
 }
 
 export const designPrompt = `You design recognizable DUPLO constructions for children aged 3–6.
@@ -106,49 +101,65 @@ export function validateGeneratorInput(body, rules) {
   return { description: body.description, inventory: body.inventory.map(({ part, color, quantity }) => ({ part, color, quantity })) }
 }
 
-// Exactly one SDK generation call for valid input; no repair loop or fallback.
-export async function generateBrickDesign(body, { createClient = createGeminiClient, loadRules = loadBrickRules, model = configuredModel() } = {}) {
+export function buildDesignRequest(model, input, rules) {
+  const prompt = buildDesignPrompt(rules, input.inventory), schema = designSchema(rules, input.inventory)
+  if (resolveModel(model, 'design').provider === 'openai') return buildOpenaiRequest({ model, task: 'design', prompt, schema,
+    content: [{ type: 'input_text', text: 'Return a JSON object only, following the business output contract in the instructions. No markdown.\n' + JSON.stringify(input) }] })
+  return { model, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
+    config: { systemInstruction: prompt, responseMimeType: 'application/json', responseSchema: schema, ...brickGenerationSettings(model) } }
+}
+
+// Same raw-wire recorder as Vision; no new HTTP or trace implementation.
+export async function generateBrickDesign(body, { createClient = createGeminiClient, loadRules = loadBrickRules, model = configuredModel(),
+  requestOpenai, traceDirectory = fileURLToPath(new URL('../generated/brick-design-traces/', import.meta.url)) } = {}) {
   const started = performance.now()
   const output = { ok: false, model, modelVersion: null, promptVersion, rawOutput: null, finishReason: null, blockReason: null, validation: null }
-  const finish = (status, fields) => ({ status, body: { ...output, ...fields, elapsedMs: Math.round(performance.now() - started) } })
-  let rules
+  let persist
+  const finish = async (status, fields) => {
+    Object.assign(output, fields, { elapsedMs: Math.round(performance.now() - started) })
+    if (persist) {
+      try { await persist() }
+      catch { return { status: 503, body: { ...output, ok: false, error: { code: 'TRACE_SAVE_FAILED', message: '无法保存完整诊断；未重试模型。' } } } }
+    }
+    return { status, body: output }
+  }
+  let rules, input
   try { rules = await loadRules() }
   catch { return finish(503, { error: { code: 'VALIDATOR_UNAVAILABLE', message: '无法加载共享 V2 Validator，请检查 Node TypeScript 支持或项目 TypeScript 依赖。' } }) }
-  let input
   try {
     input = validateGeneratorInput(body, rules)
     output.requestInput = input
     model = resolveBrickModel(body.model, model)
-    output.model = model
+    output.model = model; output.provider = resolveModel(model, 'design').provider
     output.generationSettings = brickGenerationSettings(model)
-  }
-  catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
-  let ai
-  try { ai = createClient() }
-  catch { return finish(503, { error: { code: 'GEMINI_CONFIG', message: 'Gemini 客户端不可用，请配置服务端 GEMINI_API_KEY 并重启。' } }) }
-  let response
+    output.request = buildDesignRequest(model, input, rules)
+  } catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
+  const id = randomUUID()
+  output.id = id; output.createdAt = new Date().toISOString(); output.task = 'design'
+  output.tracePath = path.resolve(traceDirectory, id + '.json')
   try {
-    response = await ai.models.generateContent({
-      model,
-      contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
-      config: { systemInstruction: buildDesignPrompt(rules, input.inventory), responseMimeType: 'application/json', responseSchema: designSchema(rules, input.inventory), ...output.generationSettings },
-    })
+    await mkdir(traceDirectory, { recursive: true })
+    await writeFile(output.tracePath, JSON.stringify(output), { flag: 'wx', mode: 0o600 })
+    persist = async () => {
+      const temp = output.tracePath + '.tmp'
+      await writeFile(temp, JSON.stringify(output), { mode: 0o600 })
+      await rename(temp, output.tracePath)
+    }
+    await captureVisionWire(traceDirectory, output, persist, () => callBrickModel({ model, task: 'design', request: output.request, record: output, createClient, requestOpenai }))
   } catch (error) {
-    const status = Number.isInteger(error?.status) ? error.status : null
-    return finish(502, { error: { code: 'GEMINI_REQUEST', message: `Gemini 请求失败${status ? `（HTTP ${status}）` : ''}；请检查模型权限、配额和网络。未自动重试。` } })
+    output.httpStatus ??= error?.status ?? error?.providerDiagnostic?.httpStatus ?? null
+    return finish(error?.statusCode === 503 ? 503 : 502, {
+      error: { code: error?.statusCode === 503 ? 'PROVIDER_CONFIG' : 'PROVIDER_REQUEST',
+        message: error?.statusCode === 503 || error?.providerDiagnostic ? error.message : 'Provider 请求失败；请查看 Raw Response 和 HTTP 状态，未自动重试。' },
+      providerDiagnostic: error?.providerDiagnostic ?? { httpStatus: output.httpStatus, rawErrorBody: error instanceof ApiError ? error.message : null },
+    })
   }
-  const candidate = response.candidates?.[0]
-  output.rawOutput = candidate?.content?.parts?.filter((part) => !part.thought).map((part) => part.text || '').join('') || ''
-  output.modelVersion = response.modelVersion || null
-  output.finishReason = candidate?.finishReason || null
-  output.blockReason = response.promptFeedback?.blockReason || null
-  const metadata = { usageMetadata: response.usageMetadata || null, responseId: response.responseId || null, finishMessage: candidate?.finishMessage || null }
-  if (output.finishReason !== 'STOP') return finish(502, { ...metadata, error: { code: 'MODEL_INCOMPLETE', message: `模型未正常完成：${output.finishReason || output.blockReason || '无候选输出'}。${output.finishReason === 'MAX_TOKENS' ? '推理与 JSON 共用输出预算，已到达生成上限；请查看 Token 用量及原始输出。' : ''}未自动重试或切换模型。` } })
+  const complete = output.provider === 'gemini' ? output.finishReason === 'STOP' : output.finishReason === 'completed'
+  if (!complete) return finish(502, { error: { code: 'MODEL_INCOMPLETE', message: '模型未正常完成：' + (output.finishReason || output.blockReason || '无候选输出') + '；未自动重试或切换模型。' } })
   let design
   try { design = JSON.parse(output.rawOutput) }
-  catch { return finish(422, { ...metadata, error: { code: 'INVALID_JSON', message: '模型输出不是有效 JSON；原始输出已保留。' } }) }
-  const validation = validateBrickDesign(design, input.inventory, rules)
-  output.validation = validation
-  if (!validation.valid) return finish(422, { ...metadata, error: { code: 'INVALID_DESIGN', message: '设计未通过验证，未修改或替换模型输出。' } })
-  return finish(200, { ...metadata, ok: true, design })
+  catch { return finish(422, { error: { code: 'INVALID_JSON', message: '模型输出不是有效 JSON；原始输出已保留。' } }) }
+  output.validation = validateBrickDesign(design, input.inventory, rules)
+  if (!output.validation.valid) return finish(422, { error: { code: 'INVALID_DESIGN', message: '设计未通过验证，未修改或替换模型输出。' } })
+  return finish(200, { ok: true, design })
 }

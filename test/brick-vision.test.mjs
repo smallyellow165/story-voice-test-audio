@@ -17,7 +17,7 @@ const observation = () => ({ color_id: null, size: null, shape: null, print: 'un
 const reference = () => ({ artifactId: 'design', designHash: 'hash', instanceId: 'activity', runId: 'run', taskAttemptId: 'attempt', revision: 2, index: 1, taskId: 'place-target' })
 
 test('Vision uses shared model options and passes selection to SDK and persisted diagnostics', async t => {
-  assert.deepEqual(visionStatus().models.filter(m => m.provider === 'gemini').map(({ provider, ...m }) => m), brickModelOptions(visionModel()))
+  assert.deepEqual(visionStatus().models, brickModelOptions())
   assert.equal(visionStatus().model, visionModel())
   const directory = await mkdtemp(path.join(tmpdir(), 'brick-vision-model-'))
   t.after(() => rm(directory, { recursive: true, force: true }))

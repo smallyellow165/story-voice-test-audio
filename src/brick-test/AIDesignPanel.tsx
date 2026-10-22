@@ -21,7 +21,7 @@ const endpoint = '/api/brick-test/generate'
 export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
-  const [status, setStatus] = useState<{ model: string; models: { id: string; label: string }[]; apiKeyConfigured: boolean } | null>(null)
+  const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
   const [selectedModel, setSelectedModel] = useState('')
   const [statusError, setStatusError] = useState('')
   const [statusRetry, setStatusRetry] = useState(0)
@@ -41,6 +41,8 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const design = result?.ok && result.validation?.valid ? result.design : undefined
   const shownStep = applied?.runId === run?.id ? applied?.step : undefined
   const total = inventory.reduce((sum, row) => sum + row.quantity, 0)
+  const selectedProvider = status?.models.find(item => item.id === selectedModel)?.provider
+  const selectedConfigured = !!selectedProvider && !!status?.providers[selectedProvider]
   const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     fetch(endpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('模型 API 不可用，请用 npm run dev 启动现有 Test Audio 服务；dev:brick 只提供本地 Viewer。')
       const value = await response.json()
-      if (typeof value.model !== 'string' || typeof value.apiKeyConfigured !== 'boolean' || !Array.isArray(value.models) || !value.models.length || !value.models.every((item: { id?: unknown; label?: unknown }) => item && typeof item.id === 'string' && typeof item.label === 'string') || !value.models.some((item: { id: string }) => item.id === value.model)) throw new Error('模型状态响应无效。')
+      if (typeof value.model !== 'string' || typeof value.apiKeyConfigured !== 'boolean' || typeof value.providers?.gemini !== 'boolean' || typeof value.providers?.openai !== 'boolean' || !Array.isArray(value.models) || !value.models.length || !value.models.every((item: { id?: unknown; label?: unknown; provider?: unknown }) => item && typeof item.id === 'string' && typeof item.label === 'string' && ['gemini', 'openai'].includes(String(item.provider))) || !value.models.some((item: { id: string }) => item.id === value.model)) throw new Error('模型状态响应无效。')
       if (active) { setStatus(value); setSelectedModel((previous) => value.models.some((item: { id: string }) => item.id === previous) ? previous : value.model) }
     }).catch((error) => { if (active) setStatusError(error.name === 'AbortError' ? '读取模型配置超时，请检查服务后重试。' : error.message) })
       .finally(() => clearTimeout(timeout))
@@ -87,7 +89,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
 
   async function generate(event: FormEvent) {
     event.preventDefault()
-    if (requestLock.current || disabled || !inputValid || !status?.apiKeyConfigured || !status.models.some((item) => item.id === selectedModel)) return
+    if (requestLock.current || disabled || !inputValid || !selectedConfigured || !status?.models.some((item) => item.id === selectedModel)) return
     requestLock.current = true
     setRunning(true); onGeneratingChange(true); setViewError('')
     const snapshot = { model: selectedModel, description, inventory: inventory.map((row) => ({ ...row })) }
@@ -134,22 +136,22 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
         <AvailableInventory inventory={inventory} total={total} onQuantity={(row, quantity) => {
           setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))
         }} />
-        <ModelSelector label="Gemini 模型" models={(status?.models || []).map(item => ({ ...item, provider: 'gemini' }))}
-          value={{ provider: 'gemini', id: selectedModel }} disabled={!status} onChange={chosen => setSelectedModel(chosen.id)} />
+        <ModelSelector models={status?.models || []}
+          value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => setSelectedModel(chosen.id)} />
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-        <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !status?.apiKeyConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
+        <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !selectedConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>
     </form>
-    <p className="brick-help" role="status">{running ? '正在等待 Gemini 并验证设计，请勿重复提交。' : status ? `配置模型：${selectedModel} · ${status.apiKeyConfigured ? 'API Key 已配置' : '缺少服务端 GEMINI_API_KEY'}` : '正在读取服务端配置…'}</p>
+    <p className="brick-help" role="status">{running ? '正在等待所选模型并验证设计，请勿重复提交。' : status ? `配置模型：${selectedModel} · ${selectedConfigured ? 'API Key 已配置' : '缺少服务端 ' + (selectedProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY')}` : '正在读取服务端配置…'}</p>
     {!inputValid && <p className="brick-help">库存总量需为 {designLimits.minBricks}–100 块，每项为非负整数；请填写造型描述。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     {!!runs.length && <div className="brick-ai-result">
       <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
-      <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
+      <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
       <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
-      <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? '未返回'}</p>
-      {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}
+      <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? result?.usageMetadata?.input_tokens ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? result?.usageMetadata?.output_tokens_details?.reasoning_tokens ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? result?.usageMetadata?.output_tokens ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? result?.usageMetadata?.total_tokens ?? '未返回'}</p>
+      {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens ?? 'Provider 默认'} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || result.generationSettings.reasoning?.effort || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}
       {!!result?.validation?.issues.length && <ul className="brick-ai-issues">{result.validation.issues.map((issue, index) => <li key={index}><code>{issue.code}</code> {issue.message}</li>)}</ul>}
       {design && stepsHost && createPortal(<div className="brick-build-steps">
         <p>{shownStep === undefined ? '当前场景未应用这份设计。' : `当前显示：${shownStep} / ${design.steps.length} 步`}</p>
@@ -163,7 +165,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
       </div>, stepsHost)}
       {viewError && <div className="brick-error" role="alert">{viewError}</div>}
       {!!result?.validation?.usage.length && <details open><summary>完整设计的库存消耗（生成时快照）</summary><table><thead><tr><th>型号 / 颜色</th><th>可用</th><th>使用</th><th>剩余</th></tr></thead><tbody>{result.validation.usage.filter((row) => row.available || row.used).map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part} / {COLORS.find((color) => color.code === row.color)?.label || row.color}</td><td>{row.available}</td><td>{row.used}</td><td>{row.remaining}</td></tr>)}</tbody></table></details>}
-      <details><summary>原始输出与完整诊断</summary><p className="brick-help">记录在当前页面内保留，刷新后消失；可下载保存。失败结果不应用到场景。</p><button onClick={download}>下载本次诊断 JSON</button><h3>LLM 原始可见输出</h3><pre>{result?.rawOutput ?? '本次没有取得模型输出。'}</pre><h3>请求快照、模型信息与 Validator 报告</h3><pre>{JSON.stringify(run, null, 2)}</pre></details>
+      <details><summary>原始输出与完整诊断</summary><p className="brick-help">本页列表刷新后消失；完整调用诊断另存于服务端，路径见下方 JSON，也可下载保存。失败结果不应用到场景。</p><button onClick={download}>下载本次诊断 JSON</button><h3>LLM 原始可见输出</h3><pre>{result?.rawOutput ?? '本次没有取得模型输出。'}</pre><h3>请求快照、模型信息与 Validator 报告</h3><pre>{JSON.stringify(run, null, 2)}</pre></details>
     </div>}
     <p className="brick-help">库存按每次独立设计计算，不会自动扣减。基础限制不等于儿童适用性或抗倾倒认证；请人工检查造型与指导。</p>
   </section>

@@ -137,7 +137,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     void requestJson<ModelStatus>('/api/brick-vision', { signal: controller.signal }, 'Vision 模型配置').then(status => {
       if (!Array.isArray(status.models) || !status.models.every(m => m && typeof m.id === 'string' && typeof m.label === 'string' && ['gemini', 'openai'].includes(m.provider))
         || !status.models.some(m => m.id === status.model)) throw new Error('Vision 模型配置无效')
-      if (!controller.signal.aborted) { setModels(status.models); setModel(status.model); setProvider('gemini'); setOpenaiConfigured(status.openaiApiKeyConfigured) }
+      if (!controller.signal.aborted) { setModels(status.models); setModel(status.model); setProvider(status.models.find(m => m.id === status.model)!.provider); setOpenaiConfigured(status.openaiApiKeyConfigured) }
     }).catch(e => { if (!controller.signal.aborted) setModelError(String(e)) })
     return () => controller.abort()
   }, [configRevision])
