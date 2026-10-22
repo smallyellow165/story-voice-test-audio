@@ -161,3 +161,8 @@ ActivityLink、Game Runtime、Gaming Tools、Pipecat pipeline 没有新增平行
 
 本次子集回归需要新流程生成的 Artifact（包含 confirmation）；未增加旧实验记录兼容路径。
 测试代码已补充，但未执行构建、测试、服务启动或真实模型调用。
+
+## Assembly V2
+
+几何与坐标规则、能力证据、98223 的限制及验收见 [Assembly V2](brick-assembly-v2.md)。
+新生成记录额外保存 geometrySnapshot；旧记录不自动转换。请建立新 Review。

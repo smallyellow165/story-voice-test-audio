@@ -29,7 +29,8 @@ export async function resolveLibraryFile(root, relative) {
 // Follow type-1 references without changing candidate identity or resolving aliases
 // to different Part IDs. Results are scoped to one Review, never cached globally.
 export async function inspectBrickModel(part, library = brickLibraryRoot()) {
-  const files = new Set(), active = new Set()
+  const files = new Set(), active = new Set(), entryReferences = []
+  const connectionMetadataFiles = []
   let entryAvailable = false, geometry = false
   try {
     if (typeof part !== 'string' || !/^[a-z0-9_-]+$/i.test(part)) throw new Error('候选型号不是有效的 LDraw 文件编号')
@@ -44,12 +45,15 @@ export async function inspectBrickModel(part, library = brickLibraryRoot()) {
       let source
       try { source = await readFile(file, 'utf8') }
       catch { throw new Error(`模型或依赖不可读取：${relative}`) }
-      if (!files.size) entryAvailable = true
+      const isEntry = !files.size
+      if (isEntry) entryAvailable = true
+      if (/^0\s+!LDCAD\s+SNAP_/m.test(source)) connectionMetadataFiles.push(relative)
       files.add(file); active.add(file)
       for (const line of source.split(/\r?\n/)) {
         const tokens = line.trim().split(/\s+/)
         if (tokens[0] === '1') {
           if (tokens.length < 15 || !tokens.slice(2, 14).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的模型引用：${relative}`)
+          if (isEntry) entryReferences.push({ file: tokens.slice(14).join(' ').replaceAll('\\', '/'), translation: tokens.slice(2, 5).map(Number), matrix: tokens.slice(5, 14).map(Number) })
           await visit(tokens.slice(14).join(' ').replaceAll('\\', '/'))
         } else if (tokens[0] === '3' || tokens[0] === '4') {
           if (tokens.length !== (tokens[0] === '3' ? 11 : 14) || !tokens.slice(2).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的几何记录：${relative}`)
@@ -60,9 +64,9 @@ export async function inspectBrickModel(part, library = brickLibraryRoot()) {
     }
     await visit(`${part}.dat`)
     if (!geometry) throw new Error('模型及依赖没有可显示的面')
-    return { available: true, entryAvailable, checkedFiles: files.size, errors: [] }
+    return { available: true, entryAvailable, checkedFiles: files.size, entryReferences, connectionMetadata: { files: connectionMetadataFiles, interpreted: false }, errors: [] }
   } catch (error) {
-    return { available: false, entryAvailable, checkedFiles: files.size,
+    return { available: false, entryAvailable, checkedFiles: files.size, entryReferences, connectionMetadata: { files: connectionMetadataFiles, interpreted: false },
       errors: [error.code ? `本地 LDraw 库读取失败（${error.code}）` : error.message] }
   }
 }

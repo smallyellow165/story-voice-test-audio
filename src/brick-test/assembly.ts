@@ -1,146 +1,158 @@
 import { PARTS } from './catalog.ts'
 import type { Brick } from './catalog.ts'
+import { STUD_LDU, BODY_LDU, geometryIssues, validPosition } from './part-geometry.ts'
+import type { PartDefinition, Point3, Box3, Connector } from './part-geometry.ts'
 
-// Pure product geometry. No DOM, Three.js, randomness, network or mutable state.
 export type Cell = { x: number; z: number }
 export type Connection = { lowerId: string; upperId: string; points: Cell[] }
 export type Validation = {
   valid: boolean
   code: 'VALID' | 'INPUT' | 'PART' | 'GRID' | 'ROTATION' | 'DUPLICATE_ID' | 'COLLISION' | 'UNSUPPORTED' | 'DISCONNECTED'
-  reason: string
-  brickIds: string[]
-  connections: Connection[]
+  reason: string; brickIds: string[]; connections: Connection[]
 }
 export type Candidate = { key: string; brick: Brick; contactCount: number }
 const invalid = (code: Validation['code'], reason: string, brickIds: string[] = []): Validation => ({ valid: false, code, reason, brickIds, connections: [] })
-const cellKey = (x: number, z: number, layer: number) => `${x},${z},${layer}`
-
-export function dimensions(part: string, rotation: number): { width: number; depth: number } {
-  const definition = PARTS.find((item) => item.id === part)
-  if (!definition) throw new Error(`不支持型号 ${part}`)
-  if (![0, 90, 180, 270].includes(rotation)) throw new Error('仅支持 0/90/180/270° 旋转')
-  return rotation % 180 === 0 ? { width: definition.length, depth: definition.depth } : { width: definition.depth, depth: definition.length }
-}
-
-function checkBrick(brick: Brick): Validation | null {
-  if (!brick || typeof brick !== 'object' || typeof brick.id !== 'string' || !brick.id.trim()) return invalid('INPUT', '积木需要非空字符串 ID')
-  if (!PARTS.some((item) => item.id === brick.part)) return invalid('PART', `不支持型号 ${brick.part}`, [brick.id])
-  if (![0, 90, 180, 270].includes(brick.rotation)) return invalid('ROTATION', '仅支持正放与 0/90/180/270° 旋转', [brick.id])
-  // All supported footprints have even dimensions. Integral centers align
-  // their half-integral stud positions; half-stud offsets do NOT connect.
-  if (![brick.x, brick.z, brick.layer].every((value) => Number.isSafeInteger(value) && Math.abs(value) <= 1_000_000) || brick.layer < 0) {
-    return invalid('GRID', 'X/Z 与层高必须为整数网格坐标，层高不能小于 0（坐标绝对值上限 1000000）', [brick.id])
+const EPS = 1e-7
+const equal = (a: number, b: number) => Math.abs(a - b) < EPS
+function rotate(p: Point3, angle: number): Point3 {
+  switch (angle) {
+    case 0: return { ...p }
+    case 90: return { x: p.z, y: p.y, z: -p.x }
+    case 180: return { x: -p.x, y: p.y, z: -p.z }
+    case 270: return { x: -p.z, y: p.y, z: p.x }
+    default: throw new Error('不支持的旋转')
   }
-  return null
+}
+function world(p: Point3, b: Brick): Point3 {
+  const r = rotate(p, b.rotation)
+  return { x: r.x + Math.round(b.x * STUD_LDU), y: r.y + Math.round(b.layer * BODY_LDU), z: r.z + Math.round(b.z * STUD_LDU) }
+}
+function overlaps(a: Box3, b: Box3) {
+  return a.min.x < b.max.x - EPS && a.max.x > b.min.x + EPS
+    && a.min.y < b.max.y - EPS && a.max.y > b.min.y + EPS
+    && a.min.z < b.max.z - EPS && a.max.z > b.min.z + EPS
 }
 
-// A cell is one stud pitch of nominal body occupancy. Its connector is at
-// (x + .5, z + .5); bottom interfaces and top studs share the same XZ footprint.
-export function footprint(brick: Brick): Cell[] {
-  const error = checkBrick(brick)
-  if (error) throw new Error(error.reason)
-  const { width, depth } = dimensions(brick.part, brick.rotation)
-  const cells: Cell[] = []
-  for (let x = brick.x - width / 2; x < brick.x + width / 2; x++) {
-    for (let z = brick.z - depth / 2; z < brick.z + depth / 2; z++) cells.push({ x, z })
+// One geometry algorithm; default application and tests bind different reviewed data.
+export function createAssemblyRules(definitions: readonly PartDefinition[]) {
+  const profiles = new Map(definitions.map(p => [p.id, p.geometry]))
+  if (profiles.size !== definitions.length) throw new Error('Duplicate part geometry ID')
+  const faults = new Map(definitions.map(p => [p.id, geometryIssues(p.geometry)]))
+  function checkBrick(brick: Brick): Validation | null {
+    if (!brick || typeof brick !== 'object' || typeof brick.id !== 'string' || !brick.id.trim()) return invalid('INPUT', '积木需要非空字符串 ID')
+    const g = profiles.get(brick.part)
+    if (!g || faults.get(brick.part)!.length) return invalid('PART', '缺少可用几何/连接描述：' + brick.part, [brick.id])
+    if (!g.rotations.includes(brick.rotation)) return invalid('ROTATION', '该零件不支持此旋转', [brick.id])
+    if (!validPosition(brick)) return invalid('GRID', 'X/Z 必须位于半凸点网格；底部高度必须为非负整数 LDU（layer × 48）', [brick.id])
+    return null
   }
-  return cells
-}
-
-function occupancy(bricks: readonly Brick[]) {
-  const occupied = new Map<string, string>()
-  for (const brick of bricks) for (const cell of footprint(brick)) occupied.set(cellKey(cell.x, cell.z, brick.layer), brick.id)
-  return occupied
-}
-
-export function validateAssembly(bricks: readonly Brick[]): Validation {
-  if (!Array.isArray(bricks)) return invalid('INPUT', '组合必须为积木数组')
-  const ids = new Set<string>()
-  const occupied = new Map<string, string>()
-  const cells = new Map<string, Cell[]>()
-  for (const brick of bricks) {
+  function dimensions(part: string, rotation: number) {
+    const g = profiles.get(part)
+    if (!g || !g.rotations.includes(rotation)) throw new Error('未知几何或旋转')
+    const p = rotate(g.bodySizeLdu, rotation)
+    return { width: Math.abs(p.x) / STUD_LDU, depth: Math.abs(p.z) / STUD_LDU }
+  }
+  function connectors(brick: Brick, face: 'top' | 'bottom'): Connector[] {
     const error = checkBrick(brick)
-    if (error) return error
-    if (ids.has(brick.id)) return invalid('DUPLICATE_ID', `重复积木 ID：${brick.id}`, [brick.id])
-    ids.add(brick.id)
-    const footprintCells = footprint(brick)
-    cells.set(brick.id, footprintCells)
-    for (const cell of footprintCells) {
-      const key = cellKey(cell.x, cell.z, brick.layer)
-      const other = occupied.get(key)
-      if (other !== undefined) return invalid('COLLISION', `砖体占位冲突：${other} 与 ${brick.id}（层 ${brick.layer}）`, [other, brick.id])
-      occupied.set(key, brick.id)
-    }
+    if (error) throw new Error(error.reason)
+    return profiles.get(brick.part)![face].map(p => ({ ...p, ...world(p, brick) }))
   }
-  const connections: Connection[] = []
-  const graph = new Map(bricks.map((brick) => [brick.id, new Set<string>()]))
-  for (const brick of bricks) {
-    if (brick.layer === 0) continue
-    const supports = new Map<string, Cell[]>()
-    for (const cell of cells.get(brick.id)!) {
-      const lowerId = occupied.get(cellKey(cell.x, cell.z, brick.layer - 1))
-      if (lowerId === undefined) continue
-      const points = supports.get(lowerId) || []
-      points.push({ x: cell.x + 0.5, z: cell.z + 0.5 })
-      supports.set(lowerId, points)
-    }
-    if (!supports.size) return invalid('UNSUPPORTED', `积木 ${brick.id} 没有与下方相邻层对齐的接合点`, [brick.id])
-    for (const [lowerId, points] of supports) {
-      connections.push({ lowerId, upperId: brick.id, points })
-      graph.get(lowerId)!.add(brick.id)
-      graph.get(brick.id)!.add(lowerId)
-    }
+  function collisionBoxes(brick: Brick): Box3[] {
+    return profiles.get(brick.part)!.collision.boxes.map(box => {
+      // Quarter turns preserve axis-aligned boxes. Opposite corners suffice.
+      const a = world(box.min, brick), b = world(box.max, brick)
+      return { min: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), z: Math.min(a.z, b.z) },
+        max: { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y), z: Math.max(a.z, b.z) } }
+    })
   }
-  // One connected assembly, not several unrelated piles sharing the floor.
-  if (bricks.length) {
-    const seen = new Set<string>()
-    const queue = [bricks[0].id]
-    for (let i = 0; i < queue.length; i++) {
-      const id = queue[i]
-      if (seen.has(id)) continue
-      seen.add(id)
-      graph.get(id)!.forEach((neighbor) => { if (!seen.has(neighbor)) queue.push(neighbor) })
-    }
-    if (seen.size !== bricks.length) return invalid('DISCONNECTED', '存在未连接的独立积木；地面或侧面接触不算积木连接', bricks.filter((brick) => !seen.has(brick.id)).map((brick) => brick.id))
+  // Kept as the shared support-count interface. These are bottom connector cells,
+  // NOT body occupancy. Existing rectangular profiles yield the same cells as V1.
+  function footprint(brick: Brick): Cell[] {
+    return connectors(brick, 'bottom').map(p => ({ x: p.x / STUD_LDU - 0.5, z: p.z / STUD_LDU - 0.5 }))
   }
-  const count = connections.reduce((sum, connection) => sum + connection.points.length, 0)
-  return { valid: true, code: 'VALID', reason: bricks.length ? `几何连接合法 · ${count} 个接合点；未评估物理稳定性` : '空场景，可放置第一块地面积木', brickIds: [], connections }
-}
-
-export function validatePlacement(bricks: readonly Brick[], brick: Brick): Validation {
-  if (!Array.isArray(bricks)) return invalid('INPUT', '组合必须为积木数组')
-  return validateAssembly([...bricks, brick])
-}
-
-// Enumerate every upward attachment for the chosen orientation. Align each
-// bottom connector with each exposed top connector, deduplicate translations,
-// reject occupied body cells. No viewport truncation occurs in the core.
-export function connectionCandidates(bricks: readonly Brick[], draft: Brick): Candidate[] {
-  if (!validateAssembly(bricks).valid || checkBrick(draft) || bricks.some((brick) => brick.id === draft.id)) return []
-  const origin = { ...draft, x: 0, z: 0, layer: 0 }
-  if (!bricks.length) return [{ key: '0,0,0', brick: origin, contactCount: 0 }]
-  const occupied = occupancy(bricks)
-  const offsets = footprint(origin)
-  const translations = new Map<string, Brick>()
-  for (const lower of bricks) {
-    const layer = lower.layer + 1
-    for (const top of footprint(lower)) {
-      if (occupied.has(cellKey(top.x, top.z, layer))) continue
-      for (const bottom of offsets) {
-        const x = top.x - bottom.x
-        const z = top.z - bottom.z
-        if (Math.abs(x) > 1_000_000 || Math.abs(z) > 1_000_000 || layer > 1_000_000) continue
-        const key = cellKey(x, z, layer)
-        if (!translations.has(key)) translations.set(key, { ...draft, x, z, layer })
+  function validateAssembly(bricks: readonly Brick[]): Validation {
+    if (!Array.isArray(bricks)) return invalid('INPUT', '组合必须为积木数组')
+    const ids = new Set<string>()
+    for (const b of bricks) {
+      const error = checkBrick(b)
+      if (error) return error
+      if (ids.has(b.id)) return invalid('DUPLICATE_ID', '重复积木 ID：' + b.id, [b.id])
+      ids.add(b.id)
+    }
+    const boxes = bricks.map(collisionBoxes)
+    for (let i = 0; i < bricks.length; i++) for (let j = i + 1; j < bricks.length; j++) {
+      if (boxes[i].some(a => boxes[j].some(b => overlaps(a, b))))
+        return invalid('COLLISION', '砖体碰撞包络冲突：' + bricks[i].id + ' / ' + bricks[j].id, [bricks[i].id, bricks[j].id])
+    }
+    const tops = bricks.map(b => connectors(b, 'top'))
+    const bottoms = bricks.map(b => connectors(b, 'bottom'))
+    const mates = (t: Connector, p: Connector) => t.type === p.type && t.direction === 'up' && p.direction === 'down'
+      && equal(t.x, p.x) && equal(t.y, p.y) && equal(t.z, p.z)
+      && p.radiusLdu >= t.radiusLdu && p.depthLdu >= t.depthLdu
+    const studBox = (t: Connector): Box3 => ({ min: { x: t.x - t.radiusLdu, y: t.y, z: t.z - t.radiusLdu },
+      max: { x: t.x + t.radiusLdu, y: t.y + t.depthLdu, z: t.z + t.radiusLdu } })
+    // Do not let an unmatched stud penetrate a body just because nominal boxes touch.
+    // Only an explicitly compatible bottom socket exempts its mating stud volume.
+    for (let i = 0; i < bricks.length; i++) for (let j = i + 1; j < bricks.length; j++) {
+      for (const [lower, other] of [[i, j], [j, i]]) for (const t of tops[lower]) {
+        if (boxes[other].some(b => overlaps(studBox(t), b)) && !bottoms[other].some(p => mates(t, p)))
+          return invalid('COLLISION', '凸点包络与未配对的实体相交', [bricks[lower].id, bricks[other].id])
       }
+      if (tops[i].some(a => tops[j].some(b => overlaps(studBox(a), studBox(b)))))
+        return invalid('COLLISION', '凸点碰撞包络相交', [bricks[i].id, bricks[j].id])
     }
+    const connections: Connection[] = []
+    const graph = new Map(bricks.map(b => [b.id, new Set<string>()]))
+    for (const upper of bricks) {
+      if (equal(upper.layer, 0)) continue
+      const bottom = connectors(upper, 'bottom'), supported = new Set<number>()
+      for (const [i, lower] of bricks.entries()) {
+        if (lower.id === upper.id) continue
+        const points: Cell[] = []
+        for (const [j, p] of bottom.entries()) if (tops[i].some(t => mates(t, p))) {
+          if (supported.has(j)) return invalid('COLLISION', '同一底部接口不能由两个零件占用', [upper.id, lower.id])
+          supported.add(j); points.push({ x: p.x / STUD_LDU, z: p.z / STUD_LDU })
+        }
+        if (points.length) {
+          connections.push({ lowerId: lower.id, upperId: upper.id, points })
+          graph.get(lower.id)!.add(upper.id); graph.get(upper.id)!.add(lower.id)
+        }
+      }
+      if (!supported.size) return invalid('UNSUPPORTED', '积木 ' + upper.id + ' 没有方向、类型与位置吻合的底部连接', [upper.id])
+    }
+    if (bricks.length) {
+      const seen = new Set<string>(), queue = [bricks[0].id]
+      for (let i = 0; i < queue.length; i++) {
+        if (seen.has(queue[i])) continue
+        seen.add(queue[i]); graph.get(queue[i])!.forEach(id => { if (!seen.has(id)) queue.push(id) })
+      }
+      if (seen.size !== bricks.length) return invalid('DISCONNECTED', '存在未连接积木；地面或侧面接触不算连接', bricks.filter(b => !seen.has(b.id)).map(b => b.id))
+    }
+    const count = connections.reduce((n, c) => n + c.points.length, 0)
+    return { valid: true, code: 'VALID', reason: '几何连接合法 · ' + count + ' 个接合点；保守碰撞包络，未评估物理稳定性', brickIds: [], connections }
   }
-  const candidates: Candidate[] = []
-  for (const [key, brick] of translations) {
-    const cells = footprint(brick)
-    if (cells.some((cell) => occupied.has(cellKey(cell.x, cell.z, brick.layer)))) continue
-    const contactCount = cells.filter((cell) => occupied.has(cellKey(cell.x, cell.z, brick.layer - 1))).length
-    if (contactCount) candidates.push({ key, brick, contactCount })
+  function validatePlacement(bricks: readonly Brick[], brick: Brick) { return Array.isArray(bricks) ? validateAssembly([...bricks, brick]) : invalid('INPUT', '组合必须为积木数组') }
+  function connectionCandidates(bricks: readonly Brick[], draft: Brick): Candidate[] {
+    if (!validateAssembly(bricks).valid || checkBrick(draft) || bricks.some(b => b.id === draft.id)) return []
+    const origin = { ...draft, x: 0, z: 0, layer: 0 }
+    if (!bricks.length) return [{ key: '0,0,0', brick: origin, contactCount: 0 }]
+    const offsets = connectors(origin, 'bottom'), translations = new Map<string, Brick>()
+    for (const lower of bricks) for (const top of connectors(lower, 'top')) for (const bottom of offsets) {
+      if (top.type !== bottom.type) continue
+      const x = (top.x - bottom.x) / STUD_LDU, z = (top.z - bottom.z) / STUD_LDU, layer = (top.y - bottom.y) / BODY_LDU
+      const brick = { ...draft, x, z, layer }
+      if (checkBrick(brick)) continue
+      translations.set([x, z, layer].join(','), brick)
+    }
+    const result: Candidate[] = []
+    for (const [key, brick] of translations) {
+      const report = validatePlacement(bricks, brick)
+      if (!report.valid) continue
+      const contactCount = report.connections.filter(c => c.upperId === brick.id).reduce((n, c) => n + c.points.length, 0)
+      if (contactCount) result.push({ key, brick, contactCount })
+    }
+    return result.sort((a, b) => b.contactCount - a.contactCount || a.brick.layer - b.brick.layer || a.brick.x - b.brick.x || a.brick.z - b.brick.z)
   }
-  return candidates.sort((a, b) => b.contactCount - a.contactCount || a.brick.layer - b.brick.layer || a.brick.x - b.brick.x || a.brick.z - b.brick.z)
+  return { dimensions, footprint, connectors, validateAssembly, validatePlacement, connectionCandidates }
 }
+export const { dimensions, footprint, connectors, validateAssembly, validatePlacement, connectionCandidates } = createAssemblyRules(PARTS)

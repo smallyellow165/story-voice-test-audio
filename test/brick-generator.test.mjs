@@ -109,7 +109,7 @@ test('reject invalid designs without repairs and preserve original output', asyn
     ['INVENTORY_EXCEEDED', (d) => { d.bricks[1].color = '0' }],
     ['BRICK_SCHEMA', (d) => { d.bricks[1].part = 'fake' }],
     ['BRICK_SCHEMA', (d) => { d.bricks[1].color = 'unknown' }],
-    ['BRICK_SCHEMA', (d) => { d.bricks[1].x = 0.5 }],
+    ['BRICK_SCHEMA', (d) => { d.bricks[1].x = 0.25 }],
     ['BRICK_SCHEMA', (d) => { d.bricks[1].rotation = 45 }],
     ['DUPLICATE_ID', (d) => { d.bricks[1].id = 'base' }],
     ['CHILD_LIMIT', (d) => { d.bricks[1].layer = 4 }],

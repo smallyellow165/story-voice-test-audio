@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { LDrawLoader } from 'three/addons/loaders/LDrawLoader.js'
 import { LDrawConditionalLineMaterial } from 'three/addons/materials/LDrawConditionalLineMaterial.js'
-import { BODY_LDU, MM_PER_LDU, STUD_LDU } from './catalog'
+import { BODY_LDU, MM_PER_LDU, STUD_LDU, geometrySupport } from './catalog'
 import type { Brick } from './catalog'
 import type { Candidate } from './assembly'
 
@@ -194,6 +194,9 @@ export class BrickViewer {
     const cached = this.templates.get(key)
     if (cached) return cached
     const pending = (async () => {
+      const capability = geometrySupport(part)
+      if (!capability.supported || !capability.geometry) throw new Error(capability.reasons.join('; '))
+      const geometry = capability.geometry
       const manager = new THREE.LoadingManager()
       const failedUrls = new Set<string>()
       manager.onError = (url) => { failedUrls.add(url) }
@@ -215,10 +218,11 @@ export class BrickViewer {
         model.traverse((node) => { if ((node as THREE.Mesh).isMesh) meshes++ })
         if (!meshes) throw new Error('LDrawLoader 没有返回可显示的网格')
         // LDraw +Y points down. Rotate (not reflect) to preserve winding.
-        // 1 scene unit = 1 mm. Body bottom y=48 LDU becomes ground y=0.
-        model.rotation.x = Math.PI
+        // 1 scene unit = 1 mm. Profile aligns the original entry to its body bottom.
+        // LDrawLoader retains all alias/subfile transforms; do not strip redirects.
+        model.rotation.x = geometry.ldraw.rotationX
         model.scale.setScalar(MM_PER_LDU)
-        model.position.y = BODY_LDU * MM_PER_LDU
+        model.position.set(geometry.ldraw.offsetLdu.x * MM_PER_LDU, geometry.ldraw.offsetLdu.y * MM_PER_LDU, geometry.ldraw.offsetLdu.z * MM_PER_LDU)
         const positioned = new THREE.Group()
         positioned.add(model)
         return positioned

@@ -1,7 +1,7 @@
 import { createGameRuntime, type GameDefinition } from './games/game-runtime.ts'
 import { validateAssembly, footprint } from './brick-test/assembly.ts'
 import type { BrickGameArtifact } from './brick-game-contract.ts'
-import { PARTS, COLORS } from './brick-test/catalog.ts'
+import { PARTS, COLORS, validPosition } from './brick-test/catalog.ts'
 import { validateBrickDesign } from './brick-design-validation.mjs'
 import { createActivityBridge } from './activity-bridge.ts'
 import type { ActivityMessage } from './activity-message.ts'
@@ -11,7 +11,7 @@ export function createBrickBuilding(options: ScreenGameOptions & { artifact: Bri
   const artifact = options.artifact
   if (!artifact || artifact.schemaVersion !== 1 || !artifact.generation?.ok || !artifact.review?.mapping.valid) throw new Error('validated_design_required')
   const design = artifact.generation.design
-  const report = validateBrickDesign(design, artifact.generatorInput.inventory, { PARTS, COLORS, validateAssembly, footprint })
+  const report = validateBrickDesign(design, artifact.generatorInput.inventory, { PARTS, COLORS, validPosition, validateAssembly, footprint })
   if (!report.valid) throw new Error('design_validation_failed: ' + report.issues.map((i: { message: string }) => i.message).join('; '))
   const byId = new Map(design.bricks.map(brick => [brick.id, brick]))
   const tasks = design.steps.flatMap(step => {

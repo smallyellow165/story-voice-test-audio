@@ -18,13 +18,13 @@ export function validateBrickDesign(design, inventory, rules) {
   const ids = new Set()
   const counts = new Map()
   for (const brick of design.bricks) {
-    if (!record(brick) || typeof brick.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(brick.id) || !rules.PARTS.some((p) => p.id === brick.part) || !rules.COLORS.some((c) => c.code === brick.color) || ![brick.x, brick.z, brick.layer].every(Number.isSafeInteger) || ![0, 90, 180, 270].includes(brick.rotation)) {
-      issue('BRICK_SCHEMA', '积木字段无效：检查 ID、真实型号/颜色、整数坐标和直角旋转。')
+    if (!record(brick) || typeof brick.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(brick.id) || !rules.PARTS.some((p) => p.id === brick.part && p.geometry?.status === 'reviewed') || !rules.COLORS.some((c) => c.code === brick.color) || !rules.validPosition(brick) || ![0, 90, 180, 270].includes(brick.rotation)) {
+      issue('BRICK_SCHEMA', '积木字段无效：检查 ID、真实型号/颜色、声明的坐标网格和直角旋转。')
       continue
     }
     if (ids.has(brick.id)) issue('DUPLICATE_ID', `积木 ID 重复：${brick.id}`)
     ids.add(brick.id)
-    if (Math.abs(brick.x) > designLimits.maxCoordinate || Math.abs(brick.z) > designLimits.maxCoordinate || brick.layer < 0 || brick.layer > designLimits.maxLayer) issue('CHILD_LIMIT', `造型中心坐标需在 ±${designLimits.maxCoordinate} 内，底部层高需在 0–${designLimits.maxLayer} 内。`, { brickId: brick.id })
+    if (Math.abs(brick.x) > designLimits.maxCoordinate || Math.abs(brick.z) > designLimits.maxCoordinate || brick.layer < 0 || brick.layer > designLimits.maxLayer || brick.layer + rules.PARTS.find(p => p.id === brick.part).geometry.bodySizeLdu.y / 48 > designLimits.maxLayer + 1) issue('CHILD_LIMIT', `造型中心坐标需在 ±${designLimits.maxCoordinate} 内，底部层高需在 0–${designLimits.maxLayer} 内，实体顶部不能超过 ${designLimits.maxLayer + 1} 层。`, { brickId: brick.id })
     const key = pairKey(brick.part, brick.color)
     counts.set(key, (counts.get(key) || 0) + 1)
   }

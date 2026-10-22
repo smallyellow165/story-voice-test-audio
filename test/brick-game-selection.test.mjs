@@ -38,7 +38,7 @@ test('shared dimensions drive prompt and geometry; request enum contains only se
   assert.deepEqual(schema.properties.bricks.items.properties.part.enum, [part.id])
   assert.deepEqual(schema.properties.bricks.items.properties.color.enum, [color])
   for (const p of rules.PARTS) {
-    assert.ok(buildDesignPrompt(rules).includes(p.id + ' (X width ' + p.length + ', Z depth ' + p.depth + ')'))
+    assert.ok(buildDesignPrompt(rules).includes(JSON.stringify(p.geometry.bodySizeLdu)))
     assert.deepEqual(rules.dimensions(p.id, 0), { width: p.length, depth: p.depth })
     assert.deepEqual(rules.dimensions(p.id, 90), { width: p.depth, depth: p.length })
   }

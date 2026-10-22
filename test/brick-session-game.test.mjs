@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readAcceptedArtifact } from './brick-artifact-input.mjs'
@@ -78,6 +78,12 @@ test('review freezes the saved inventory; generation is single-attempt and V4 re
     assert.deepEqual(loaded.generation.design, accepted.generation.design)
     assert.deepEqual(loaded.review.session, accepted.review.session)
     assert.equal(loaded.designHash, first.artifact.designHash)
+    assert.deepEqual(loaded.geometrySnapshot, first.artifact.geometrySnapshot)
+    const damaged = structuredClone(loaded)
+    damaged.geometrySnapshot[0].geometry.bodySizeLdu.y++
+    await writeFile(path.join(directory, 'designs', loaded.id + '.json'), JSON.stringify(damaged))
+    await assert.rejects(service.artifact(loaded.id), /几何能力快照/)
+    await writeFile(path.join(directory, 'designs', loaded.id + '.json'), JSON.stringify(loaded))
     await assert.rejects(service.generate({ ...request, description: request.description + ' changed' }), /已有另一生成请求/)
     assert.equal(calls.length, 1)
     await assert.rejects(service.generate({ ...request, selection: [] }), /选择/)

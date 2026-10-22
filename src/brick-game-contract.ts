@@ -1,3 +1,4 @@
+import type { PartGeometry } from './brick-test/part-geometry.ts'
 import type { SessionInventory } from './brick-inventory/inventory.ts'
 import type { BrickDesign, GenerationResult, InventoryRow } from './brick-test/design-types.ts'
 
@@ -6,7 +7,7 @@ export type MappingRow = {
   sourcePartName: string | null; sourceColorName: string | null
   partCandidates: string[]; colorCandidates: string[]
   partCandidateChecks: {
-    part: string; supported: boolean; eligible: boolean; reasons: string[]
+    part: string; supported: boolean; capability: { supported: boolean; reasons: string[]; geometry: PartGeometry | null }; eligible: boolean; reasons: string[]
     local: { available: boolean; entryAvailable: boolean; checkedFiles: number; errors: string[] }
   }[]
   target: { part: string; color: string; colorName: string } | null
@@ -25,6 +26,7 @@ export type InventoryReview = {
 export type BrickGameArtifact = {
   schemaVersion: 1; id: string; createdAt: string; designHash: string
   review: InventoryReview
+  geometrySnapshot: { part: string; geometry: PartGeometry }[]
   generatorInput: { description: string; inventory: InventoryRow[]; model: string }
   generation: GenerationResult & { ok: true; design: BrickDesign }
 }

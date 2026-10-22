@@ -16,11 +16,12 @@ export async function resolveInventoryMapping(session, metadata, rules, inspectM
     if (!p?.known_colors?.includes(source.color_id)) errors.push('数据库未确认此型号与颜色组合')
     const partCandidateChecks = []
     for (const part of partCandidates) {
-      const supported = rules.PARTS.some(p => p.id === part)
+      const capability = rules.geometrySupport(part)
+      const supported = capability.supported
       if (!checked.has(part)) checked.set(part, await inspectModel(part))
       const local = checked.get(part)
-      const reasons = [...(!supported ? ['当前 Generator / Validator 不支持此型号'] : []), ...local.errors]
-      partCandidateChecks.push({ part, supported, local, eligible: supported && local.available, reasons })
+      const reasons = [...capability.reasons, ...local.errors]
+      partCandidateChecks.push({ part, supported, capability, local, eligible: supported && local.available, reasons })
     }
     const eligible = partCandidateChecks.filter(candidate => candidate.eligible)
     if (!eligible.length) errors.push('没有有效的 LDraw 零件候选；请查看候选检查原因')

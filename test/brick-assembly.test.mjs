@@ -48,8 +48,8 @@ test('mere side, edge, corner or floor contact does not create a connection', ()
   assert.equal(code([base, brick('above-corner', { x: 2, z: 2, layer: 1 })]), 'UNSUPPORTED')
 })
 
-test('half-stud positions, arbitrary angles, fractional layers and negative height are rejected', () => {
-  for (const patch of [{ x: 0.5 }, { z: -0.5 }, { layer: 1.5 }, { layer: -1 }, { x: NaN }, { z: Infinity }, { x: 1_000_001 }]) {
+test('off-grid positions, arbitrary angles and negative height are rejected', () => {
+  for (const patch of [{ x: 0.25 }, { z: -0.25 }, { layer: 0.01 }, { layer: -1 }, { x: NaN }, { z: Infinity }, { x: 1_000_001 }]) {
     assert.equal(code([brick('invalid', patch)]), 'GRID')
   }
   for (const rotation of [45, -90, 360, NaN]) assert.equal(code([brick('invalid', { rotation })]), 'ROTATION')

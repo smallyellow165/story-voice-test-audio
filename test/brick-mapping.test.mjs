@@ -22,7 +22,7 @@ function input(candidates) {
   const session = { items: [{ part_num: 'catalog-item', color_id: 99, quantity: 2 }] }
   const metadata = { parts: { 'catalog-item': { status: 'available', known_colors: [99], external_ids: { LDraw: candidates } } },
     colors: { 99: { status: 'available', external_ids: { LDraw: { ext_ids: ['4'] } } } } }
-  const rules = { PARTS: [{ id: 'a' }, { id: 'b' }], COLORS: [{ code: '4', label: '红色' }] }
+  const rules = { geometrySupport: part => ({ supported: ['a', 'b'].includes(part), reasons: ['a', 'b'].includes(part) ? [] : ['不支持的测试几何'], geometry: null }), PARTS: [{ id: 'a' }, { id: 'b' }], COLORS: [{ code: '4', label: '红色' }] }
   return { session, metadata, rules }
 }
 
@@ -109,4 +109,11 @@ test('symlinks outside the library are rejected and checks are fresh on later re
   assert.equal((await inspectBrickModel('a', root)).available, true)
   await rm(path.join(root, 'parts/dep.dat'))
   assert.equal((await inspectBrickModel('a', root)).available, false)
+})
+
+test('entry alias matrices are retained; snap metadata is never treated as verified connectivity', async t => {
+  const root = await library(t, { 'parts/a.dat': '0 !LDCAD SNAP_CLEAR\n1 16 0 0 0 0 0 1 0 1 0 -1 0 0 b.dat\n', 'parts/b.dat': face })
+  const inspected = await inspectBrickModel('a', root)
+  assert.deepEqual(inspected.entryReferences[0].matrix, [0, 0, 1, 0, 1, 0, -1, 0, 0])
+  assert.deepEqual(inspected.connectionMetadata, { files: ['a.dat'], interpreted: false })
 })

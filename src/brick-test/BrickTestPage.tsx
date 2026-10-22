@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { COLORS, PARTS, exampleBricks } from './catalog'
+import { COLORS, PARTS, BODY_LDU, exampleBricks } from './catalog'
 import type { Brick } from './catalog'
 import { connectionCandidates, validateAssembly } from './assembly'
 import type { Candidate, Validation } from './assembly'
@@ -10,7 +10,7 @@ import './brick-test.css'
 
 const PAGE_SIZE = 24
 const initialBrick = (): Brick => ({ id: crypto.randomUUID(), part: '3437', color: '4', x: 0, z: 0, layer: 0, rotation: 0 })
-const batchAt = (brick: Brick, quantity: number): Brick[] => Array.from({ length: quantity }, (_, i) => ({ ...brick, id: `${brick.id}:${i}`, layer: brick.layer + i }))
+const batchAt = (brick: Brick, quantity: number): Brick[] => Array.from({ length: quantity }, (_, i) => ({ ...brick, id: `${brick.id}:${i}`, layer: brick.layer + i * (PARTS.find(p => p.id === brick.part)!.geometry.bodySizeLdu.y / BODY_LDU) }))
 const inWorkspace = (brick: Brick) => Math.abs(brick.x) <= 20 && Math.abs(brick.z) <= 20 && brick.layer <= 20
 const inputError = (reason: string): Validation => ({ valid: false, code: 'INPUT', reason, brickIds: [], connections: [] })
 

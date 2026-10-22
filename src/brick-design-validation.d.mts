@@ -1,3 +1,5 @@
+import type { PartDefinition } from './brick-test/part-geometry.ts'
+import type { validPosition } from './brick-test/catalog.ts'
 import type { validateAssembly, footprint } from './brick-test/assembly.ts'
 import type { DesignReport, InventoryRow } from './brick-test/design-types.ts'
 
@@ -11,7 +13,8 @@ export const designLimits: Readonly<{
 }>
 
 export type BrickValidationRules = {
-  PARTS: readonly { readonly id: string }[]
+  PARTS: readonly PartDefinition[]
+  validPosition: typeof validPosition
   COLORS: readonly { readonly code: string }[]
   validateAssembly: typeof validateAssembly
   footprint: typeof footprint

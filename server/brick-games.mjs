@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promise
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
-import { loadBrickRules } from './brick-rules.mjs'
+import { loadBrickRules, geometrySnapshot } from './brick-rules.mjs'
 import { generateBrickDesign, validateBrickDesign, validateGeneratorInput, resolveBrickModel } from './brick-generator.mjs'
 import { selectGameInventory } from './brick-game-selection.mjs'
 import { resolveInventoryMapping } from './brick-mapping.mjs'
@@ -47,6 +47,8 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
     const selected = selectGameInventory(value.review, confirmed.items)
     if (JSON.stringify(selected.inventory) !== JSON.stringify(value.generatorInput.inventory)
       || JSON.stringify(selected.excluded) !== JSON.stringify(confirmed.excluded)) fail('库存子集证据不一致。', 422)
+    if (JSON.stringify(value.geometrySnapshot) !== JSON.stringify(geometrySnapshot(rules, value.generatorInput.inventory)))
+      fail('设计几何能力快照与当前规则不一致，请重新检查并生成。', 422)
     const report = validateBrickDesign(value.generation.design, value.generatorInput.inventory, rules)
     if (!report.valid) fail('设计已不满足当前 Validator，不能启动。', 422)
     return value
@@ -120,6 +122,13 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
       catch (e) { if (e.statusCode !== 404) throw e }
       const rules = await loadRules()
       const input = { ...validateGeneratorInput({ description: body.description, inventory: selected.inventory }, rules), model: resolveBrickModel(body.model) }
+      const geometry = geometrySnapshot(rules, input.inventory)
+      for (const item of selected.items) {
+        const row = review.mapping.rows.find(r => r.source.part_num === item.part_num && r.source.color_id === item.color_id)
+        const checked = row.partCandidateChecks.find(c => c.part === row.target.part)?.capability?.geometry
+        if (JSON.stringify(checked) !== JSON.stringify(rules.geometrySupport(row.target.part).geometry))
+          fail('Review 的几何能力已改变，请重新检查库存。', 409)
+      }
       inFlight.add(review.id)
       let lock
       try {
@@ -137,10 +146,10 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
           const validation = validateBrickDesign(result.body.design, input.inventory, rules)
           if (!validation.valid) fail('生成结果复核失败。', 422)
           record = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), review,
-            generatorInput: input, generation: result.body, designHash: hashDesign(result.body.design) }
+            generatorInput: input, geometrySnapshot: geometry, generation: result.body, designHash: hashDesign(result.body.design) }
           await write('designs', record.id, record)
         }
-        const attempt = { reviewId: review.id, confirmation, generatorInput: input, generation: result.body, artifact: record }
+        const attempt = { reviewId: review.id, confirmation, geometrySnapshot: geometry, generatorInput: input, generation: result.body, artifact: record }
         await write('attempts', review.id, attempt)
         return attempt
       } finally { inFlight.delete(review.id) }
