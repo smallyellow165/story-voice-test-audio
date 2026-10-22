@@ -12,8 +12,14 @@ export type MappingRow = {
   target: { part: string; color: string; colorName: string } | null
   errors: string[]
 }
+export type GameSelectionItem = { part_num: string; color_id: number; quantity: number }
+export type GameSelectionConfirmation = {
+  accepted: true; reviewId: string; confirmedAt: string; items: GameSelectionItem[]
+  excluded: (GameSelectionItem & { reasons: string[] })[]
+}
 export type InventoryReview = {
   schemaVersion: 1; id: string; session: SessionInventory
+  confirmation?: GameSelectionConfirmation
   mapping: { valid: boolean; rows: MappingRow[]; inventory: InventoryRow[]; issues: string[] }
 }
 export type BrickGameArtifact = {

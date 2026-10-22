@@ -1,9 +1,10 @@
-import type { BrickGameArtifact, InventoryReview } from '../brick-game-contract.ts'
+import type { BrickGameArtifact, InventoryReview, GameSelectionItem, GameSelectionConfirmation } from '../brick-game-contract.ts'
 import type { GenerationResult } from '../brick-test/design-types.ts'
 import type { SessionInventory } from './inventory.ts'
 
 export type GenerationAttempt = {
   reviewId: string
+  confirmation: GameSelectionConfirmation
   generatorInput: BrickGameArtifact['generatorInput']
   generation: GenerationResult
   artifact: BrickGameArtifact | null
@@ -26,6 +27,6 @@ export function postBrickGame(
 
 export function postBrickGame(
   action: 'generate',
-  body: { reviewId: string; description: string; model: string },
+  body: { reviewId: string; description: string; model: string; selection: GameSelectionItem[]; confirmSelection: true },
   fetchImpl?: typeof fetch,
 ): Promise<GenerationAttempt>

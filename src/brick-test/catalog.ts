@@ -1,7 +1,9 @@
+// Shared capability registry: only full-footprint rectangular, one-layer DUPLO bricks.
+// A model file alone never establishes assembly support.
 export const PARTS = [
-  { id: '3437', label: '2 × 2', length: 2 },
-  { id: '3011', label: '2 × 4', length: 4 },
-  { id: '2300', label: '2 × 6', length: 6 },
+  { id: '3437', label: '2 × 2', length: 2, depth: 2 },
+  { id: '3011', label: '2 × 4', length: 4, depth: 2 },
+  { id: '2300', label: '2 × 6', length: 6, depth: 2 },
 ] as const
 
 // Standard LDraw codes; the actual materials come from LDConfig.ldr.

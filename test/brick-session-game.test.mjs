@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readAcceptedArtifact } from './brick-artifact-input.mjs'
+import { selectGameInventory } from '../server/brick-game-selection.mjs'
 import { resolveInventoryMapping } from '../server/brick-mapping.mjs'
 import { createBrickGames } from '../server/brick-games.mjs'
 import { loadBrickRules } from '../server/brick-rules.mjs'
@@ -23,8 +24,8 @@ function evidence() {
 }
 test('actual inventory maps from official evidence to the actual Generator input', async () => {
   const mapping = await resolveInventoryMapping(accepted.review.session, evidence(), await loadBrickRules())
-  assert.equal(mapping.valid, true)
-  assert.deepEqual(mapping.inventory, accepted.generatorInput.inventory)
+  const selected = selectGameInventory({ session: accepted.review.session, mapping }, accepted.review.confirmation.items)
+  assert.deepEqual(selected.inventory, accepted.generatorInput.inventory)
   assert.deepEqual(mapping.rows.map(row => row.source), accepted.review.session.items)
 })
 test('missing, ambiguous or unsupported mappings fail the whole inventory without substitution', async () => {
@@ -65,7 +66,9 @@ test('review freezes the saved inventory; generation is single-attempt and V4 re
     const received = await postBrickGame('review', body, async () => Response.json(review))
     assert.deepEqual(received, review)
     body.session.items[0].quantity++ // Unsaved UI edits cannot alter server review.
-    const request = { reviewId: review.id, description: accepted.generatorInput.description, model: accepted.generatorInput.model }
+    const request = { reviewId: review.id, description: accepted.generatorInput.description, model: accepted.generatorInput.model, selection: accepted.review.confirmation.items, confirmSelection: true }
+    await assert.rejects(service.generate({ ...request, confirmSelection: false }), /明确确认/)
+    assert.equal(calls.length, 0)
     const first = await service.generate(request)
     const repeated = await service.generate(request)
     assert.equal(calls.length, 1)
@@ -77,6 +80,7 @@ test('review freezes the saved inventory; generation is single-attempt and V4 re
     assert.equal(loaded.designHash, first.artifact.designHash)
     await assert.rejects(service.generate({ ...request, description: request.description + ' changed' }), /已有另一生成请求/)
     assert.equal(calls.length, 1)
+    await assert.rejects(service.generate({ ...request, selection: [] }), /选择/)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -92,7 +96,7 @@ test('failed generation keeps its actual diagnostic output and publishes no play
   })
   try {
     const review = await service.review({ session: accepted.review.session })
-    const request = { reviewId: review.id, description: accepted.generatorInput.description, model: accepted.generatorInput.model }
+    const request = { reviewId: review.id, description: accepted.generatorInput.description, model: accepted.generatorInput.model, selection: accepted.review.confirmation.items, confirmSelection: true }
     const result = await service.generate(request)
     assert.equal(result.artifact, null)
     assert.deepEqual(result.generation, failure)
@@ -124,5 +128,28 @@ test('mapping backend failure returns complete invalid review with HTTP evidence
     }
     await assert.rejects(service.generate({ reviewId: review.id }), /库存映射未通过/)
     assert.equal(calls, 0)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a metadata failure excludes only that source row from Game Preparation', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'brick-mixed-review-'))
+  const metadata = evidence()
+  const extra = { part_num: 'unavailable-test-source', color_id: accepted.review.session.items[0].color_id, quantity: 1 }
+  const session = { ...structuredClone(accepted.review.session), items: [...structuredClone(accepted.review.session.items), extra] }
+  const service = createBrickGames(directory, {
+    getMetadata: async (route, params) => {
+      if (params.part_num === extra.part_num) throw new Error('metadata unavailable')
+      return route === 'mapping-part' ? metadata.parts[params.part_num] : metadata.colors[params.color_id]
+    },
+    generate: async () => { throw new Error('must not generate in a review test') },
+  })
+  try {
+    const value = await service.review({ session })
+    assert.equal(value.mapping.valid, true)
+    assert.deepEqual(value.session, session)
+    assert.equal(value.mapping.rows.at(-1).target, null)
+    const subset = selectGameInventory(value, accepted.review.confirmation.items)
+    assert.deepEqual(subset.inventory, accepted.generatorInput.inventory)
+    assert.ok(subset.excluded.some(row => row.part_num === extra.part_num && row.reasons.length))
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

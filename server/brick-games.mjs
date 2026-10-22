@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
 import { loadBrickRules } from './brick-rules.mjs'
 import { generateBrickDesign, validateBrickDesign, validateGeneratorInput, resolveBrickModel } from './brick-generator.mjs'
+import { selectGameInventory } from './brick-game-selection.mjs'
 import { resolveInventoryMapping } from './brick-mapping.mjs'
 import { requestJson } from '../src/brick-inventory/api.mjs'
 
@@ -41,6 +42,11 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
       || JSON.stringify(value.generation.requestInput?.inventory) !== JSON.stringify(value.generatorInput?.inventory)
       || value.generation.requestInput?.description !== value.generatorInput?.description
       || hashDesign(value.generation.design) !== value.designHash) fail('设计记录完整性校验失败。', 422)
+    const confirmed = value.review.confirmation
+    if (!confirmed || confirmed.accepted !== true || confirmed.reviewId !== value.review.id) fail('缺少库存子集确认记录。', 422)
+    const selected = selectGameInventory(value.review, confirmed.items)
+    if (JSON.stringify(selected.inventory) !== JSON.stringify(value.generatorInput.inventory)
+      || JSON.stringify(selected.excluded) !== JSON.stringify(confirmed.excluded)) fail('库存子集证据不一致。', 422)
     const report = validateBrickDesign(value.generation.design, value.generatorInput.inventory, rules)
     if (!report.valid) fail('设计已不满足当前 Validator，不能启动。', 422)
     return value
@@ -71,18 +77,22 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
         }
       }
       const mapping = await resolveInventoryMapping(session, metadata, rules)
-      if (mapping.valid) {
+      // Resource failures affect only their source row, never the saved inventory.
+      let codes = null
+      try {
         const root = process.env.LDRAW_LIBRARY_PATH || '/home/umi/Documents/pg/gaming/lego-brick/complete/ldraw'
-        try {
-          const config = await readFile(path.join(root, 'LDConfig.ldr'), 'utf8')
-          const codes = new Set([...config.matchAll(/\bCODE\s+(\d+)\b/g)].map(match => match[1]))
-          for (const row of mapping.inventory) if (!codes.has(row.color)) {
-            mapping.valid = false; mapping.issues.push(`本地 LDConfig.ldr 缺少颜色 ${row.color}`)
-          }
-        } catch { mapping.valid = false; mapping.issues.push('本地 LDConfig.ldr 无法读取。') }
-        try { validateGeneratorInput({ description: '库存可用性检查', inventory: mapping.inventory }, rules) }
-        catch (e) { mapping.valid = false; mapping.issues.push(e.message) }
+        const config = await readFile(path.join(root, 'LDConfig.ldr'), 'utf8')
+        codes = new Set([...config.matchAll(/\bCODE\s+(\d+)\b/g)].map(match => match[1]))
+      } catch { /* Explicit per-row exclusion below. */ }
+      for (const row of mapping.rows) if (row.target && (!codes || !codes.has(row.target.color))) {
+        row.errors.push(codes ? '本地 LDConfig.ldr 缺少颜色 ' + row.target.color : '本地 LDConfig.ldr 无法读取。')
+        row.target = null
       }
+      mapping.valid = mapping.rows.some(row => row.target && !row.errors.length)
+      mapping.inventory = [] // Not generation inventory until explicit confirmation.
+      mapping.issues = mapping.valid
+        ? ['请检查不可用项目，并明确选择本次生成子集；完整库存不会改变。']
+        : ['没有可用于游戏的库存项目，请查看各行原因。']
       const review = { schemaVersion: 1, id: randomUUID(), session, mapping }
       try { await write('reviews', review.id, review) }
       catch (error) {
@@ -92,21 +102,24 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
       return review
     },
     async generate(body) {
-      const review = await read('reviews', body.reviewId)
+      let review = await read('reviews', body.reviewId)
       if (!review.mapping.valid) fail('库存映射未通过，不能生成。')
+      if (body.confirmSelection !== true) fail('请明确确认本次生成库存子集。')
+      let selected
+      try { selected = selectGameInventory(review, body.selection) } catch (error) { fail(error.message) }
       if (inFlight.has(review.id)) fail('该库存检查已有生成请求正在进行。', 409)
       // One completed attempt per review: a timed-out browser never silently
       // sends a second LLM request. A deliberate new review permits a new attempt.
       try {
         const saved = await read('attempts', review.id)
-        if (saved.generatorInput.description !== body.description || saved.generatorInput.model !== resolveBrickModel(body.model)) {
+        if (JSON.stringify(saved.confirmation.items) !== JSON.stringify(selected.items) || saved.generatorInput.description !== body.description || saved.generatorInput.model !== resolveBrickModel(body.model)) {
           fail('此检查记录已有另一生成请求；修改描述或模型后请重新检查库存。', 409)
         }
         return saved
       }
       catch (e) { if (e.statusCode !== 404) throw e }
       const rules = await loadRules()
-      const input = { ...validateGeneratorInput({ description: body.description, inventory: review.mapping.inventory }, rules), model: resolveBrickModel(body.model) }
+      const input = { ...validateGeneratorInput({ description: body.description, inventory: selected.inventory }, rules), model: resolveBrickModel(body.model) }
       inFlight.add(review.id)
       let lock
       try {
@@ -114,6 +127,10 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
         lock = path.join(directory, 'attempts', `${review.id}.lock`)
         try { await writeFile(lock, JSON.stringify({ input, startedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 }) }
         catch (e) { if (e.code === 'EEXIST') fail('生成请求已提交或结果未知；请检查原请求，未再次调用模型。', 409); throw e }
+        const confirmation = { accepted: true, reviewId: review.id, confirmedAt: new Date().toISOString(),
+          items: selected.items, excluded: selected.excluded }
+        review = { ...review, mapping: { ...review.mapping, inventory: input.inventory }, confirmation }
+        await write('reviews', review.id, review)
         const result = await generate(input)
         let record = null
         if (result.body.ok) {
@@ -123,7 +140,7 @@ export function createBrickGames(directory, { loadRules = loadBrickRules, getMet
             generatorInput: input, generation: result.body, designHash: hashDesign(result.body.design) }
           await write('designs', record.id, record)
         }
-        const attempt = { reviewId: review.id, generatorInput: input, generation: result.body, artifact: record }
+        const attempt = { reviewId: review.id, confirmation, generatorInput: input, generation: result.body, artifact: record }
         await write('attempts', review.id, attempt)
         return attempt
       } finally { inFlight.delete(review.id) }

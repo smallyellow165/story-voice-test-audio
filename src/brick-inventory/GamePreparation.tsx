@@ -4,12 +4,15 @@ import { postBrickGame, requestJson } from './api.mjs'
 import type { GenerationAttempt } from './api.mjs'
 import type { SessionInventory } from './inventory'
 import type { InventoryReview } from '../brick-game-contract'
+const sourceKey = (row: { part_num: string; color_id: number }) => JSON.stringify([row.part_num, row.color_id])
 type ModelStatus = { model: string; models: { id: string; label: string }[] }
 
 export function GamePreparation() {
   const [sessions, setSessions] = useState<SessionInventory[]>([])
   const [selected, setSelected] = useState('')
   const [review, setReview] = useState<InventoryReview | null>(null)
+  const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [confirmed, setConfirmed] = useState(false)
   const [attempt, setAttempt] = useState<GenerationAttempt | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -26,6 +29,12 @@ export function GamePreparation() {
     }).catch(e => { if (!disposed) setError(String(e)) })
     return () => { disposed = true }
   }, [])
+  const selection = review?.mapping.rows.filter(row => row.target && !row.errors.length && quantities[sourceKey(row.source)] > 0)
+    .map(row => ({ ...row.source, quantity: quantities[sourceKey(row.source)] })) || []
+  const total = selection.reduce((sum, row) => sum + row.quantity, 0)
+  const selectionValid = Object.values(quantities).every(q => Number.isSafeInteger(q) && q >= 0) && selection.length > 0 && selection.every(item => Number.isSafeInteger(item.quantity)
+    && item.quantity > 0 && item.quantity <= (review?.session.items.find(s => sourceKey(s) === sourceKey(item))?.quantity || 0))
+    && total >= 2 && total <= 100
   const chosen = sessions.find(s => s.id === selected)
   const start = () => {
     try {
@@ -39,25 +48,31 @@ export function GamePreparation() {
     <h2>从已保存库存生成游戏</h2>
     <p>仅读取你明确选择并保存的库存。修改库存后请先保存，再刷新列表并重新检查。</p>
     <div className="inventory-filters">
-      <label>已保存 Session<select value={selected} disabled={!!busy} onChange={e => { setSelected(e.target.value); setReview(null); setAttempt(null) }}>
+      <label>已保存 Session<select value={selected} disabled={!!busy} onChange={e => { setSelected(e.target.value); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false) }}>
         <option value="">请选择库存</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at}</option>)}
-      </select></label><button disabled={!!busy} onClick={() => { refresh(); setReview(null); setAttempt(null) }}>刷新保存列表</button>
+      </select></label><button disabled={!!busy} onClick={() => { refresh(); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false) }}>刷新保存列表</button>
       <button disabled={!chosen || !!busy} onClick={async () => {
-        setBusy('读取已保存库存并查询官方映射…'); setError(''); setReview(null); setAttempt(null)
+        setBusy('读取已保存库存并查询官方映射…'); setError(''); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false)
         try {
           const saved = loadSessions(localStorage).find(s => s.id === selected)
           if (!saved) throw new Error('所选库存已不存在，请刷新列表。')
           setSessions(loadSessions(localStorage))
           setReview(await postBrickGame('review', { session: saved }))
+          setQuantities({}); setConfirmed(false)
         } catch (e) { setError(String(e)) } finally { setBusy('') }
       }}>查看库存与映射</button>
     </div>
     {chosen && <details open><summary>读取来源：{chosen.name} · {chosen.id}</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review?.session || chosen, null, 2)}</pre></details>}
     {review && <>
-      <p>检查记录：{review.id} · 映射 {review.mapping.valid ? 'Valid' : 'Invalid'}</p>
-      <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Rebrickable 型号 / 名称</th><th>Rebrickable 颜色</th><th>数量</th><th>LDraw 型号 / 颜色</th><th>结果</th></tr></thead>
+      <p>检查记录：{review.id} · 游戏可用项目 {review.mapping.rows.filter(row => row.target && !row.errors.length).length} / {review.mapping.rows.length}</p>
+      <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Rebrickable 型号 / 名称</th><th>Rebrickable 颜色</th><th>原数量 / 本次使用</th><th>LDraw 型号 / 颜色</th><th>结果</th></tr></thead>
         <tbody>{review.mapping.rows.map(row => <tr key={`${row.source.part_num}:${row.source.color_id}`}>
-          <td>{row.source.part_num} · {row.sourcePartName}</td><td>{row.source.color_id} · {row.sourceColorName}</td><td>{row.source.quantity}</td>
+          <td>{row.source.part_num} · {row.sourcePartName}</td><td>{row.source.color_id} · {row.sourceColorName}</td><td>{row.source.quantity} / <input type="number" min={0} max={row.source.quantity} step={1}
+            aria-label={row.source.part_num + ' / ' + row.source.color_id + ' 本次使用数量'}
+            disabled={!row.target || !!row.errors.length || !!busy || !!attempt}
+            value={quantities[sourceKey(row.source)] ?? 0}
+            onChange={e => { setQuantities(q => ({ ...q, [sourceKey(row.source)]: Number(e.target.value) })); setConfirmed(false) }} />
+            <small>0 = 不使用</small></td>
           <td>{row.target ? `已选择 ${row.target.part} / ${row.target.color} · ${row.target.colorName}` : '未选择目标'}
             <div>官方型号候选：{row.partCandidates.join(', ') || '无'}；颜色候选：{row.colorCandidates.join(', ') || '无'}</div>
             <ul>{row.partCandidateChecks.map(candidate => <li key={candidate.part}>
@@ -67,15 +82,17 @@ export function GamePreparation() {
               {candidate.eligible ? (row.target?.part === candidate.part ? '已选中' : '有效候选，未选择') : `已排除：${candidate.reasons.join('；')}`}
             </li>)}</ul>
           </td>
-          <td>{row.errors.join('；') || '映射通过'}</td></tr>)}</tbody></table></div>
+          <td>{row.errors.join('；') || '可用于本次游戏，请填写数量'}</td></tr>)}</tbody></table></div>
       {review.mapping.issues.map(issue => <p className="inventory-error" key={issue}>{issue}</p>)}
-      <details><summary>映射原始证据 / 将发送的 Generator 库存</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review.mapping, null, 2)}</pre></details>
+      <p>本次选择 {total} 块；需 2–100 块。未选择及不支持的项目仍保留在完整库存中。</p>
+      <label><input type="checkbox" checked={confirmed} disabled={!selectionValid || !!busy || !!attempt} onChange={e => setConfirmed(e.target.checked)} />我已核对可用与排除项目，确认仅使用以上数量生成游戏。</label>
+      <details><summary>映射原始证据 / 可用性检查</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review.mapping, null, 2)}</pre></details>
     </>}
     <div className="inventory-filters"><label>想搭什么<input maxLength={500} value={description} disabled={!!busy || !!attempt} onChange={e => setDescription(e.target.value)} placeholder="请输入造型描述" /></label>
       <label>Gemini 模型<select disabled={!!busy || !!attempt} value={model} onChange={e => setModel(e.target.value)}>{models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-      <button disabled={!review?.mapping.valid || !description.trim() || !model || !!busy || !!attempt} onClick={async () => {
+      <button disabled={!review?.mapping.valid || !selectionValid || !confirmed || !description.trim() || !model || !!busy || !!attempt} onClick={async () => {
         setBusy('Gemini 生成及 Validator 验证中；不会自动重试…'); setError('')
-        try { setAttempt(await postBrickGame('generate', { reviewId: review!.id, description, model })) }
+        try { setAttempt(await postBrickGame('generate', { reviewId: review!.id, description, model, selection, confirmSelection: true })) }
         catch (e) { setError(String(e)) } finally { setBusy('') }
       }}>确认库存并生成游戏</button></div>
     <p role="status">{busy}</p>{error && <p role="alert" className="inventory-error">{error}</p>}

@@ -19,18 +19,22 @@
    同时确认数据库有该 DUPLO 型号及型号颜色组合；保留来源 URL、获取时间、原始候选 ID、名称和失败状态。
 4. `resolveInventoryMapping` 只接受明确、唯一且受现有规则支持的目标；不按同号、名称、RGB 或旧实验数据推断。
    多来源确实映射到同一 LDraw 型号/颜色时合计数量，原始行仍全部保留。
-   任一行失败就阻止整份库存生成，绝不删掉该行或改用默认积木。
-   同时检查本地 `.dat` 可读、目标颜色存在于 `LDConfig.ldr`，及 V3 库存数量边界。
-5. 用户确认映射后填写描述、选择现有 Gemini 模型，POST `/api/brick-games/generate` 只传 reviewId、描述和模型。
-   Generator 库存从服务端检查快照读取，不接受按钮再提交另一份库存。
+   Game Preparation 保留全部行，并逐项检查本地模型和递归依赖、LDConfig 颜色以及当前几何能力。
+   不可用行显示原因且不能选入生成子集；不会修改完整库存，也不会静默替换积木。
+5. 用户为可用行填写本次使用数量（初始为 0；范围 0–原数量），勾选确认后填写描述并选择模型。
+   POST `/api/brick-games/generate` 传 reviewId、描述、模型、来源行 selection 和 confirmSelection=true。
+   服务端将选择与已保存 Review 对照，拒绝库存外、不可用、重复、超量及非整数项目；LDraw 目标仅来自服务端 Review。
+   数量合并后仍需满足既有 2–100 块库存边界；设计使用 2–12 块。Generator 只接收确认子集。
    复用 `generateBrickDesign()` 和 `gemini-client.mjs`；一次检查记录至多执行一次生成。
-   同一请求重复到达返回已保存结果，不再调用模型；改变描述/模型需用户明确重新检查。
+   同一请求重复到达返回已保存结果，不再调用模型；改变子集、描述或模型需用户明确重新检查。
    不完整/错误设计保存失败诊断，不发布可启动设计，不自动重试、替换模型或修复零件。
 6. `validateBrickDesign` 从原 V3 文件移动到 `src/brick-design-validation.mjs`，原导出保留。
    服务端与浏览器引用同一函数，几何仍调用原 `assembly.ts`，没有第二套连接算法。
    检查数量、碰撞、连接、放置顺序、每个搭建前缀与现有儿童基础限制。
 7. 成功结果保存为 `generated/brick-games/designs/<id>.json`，包含完整输入、映射、模型诊断、原始输出、
-   Design/Steps、Validator、库存消耗与 Design SHA-256。检查和尝试分别保存在 `reviews/`、`attempts/`。
+   Design/Steps、Validator、库存消耗与 Design SHA-256。
+   Review 的 session 保留完整原库存；confirmation 保存来源子集、排除数量/原因、确认时间和 reviewId，
+   mapping.inventory 保存确认后的 LDraw 数量；加载设计时重新核对子集与实际模型输入。检查和尝试分别保存在 `reviews/`、`attempts/`。
 8. “在 V4 启动这个游戏”打开 V4 URL `?brickGame=<id>`。V4 通过现有 Next rewrite
    `/ringfeet-api/api/brick-games/<id>` 读取同一设计记录；Test Audio 重新校验哈希和 Validator。
    V4 不读取 Test Audio localStorage，也不接收 URL 中的整份库存或不受验证的设计。
@@ -142,3 +146,18 @@ My-Good-GYM：`api/rebrickable_catalog.py`、`api/rebrickable_media.py`，增加
 V4：`client/src/app/page.tsx`、`components/App.tsx`、`ScreenGameActivity.tsx`、`activity-contract.ts`、
 `server/src/activity.py`、`game_voice_guide.py`、`server/personas/game.md`、相关集成/浏览器/Python 测试。
 ActivityLink、Game Runtime、Gaming Tools、Pipecat pipeline 没有新增平行实现。
+
+## 共享能力与混合库存验收
+
+`src/brick-test/catalog.ts` 是现有三种矩形砖的型号、长宽、颜色和 LDraw 单位定义；
+`assembly.ts` 读取该尺寸，Generator Prompt 从该定义生成尺寸说明。
+`src/brick-design-validation.mjs` 的 designLimits 统一生成 Schema 和设计校验边界。
+弧顶、拱门、板件及其他未注册型号仍不支持，模型文件存在不等于连接能力支持。
+
+用包含普通砖与 98223 的已保存库存建立新 Review：核对完整库存、逐行排除原因，
+仅选择普通砖数量并确认。修改数量应取消勾选；全部为 0、少于 2 块或超量时不能生成。
+用户触发一次生成后，检查 confirmation.items/excluded、generatorInput.inventory 和 Validator usage，
+再通过原 V4 入口启动。源库存中的 98223 应保持原数量。
+
+本次子集回归需要新流程生成的 Artifact（包含 confirmation）；未增加旧实验记录兼容路径。
+测试代码已补充，但未执行构建、测试、服务启动或真实模型调用。

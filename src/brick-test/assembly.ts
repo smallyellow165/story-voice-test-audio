@@ -19,7 +19,7 @@ export function dimensions(part: string, rotation: number): { width: number; dep
   const definition = PARTS.find((item) => item.id === part)
   if (!definition) throw new Error(`不支持型号 ${part}`)
   if (![0, 90, 180, 270].includes(rotation)) throw new Error('仅支持 0/90/180/270° 旋转')
-  return rotation % 180 === 0 ? { width: definition.length, depth: 2 } : { width: 2, depth: definition.length }
+  return rotation % 180 === 0 ? { width: definition.length, depth: definition.depth } : { width: definition.depth, depth: definition.length }
 }
 
 function checkBrick(brick: Brick): Validation | null {

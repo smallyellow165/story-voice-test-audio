@@ -13,8 +13,8 @@ export function validateBrickDesign(design, inventory, rules) {
   }
   if (design.bricks.length < designLimits.minBricks || design.bricks.length > designLimits.maxBricks) issue('BRICK_COUNT', `造型必须使用 ${designLimits.minBricks}–${designLimits.maxBricks} 块积木。`)
   // Reject unbounded model output before passing it to geometric routines.
-  if (design.steps.length > 12) issue('STEP_COUNT', '步骤不能超过 12 步。')
-  if (design.bricks.length > 12 || design.steps.length > 12) return report
+  if (design.steps.length > designLimits.maxBricks) issue('STEP_COUNT', `步骤不能超过 ${designLimits.maxBricks} 步。`)
+  if (design.bricks.length > designLimits.maxBricks || design.steps.length > designLimits.maxBricks) return report
   const ids = new Set()
   const counts = new Map()
   for (const brick of design.bricks) {
@@ -24,7 +24,7 @@ export function validateBrickDesign(design, inventory, rules) {
     }
     if (ids.has(brick.id)) issue('DUPLICATE_ID', `积木 ID 重复：${brick.id}`)
     ids.add(brick.id)
-    if (Math.abs(brick.x) > 6 || Math.abs(brick.z) > 6 || brick.layer < 0 || brick.layer > 3) issue('CHILD_LIMIT', '造型中心坐标需在 ±6 内，底部层高需在 0–3 内。', { brickId: brick.id })
+    if (Math.abs(brick.x) > designLimits.maxCoordinate || Math.abs(brick.z) > designLimits.maxCoordinate || brick.layer < 0 || brick.layer > designLimits.maxLayer) issue('CHILD_LIMIT', `造型中心坐标需在 ±${designLimits.maxCoordinate} 内，底部层高需在 0–${designLimits.maxLayer} 内。`, { brickId: brick.id })
     const key = pairKey(brick.part, brick.color)
     counts.set(key, (counts.get(key) || 0) + 1)
   }
