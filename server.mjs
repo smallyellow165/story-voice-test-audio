@@ -10,6 +10,7 @@ import { detectRingsWithGemini, geminiRingModelOptions } from './server/gemini-r
 import { brickGeneratorStatus, generateBrickDesign } from './server/brick-generator.mjs'
 import { proxyBrickCatalog } from './server/brick-catalog.mjs'
 import { createBrickGames } from './server/brick-games.mjs'
+import { createBrickVision, visionStatus } from './server/brick-vision.mjs'
 import { createServer } from 'node:http'
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -37,6 +38,7 @@ const generatedDirectory = path.join(projectRoot, 'generated')
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
+const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -446,6 +448,24 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if (url.pathname === '/api/brick-vision' || url.pathname.startsWith('/api/brick-vision/')) {
+    try {
+      if (request.method === 'GET' && url.pathname === '/api/brick-vision') { sendJson(response, 200, visionStatus()); return }
+      if (request.method === 'GET' && url.pathname === '/api/brick-vision/history') { sendJson(response, 200, await brickVision.history()); return }
+      if (request.method === 'GET' && url.pathname.startsWith('/api/brick-vision/history/')) { sendJson(response, 200, await brickVision.historyRecord(url.pathname.slice('/api/brick-vision/history/'.length))); return }
+      if (!['/api/brick-vision', '/api/brick-vision/validate'].includes(url.pathname)) { sendJson(response, 404, { error: '未知 Vision 路由' }); return }
+      if (request.method !== 'POST') { sendJson(response, 405, { error: 'Use POST' }); return }
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, { error: '仅接受同源图片操作' }); return
+      }
+      const body = await readJsonBody(request, 18 * 1024 * 1024)
+      const result = url.pathname.endsWith('/validate') ? await brickVision.validateDraft(body) : await brickVision.recognize(body)
+      sendJson(response, 200, result)
+    } catch (error) {
+      sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Brick Vision 请求失败；请检查本地服务配置。未自动重试。' })
+    }
+    return
+  }
   if (await proxyBrickCatalog(request, response, url)) return
   if (url.pathname === '/api/brick-games' || url.pathname.startsWith('/api/brick-games/')) {
     try {

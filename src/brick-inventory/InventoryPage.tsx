@@ -3,6 +3,7 @@ import { addItem, itemKey, MAX_QUANTITY, newSessionId, parseSession, setQuantity
 import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
+import { InventoryImagePanel } from '../brick-vision/InventoryImagePanel'
 import './inventory.css'
 
 type Color = { id: number; name: string; rgb: string }
@@ -167,6 +168,11 @@ export function InventoryPage() {
   return <main className="brick-inventory-page">
     <header><div><p className="inventory-eyebrow">DUPLO · MANUAL SELECTION</p><h1>今天玩哪些积木？</h1><p>选择拿出来的积木、颜色和数量，保存为今天的搭建库存。</p></div>
       <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>Brick Test ↗</a></nav></header>
+    <InventoryImagePanel onApply={recognized => {
+      const next = recognized.reduce((draft, item) => addItem(draft, item), items)
+      changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
+    }} />
+    <a href={`${import.meta.env.BASE_URL}brick-vision.html`}>打开独立 Step Image Confirmation 测试页 ↗</a>
     <div className="inventory-workspace">
       <section className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>

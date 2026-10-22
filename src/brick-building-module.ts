@@ -5,6 +5,7 @@ import { createBrickBuilding } from './brick-building-core'
 import { allowsGameAction, defaultGamePermissions, type GameAction } from './game-permissions'
 import type { ScreenGameOptions } from './screen-game-module'
 import type { ActivityMessage } from './activity-message'
+import { mountStepImageConfirmation } from './brick-vision/step-upload'
 
 export const brickArtifactVersion = 1
 
@@ -22,6 +23,7 @@ export function mount(host: HTMLElement, options: ScreenGameOptions & { libraryU
   let disposed = false, enabled = true, loading = true, error = '', visualKey = '', generation = 0
   let viewer: BrickViewer | undefined
   let game: ReturnType<typeof createBrickBuilding> | undefined
+  let vision: ReturnType<typeof mountStepImageConfirmation> | undefined
   const permissions = () => options.permissions?.() ?? defaultGamePermissions(enabled && (options.canInteract?.() ?? true), !enabled)
   function render() {
     if (!game || disposed) return
@@ -37,6 +39,7 @@ export function mount(host: HTMLElement, options: ScreenGameOptions & { libraryU
         || (action === 'confirm_task' && (loading || !!error))
     }
     panel.querySelector('.confirm')!.textContent = state.index % 2 === 0 ? '找到了' : '做好了'
+    vision?.refresh()
     const key = `${state.runId}:${state.index}`
     if (viewer && !fatal && key !== visualKey && state.lifecycle !== 'closed') {
       visualKey = key; loading = true; error = ''; const ticket = ++generation
@@ -86,6 +89,22 @@ export function mount(host: HTMLElement, options: ScreenGameOptions & { libraryU
       }
     }
   }
+  const visionHost = document.createElement('div'); panel.append(visionHost)
+  vision = mountStepImageConfirmation(visionHost, {
+    capture: () => {
+      const state = game!.snapshot()
+      return state.lifecycle !== 'running' ? null : { instanceId: options.instanceId,
+        artifactId: options.artifact.id, designHash: options.artifact.designHash,
+        runId: state.runId, taskAttemptId: state.taskAttemptId, revision: state.revision, index: state.index, taskId: state.taskId }
+    },
+    permitted: () => !disposed && enabled && !loading && !error && allowsGameAction(permissions(), 'confirm_task') && (options.canInteract?.() ?? true),
+    confirm: reference => {
+      const taskReference = { instanceId: reference.instanceId, runId: reference.runId, taskAttemptId: reference.taskAttemptId, revision: reference.revision }
+      if (options.onAction) options.onAction('confirm_task', { taskReference })
+      else game!.receive({ v: 1, id: crypto.randomUUID(), kind: 'command', name: 'confirm_task', instanceId: options.instanceId,
+        payload: { expectedRunId: reference.runId, expectedTaskAttemptId: reference.taskAttemptId, baseRevision: reference.revision } })
+    },
+  })
   render(); game.start()
   return {
     snapshot: game.snapshot,
@@ -97,7 +116,7 @@ export function mount(host: HTMLElement, options: ScreenGameOptions & { libraryU
       if (!options.permissions || options.permissions().canAdminGame) {
         game!.receive({ v: 1, id: crypto.randomUUID(), instanceId: options.instanceId, kind: 'command', name: 'exit', payload: {} })
       }
-      disposed = true; ++generation; game!.dispose(); viewer?.dispose(); root.replaceChildren()
+      disposed = true; ++generation; vision?.dispose(); game!.dispose(); viewer?.dispose(); root.replaceChildren()
     },
   }
 }

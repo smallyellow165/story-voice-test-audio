@@ -11,7 +11,7 @@ const uuid = /^[a-f0-9-]{36}$/
 const hashDesign = design => createHash('sha256').update(JSON.stringify(design)).digest('hex')
 function fail(message, statusCode = 400) { throw Object.assign(new Error(message), { statusCode }) }
 
-async function catalog(route, params) {
+export async function catalog(route, params) {
   const url = new URL(process.env.APPLICATION_SERVER_URL || 'http://127.0.0.1:8001')
   if (!['http:', 'https:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
     || url.username || url.password || url.search || url.hash || url.pathname !== '/') fail('Application Server 地址配置无效。', 503)
