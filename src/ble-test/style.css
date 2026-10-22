@@ -1,0 +1,17 @@
+:root { font-family: system-ui, sans-serif; color: #182c42; background: #f2f5f8; }
+body { margin: 0; }
+.ble-test { max-width: 680px; margin: 24px auto; padding: 24px; background: white; border-radius: 16px; }
+.ble-test h1 { font-size: 1.6rem; }
+.ble-test h2 { font-size: 1.15rem; margin-top: 28px; }
+.ble-test dl { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr; gap: 12px; }
+.ble-test dt { font-weight: 600; }
+.ble-test dd { margin: 0; overflow-wrap: anywhere; }
+.ble-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
+.ble-actions button { min-height: 48px; padding: 12px 20px; border: 0; border-radius: 8px; background: #164da3; color: white; font: inherit; cursor: pointer; }
+.ble-actions button:disabled { opacity: .45; cursor: default; }
+.ble-actions button:focus-visible { outline: 3px solid #e09000; outline-offset: 3px; }
+.ble-error { color: #9c2424; background: #fff1f1; padding: 14px; border-radius: 8px; overflow-wrap: anywhere; }
+.ble-test ol { max-height: 320px; overflow: auto; padding-left: 24px; }
+.ble-test li { margin: 8px 0; overflow-wrap: anywhere; }
+.ble-hint { color: #526174; font-size: .9rem; }
+@media (max-width: 480px) { .ble-test { margin: 0; padding: 20px 16px; border-radius: 0; } }
