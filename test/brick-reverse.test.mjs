@@ -199,3 +199,31 @@ test('restore does not apply a corrupt complete artifact or repeat a submitted g
     assert.ok(restored.warnings.some(w => w.includes('Artifact 无法恢复')))
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('Reverse forwards reviewed height and restores it without changing original observations', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'brick-reverse-3d-test-'))
+  try {
+    const id = randomUUID(), queries = []
+    const original = { id, kind: 'reverse-analysis', status: 'complete', source: { kind: 'full' },
+      analysis: { appearance: 'isolated fixture', unknowns: [], observations: [observation('a')], relations: [] } }
+    const originalText = JSON.stringify(original)
+    await writeFile(path.join(directory, id + '.json'), originalText)
+    const service = createBrickReverse(directory, {
+      games: { review: async () => { throw new Error('No candidates') } },
+      callModel: async () => { throw new Error('No model in search/restore') },
+      getCatalog: async (route, params) => { queries.push({ route, params }); return { items: [], total: 0,
+        geometry_report: { unknown_total: 1, mismatched_total: 0 } } },
+    })
+    const features = { color_id: null, size: null, shape: null, print: 'unknown', width_studs: 2, depth_studs: 4, height_brick_units: .5 }
+    const search = await service.search({ analysisId: id, observationId: 'a', features })
+    assert.deepEqual(queries[0], { route: 'candidates', params: { width: '2', depth: '4', height: '0.5', page: '1', page_size: '6' } })
+    assert.equal(search.geometry_report.unknown_total, 1)
+    await service.saveReview({ analysisId: id, rows: { a: { features: { color: '', size: '2x4', shape: '', print: 'unknown',
+      width_studs: '2', depth_studs: '4', height_brick_units: '0.5' }, quantity: '1', excluded: false, reason: '', searchId: search.id } } })
+    const restored = await service.restore(id)
+    assert.equal(restored.rows.a.features.height_brick_units, '0.5')
+    assert.equal(restored.rows.a.search.features.height_brick_units, .5)
+    assert.equal(restored.rows.a.index, undefined)
+    assert.equal(await readFile(path.join(directory, id + '.json'), 'utf8'), originalText)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

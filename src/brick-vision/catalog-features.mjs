@@ -18,29 +18,35 @@ export function validateCatalogFeatures(value) {
 }
 
 export function catalogFeatureParams(features) {
-  validateCatalogFeatures(features)
+  validateCatalogQuery(features)
   const params = {}
   if (features.color_id !== null) params.color = String(features.color_id)
   if (features.size !== null) params.size = features.size
   if (features.shape !== null) params.shape = features.shape
   if (features.print !== 'unknown') params.printed = features.print
+  for (const [field, param] of [['width_studs', 'width'], ['depth_studs', 'depth'], ['height_brick_units', 'height']])
+    if (features[field] != null) params[param] = String(features[field])
   return params
 }
 
 export function featureEditor(observation) {
   // Missing fields remain empty. Never derive them from old IDs or Evidence.
   return { color: observation.color_id == null ? '' : String(observation.color_id),
-    size: observation.size ?? '', width_studs: observation.size?.split(/[x×]/)[0] ?? '', depth_studs: observation.size?.split(/[x×]/)[1] ?? '', height_brick_units: '', partNumber: '', shape: observation.shape ?? '', print: observation.print ?? 'unknown' }
+    size: observation.size ?? '', width_studs: observation.width_studs != null ? String(observation.width_studs) : observation.size?.split(/[x×]/)[0] ?? '', depth_studs: observation.depth_studs != null ? String(observation.depth_studs) : observation.size?.split(/[x×]/)[1] ?? '', height_brick_units: observation.height_brick_units != null ? String(observation.height_brick_units) : '', partNumber: '', shape: observation.shape ?? '', print: observation.print ?? 'unknown' }
 }
 
 export function readFeatureEditor(editor) {
   validateReviewDimensions(editor)
-  if (Boolean(editor.width_studs) !== Boolean(editor.depth_studs)) throw new Error('Catalog 二维尺寸筛选需要同时填写 Width 和 Depth；单一水平维度尚未支持。')
   const color = editor.color.trim()
   if (color && !/^\d+$/.test(color)) throw new Error('特征颜色请输入非负整数 RB Color ID，未知请留空。')
   const features = { color_id: color ? Number(color) : null, size: editor.size.trim() || null,
     shape: editor.shape || null, print: editor.print }
-  return validateCatalogFeatures(features)
+  const keys = ['width_studs', 'depth_studs', 'height_brick_units']
+  const known = Object.fromEntries(keys.filter(key => editor[key]?.trim()).map(key => [key, Number(editor[key])]))
+  const useGeometry = known.height_brick_units != null || Boolean(editor.width_studs) !== Boolean(editor.depth_studs)
+    || [known.width_studs, known.depth_studs].some(n => n != null && !Number.isInteger(n))
+  if (!useGeometry && known.width_studs != null && known.depth_studs != null) features.size = known.width_studs + 'x' + known.depth_studs
+  return validateCatalogQuery(useGeometry ? { ...features, size: null, ...known } : features)
 }
 
 export function createObservationDraft(observation) {
@@ -62,4 +68,17 @@ export function validateReviewDimensions(editor) {
     if (value != null && value !== '' && (typeof value !== 'string' || !Number.isFinite(Number(value)) || Number(value) <= 0))
       throw new Error('尺寸须为正数（可含小数），Unknown 请留空。')
   }
+}
+
+// Search-only extension. The Vision response schema remains unchanged.
+export function validateCatalogQuery(value) {
+  validateCatalogFeatures(value)
+  let axes = false
+  for (const key of ['width_studs', 'depth_studs', 'height_brick_units']) {
+    if (value[key] == null) continue
+    axes = true
+    if (!Number.isFinite(value[key]) || value[key] <= 0 || value[key] > 100) throw new Error('Catalog 尺寸必须大于 0 且不超过 100。')
+  }
+  if (axes && value.size !== null) throw new Error('请勿混用 Size 与独立三维查询字段。')
+  return value
 }

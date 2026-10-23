@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
-import { catalogFeatureParams, validateCatalogFeatures, visionFeatureProperties, featureEditor, readFeatureEditor, validateReviewDimensions } from '../src/brick-vision/catalog-features.mjs'
+import { catalogFeatureParams, validateCatalogFeatures, validateCatalogQuery, visionFeatureProperties, featureEditor, readFeatureEditor, validateReviewDimensions } from '../src/brick-vision/catalog-features.mjs'
 import { catalog } from './brick-games.mjs'
 import { loadBrickRules, geometrySnapshot } from './brick-rules.mjs'
 import { validateImage, visionErrorDiagnostic } from './brick-vision.mjs'
@@ -173,7 +173,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
           const search = await read(c.searchId)
           const index = search.rows.findIndex(r => r.source.part_num === c.item.part_num && r.source.color_id === c.item.color_id)
           if (index < 0) throw new Error('确认组合不在已保存候选中')
-          Object.assign(row, { features: { ...featureEditor(c.features), height_brick_units: row.features.height_brick_units }, quantity: String(c.item.quantity), search, index })
+          Object.assign(row, { features: { ...featureEditor(c.features), height_brick_units: c.features.height_brick_units != null ? String(c.features.height_brick_units) : row.features.height_brick_units }, quantity: String(c.item.quantity), search, index })
         } catch (e) { warnings.push(c.observationId + ' 确认恢复失败：' + e.message) }
       }
       for (const e of artifact?.excluded || []) if (rows[e.observationId]) Object.assign(rows[e.observationId], { excluded: true, reason: e.reason })
@@ -246,7 +246,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     async search(body) {
       const analysis = await analyzed(body.analysisId)
       if (!analysis.analysis.observations.some(o => o.id === body.observationId)) fail('Observation 不存在。')
-      const features = validateCatalogFeatures(body.features), params = catalogFeatureParams(features)
+      const features = validateCatalogQuery(body.features), params = catalogFeatureParams(features)
       const partNumber = typeof body.partNumber === 'string' ? body.partNumber.trim() : ''
       if (partNumber && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(partNumber)) fail('Part Number 格式无效。')
       if (!partNumber && !Object.keys(params).length) fail('请至少确认一个特征后检索，未知条件不参与匹配。')
@@ -272,13 +272,13 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         const p = result.items.find(p => p.part_num === row.source.part_num)
         let sourceAllowed = true
         if (analysis.source.kind === 'virtual') sourceAllowed = !!row.target && analysis.source.inventory.some(r => r.part === row.target.part && r.color === row.target.color && r.quantity > 0)
-        return { ...row, name: p.name, checks: p.checks, sourceAllowed, eligible: sourceAllowed && !!row.target && row.errors.length === 0 }
+        return { ...row, name: p.name, checks: p.checks, catalog_geometry: p.catalog_geometry, sourceAllowed, eligible: sourceAllowed && !!row.target && row.errors.length === 0 }
       })
       let images = {}, imageError = null
       if (result.items.length) try { images = (await getCatalog('images', { part_nums: result.items.map(p => p.part_num).join(',') })).images }
       catch { imageError = 'Catalog 图片暂不可用；保留型号和诊断。' }
       const record = { id: randomUUID(), kind: 'reverse-search', analysisId: analysis.id, observationId: body.observationId,
-        createdAt: new Date().toISOString(), features, partNumber, page, catalogTotal: result.total, pageSize: 6, rows, images, imageError, review }
+        createdAt: new Date().toISOString(), features, partNumber, page, catalogTotal: result.total, pageSize: 6, rows, images, imageError, review, geometry_report: result.geometry_report }
       await save(record)
       return record
     },

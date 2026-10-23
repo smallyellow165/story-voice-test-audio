@@ -1,6 +1,6 @@
 import type { InventoryItem } from '../brick-inventory/inventory'
 import type { MappingRow } from '../brick-game-contract'
-import type { CatalogFeatures } from './catalog-features.mjs'
+import type { CatalogFeatures, CatalogQuery } from './catalog-features.mjs'
 
 export type StepReference = {
   artifactId: string; designHash: string; instanceId: string; runId: string; taskAttemptId: string
@@ -13,7 +13,7 @@ export type Observation = CatalogFeatures & {
 
 export type ObservationCatalogSearch = {
   method?: 'features' | 'part' | 'manual'; partNumber?: string
-  key: string; observationId: string; features: CatalogFeatures; quantity: string
+  key: string; observationId: string; features: CatalogQuery; quantity: string
   onResults?(count: number | null): void
   onChoose(item: InventoryItem, evidence: unknown): void
 }

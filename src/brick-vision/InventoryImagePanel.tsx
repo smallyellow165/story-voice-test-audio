@@ -92,7 +92,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       const partNumber = method === 'part' ? row.part.trim() : undefined
       if (method === 'part' && (!partNumber || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(partNumber))) throw new Error('请输入一个有效的 Rebrickable Part Number。')
       const features = method === 'features' ? readFeatureEditor(row.features) : { color_id: null, size: null, shape: null, print: 'unknown' as const }
-      if (method === 'features' && features.color_id === null && features.size === null && features.shape === null && features.print === 'unknown') {
+      if (method === 'features' && !Object.keys(catalogFeatureParams(features)).length) {
         throw new Error('没有可检索的已知特征，请先人工填写至少一项；不会使用模型猜测编号代替检索。')
       }
       const epoch = ++catalogEpoch.current
@@ -217,7 +217,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       <p>{result.prompt_id || '历史记录未标注 Prompt'} {result.prompt_version ? 'v' + result.prompt_version : ''} · {result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
-        <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。Catalog 不支持 Height 筛选；二维筛选需要成对整数 Width / Depth。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
+        <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。填写 Height 时使用可靠主体三维几何检索；Unknown 不匹配。不填 Height 的整数二维 Size 保留现有水平检索。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
         <button disabled={busy} onClick={saveDraft}>保存审核草稿（此浏览器）</button>
         {draftNotice && <p role="status">{draftNotice}</p>}
         <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
@@ -242,7 +242,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                 }}>
                 <td><ObservationActions observationId={row.id} actions={[
                   { label: 'By Part Number', disabled: busy || applied || !row.part.trim() || !onSearchCatalog, run: () => searchObservation(row, 'part') },
-                  { label: 'By Features（Height 未支持）', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
+                  { label: 'By Features（含已填 Height）', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
                   { label: 'Manual Catalog', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row, 'manual') },
                   { label: '检索并回填', disabled: busy || applied, run: () => { void autofill([row]) } },
                   { label: '查看详情', run: () => setDetail({ kind: 'observation', id: row.id }) },
@@ -266,7 +266,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                 <td className="vision-match-status" title={note}><span className="vision-review-badge">{reviewStatus}</span>
                   <label><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied || row.excluded}
                     onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} />加入 Results（需校验）</label>
-                  <small>Height 未经 Catalog 验证</small></td>
+                  <small>尺寸验证范围见候选证据</small></td>
               </tr>
           })}
         </ObservationTable>

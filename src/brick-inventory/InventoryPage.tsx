@@ -1,3 +1,5 @@
+import { CatalogGeometryEvidence } from '../brick-vision/CatalogGeometryEvidence'
+import type { CatalogBodyMetadata } from '../brick-vision/CatalogGeometryEvidence'
 import { ExplorerWorkspace } from './ExplorerWorkspace'
 import { CatalogPhoto as Photo } from '../catalog-photo'
 import type { Media } from '../catalog-photo'
@@ -16,12 +18,12 @@ import './workbench.css'
 type Color = { id: number; name: string; rgb: string }
 type FeatureCheck = { feature: string; expected: unknown; actual: unknown; status: 'matched' | 'mismatched' | 'unknown'; source: string; evidence: string }
 type Part = { part_num: string; name: string; part_cat_id: number; colors: Color[];
-  category_name?: string; features?: Record<string, unknown>; checks?: FeatureCheck[];
+  catalog_geometry?: CatalogBodyMetadata; category_name?: string; features?: Record<string, unknown>; checks?: FeatureCheck[];
   counts?: { matched: number; mismatched: number; unknown: number }; eligible?: boolean }
 type Results = { items: Part[]; total: number; page: number; page_size: number;
   prefilter_total?: number; performance?: Record<string, number>;
   matched_total?: number; fully_matched_total?: number; eligible_total?: number; excluded_total?: number;
-  criteria?: Record<string, unknown>; schema?: { database: string; source: string; used_columns: unknown[] } }
+  geometry_report?: { unknown_total: number; mismatched_total: number; excluded_examples: unknown[] }; criteria?: Record<string, unknown>; schema?: { database: string; source: string; used_columns: unknown[] } }
 const errors: Record<string, string> = {
   rebrickable_catalog_disabled: '请在 Application Server 启用 REBRICKABLE_CATALOG_LOCAL=1。',
   rebrickable_catalog_unavailable: 'Backend Catalog 处理失败，请查看 Backend 日志中的异常类型。',
@@ -37,7 +39,7 @@ const errors: Record<string, string> = {
   application_server_invalid_response: 'Application Server 返回的 JSON 格式错误，需要对象。',
   catalog_request_failed: 'Backend API 返回错误，请核对请求参数、HTTP 状态及 Backend 日志。',
   unknown_duplo_part_or_color: '数据库中没有这个 DUPLO 型号或颜色组合。',
-  invalid_feature_size: '尺寸请填写 2x4 或 2×4 这样的两项正整数。',
+  invalid_feature_size: '尺寸请填写 2×4 或 2×4×0.5；各维度须大于 0 且不超过 100。',
   invalid_feature_shape: '请选择支持的名称形状特征。',
   invalid_feature_print: '印花请选择未知、有或无。',
 }
@@ -84,12 +86,13 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
     <Photo media={specific ? specificImage : image} name={part.name} />
     <div className="inventory-part-identity"><small title={specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}>{specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}</small>
     <h3 title={part.name}>{part.name}</h3><a title={`${part.part_num} · Rebrickable`} href={`https://rebrickable.com/parts/${encodeURIComponent(part.part_num)}/`} target="_blank" rel="noreferrer">{part.part_num} · Rebrickable ↗</a>
+      <CatalogGeometryEvidence geometry={part.catalog_geometry} checks={part.checks} />
       {part.checks && <details className="inventory-feature-evidence"><summary>匹配 {part.counts?.matched} · 不匹配 {part.counts?.mismatched} · 未知 {part.counts?.unknown}</summary>
         <p>类别：{part.category_name || '未知'}（数据库）</p>
         <ul>{part.checks.map(check => <li key={check.feature}>
           <strong>{check.feature}</strong>：{check.status === 'matched' ? '匹配' : check.status === 'mismatched' ? '不匹配' : '未知'}；
           要求 {JSON.stringify(check.expected)}，记录 {JSON.stringify(check.actual)}；
-          来源 {check.source === 'database' ? '数据库明确记录' : check.source === 'name' ? '名称解析' : '未知'}。
+          来源 {check.source === 'database' ? '数据库明确记录' : check.source === 'name' ? '名称解析' : check.source === 'ldraw-reviewed-body' ? '已审核 LDraw 主体坐标' : '未知'}。
           <div>{check.evidence}</div>
         </li>)}</ul>
         <details><summary>全部特征与来源</summary><pre>{JSON.stringify(part.features, null, 2)}</pre></details>
@@ -226,7 +229,7 @@ export function InventoryPage() {
       const params = catalogFeatureParams(request.features)
       setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
       const { color: requestedColor, ...featureParams } = params
-      setFeatureQuery(request.method === 'part' || request.method === 'manual' ? null : featureParams); setQuery(''); setSearch(request.partNumber || ''); setFeatureSize(request.features.size ?? ''); setFeatureShape(request.features.shape ?? '')
+      setFeatureQuery(request.method === 'part' || request.method === 'manual' ? null : featureParams); setQuery(''); setSearch(request.partNumber || ''); setFeatureSize(request.features.size ?? ([request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].every(n => n != null) ? [request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].join('×') : '')); setFeatureShape(request.features.shape ?? '')
       setFeaturePrint(request.features.print); setColorFilter(requestedColor ?? ''); setCategory(''); setPage(1)
       requestAnimationFrame(() => catalogHost.current?.scrollIntoView({ block: 'start' }))
     }} onApply={recognized => {
@@ -264,7 +267,7 @@ export function InventoryPage() {
             e.preventDefault(); setCatalogReview(null); setPage(1)
             setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint })
           }}>
-            <label>Size / Width × Depth<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
+            <label>Size / Width × Depth × Height<input value={featureSize} maxLength={24} placeholder="例如 2×4×0.5；也支持 2×4" onChange={e => setFeatureSize(e.target.value)} /></label>
             <label>Shape / 形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
               <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
             </select></label>
@@ -276,7 +279,7 @@ export function InventoryPage() {
             {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setCatalogReview(null); setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
           </div>
           </div>
-          <p className="inventory-note">“搜索”使用型号 / 名称、Category、Color；“检索候选”使用 Size、Shape、Print、Category、Color，不合并型号 / 名称条件。Size 仅筛选 Width × Depth，Height 尚未支持，不代表完整三维匹配。候选检索采用 Strict AND：所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。尺寸和形状从名称解析，印花结合 P 关系与整件名称证据；冲突或不足为未知。尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
+          <p className="inventory-note">“搜索”使用型号 / 名称、Category、Color；“检索候选”使用 Size、Shape、Print、Category、Color，不合并型号 / 名称条件。三维 Size 使用已审核主体几何：Stud × Stud × Brick；高度可为 0.5。两维 Size 保留名称水平尺寸检索。三维缺少 Mapping 或可靠尺寸时排除，不自动补全。候选检索采用 Strict AND：所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。两维 Size 和形状从名称解析，三维尺寸需官方 Mapping 与本地源文件校验，印花结合 P 关系与整件名称证据；冲突或不足为未知。尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
         </div>
         <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
@@ -284,6 +287,10 @@ export function InventoryPage() {
         {loading && <p role="status">正在读取 Catalog…</p>}
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
           <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
+          {result.geometry_report && <div className="inventory-feature-summary">
+            <p>几何条件 Unknown 排除 {result.geometry_report.unknown_total}；尺寸不符排除 {result.geometry_report.mismatched_total}（可能重叠）。Mapping 仅读现有官方缓存，不自动批量请求；Unknown 不代表 Catalog 中不存在该规格。</p>
+            <details><summary>几何排除原因与示例（最多 12 项）</summary><pre>{JSON.stringify(result.geometry_report, null, 2)}</pre></details>
+          </div>}
           {result.criteria && <div className="inventory-feature-summary"><p>SQL 预筛选 {result.prefilter_total}；严格匹配 {result.eligible_total}；解析复核排除（不匹配或未知）{result.excluded_total}。未填写条件不参与筛选；无结果时不自动放宽条件，不自动选择型号。</p>
             <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}

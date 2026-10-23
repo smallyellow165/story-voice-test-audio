@@ -1,3 +1,4 @@
+import { CatalogGeometryEvidence } from '../brick-vision/CatalogGeometryEvidence'
 import { createPortal } from 'react-dom'
 import { reverseFeatureEditor } from '../brick-vision/reverse-review.mjs'
 import type { InventoryItem } from '../brick-inventory/inventory'
@@ -159,15 +160,17 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
         <p>Catalog 全局匹配 {search.catalogTotal} · 第 {search.page} 页 · 本页源范围内候选 {search.rows.filter(r => r.sourceAllowed).length} · Assembly 支持 {search.rows.filter(r => r.eligible).length}。0 个可用不代表后续页为空。</p>
         <div className="brick-actions"><button disabled={locked || search.page <= 1} onClick={() => void action('上一页', () => find(active, search.page - 1))}>上一页</button>
           <button disabled={locked || search.page * search.pageSize >= search.catalogTotal} onClick={() => void action('下一页', () => find(active, search.page + 1))}>下一页</button></div>
+        {search.geometry_report != null && <details><summary>三维检索排除原因 / Unknown</summary><pre>{JSON.stringify(search.geometry_report, null, 2)}</pre></details>}
         {search.imageError && <p>{search.imageError}</p>}
         {search.rows.map((r, index) => <div className="brick-reverse-candidate" key={r.source.part_num + ':' + r.source.color_id}>
           <CatalogPhoto media={search.images[r.source.part_num]} name={r.name} />
           <div><strong>{r.name}</strong><div>RB {r.source.part_num} / Color {r.source.color_id}</div>
-            <small>{search.partNumber ? 'Catalog 型号查询（未验证几何）' : 'Catalog 特征匹配（未验证高度）'} · 官方 LDraw 候选 {r.partCandidates.join(', ') || '无'} · 颜色映射 {r.colorCandidates.join(', ') || '无'}<br />本地文件及依赖可用：{r.partCandidateChecks.filter(c => c.local.available).map(c => c.part).join(', ') || '无'} · 已有几何能力定义：{r.partCandidateChecks.filter(c => c.supported).map(c => c.part).join(', ') || '无'}</small>
+            <small>{search.partNumber ? 'Catalog 型号查询（未验证几何）' : 'Catalog Strict AND（仅验证已提交条件）'} · 官方 LDraw 候选 {r.partCandidates.join(', ') || '无'} · 颜色映射 {r.colorCandidates.join(', ') || '无'}<br />本地文件及依赖可用：{r.partCandidateChecks.filter(c => c.local.available).map(c => c.part).join(', ') || '无'} · 已有几何能力定义：{r.partCandidateChecks.filter(c => c.supported).map(c => c.part).join(', ') || '无'}</small>
+            <CatalogGeometryEvidence geometry={r.catalog_geometry} checks={r.checks} />
             <div>{r.eligible ? 'Assembly 可用 · LDraw ' + r.target?.part + ' / ' + r.target?.color : '当前 Assembly 不可用；仍可确认 Catalog 身份'}</div>
             {!r.sourceAllowed && <small>未证明属于当前虚拟库存，不可选择。</small>}
             {r.errors.length > 0 && <small>{r.errors.join('；')}</small>}
-            <button type="button" disabled={locked || !r.sourceAllowed} onClick={() => edit(active, { index, excluded: false })}>确认 Catalog 身份（高度未验证）</button>
+            <button type="button" disabled={locked || !r.sourceAllowed} onClick={() => edit(active, { index, excluded: false })}>确认 Catalog 身份（核对尺寸依据）</button>
             <details><summary>Catalog / Mapping / 本地资源 / 几何证据</summary><pre>{JSON.stringify(r, null, 2)}</pre></details>
           </div>
         </div>)}
@@ -179,7 +182,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       <div className="brick-actions"><button type="button" disabled={locked || record.status !== 'complete'} onClick={() => void action('保存审核', saveReview)}>保存审核（不调用模型）</button>
         <small>{dirty ? '审核有未保存修改；请保存后再加载其他记录。' : savedAt ? '审核已保存：' + savedAt : '尚未保存审核草稿'}</small></div>
       <p>{record.analysis.appearance}</p>
-      <p>Width / Depth 单位 Stud（16 mm），Height 单位 Brick（19.2 mm）；留空表示 Unknown。By Features 需要成对的整数 Width / Depth 才能筛选尺寸。Catalog 当前仅按水平尺寸、RB 颜色、名称形状和印花查找；不支持 Height 筛选。候选身份确认不是完整三维匹配，也不是 Assembly 能力验证。几何表中的高度、颜色描述和证据保持独立，请人工核对。Manual Catalog 可直接加入 Results；若需关联当前 Observation，请将找到的型号填入 Part Number，再查询并确认候选。</p>
+      <p>Width / Depth 单位 Stud（16 mm），Height 单位 Brick（19.2 mm）；留空表示 Unknown。By Features 会发送已填写的 Width / Depth / Height；填写 Height 时需可靠主体几何证据，Unknown 不匹配。未填写 Height 的完整整数二维尺寸仍走现有水平检索。Catalog 身份和尺寸匹配不是 Assembly 连接能力验证。几何表中的高度、颜色描述和证据保持独立，请人工核对。Manual Catalog 可直接加入 Results；若需关联当前 Observation，请将找到的型号填入 Part Number，再查询并确认候选。</p>
       <ObservationTable stickyAction hostRef={geometryOnly ? undefined : tableHost} columns={[
         { label: 'Action', width: 60 }, { label: 'Observation', width: 110 }, { label: 'Part Number', width: 135 },
         { label: 'Width (Stud)', width: 85 }, { label: 'Depth (Stud)', width: 85 }, { label: 'Height (Brick)', width: 90 },
@@ -198,7 +201,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
           }}>
             <td><ObservationActions observationId={o.id} actions={[
               { label: 'By Part Number', disabled: locked || !row.features.partNumber?.trim(), run: () => { void action('型号检索', () => find(o.id, 1, 'part')) } },
-              { label: 'By Features（Height 未支持）', disabled: locked, run: () => { void action('特征检索', () => find(o.id, 1, 'features')) } },
+              { label: 'By Features（含已填 Height）', disabled: locked, run: () => { void action('特征检索', () => find(o.id, 1, 'features')) } },
               { label: 'Manual Catalog', run: () => { setActive(o.id); onShowCatalog('search') } },
               { label: '查看候选 / 人工确认', disabled: !row.search, run: () => { setActive(o.id); onShowCatalog() } },
               { label: '查看详情', run: () => setDetailId(o.id) },
@@ -216,7 +219,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
             <td><input aria-label={o.id + ' 确认可见数量'} type="number" min="1" max="100" value={row.quantity}
               disabled={locked || generationSubmitted} onChange={e => edit(o.id, { quantity: e.target.value })} /></td>
             <td className="vision-match-status"><span className="vision-review-badge">{status}</span>
-              <small>Height 未经 Catalog 验证</small>
+              <small>尺寸验证范围见候选证据</small>
               <small title={'可见凸点 ' + (o.visible_studs ?? 'Unknown') + ' · ' + o.occlusion}>可见凸点 {o.visible_studs ?? 'Unknown'} · 遮挡见详情</small>
               {row.excluded && <input aria-label={o.id + ' 排除原因'} value={row.reason} placeholder="请填写排除原因" disabled={locked}
                 onChange={e => edit(o.id, { reason: e.target.value })} />}
@@ -234,7 +237,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     {record?.analysis && <>
       <h2>Analysis Results</h2>
       <p>原始 Observation 已保存在 Analysis {record.id}，无需匹配 Part Number。{dirty ? '人工审核尚未保存。' : '可随时从历史加载。'}</p>
-      <p>已确认 {confirmedItems.length} 项 Catalog 身份；Height 未经匹配验证。</p>
+      <p>已确认 {confirmedItems.length} 项 Catalog 身份；尺寸仅验证查询时已填条件，请核对候选依据。</p>
       <ul>{confirmedItems.map((item, index) => <li key={index}>{item.part_num} / Color {item.color_id} × {item.quantity}</li>)}</ul>
       <button disabled={locked || record.status !== 'complete'} onClick={() => void action('保存审核', saveReview)}>保存观察关联与审核</button>
       <button disabled={locked || applied || !confirmedItems.length} onClick={() => void action('加入 Results', async () => {
