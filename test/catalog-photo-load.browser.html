@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>CatalogPhoto native browser regression tests</title>
+<h1>CatalogPhoto 原生浏览器回归测试</h1>
+<p>通过项目开发服务器打开此页。使用真实 Image、事件及默认原生定时器；不请求 Catalog API。</p>
+<pre id="results">运行中…</pre>
+<script type="module">
+import { observeCatalogImage } from '../src/catalog-photo-load.ts'
+
+const output = document.querySelector('#results')
+const results = []
+const assert = (condition, message) => { if (!condition) throw new Error(message) }
+const tick = () => new Promise(resolve => window.setTimeout(resolve, 0))
+const url = URL.createObjectURL(new Blob([
+  '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="green"/></svg>',
+], { type: 'image/svg+xml' }))
+async function test(name, body) {
+  try { await body(); results.push('PASS ' + name) }
+  catch (error) { results.push('FAIL ' + name + ': ' + error.message); console.error(error) }
+  output.textContent = results.join('\n')
+}
+async function decode(image) {
+  let timer
+  try {
+    await Promise.race([
+      image.decode(),
+      new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error('decode timeout')), 5000) }),
+    ])
+    await tick()
+  } finally { window.clearTimeout(timer) }
+}
+try {
+  await test('真实未完成图片：默认 setTimeout 和加载成功后的 clearTimeout', async () => {
+    const image = new Image()
+    image.src = url
+    assert(!image.complete, '必须进入未完成图片分支，避免跳过第 40 行')
+    const states = []
+    const dispose = observeCatalogImage(image, state => states.push(state))
+    try {
+      assert(states[0] === 'loading', '初始应为 loading')
+      await decode(image)
+      assert(states.at(-1) === 'loaded', '真实 load 事件应完成加载')
+      assert(image.naturalWidth === 2, '必须成功解码真实图片')
+    } finally { dispose() }
+  })
+  await test('挂载后立即卸载：原生 clearTimeout 和 removeEventListener', async () => {
+    const image = new Image()
+    image.src = url
+    assert(!image.complete, '必须创建待清理的定时器')
+    const states = []
+    const dispose = observeCatalogImage(image, state => states.push(state))
+    dispose()
+    await decode(image)
+    image.dispatchEvent(new Event('error'))
+    assert(states.join(',') === 'loading', '卸载后的事件不能更新状态')
+  })
+  await test('相同 URL 连续三次挂载：已解码图片不依赖新 load 事件', async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const image = new Image()
+      image.src = url
+      await decode(image)
+      const states = []
+      const dispose = observeCatalogImage(image, state => states.push(state))
+      try {
+        assert(states.at(-1) === 'loaded', '缓存完成应立即识别为 loaded')
+        await tick()
+        assert(states.at(-1) === 'loaded', '不能重新变成 loading/failed')
+      } finally { dispose() }
+    }
+  })
+  await test('真实损坏图片：complete 为 true 但 naturalWidth 为 0', async () => {
+    const image = new Image()
+    image.src = 'data:image/png;base64,AAAA'
+    try { await image.decode() } catch { /* Expected decoding failure. */ }
+    await tick()
+    assert(image.complete && image.naturalWidth === 0, '必须使用真实失败的 Image')
+    const states = []
+    const dispose = observeCatalogImage(image, state => states.push(state))
+    try { assert(states.at(-1) === 'failed', '损坏图片应保持失败处理') }
+    finally { dispose() }
+  })
+} finally { URL.revokeObjectURL(url) }
+</script>
+</html>

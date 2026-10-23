@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { observeCatalogImage } from './catalog-photo-load'
 import './catalog-photo.css'
 
 export type Media = { status: string; url: string | null; cached?: boolean; cache_warning?: string;
@@ -18,6 +19,8 @@ export function CatalogPhoto({ media, name }: { media?: Media; name: string }) {
   const [loaded, setLoaded] = useState(false)
   const [current, setCurrent] = useState(media)
   const [retrying, setRetrying] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const imageRef = useRef<HTMLImageElement | null>(null)
   const retryRequest = useRef<AbortController | null>(null)
   useEffect(() => { setCurrent(media) }, [media])
   useEffect(() => {
@@ -57,14 +60,19 @@ export function CatalogPhoto({ media, name }: { media?: Media; name: string }) {
     timer = setTimeout(() => void poll(), 2000)
     return () => { controller.abort(); clearTimeout(timer) }
   }, [current?.status, current?.part_num, current?.color_id])
-  useEffect(() => {
-    setFailed(false); setLoaded(false)
-  }, [current?.url])
-  useEffect(() => {
-    if (!current?.url || loaded || failed) return
-    const timer = setTimeout(() => setFailed(true), 20000)
-    return () => clearTimeout(timer)
-  }, [current?.url, loaded, failed])
+  useLayoutEffect(() => {
+    // Subscribe before inspecting cached completion. Do not reset a successful
+    // image in a later passive effect: its load event may already have fired.
+    const image = imageRef.current
+    if (!current?.url || !image) {
+      setFailed(false); setLoaded(false)
+      return
+    }
+    return observeCatalogImage(image, state => {
+      setLoaded(state === 'loaded')
+      setFailed(state === 'failed')
+    })
+  }, [current?.url, loadAttempt])
   const retry = async () => {
     if (!current?.part_num || retrying) return
     retryRequest.current?.abort()
@@ -78,15 +86,16 @@ export function CatalogPhoto({ media, name }: { media?: Media; name: string }) {
       const next = await response.json()
       if (typeof next.status !== 'string') throw new Error('invalid_image_status')
       if (controller.signal.aborted) return
-      setFailed(false); setLoaded(false); setCurrent(next)
+      setFailed(false); setLoaded(false); setLoadAttempt(attempt => attempt + 1); setCurrent(next)
     } catch { if (!controller.signal.aborted) setCurrent(old => ({ ...old, status: 'api_error', url: null })) }
     finally { if (!controller.signal.aborted) setRetrying(false) }
   }
   return <div className="inventory-photo">
-    {current?.url && !failed ? <>
-      {!loaded && <span>图片加载中…</span>}
-      <img src={current.url} alt={name} style={{ opacity: loaded ? 1 : 0 }} onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
-    </> : <span role="status">{failed ? '图片加载失败' : imageMessages[current?.status || 'loading'] || '图片不可用'}
+    {current?.url && <>
+      {!loaded && !failed && <span>图片加载中…</span>}
+      <img key={`${current.url}:${loadAttempt}`} ref={imageRef} src={current.url} alt={name} style={{ opacity: loaded ? 1 : 0, display: failed ? 'none' : undefined }} />
+    </>}
+    {(!current?.url || failed) && <span role="status">{failed ? '图片加载失败' : imageMessages[current?.status || 'loading'] || '图片不可用'}
       {current?.failure_reason && <small> · {current.failure_reason}</small>}
       {current?.part_num && (failed || ['failed', 'queue_full', 'timeout', 'api_error', 'missing', 'not_configured', 'unauthorized', 'forbidden', 'rate_limited', 'unsupported_image_url'].includes(current.status)) &&
         <button type="button" disabled={retrying} onClick={() => void retry()}>{retrying ? '重试中…' : '重试图片'}</button>}
