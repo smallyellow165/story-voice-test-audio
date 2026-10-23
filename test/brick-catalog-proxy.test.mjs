@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { proxyBrickCatalog } from '../server/brick-catalog.mjs'
 
 // Offline transport fixtures only. No real Backend, database or image API.
-async function invoke(t, fetchImpl, target = 'http://127.0.0.1:8001') {
+async function invoke(t, fetchImpl, target = 'http://127.0.0.1:8001', route = 'candidates?color=25&size=2%C3%972&shape=curved_top&printed=unknown&page=1&page_size=24') {
   const previous = process.env.APPLICATION_SERVER_URL
   process.env.APPLICATION_SERVER_URL = target
   t.after(() => {
@@ -17,7 +17,7 @@ async function invoke(t, fetchImpl, target = 'http://127.0.0.1:8001') {
     writeHead(status) { this.status = status },
     end(body) { this.body = JSON.parse(body) },
   }
-  const url = new URL('http://localhost/api/brick-catalog/candidates?color=25&size=2%C3%972&shape=curved_top&printed=unknown&page=1&page_size=24')
+  const url = new URL('http://localhost/api/brick-catalog/' + route)
   assert.equal(await proxyBrickCatalog({ method: 'GET', headers: {} }, response, url), true)
   return { ...response, calls }
 }
@@ -105,4 +105,37 @@ test('invalid configuration is distinguished before fetching and never leaks cre
   assert.equal(result.body.detail, 'application_server_configuration_error')
   assert.equal(result.body.diagnostics.stage, 'proxy_configuration')
   assert.equal(JSON.stringify(result.body).includes('private'), false)
+})
+
+test('database-owned image URL uses the existing same-origin byte proxy', async t => {
+  const result = await invoke(t, async () => Response.json({ images: { '4066': {
+    status: 'available', url: '/rebrickable-catalog/image-file?id=42', original_url: 'https://cdn.rebrickable.com/original.png',
+  } } }), undefined, 'images?part_nums=4066')
+  assert.equal(result.body.images['4066'].url, '/api/brick-catalog/image-file?id=42')
+  assert.equal(result.body.images['4066'].original_url, 'https://cdn.rebrickable.com/original.png')
+})
+
+test('image bytes are forwarded without JSON parsing and retry uses explicit POST', async t => {
+  const previous = process.env.APPLICATION_SERVER_URL
+  process.env.APPLICATION_SERVER_URL = 'http://127.0.0.1:8001'
+  t.after(() => { if (previous === undefined) delete process.env.APPLICATION_SERVER_URL; else process.env.APPLICATION_SERVER_URL = previous })
+  let lastMethod
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    lastMethod = init.method
+    return url.pathname.endsWith('/image-file')
+      ? new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })
+      : Response.json({ status: 'loading', part_num: '4066', url: null })
+  })
+  const response = { status: null, headers: null, body: null,
+    writeHead(status, headers) { this.status = status; this.headers = headers },
+    end(body) { this.body = body } }
+  await proxyBrickCatalog({ method: 'GET', headers: {} }, response, new URL('http://localhost/api/brick-catalog/image-file?id=42'))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers['Cache-Control'], 'no-store')
+  assert.deepEqual([...response.body], [1, 2, 3])
+  await proxyBrickCatalog({ method: 'POST', headers: {} }, response, new URL('http://localhost/api/brick-catalog/image-retry?part_num=4066'))
+  assert.equal(lastMethod, 'POST')
+  assert.equal(JSON.parse(response.body).status, 'loading')
+  await proxyBrickCatalog({ method: 'GET', headers: {} }, response, new URL('http://localhost/api/brick-catalog/image-retry?part_num=4066'))
+  assert.equal(response.status, 405)
 })

@@ -1,4 +1,4 @@
-// Same-origin, GET-only bridge to the existing Application Server. No DB client.
+// Same-origin bridge; image retry is the only POST. No DB client or remote-image fetch.
 export async function proxyBrickCatalog(request, response, url) {
   if (!url.pathname.startsWith('/api/brick-catalog/')) return false
   const send = (status, data) => {
@@ -6,8 +6,8 @@ export async function proxyBrickCatalog(request, response, url) {
     response.end(JSON.stringify(data))
   }
   const route = url.pathname.slice('/api/brick-catalog/'.length)
-  if (request.method !== 'GET') { send(405, { detail: 'get_only' }); return true }
-  if (!['parts', 'filters', 'images', 'color-image', 'selection', 'schema', 'candidates'].includes(route)) { send(404, { detail: 'not_found' }); return true }
+  if (request.method !== (route === 'image-retry' ? 'POST' : 'GET')) { send(405, { detail: 'method_not_allowed' }); return true }
+  if (!['parts', 'filters', 'images', 'color-image', 'image-file', 'image-retry', 'selection', 'schema', 'candidates'].includes(route)) { send(404, { detail: 'not_found' }); return true }
   // LAN/mobile same-origin access is supported; cross-site requests must not
   // spend the owner's Rebrickable quota. Keys never reach the browser.
   let foreignOrigin = false
@@ -42,11 +42,30 @@ export async function proxyBrickCatalog(request, response, url) {
   }
   let result
   try {
-    result = await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(25000), headers: { Accept: 'application/json' } })
+    result = await fetch(target, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(25000), headers: { Accept: route === 'image-file' ? 'image/*' : 'application/json' } })
   } catch (error) {
     return transportFailure(error, 'upstream_fetch')
   }
   context.upstreamStatus = result.status
+  if (route === 'image-file' && result.ok) {
+    const mime = result.headers.get('content-type')?.split(';')[0]
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mime)) return fail(502, 'invalid_image_content', 'upstream_body', context)
+    try {
+      const reader = result.body.getReader(), chunks = []
+      let size = 0
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        size += value.length
+        if (size > 12 * 1024 * 1024) { await reader.cancel(); return fail(502, 'image_too_large', 'upstream_body', context) }
+        chunks.push(Buffer.from(value))
+      }
+      if (!size) return fail(502, 'invalid_image_content', 'upstream_body', context)
+      response.writeHead(200, { 'Content-Type': mime, 'Content-Length': size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
+      response.end(Buffer.concat(chunks))
+      return true
+    } catch (error) { return transportFailure(error, 'upstream_body') }
+  }
   let body
   try { body = await result.text() }
   catch (error) { return transportFailure(error, 'upstream_body') }
@@ -61,6 +80,14 @@ export async function proxyBrickCatalog(request, response, url) {
   if (!result.ok) {
     return fail(result.status, typeof data.detail === 'string' && /^[a-z_]+$/.test(data.detail)
       ? data.detail : 'catalog_request_failed', 'backend_api', context)
+  }
+  if (['images', 'color-image', 'image-retry'].includes(route)) {
+    const records = route === 'images' ? Object.values(data.images || {}) : [data]
+    for (const image of records) {
+      if (typeof image?.url === 'string' && /^\/rebrickable-catalog\/image-file\?id=\d+$/.test(image.url)) {
+        image.url = image.url.replace('/rebrickable-catalog/', '/api/brick-catalog/')
+      }
+    }
   }
   send(result.status, data)
   return true
