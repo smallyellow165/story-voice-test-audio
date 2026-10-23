@@ -14,3 +14,6 @@
 
 .brick-reverse .vision-observation-table .vision-cell-ellipsis { overflow: hidden; text-overflow: ellipsis; }
 .brick-reverse .vision-observation-table input[type="checkbox"] { width: auto; margin: 0; }
+
+.brick-reverse .geometry-observations .vision-observation-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.brick-reverse .geometry-observations p { margin: 4px 0; }

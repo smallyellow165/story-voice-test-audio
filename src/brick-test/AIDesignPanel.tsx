@@ -18,14 +18,32 @@ type Props = {
   onApply: (bricks: Brick[]) => Promise<boolean>
 }
 const endpoint = '/api/brick-test/generate'
+type DesignMode = 'creative' | 'reverse'
+type ModelChoice = { provider: 'gemini' | 'openai'; id: string }
+const modelStorageKey = (mode: DesignMode) => 'story-voice-test-audio:ai-design:model:' + mode
+const modeFromUrl = (): DesignMode => new URL(window.location.href).searchParams.get('mode') === 'reverse' ? 'reverse' : 'creative'
+function readModelChoice(mode: DesignMode): ModelChoice | null {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(modelStorageKey(mode)) || 'null')
+    return value && ['gemini', 'openai'].includes(value.provider) && typeof value.id === 'string'
+      ? { provider: value.provider, id: value.id } : null
+  } catch { return null }
+}
+function resolveModelChoice(choice: ModelChoice | null, models: ModelChoice[], defaultId: string): ModelChoice {
+  const selected = models.find(item => item.id === choice?.id && item.provider === choice?.provider)
+    || models.find(item => item.id === defaultId)!
+  return { provider: selected.provider, id: selected.id }
+}
 
 export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
-  const [mode, setMode] = useState<'creative' | 'reverse'>('creative')
-  const [reverseOpened, setReverseOpened] = useState(false)
+  const [mode, setMode] = useState<DesignMode>(modeFromUrl)
+  const [reverseOpened, setReverseOpened] = useState(() => modeFromUrl() === 'reverse')
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
-  const [selectedModel, setSelectedModel] = useState('')
+  const [modelChoices, setModelChoices] = useState<Record<DesignMode, ModelChoice | null>>({ creative: null, reverse: null })
+  const selectedModel = modelChoices.creative?.id || ''
+  const reverseModel = modelChoices.reverse?.id || ''
   const [statusError, setStatusError] = useState('')
   const [statusRetry, setStatusRetry] = useState(0)
   const [running, setRunning] = useState(false)
@@ -48,6 +66,34 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const selectedConfigured = !!selectedProvider && !!status?.providers[selectedProvider]
   const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
 
+  function selectMode(next: DesignMode) {
+    if (disabled || running) return
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('mode') !== next) {
+      url.searchParams.set('mode', next)
+      window.history.pushState(window.history.state, '', url)
+    }
+    if (next === 'reverse') setReverseOpened(true)
+    setMode(next)
+  }
+  function selectModel(targetMode: DesignMode, id: string) {
+    const model = status?.models.find(item => item.id === id)
+    if (!model) return
+    const choice: ModelChoice = { provider: model.provider, id: model.id }
+    setModelChoices(previous => ({ ...previous, [targetMode]: choice }))
+    try { window.localStorage.setItem(modelStorageKey(targetMode), JSON.stringify(choice)) }
+    catch { /* Storage may be unavailable; keep the selection for this session. */ }
+  }
+  useEffect(() => {
+    const syncMode = () => {
+      const next = modeFromUrl()
+      if (next === 'reverse') setReverseOpened(true)
+      setMode(next)
+    }
+    window.addEventListener('popstate', syncMode)
+    return () => window.removeEventListener('popstate', syncMode)
+  }, [])
+
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; requestController.current?.abort() }
@@ -62,7 +108,14 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
       if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('模型 API 不可用，请用 npm run dev 启动现有 Test Audio 服务；dev:brick 只提供本地 Viewer。')
       const value = await response.json()
       if (typeof value.model !== 'string' || typeof value.apiKeyConfigured !== 'boolean' || typeof value.providers?.gemini !== 'boolean' || typeof value.providers?.openai !== 'boolean' || !Array.isArray(value.models) || !value.models.length || !value.models.every((item: { id?: unknown; label?: unknown; provider?: unknown }) => item && typeof item.id === 'string' && typeof item.label === 'string' && ['gemini', 'openai'].includes(String(item.provider))) || !value.models.some((item: { id: string }) => item.id === value.model)) throw new Error('模型状态响应无效。')
-      if (active) { setStatus(value); setSelectedModel((previous) => value.models.some((item: { id: string }) => item.id === previous) ? previous : value.model) }
+      if (active) {
+        const savedCreative = readModelChoice('creative'), savedReverse = readModelChoice('reverse')
+        setStatus(value)
+        setModelChoices(previous => ({
+          creative: resolveModelChoice(previous.creative || savedCreative, value.models, value.model),
+          reverse: resolveModelChoice(previous.reverse || savedReverse, value.models, value.model),
+        }))
+      }
     }).catch((error) => { if (active) setStatusError(error.name === 'AbortError' ? '读取模型配置超时，请检查服务后重试。' : error.message) })
       .finally(() => clearTimeout(timeout))
     return () => { active = false; clearTimeout(timeout); controller.abort() }
@@ -132,21 +185,29 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   }
 
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
-    <div className="brick-actions" aria-label="Design mode">
-      <button type="button" disabled={disabled || running} aria-pressed={mode === 'creative'} onClick={() => setMode('creative')}>Creative</button>
-      <button type="button" disabled={disabled || running} aria-pressed={mode === 'reverse'} onClick={() => { setReverseOpened(true); setMode('reverse') }}>Reverse</button>
+    <div className="brick-design-tabs" role="tablist" aria-label="Design mode" onKeyDown={event => {
+      if (disabled || running || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const next: DesignMode = event.key === 'Home' ? 'creative' : event.key === 'End' ? 'reverse' : mode === 'creative' ? 'reverse' : 'creative'
+      selectMode(next)
+      event.currentTarget.querySelector<HTMLButtonElement>('#design-tab-' + next)?.focus()
+    }}>
+      <button id="design-tab-creative" type="button" role="tab" aria-controls="design-panel-creative" tabIndex={mode === 'creative' ? 0 : -1}
+        disabled={disabled || running} aria-selected={mode === 'creative'} onClick={() => selectMode('creative')}>Creative</button>
+      <button id="design-tab-reverse" type="button" role="tab" aria-controls="design-panel-reverse" tabIndex={mode === 'reverse' ? 0 : -1}
+        disabled={disabled || running} aria-selected={mode === 'reverse'} onClick={() => selectMode('reverse')}>Reverse</button>
     </div>
-    {reverseOpened && <div hidden={mode !== 'reverse'}><ReverseAssemblyPanel inventory={inventory}
+    <div id="design-panel-reverse" role="tabpanel" aria-labelledby="design-tab-reverse" hidden={mode !== 'reverse'}>{reverseOpened && <ReverseAssemblyPanel inventory={inventory}
       onQuantity={(row, quantity) => setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))}
-      models={status?.models || []} model={selectedModel} onModel={setSelectedModel} disabled={disabled}
+      models={status?.models || []} model={reverseModel} onModel={id => selectModel('reverse', id)} disabled={disabled}
       onBusy={value => { setRunning(value); onGeneratingChange(value) }} onComplete={async value => {
         const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
-          request: { model: value.model || selectedModel, description: value.requestInput?.description || 'Reverse Approximation', inventory: value.requestInput?.inventory || [] },
+          request: { model: value.model || reverseModel, description: value.requestInput?.description || 'Reverse Approximation', inventory: value.requestInput?.inventory || [] },
           httpStatus: value.httpStatus ?? null, result: value }
         setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
         if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
-      }} /></div>}
-    <div hidden={mode !== 'creative'}>
+      }} />}</div>
+    <div id="design-panel-creative" role="tabpanel" aria-labelledby="design-tab-creative" hidden={mode !== 'creative'}>
     <h2>AI Design · 虚拟库存 → 造型</h2>
     <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
     <form onSubmit={generate}>
@@ -155,7 +216,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
           setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))
         }} />
         <ModelSelector models={status?.models || []}
-          value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => setSelectedModel(chosen.id)} />
+          value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => selectModel('creative', chosen.id)} />
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !selectedConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>

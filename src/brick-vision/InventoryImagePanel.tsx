@@ -1,3 +1,5 @@
+import { ServerImagePicker } from './ServerImagePicker'
+import type { PreparedSourceImage } from './ServerImagePicker'
 import { ObservationTable, ObservationFeatureCells } from './ObservationTable'
 import { ModelSelector } from '../model-selector'
 import { useEffect, useRef, useState } from 'react'
@@ -5,7 +7,7 @@ import { createPortal } from 'react-dom'
 import { addItem, newSessionId } from '../brick-inventory/inventory'
 import type { InventoryItem } from '../brick-inventory/inventory'
 import { requestJson } from '../brick-inventory/api.mjs'
-import { prepareInventoryImage, recognizeImage, downloadVision } from './upload'
+import { recognizeImage, downloadVision } from './upload'
 import type { ObservationCatalogSearch, VisionResult } from './types'
 import { ObservationPreview } from './ObservationPreview'
 import { ObservationActions } from './ObservationActions'
@@ -23,8 +25,8 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
   onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null
   onSearchCatalog?(request: ObservationCatalogSearch): void
 }) {
-  const [file, setFile] = useState<File | null>(null), [preview, setPreview] = useState('')
-  const [prepared, setPrepared] = useState<Awaited<ReturnType<typeof prepareInventoryImage>> | null>(null)
+  const [preview, setPreview] = useState('')
+  const [prepared, setPrepared] = useState<PreparedSourceImage | null>(null)
   const [imageInfo, setImageInfo] = useState<VisionResult['compression']>(null)
   const [history, setHistory] = useState<{ id: string; createdAt: string; provider: string; model: string; image: VisionResult['image']; originalName?: string }[]>([])
   const [historyId, setHistoryId] = useState('')
@@ -143,7 +145,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     return () => controller.abort()
   }, [configRevision])
   async function recognize() {
-    if (!file || !prepared || lock.current || !models.some(m => m.id === model && m.provider === provider)) return
+    if (!prepared || lock.current || !models.some(m => m.id === model && m.provider === provider)) return
     catalogEpoch.current++
     lock.current = true; setBusy(true); setError(''); setResult(null); setRows([]); setValidation(null)
     try {
@@ -229,20 +231,13 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     </>}
   </div>
   return <section className="inventory-catalog inventory-source" id="inventory-image">
-    <h2>Inventory Image Recognition · 上传图片</h2>
+    <h2>Inventory Image Recognition</h2>
     <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
-    <input aria-label="选择库存照片" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={async e => {
-      const selected = e.target.files?.[0] || null
+    <ServerImagePicker disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
       catalogEpoch.current++
-      setFile(selected); setPrepared(null); setImageInfo(null); requestId.current = newSessionId(); setResult(null); setPreview(''); setRows([]); setApplied(false); setValidation(null); setError('')
-      if (!selected) return
-      lock.current = true; setBusy(true)
-      try {
-        const image = await prepareInventoryImage(selected)
-        setPrepared(image); setImageInfo(image.compression)
-        setPreview(`data:${image.originalImage.mimeType};base64,${image.originalImage.imageBase64}`)
-      } catch (err) { setError(String(err)) }
-      finally { lock.current = false; setBusy(false) }
+      setPrepared(image); setImageInfo(image?.compression || null); requestId.current = newSessionId()
+      setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
+      setPreview(image ? 'data:' + image.originalImage.mimeType + ';base64,' + image.originalImage.imageBase64 : '')
     }} />
     <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
     <div className="inventory-history">
@@ -256,7 +251,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
         lock.current = true; setBusy(true); setError('')
         try {
           const next = await requestJson<VisionResult>(`/api/brick-vision/history/${encodeURIComponent(historyId)}`, {}, '加载历史识别')
-          restoreResult(next); setFile(null); setPrepared(null); setImageInfo(next.compression)
+          restoreResult(next); setPrepared(null); setImageInfo(next.compression)
           setPreview(next.originalImage ? `data:${next.originalImage.mimeType};base64,${next.originalImage.imageBase64}` : '')
         } catch (e) { setError(String(e)) } finally { lock.current = false; setBusy(false) }
       }}>加载结果（不调用模型）</button>
@@ -269,7 +264,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}
-    <button disabled={!file || !prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : '识别照片'}</button>
+    <button disabled={!prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : 'Analyze · 识别照片'}</button>
     <p>切换模型不会立即识别，需再次点击“识别照片”。相同请求不会自动重试模型。如需重新识别，可明确重新选择图片或切换模型。遮挡、相似模具和光照可能造成误识别。</p>
     {preview && <div ref={previewHost}><ObservationPreview src={preview} observations={visibleObservations} activeId={activeId} onSelect={selectBox} /></div>}
     {result && !preview && <p>此记录没有可显示的原图，未绘制 BBox；原始坐标仍可在详情查看。</p>}

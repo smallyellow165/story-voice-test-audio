@@ -1,3 +1,4 @@
+import { testImageLibraryPlugin } from './server/test-image-library.mjs'
 import { readingCaseMiddleware } from './server/reading-test-cases.mjs'
 import { defineConfig } from 'vite'
 import { readFileSync } from 'node:fs'
@@ -25,7 +26,7 @@ const ringProxy = {
 export default defineConfig({
   base,
   worker: { format: 'es' },
-  plugins: [brickLibraryPlugin(), { name: 'reading-test-cases', configureServer(server) { server.middlewares.use(readingCaseMiddleware) }, configurePreviewServer(server) { server.middlewares.use(readingCaseMiddleware) } }, { name: 'reading-v2-cli', configureServer(server) { server.middlewares.use(readingV2Middleware) }, configurePreviewServer(server) { server.middlewares.use(readingV2Middleware) } }, {
+  plugins: [testImageLibraryPlugin(), brickLibraryPlugin(), { name: 'reading-test-cases', configureServer(server) { server.middlewares.use(readingCaseMiddleware) }, configurePreviewServer(server) { server.middlewares.use(readingCaseMiddleware) } }, { name: 'reading-v2-cli', configureServer(server) { server.middlewares.use(readingV2Middleware) }, configurePreviewServer(server) { server.middlewares.use(readingV2Middleware) } }, {
     name: 'local-screencast-mp4',
     configureServer(server) { server.middlewares.use(screencastMiddleware) },
     configurePreviewServer(server) { server.middlewares.use(screencastMiddleware) },
