@@ -149,8 +149,13 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       const warnings = [], rows = {}
       if (!analysis.image?.imageBase64) warnings.push('记录缺少参考图片，无法恢复图片或 BBox。')
       if (!analysis.analysis) warnings.push('记录没有可恢复的完整分析；请查看原始诊断。')
+      let reviewColors = []
+      if (analysis.analysis_mode === 'geometry_only') {
+        try { reviewColors = (await getCatalog('filters', {})).colors || [] }
+        catch { warnings.push('Catalog 颜色列表暂不可用；未自动填写原始颜色，已有审核颜色仍会恢复。') }
+      }
       for (const o of analysis.analysis?.observations || []) rows[o.id] = {
-        features: reverseFeatureEditor(o), quantity: String(o.quantity ?? 1), excluded: false, reason: '',
+        features: reverseFeatureEditor(o, reviewColors), quantity: String(o.quantity ?? 1), excluded: false, reason: '',
       }
       let artifact = null, generationStatus = 'none'
       try {

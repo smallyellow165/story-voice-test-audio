@@ -107,13 +107,20 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     try { await work() } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { gate.current = false; setBusy(''); onBusy(false) }
   }
-  function acceptAnalysis(value: Analysis) {
+  async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
     catalogEpoch.current++; setCandidateNotes({})
     setDetailId(''); setDirty(false); setSavedAt(''); setRestoreWarning('')
     setSource(value.source.kind); onAnalysisMode(value.analysis_mode || 'catalog_match')
     if (value.kind !== 'reverse-analysis') throw new Error('请选择 Reverse Analysis 记录 ID。')
     setRecord(value); setRecordId(value.id); setSubmitted(true); setArtifact(null); setGenerationSubmitted(false); setApplied(false)
-    setRows(Object.fromEntries((value.analysis?.observations || []).map(o => [o.id, { features: reverseFeatureEditor(o), quantity: String(o.quantity ?? 1), excluded: false, reason: '' }])))
+    let colors: { id: number; name: string }[] = []
+    if (!restoredRows && value.analysis_mode === 'geometry_only') {
+      try { colors = (await requestJson<{ colors: typeof colors }>('/api/brick-catalog/filters', {}, 'Catalog 颜色')).colors }
+      catch { setRestoreWarning('Catalog 颜色列表暂不可用；请人工核对颜色，原始分析保持不变。') }
+    }
+    setRows(restoredRows ?? Object.fromEntries((value.analysis?.observations || []).map(o => [o.id, {
+      features: reverseFeatureEditor(o, colors), quantity: String(o.quantity ?? 1), excluded: false, reason: '',
+    }])))
     setActive(value.analysis?.observations[0]?.id || '')
     if (value.status !== 'complete') setError(value.error?.message || '分析尚未完成；可稍后读取相同记录，不会再次调用模型。')
   }
@@ -282,7 +289,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
         const selected = source === 'today' ? sessions.find(s => s.id === sessionId) : undefined
         if (!geometryOnly && source === 'today' && !selected) throw new Error('请先选择已保存库存。')
         setSubmitted(true); setRecordId(requestId.current)
-        acceptAnalysis(await post<Analysis>('analyze', { ...image, model, analysis_mode: analysisMode, requestId: requestId.current,
+        await acceptAnalysis(await post<Analysis>('analyze', { ...image, model, analysis_mode: analysisMode, requestId: requestId.current,
           source: geometryOnly ? { kind: 'full' } : source === 'virtual' ? { kind: source, inventory } : source === 'today' ? { kind: source, session: selected } : { kind: source } }))
         await refreshHistory()
       })}>Analyze · 分析照片（调用模型）</button>
@@ -301,8 +308,8 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
         <button type="button" disabled={locked} onClick={() => void action('刷新历史', refreshHistory)}>刷新</button>
         <button type="button" disabled={locked || !recordId || dirty} onClick={() => void action('加载分析', async () => {
           const value = await requestJson<Restored>('/api/brick-reverse/restore/' + recordId, {}, '恢复 Reverse 分析')
-          acceptAnalysis(value.analysis)
-          setImage(null); setRows(value.rows); setSavedAt(value.updatedAt || '')
+          await acceptAnalysis(value.analysis, value.rows)
+          setImage(null); setSavedAt(value.updatedAt || '')
           setArtifact(value.artifact); setGenerationSubmitted(value.generationStatus !== 'none')
           setRestoreWarning([...(value.analysis.analysis_mode === 'geometry_only' ? ['已恢复 Geometry 原始分析；未调用模型。'] : ['生成状态：' + value.generationStatus]), ...value.warnings].join('；'))
         })}>加载分析（不调用模型）</button>
