@@ -20,6 +20,7 @@ export type VisionMatch = {
   target: MappingRow['target']; candidates: { part_num: string; color_id: number; valid: boolean; mapping: MappingRow }[]
 }
 export type VisionResult = {
+  prompt_id?: string; prompt_version?: number
   id: string; status: 'processing' | 'complete' | 'failed'; mode: 'inventory' | 'step'
   reference: StepReference | null; model: string; modelVersion?: string; elapsedMs?: number
   provider: 'gemini' | 'openai'; httpStatus?: number | null

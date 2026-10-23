@@ -96,8 +96,4 @@ body { margin: 0; }
 .brick-page .brick-stock-colors label { font-size: 11px; margin: 0; gap: 3px; }
 .brick-page .brick-stock-colors input { padding: 6px 3px; font-size: 12px; }
 
-/* Mode tabs have their own equal columns; unrelated action buttons keep their layout. */
-.brick-design-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; width: 100%; margin: 12px 0; border-bottom: 1px solid #d7dfea; }
-.brick-page .brick-design-tabs > button { width: 100%; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; padding: 10px 8px; background: transparent; color: #65738a; }
-.brick-page .brick-design-tabs > button[aria-selected="true"] { border-bottom-color: #2b58b7; background: #e8f0ff; color: #204794; }
-.brick-page .brick-design-tabs > button:hover:not(:disabled) { background: #edf2fa; }
+.brick-reconstruction { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #d7dfea; }

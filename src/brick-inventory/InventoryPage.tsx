@@ -7,7 +7,7 @@ import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
 import { catalogFeatureParams } from '../brick-vision/catalog-features.mjs'
 import type { ObservationCatalogSearch } from '../brick-vision/types'
-import { InventoryImagePanel } from '../brick-vision/InventoryImagePanel'
+import { PartExplorerRecognition } from './PartExplorerRecognition'
 import { ThreeColumnLayout } from '../three-column-layout'
 import './inventory.css'
 import './workbench.css'
@@ -114,6 +114,7 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
 }
 
 export function InventoryPage() {
+  const [recognitionResultsHost, setRecognitionResultsHost] = useState<HTMLDivElement | null>(null)
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
   const [catalogRequestKey, setCatalogRequestKey] = useState('')
@@ -206,10 +207,10 @@ export function InventoryPage() {
   const snapshot = (): SessionInventory => parseSession({ schema_version: 1, id: id || newSessionId(), name, updated_at: new Date().toISOString(), items })
   return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
         left={<>
-          <header className="inventory-source-header"><div><p className="inventory-eyebrow">DUPLO · MANUAL SELECTION</p><h1>今天玩哪些积木？</h1><p>选择拿出来的积木、颜色和数量，保存为今天的搭建库存。</p></div>
-            <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>Brick Test ↗</a></nav></header>
+          <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
+            <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
           <h2 className="inventory-panel-title">Source</h2>
-    <InventoryImagePanel workspaceHost={visionWorkspaceHost} onSearchCatalog={request => {
+    <PartExplorerRecognition onStrategyChange={() => setCatalogReview(null)} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={request => {
       const params = catalogFeatureParams(request.features)
       setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
       const { color: requestedColor, ...featureParams } = params
@@ -275,9 +276,10 @@ export function InventoryPage() {
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>
         </>}
-        right={<><h2 className="inventory-panel-title">Inventory &amp; Game</h2>
+        right={<><h2 className="inventory-panel-title">Results · Confirmed Parts</h2>
+      <div ref={setRecognitionResultsHost} />
       <aside id="session-inventory" className="inventory-session" aria-label="Session Inventory">
-        <h2>今天的库存 <span>{total} 块</span></h2>
+        <h2>已确认零件 / 库存 <span>{total} 块</span></h2>
         <label>库存名称<input value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true) }} /></label>
         <p>{items.length} 种型号 / 颜色组合 · {dirty ? '尚未保存' : '无未保存修改'}</p>
         <div className="inventory-actions"><button onClick={() => {
@@ -290,6 +292,7 @@ export function InventoryPage() {
             const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'duplo-session-inventory.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
             } catch (e) { setStorageError(message(e)) }
           }}>导出 JSON</button></div>
+        {id && !dirty && <p><a href={import.meta.env.BASE_URL + 'brick-test.html?sessionId=' + encodeURIComponent(id)}>在 Design Lab 使用此零件集合自由创作 →</a></p>}
         <label>重新加载已保存库存<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">选择一份库存</option>{saved.map(s => <option key={s.id} value={s.id}>{s.name} · {new Date(s.updated_at).toLocaleString()}</option>)}</select></label>
         <button disabled={!selected} className="inventory-secondary" onClick={() => void load()}>加载并继续编辑</button>
         <p className="inventory-note">保存在当前浏览器和地址下，不会同步到其他设备。离开前请保存；可导出 JSON 备份。</p>
@@ -304,7 +307,7 @@ export function InventoryPage() {
               <button className="inventory-secondary" onClick={() => changeItems(setQuantity(items, key, 0))}>删除</button></div></li>
         })}</ul>
       </aside>
-          <GamePreparation />
+          <details><summary>可选：从已保存库存准备游戏</summary><GamePreparation /></details>
         </>}
       />
 }

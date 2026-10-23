@@ -1,3 +1,4 @@
+import { reverseFeatureEditor } from '../src/brick-vision/reverse-review.mjs'
 import { reversePrompts } from './brick-reverse-prompts.mjs'
 import { geometrySchema, validateGeometryAnalysis } from './brick-reverse-geometry.mjs'
 // Reverse orchestration only; Catalog, Mapping, geometry and validation stay shared.
@@ -114,7 +115,6 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     },
     async saveReview(body) {
       const analysis = await analyzed(body.analysisId)
-      if (analysis.analysis_mode === 'geometry_only') fail('Geometry Only 保留原始几何观察，不进行 Catalog 审核。')
       const rows = {}
       for (const o of analysis.analysis.observations) {
         const r = body.rows?.[o.id]
@@ -128,7 +128,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
             || hash(readFeatureEditor(r.features)) !== hash(search.features)) fail('候选与当前审核特征不一致。')
           row.searchId = search.id
           if (r.index !== undefined) {
-            if (!Number.isSafeInteger(r.index) || !search.rows[r.index]?.eligible) fail('确认候选无效。')
+            if (!Number.isSafeInteger(r.index) || !search.rows[r.index]?.sourceAllowed) fail('确认候选无效。')
             row.index = r.index
           }
         } else if (r.index !== undefined) fail('确认项缺少候选记录。')
@@ -145,12 +145,11 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       if (analysis.kind !== 'reverse-analysis') fail('请选择 Analysis。')
       if (!analysis.source || !['full', 'today', 'virtual'].includes(analysis.source.kind)) fail('记录缺少有效 Part Source，无法安全恢复。', 422)
       if (analysis.analysis) (analysis.analysis_mode === 'geometry_only' ? validateGeometryAnalysis : validateReverseAnalysis)(analysis.analysis)
-      if (analysis.analysis_mode === 'geometry_only') return { analysis, rows: {}, artifact: null, generationStatus: 'none', updatedAt: null, warnings: [] }
       const warnings = [], rows = {}
       if (!analysis.image?.imageBase64) warnings.push('记录缺少参考图片，无法恢复图片或 BBox。')
       if (!analysis.analysis) warnings.push('记录没有可恢复的完整分析；请查看原始诊断。')
       for (const o of analysis.analysis?.observations || []) rows[o.id] = {
-        features: featureEditor(o), quantity: String(o.quantity), excluded: false, reason: '',
+        features: reverseFeatureEditor(o), quantity: String(o.quantity ?? 1), excluded: false, reason: '',
       }
       let artifact = null, generationStatus = 'none'
       try {
@@ -189,7 +188,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
             if (search.kind !== 'reverse-search' || search.analysisId !== analysisId || search.observationId !== id
               || hash(readFeatureEditor(r.features)) !== hash(search.features)) throw new Error('候选与草稿不一致')
             rows[id].search = search
-            if (r.index !== undefined && search.rows[r.index]?.eligible) rows[id].index = r.index
+            if (r.index !== undefined && search.rows[r.index]?.sourceAllowed) rows[id].index = r.index
           } catch (e) { warnings.push(id + ' 候选恢复失败：' + e.message) }
         }
       } catch (e) {
@@ -245,7 +244,6 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     },
     async search(body) {
       const analysis = await analyzed(body.analysisId)
-      if (analysis.analysis_mode === 'geometry_only') fail('Geometry Only 不执行 Catalog Matching。')
       if (!analysis.analysis.observations.some(o => o.id === body.observationId)) fail('Observation 不存在。')
       const features = validateCatalogFeatures(body.features), params = catalogFeatureParams(features)
       if (!Object.keys(params).length) fail('请至少确认一个特征后检索，未知条件不参与匹配。')
@@ -280,7 +278,6 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     },
     async generate(body) {
       const analysis = await analyzed(body.analysisId)
-      if (analysis.analysis_mode === 'geometry_only') fail('Geometry Only 不生成 Assembly；请新建 Catalog Match 分析。')
       const rules = await loadRules()
       resolveModel(body.model, 'reverse')
       if (body.confirmApproximation !== true || !Array.isArray(body.choices) || !Array.isArray(body.excluded)) fail('请明确确认近似重建与零件选择。')
@@ -321,7 +318,8 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       const input = { ...validateGeneratorInput({ description: 'Approximation：根据参考照片和人工确认零件重建外观相似的合法搭建方案，不宣称精确复原。', inventory }, rules), model: body.model }
       const context = { mode: 'reverse', approximation: true, analysisId: analysis.id, appearance: analysis.analysis.appearance,
         observations: observations.filter(o => confirmations.some(c => c.observationId === o.id)), relations: analysis.analysis.relations.filter(r => confirmations.some(c => c.observationId === r.from) && confirmations.some(c => c.observationId === r.to)),
-        unknowns: analysis.analysis.unknowns, confirmations, excluded: body.excluded,
+        unknowns: analysis.analysis.unknowns, anchors: analysis.analysis.anchors, scale_evidence: analysis.analysis.scale_evidence,
+        image_reference: analysis.image_reference, source: analysis.source, confirmations, excluded: body.excluded,
         instruction: 'Human-confirmed features and identities take precedence over initial visual hypotheses. Reconstruct a visually similar APPROXIMATION from this reference evidence and confirmed parts only. Do not invent hidden parts, do not claim exact reconstruction or verified visual connections. Use the shared geometry rules and validate every build prefix. If evidence cannot be satisfied, do not pretend it is exact.' }
       const generationLock = path.join(directory, analysis.id + '.generation.lock')
       try { await writeFile(generationLock, JSON.stringify({ model: body.model, confirmations, excluded: body.excluded }), { flag: 'wx', mode: 0o600 }) }

@@ -1,4 +1,5 @@
-import { ReverseAssemblyPanel } from './ReverseAssemblyPanel'
+import { ReconstructionPanel } from './ReconstructionPanel'
+import { SavedPartsInput } from './SavedPartsInput'
 import { ModelSelector } from '../model-selector'
 import { AvailableInventory } from './AvailableInventory'
 import { useEffect, useRef, useState } from 'react'
@@ -21,7 +22,6 @@ const endpoint = '/api/brick-test/generate'
 type DesignMode = 'creative' | 'reverse'
 type ModelChoice = { provider: 'gemini' | 'openai'; id: string }
 const modelStorageKey = (mode: DesignMode) => 'story-voice-test-audio:ai-design:model:' + mode
-const modeFromUrl = (): DesignMode => new URL(window.location.href).searchParams.get('mode') === 'reverse' ? 'reverse' : 'creative'
 function readModelChoice(mode: DesignMode): ModelChoice | null {
   try {
     const value = JSON.parse(window.localStorage.getItem(modelStorageKey(mode)) || 'null')
@@ -36,8 +36,6 @@ function resolveModelChoice(choice: ModelChoice | null, models: ModelChoice[], d
 }
 
 export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
-  const [mode, setMode] = useState<DesignMode>(modeFromUrl)
-  const [reverseOpened, setReverseOpened] = useState(() => modeFromUrl() === 'reverse')
   const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
@@ -66,16 +64,6 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const selectedConfigured = !!selectedProvider && !!status?.providers[selectedProvider]
   const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
 
-  function selectMode(next: DesignMode) {
-    if (disabled || running) return
-    const url = new URL(window.location.href)
-    if (url.searchParams.get('mode') !== next) {
-      url.searchParams.set('mode', next)
-      window.history.pushState(window.history.state, '', url)
-    }
-    if (next === 'reverse') setReverseOpened(true)
-    setMode(next)
-  }
   function selectModel(targetMode: DesignMode, id: string) {
     const model = status?.models.find(item => item.id === id)
     if (!model) return
@@ -84,16 +72,6 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     try { window.localStorage.setItem(modelStorageKey(targetMode), JSON.stringify(choice)) }
     catch { /* Storage may be unavailable; keep the selection for this session. */ }
   }
-  useEffect(() => {
-    const syncMode = () => {
-      const next = modeFromUrl()
-      if (next === 'reverse') setReverseOpened(true)
-      setMode(next)
-    }
-    window.addEventListener('popstate', syncMode)
-    return () => window.removeEventListener('popstate', syncMode)
-  }, [])
-
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; requestController.current?.abort() }
@@ -185,31 +163,18 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   }
 
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
-    <div className="brick-design-tabs" role="tablist" aria-label="Design mode" onKeyDown={event => {
-      if (disabled || running || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-      event.preventDefault()
-      const next: DesignMode = event.key === 'Home' ? 'creative' : event.key === 'End' ? 'reverse' : mode === 'creative' ? 'reverse' : 'creative'
-      selectMode(next)
-      event.currentTarget.querySelector<HTMLButtonElement>('#design-tab-' + next)?.focus()
-    }}>
-      <button id="design-tab-creative" type="button" role="tab" aria-controls="design-panel-creative" tabIndex={mode === 'creative' ? 0 : -1}
-        disabled={disabled || running} aria-selected={mode === 'creative'} onClick={() => selectMode('creative')}>Creative</button>
-      <button id="design-tab-reverse" type="button" role="tab" aria-controls="design-panel-reverse" tabIndex={mode === 'reverse' ? 0 : -1}
-        disabled={disabled || running} aria-selected={mode === 'reverse'} onClick={() => selectMode('reverse')}>Reverse</button>
-    </div>
-    <div id="design-panel-reverse" role="tabpanel" aria-labelledby="design-tab-reverse" hidden={mode !== 'reverse'}>{reverseOpened && <ReverseAssemblyPanel inventory={inventory}
-      onQuantity={(row, quantity) => setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))}
-      models={status?.models || []} model={reverseModel} onModel={id => selectModel('reverse', id)} disabled={disabled}
+    <ReconstructionPanel models={status?.models || []} model={reverseModel} onModel={id => selectModel('reverse', id)} disabled={disabled || running}
       onBusy={value => { setRunning(value); onGeneratingChange(value) }} onComplete={async value => {
         const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
           request: { model: value.model || reverseModel, description: value.requestInput?.description || 'Reverse Approximation', inventory: value.requestInput?.inventory || [] },
           httpStatus: value.httpStatus ?? null, result: value }
         setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
         if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
-      }} />}</div>
-    <div id="design-panel-creative" role="tabpanel" aria-labelledby="design-tab-creative" hidden={mode !== 'creative'}>
+      }} />
+    <div className="brick-creative-design">
     <h2>AI Design · 虚拟库存 → 造型</h2>
     <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
+    <SavedPartsInput disabled={disabled || running} onInventory={setInventory} />
     <form onSubmit={generate}>
       <fieldset disabled={disabled || running}>
         <AvailableInventory inventory={inventory} total={total} onQuantity={(row, quantity) => {

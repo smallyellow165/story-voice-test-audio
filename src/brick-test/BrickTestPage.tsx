@@ -192,7 +192,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     <header className="brick-header">
       <div><span className="brick-eyebrow">PLAY LAB / 03</span><h1>DUPLO AI Design Lab</h1><p>从你的库存出发，生成造型，再一步一步搭起来。</p></div>
       <span className="brick-badge">LDraw · AI Generator V3</span>
-      <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>手动库存 Catalog ↗</a>
+      <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>LEGO Part Explorer ↗</a>
     </header>
     <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next) => commit(next, true)} />
       </>}

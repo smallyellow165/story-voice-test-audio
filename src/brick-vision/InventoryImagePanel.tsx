@@ -21,7 +21,8 @@ import './review.css'
 type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
   features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual' }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
-export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }: {
+export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy }: {
+  active?: boolean; onBusy?(busy: boolean): void
   onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null
   onSearchCatalog?(request: ObservationCatalogSearch): void
 }) {
@@ -31,6 +32,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
   const [history, setHistory] = useState<{ id: string; createdAt: string; provider: string; model: string; image: VisionResult['image']; originalName?: string }[]>([])
   const [historyId, setHistoryId] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [applied, setApplied] = useState(false)
+  useEffect(() => { onBusy?.(busy) }, [busy, onBusy])
   const [result, setResult] = useState<VisionResult | null>(null), [rows, setRows] = useState<DraftRow[]>([])
   const [validation, setValidation] = useState<unknown>(null)
   const [activeId, setActiveId] = useState('')
@@ -177,9 +179,9 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     const row = [...(tableHost.current?.querySelectorAll<HTMLElement>('[data-observation-id]') || [])].find(r => r.dataset.observationId === id)
     row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
-  const review = <div className="inventory-vision-review">
+  const review = <div className="inventory-vision-review" hidden={!active}>
     {result && <>
-      <p>{result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
+      <p>{result.prompt_id || '历史记录未标注 Prompt'} {result.prompt_version ? 'v' + result.prompt_version : ''} · {result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
         <p>编辑视觉特征后，逐行检索下方 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
@@ -231,7 +233,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog }:
     </>}
   </div>
   return <section className="inventory-catalog inventory-source" id="inventory-image">
-    <h2>Inventory Image Recognition</h2>
+    <h2>Loose Parts · Recognition</h2>
     <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
     <ServerImagePicker disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
       catalogEpoch.current++

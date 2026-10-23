@@ -92,3 +92,6 @@
 .inventory-feature-evidence { font-size: 11px; }
 .inventory-feature-evidence ul { padding-left: 16px; margin: 6px 0; }
 .inventory-feature-evidence li { margin-bottom: 6px; overflow-wrap: anywhere; }
+
+.inventory-workbench .brick-reverse .brick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.inventory-workbench .brick-reverse .brick-help { font-size: 12px; line-height: 1.5; }
