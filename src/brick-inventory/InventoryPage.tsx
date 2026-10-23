@@ -8,7 +8,8 @@ import { addItem, itemKey, MAX_QUANTITY, newSessionId, parseSession, setQuantity
 import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
-import { catalogFeatureParams, catalogSearchParams } from '../brick-vision/catalog-features.mjs'
+import { observationCatalogFields, catalogSearchParams } from '../brick-vision/catalog-features.mjs'
+import type { CatalogSearchFields } from '../brick-vision/catalog-features.mjs'
 import type { ObservationCatalogSearch } from '../brick-vision/types'
 import { PartExplorerRecognition } from './PartExplorerRecognition'
 import { ThreeColumnLayout } from '../three-column-layout'
@@ -66,13 +67,14 @@ function Swatch({ color }: { color?: Color }) {
   return <span className="inventory-swatch" aria-hidden style={{ background: color && /^[0-9a-f]{6}$/i.test(color.rgb) ? `#${color.rgb}` : '#eee' }} />
 }
 function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing = false, onAdd }: {
-  part: Part; image?: Media; initialColor: string; initialQuantity?: string; reviewing?: boolean; onAdd: (item: InventoryItem) => void
+  part: Part; image?: Media; initialColor: string; initialQuantity?: string; reviewing?: boolean; onAdd: (item: InventoryItem) => void | Promise<void>
 }) {
   const [color, setColor] = useState(part.colors.find(c => String(c.id) === initialColor)?.id ?? (reviewing ? undefined : part.colors[0]?.id))
   const [quantity, setAmount] = useState(initialQuantity)
   const [specificImage, setSpecificImage] = useState<Media | undefined>()
   const [specific, setSpecific] = useState(false)
   const [error, setError] = useState('')
+  const [adding, setAdding] = useState(false)
   const request = useRef<AbortController | null>(null)
   useEffect(() => () => request.current?.abort(), [])
   const showColor = async () => {
@@ -112,16 +114,17 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
       </select></span></label>
     <button type="button" className="inventory-secondary" title="查看所选颜色图片" disabled={color === undefined || specificImage?.status === 'loading'} onClick={() => void showColor()}>查看图片</button>
     <div className="inventory-add"><label>数量<input type="number" min="1" max={MAX_QUANTITY} step="1" value={quantity} onChange={event => setAmount(event.target.value)} /></label>
-      <button type="button" disabled={color === undefined} onClick={() => {
-        try { if (color !== undefined) { onAdd({ part_num: part.part_num, color_id: color, quantity: Number(quantity) }); setError('') } }
+      <button type="button" disabled={color === undefined || adding} onClick={async () => {
+        setAdding(true)
+        try { if (color !== undefined) { await onAdd({ part_num: part.part_num, color_id: color, quantity: Number(quantity) }); setError('') } }
         catch (e) { setError(message(e)) }
+        finally { setAdding(false) }
       }}>{reviewing ? '确认候选' : '加入库存'}</button></div></div>
   </article>
 }
 
 export function InventoryPage() {
   const [geometryHost, setGeometryHost] = useState<HTMLDivElement | null>(null)
-  const [candidatePortalHost, setCandidatePortalHost] = useState<HTMLDivElement | null>(null)
   const [hasGeometry, setHasGeometry] = useState(false)
   const [rightTab, setRightTab] = useState<'catalog' | 'confirmed'>('catalog')
   const [recognitionResultsHost, setRecognitionResultsHost] = useState<HTMLDivElement | null>(null)
@@ -129,6 +132,7 @@ export function InventoryPage() {
   const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
   const [catalogRequestKey, setCatalogRequestKey] = useState('')
   const [resultReviewKey, setResultReviewKey] = useState('')
+  const searchRevision = useRef(0)
   const catalogHost = useRef<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState<Record<string, string>>({})
@@ -202,6 +206,32 @@ export function InventoryPage() {
     return () => controller.abort()
   }, [submittedQuery, page, refresh, catalogRequestKey])
 
+  function startCatalogRequest(query: Record<string, string>, review: ObservationCatalogSearch | null, nextPage = 1) {
+    const revision = String(++searchRevision.current)
+    setCatalogReview(review); setCatalogRequestKey(revision)
+    setResult(null); setResultReviewKey(''); setLoading(true); setPage(nextPage)
+    setSubmittedQuery(query)
+  }
+  function submitCatalog(fields: CatalogSearchFields, review: ObservationCatalogSearch | null) {
+    // Submit the complete snapshot, not asynchronously updated form state.
+    startCatalogRequest(catalogSearchParams(fields), review)
+  }
+  function openObservationCatalog(request: ObservationCatalogSearch) {
+    const fields = observationCatalogFields(request.features)
+    if (request.method === 'part' || request.method === 'manual') fields.search = request.partNumber || ''
+    setSearch(fields.search); setCategory(fields.category); setColorFilter(fields.color)
+    setFeatureSize(fields.size); setFeatureShape(fields.shape); setFeaturePrint(fields.printed)
+    setRequireLdraw(fields.requireLdraw); setPartialDimensions(fields.axes)
+    setRightTab('catalog')
+    submitCatalog(fields, request)
+    requestAnimationFrame(() => catalogHost.current?.scrollIntoView({ block: 'start' }))
+  }
+  function exitObservationCatalog() {
+    // Invalidate any outstanding result/confirmation before returning to browsing.
+    submitCatalog({ search, category, color: colorFilter, size: featureSize, shape: featureShape,
+      printed: featurePrint, requireLdraw, axes: partialDimensions }, null)
+  }
+
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
   const canReplace = () => !dirty || window.confirm('当前库存尚未保存，确定放弃这些修改吗？')
@@ -226,19 +256,7 @@ export function InventoryPage() {
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
             <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
           <h2 className="inventory-panel-title">Source</h2>
-    <PartExplorerRecognition geometryHost={geometryHost} catalogHost={candidatePortalHost} onGeometryPresence={setHasGeometry} onShowCatalog={target => { setRightTab('catalog'); requestAnimationFrame(() => (target === 'search' ? catalogHost.current : candidatePortalHost)?.scrollIntoView({ block: 'start' })) }} onStrategyChange={() => setCatalogReview(null)} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={request => {
-      setRightTab('catalog')
-      const params = catalogFeatureParams(request.features)
-      setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
-      const { color: requestedColor, ...featureParams } = params
-      setSubmittedQuery(request.method === 'part' ? {} : { ...params, search: request.method === 'manual' ? request.partNumber || '' : '' })
-      setRequireLdraw(false)
-      const completeSize = request.features.size ?? ([request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].every(n => n != null) ? [request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].join('×') : '')
-      setPartialDimensions(completeSize ? {} : Object.fromEntries(Object.entries(featureParams).filter(([key]) => ['width', 'depth', 'height'].includes(key))))
-      setSearch(request.method === 'features' || !request.method ? '' : request.partNumber || ''); setFeatureSize(completeSize); setFeatureShape(request.features.shape ?? '')
-      setFeaturePrint(request.features.print); setColorFilter(requestedColor ?? ''); setCategory(''); setPage(1)
-      requestAnimationFrame(() => catalogHost.current?.scrollIntoView({ block: 'start' }))
-    }} onApply={recognized => {
+    <PartExplorerRecognition geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={openObservationCatalog} onApply={recognized => {
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
       changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
     }} />
@@ -257,17 +275,17 @@ export function InventoryPage() {
             <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>Confirmed Parts · {total}</button>
           </div>
           <div id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
-            <div ref={setCandidatePortalHost} />
       <section ref={catalogHost} className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
         {catalogReview && <p role="status">为 {catalogReview.observationId} 选择候选：确认后填写审核行，不直接加入库存。
-          <button type="button" onClick={() => setCatalogReview(null)}>退出候选选择</button></p>}
+          <button type="button" onClick={exitObservationCatalog}>退出关联，普通 Catalog Search</button></p>}
         <div className="catalog-filter-area">
           <div className="catalog-filter-grid">
         <form id="catalog-search" className="catalog-filter-fields" aria-label="Catalog Search" onSubmit={e => {
-          e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setPage(1)
-          setSubmittedQuery(catalogSearchParams({ search, category, color: colorFilter, shape: featureShape, printed: featurePrint,
-            requireLdraw, size: featureSize, axes: partialDimensions }))
+          e.preventDefault()
+          submitCatalog({ search, category, color: colorFilter, shape: featureShape, printed: featurePrint,
+            requireLdraw, size: featureSize, axes: partialDimensions },
+            catalogReview ? { ...catalogReview, method: 'manual' } : null)
         }}>
           <label className="inventory-search">Part Number / Name<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
           <label>Category / 分类<select value={category} onChange={e => setCategory(e.target.value)}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -290,7 +308,7 @@ export function InventoryPage() {
         {imageError && <p role="alert" className="inventory-error">{imageError}</p>}
         {loading && <p role="status">正在读取 Catalog…</p>}
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
-          <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
+          <button disabled={page <= 1} onClick={() => startCatalogRequest(submittedQuery, catalogReview, page - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => startCatalogRequest(submittedQuery, catalogReview, page + 1)}>下一页</button></div>
           {result.geometry_report && <div className="inventory-feature-summary">
             <p>几何条件 Unknown 排除 {result.geometry_report.unknown_total}；尺寸不符排除 {result.geometry_report.mismatched_total}（可能重叠）。Mapping 来自 rb_part_mappings；Unknown 不代表 Catalog 中不存在该规格。</p>
             <details><summary>几何排除原因与示例（最多 12 项）</summary><pre>{JSON.stringify(result.geometry_report, null, 2)}</pre></details>
@@ -299,12 +317,14 @@ export function InventoryPage() {
             <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}
           {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${submittedQuery.color ?? ''}`} part={part} image={images[part.part_num]} initialColor={submittedQuery.color ?? ''} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
-            onAdd={item => {
+            onAdd={async item => {
               if (catalogReview) {
-                if (resultReviewKey !== catalogReview.key || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
-                if (!part.colors.some(c => c.id === item.color_id) || (catalogReview.features.color_id !== null && item.color_id !== catalogReview.features.color_id)) throw new Error('所选颜色不符合本次检索条件；请修改 Observation 特征后重新检索。')
+                if (resultReviewKey !== catalogRequestKey || String(searchRevision.current) !== catalogRequestKey || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
+                if (!part.colors.some(c => c.id === item.color_id) || (submittedQuery.color !== undefined && String(item.color_id) !== submittedQuery.color)) throw new Error('所选颜色不符合本次检索条件；请按本次提交的颜色条件选择或重新搜索。')
                 addItem([], item)
-                catalogReview.onChoose(item, { part, criteria: result.criteria })
+                const revision = searchRevision.current
+                await catalogReview.onChoose(item, { part, criteria: result.criteria, query: submittedQuery }, () => searchRevision.current === revision)
+                if (searchRevision.current !== revision) return
                 setCatalogReview(null); visionWorkspaceHost?.scrollIntoView({ block: 'start' }); return
               }
               const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}

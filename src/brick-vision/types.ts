@@ -15,7 +15,7 @@ export type ObservationCatalogSearch = {
   method?: 'features' | 'part' | 'manual'; partNumber?: string
   key: string; observationId: string; features: CatalogQuery; quantity: string
   onResults?(count: number | null): void
-  onChoose(item: InventoryItem, evidence: unknown): void
+  onChoose(item: InventoryItem, evidence: unknown, isCurrent: () => boolean): void | Promise<void>
 }
 export type VisionMatch = {
   observation: Observation; status: 'matched' | 'uncertain'; reason: string; item: InventoryItem | null

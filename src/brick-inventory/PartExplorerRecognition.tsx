@@ -10,8 +10,8 @@ import type { InventoryRow } from '../brick-test/design-types'
 
 type Strategy = 'loose' | 'geometry_only' | 'catalog_match'
 const preferenceKey = 'story-voice-test-audio:ai-design:model:reverse'
-export function PartExplorerRecognition({ workspaceHost, geometryHost, catalogHost, onGeometryPresence, onShowCatalog, resultsHost, onApply, onSearchCatalog, onStrategyChange }: {
-  geometryHost: HTMLElement | null; catalogHost: HTMLElement | null; onGeometryPresence(value: boolean): void; onShowCatalog(target?: 'search'): void
+export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, resultsHost, onApply, onSearchCatalog, onStrategyChange }: {
+  geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void
   workspaceHost: HTMLElement | null; resultsHost: HTMLElement | null
   onStrategyChange(): void; onApply(items: InventoryItem[]): void; onSearchCatalog(request: ObservationCatalogSearch): void
 }) {
@@ -60,7 +60,7 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, catalogHo
           try { localStorage.setItem(preferenceKey, JSON.stringify({ provider: selected.provider, id })) } catch { /* Session selection remains. */ }
         }} disabled={false} onBusy={setBusy} onDirty={setDirty}
         analysisMode={assembledMode} onAnalysisMode={mode => { setAssembledMode(mode); setStrategy(mode); onStrategyChange() }}
-        active={strategy !== 'loose'} geometryHost={geometryHost} catalogHost={catalogHost} onGeometryPresence={onGeometryPresence} onShowCatalog={onShowCatalog} workspaceHost={workspaceHost} resultsHost={resultsHost} onApply={onApply} />}
+        active={strategy !== 'loose'} geometryHost={geometryHost} onGeometryPresence={onGeometryPresence} onSearchCatalog={onSearchCatalog} workspaceHost={workspaceHost} resultsHost={resultsHost} onApply={onApply} />}
     </div>
   </>
 }

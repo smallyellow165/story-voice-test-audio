@@ -89,3 +89,14 @@ export function validateCatalogQuery(value) {
   if (axes && value.size !== null) throw new Error('请勿混用 Size 与独立三维查询字段。')
   return value
 }
+
+// Build a fresh form snapshot; never inherit fields from a previous search.
+export function observationCatalogFields(features) {
+  const params = catalogFeatureParams(features)
+  const dimensions = [params.width, params.depth, params.height]
+  const size = params.size || (dimensions.every(Boolean) ? dimensions.join('×')
+    : params.width && params.depth && !params.height ? params.width + '×' + params.depth : '')
+  return { search: '', category: '', color: params.color || '', size,
+    shape: params.shape || '', printed: params.printed || 'unknown', requireLdraw: false,
+    axes: size ? {} : Object.fromEntries(['width', 'depth', 'height'].filter(k => params[k]).map(k => [k, params[k]])) }
+}

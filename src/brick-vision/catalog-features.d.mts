@@ -22,3 +22,6 @@ export function editDimension(editor: FeatureEditor, key: 'width_studs' | 'depth
 export function validateReviewDimensions(editor: FeatureEditor): void
 
 export function validateCatalogQuery(value: unknown): CatalogQuery
+
+export type CatalogSearchFields = { search: string; category: string; color: string; size: string; shape: string; printed: string; requireLdraw: boolean; axes: Record<string, string> }
+export function observationCatalogFields(features: CatalogQuery): CatalogSearchFields
