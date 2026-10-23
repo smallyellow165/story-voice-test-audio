@@ -1,3 +1,4 @@
+import { ExplorerWorkspace } from './ExplorerWorkspace'
 import { CatalogPhoto as Photo } from '../catalog-photo'
 import type { Media } from '../catalog-photo'
 import { useEffect, useRef, useState } from 'react'
@@ -114,6 +115,10 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
 }
 
 export function InventoryPage() {
+  const [geometryHost, setGeometryHost] = useState<HTMLDivElement | null>(null)
+  const [candidatePortalHost, setCandidatePortalHost] = useState<HTMLDivElement | null>(null)
+  const [hasGeometry, setHasGeometry] = useState(false)
+  const [rightTab, setRightTab] = useState<'catalog' | 'confirmed'>('catalog')
   const [recognitionResultsHost, setRecognitionResultsHost] = useState<HTMLDivElement | null>(null)
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
@@ -168,9 +173,15 @@ export function InventoryPage() {
     if (colorFilter) params.color = colorFilter
     void (async () => {
       try {
-        const data = await api<Results>(featureQuery ? 'candidates' : 'parts', params, controller.signal)
+        const exact = catalogReview?.method === 'part' ? catalogReview.partNumber : undefined
+        const selection = exact ? await api<{ items: Part[] }>('selection', { part_nums: exact }, controller.signal) : null
+        if (selection && (!Array.isArray(selection.items) || !selection.items.every(p => Array.isArray(p.colors)))) throw new Error('Catalog selection 缺少有效型号或颜色数据。')
+        const exactItems = selection?.items.filter(p => p.part_num === exact)
+        const data = exactItems ? { items: exactItems, total: exactItems.length, page: 1, page_size: 24 } as Results
+          : await api<Results>(featureQuery ? 'candidates' : 'parts', params, controller.signal)
         if (controller.signal.aborted) return
         setResult(data); setResultReviewKey(catalogRequestKey); setLoading(false)
+        catalogReview?.onResults?.(data.items.length)
         setNames(old => ({ ...old, ...Object.fromEntries(data.items.map(p => [p.part_num, p.name])) }))
         if (!data.items.length) return
         try {
@@ -181,7 +192,7 @@ export function InventoryPage() {
             setImageError(message(e)); setImages(Object.fromEntries(data.items.map(p => [p.part_num, { status: 'api_error', url: null }])))
           }
         }
-      } catch (e) { if (!controller.signal.aborted) { setCatalogError(message(e)); setLoading(false) } }
+      } catch (e) { if (!controller.signal.aborted) { setCatalogError(message(e)); setLoading(false); catalogReview?.onResults?.(null) } }
     })()
     return () => controller.abort()
   }, [query, featureQuery, category, colorFilter, page, refresh, catalogRequestKey])
@@ -208,31 +219,41 @@ export function InventoryPage() {
   return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
         left={<>
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
-            <nav className="inventory-navigation"><a href="#session-inventory">今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
+            <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
           <h2 className="inventory-panel-title">Source</h2>
-    <PartExplorerRecognition onStrategyChange={() => setCatalogReview(null)} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={request => {
+    <PartExplorerRecognition geometryHost={geometryHost} catalogHost={candidatePortalHost} onGeometryPresence={setHasGeometry} onShowCatalog={target => { setRightTab('catalog'); requestAnimationFrame(() => (target === 'search' ? catalogHost.current : candidatePortalHost)?.scrollIntoView({ block: 'start' })) }} onStrategyChange={() => setCatalogReview(null)} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={request => {
+      setRightTab('catalog')
       const params = catalogFeatureParams(request.features)
       setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
       const { color: requestedColor, ...featureParams } = params
-      setFeatureQuery(featureParams); setFeatureSize(request.features.size ?? ''); setFeatureShape(request.features.shape ?? '')
+      setFeatureQuery(request.method === 'part' || request.method === 'manual' ? null : featureParams); setQuery(''); setSearch(request.partNumber || ''); setFeatureSize(request.features.size ?? ''); setFeatureShape(request.features.shape ?? '')
       setFeaturePrint(request.features.print); setColorFilter(requestedColor ?? ''); setCategory(''); setPage(1)
-      catalogHost.current?.scrollIntoView({ block: 'start' })
+      requestAnimationFrame(() => catalogHost.current?.scrollIntoView({ block: 'start' }))
     }} onApply={recognized => {
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
       changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
     }} />
     <a href={`${import.meta.env.BASE_URL}brick-vision.html`}>打开独立 Step Image Confirmation 测试页 ↗</a>
         </>}
-        center={<><h2 className="inventory-panel-title">Workspace</h2>
-          <section className="inventory-vision-workspace" aria-label="图片识别审核"><h2>图片识别 · 审核与编辑</h2>
-            <p className="inventory-note">从左栏上传或加载历史结果，在此审核；也可直接使用下方 Catalog。</p>
-            <div ref={setVisionWorkspaceHost} />
-          </section>
+        center={<ExplorerWorkspace hasGeometry={hasGeometry} matchingHost={setVisionWorkspaceHost} geometryHost={setGeometryHost} />}
+        right={<section className="explorer-right">
+          <div className="explorer-right-tabs" role="tablist" aria-label="Catalog 与确认零件" onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const next = event.key === 'Home' ? 'catalog' : event.key === 'End' ? 'confirmed' : rightTab === 'catalog' ? 'confirmed' : 'catalog'
+            setRightTab(next)
+            event.currentTarget.querySelector<HTMLButtonElement>('#explorer-tab-' + next)?.focus()
+          }}>
+            <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>Catalog Search</button>
+            <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>Confirmed Parts · {total}</button>
+          </div>
+          <div id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
+            <div ref={setCandidatePortalHost} />
       <section ref={catalogHost} className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>找积木</h2>
         {catalogReview && <p role="status">为 {catalogReview.observationId} 选择候选：确认后填写审核行，不直接加入库存。
           <button type="button" onClick={() => setCatalogReview(null)}>退出候选选择</button></p>}
-        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setCatalogReview(null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
+        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
           <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
           <button type="submit">搜索</button>
           <label>分类<select value={category} onChange={e => { setCatalogReview(null); setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -265,7 +286,7 @@ export function InventoryPage() {
           {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
             onAdd={item => {
               if (catalogReview) {
-                if (resultReviewKey !== catalogReview.key || part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
+                if (resultReviewKey !== catalogReview.key || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
                 if (!part.colors.some(c => c.id === item.color_id) || (catalogReview.features.color_id !== null && item.color_id !== catalogReview.features.color_id)) throw new Error('所选颜色不符合本次检索条件；请修改 Observation 特征后重新检索。')
                 addItem([], item)
                 catalogReview.onChoose(item, { part, criteria: result.criteria })
@@ -275,8 +296,8 @@ export function InventoryPage() {
         </>}
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>
-        </>}
-        right={<><h2 className="inventory-panel-title">Results · Confirmed Parts</h2>
+          </div>
+          <div id="explorer-confirmed" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-confirmed" hidden={rightTab !== 'confirmed'}>
       <div ref={setRecognitionResultsHost} />
       <aside id="session-inventory" className="inventory-session" aria-label="Session Inventory">
         <h2>已确认零件 / 库存 <span>{total} 块</span></h2>
@@ -308,6 +329,7 @@ export function InventoryPage() {
         })}</ul>
       </aside>
           <details><summary>可选：从已保存库存准备游戏</summary><GamePreparation /></details>
-        </>}
+          </div>
+        </section>}
       />
 }

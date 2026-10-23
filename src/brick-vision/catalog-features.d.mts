@@ -3,7 +3,7 @@ export type CatalogFeatures = {
   shape: 'brick' | 'curved_top' | 'arch' | 'slope' | null
   print: 'yes' | 'no' | 'unknown'
 }
-export type FeatureEditor = { color: string; size: string; shape: string; print: string }
+export type FeatureEditor = { color: string; size: string; shape: string; print: string; width_studs?: string; depth_studs?: string; height_brick_units?: string; partNumber?: string }
 export const catalogShapes: readonly NonNullable<CatalogFeatures['shape']>[]
 export const catalogPrints: readonly CatalogFeatures['print'][]
 export const visionFeatureProperties: Record<string, unknown>
@@ -15,3 +15,6 @@ export function createObservationDraft(observation: Partial<CatalogFeatures> & {
   id: string; selected: boolean; part: string; color: string; quantity: string
   features: FeatureEditor; confirmation: null
 }
+
+export function editDimension(editor: FeatureEditor, key: 'width_studs' | 'depth_studs' | 'height_brick_units', value: string): FeatureEditor
+export function validateReviewDimensions(editor: FeatureEditor): void

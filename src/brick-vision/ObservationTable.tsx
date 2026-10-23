@@ -1,16 +1,17 @@
 import type { ReactNode, Ref } from 'react'
-import { catalogShapes, catalogPrints } from './catalog-features.mjs'
+import { catalogShapes, catalogPrints, editDimension } from './catalog-features.mjs'
 import type { FeatureEditor } from './catalog-features.mjs'
 import './review.css'
 
 /** Presentation only. Callers retain their own drafts, selection and operations. */
-export function ObservationTable({ columns, children, hostRef }: {
+export function ObservationTable({ columns, children, hostRef, stickyAction = false }: {
   columns: readonly { label: string; width: number }[]
+  stickyAction?: boolean
   children: ReactNode
   hostRef?: Ref<HTMLDivElement>
 }) {
   return <div className="vision-observation-scroll" ref={hostRef} tabIndex={0} role="region" aria-label="Observation 审核表，可横向滚动">
-    <table className="vision-observation-table" style={{ minWidth: columns.reduce((sum, c) => sum + c.width, 0) }}>
+    <table className={"vision-observation-table" + (stickyAction ? " vision-matching-table" : "")} style={{ minWidth: columns.reduce((sum, c) => sum + c.width, 0) }}>
       <colgroup>{columns.map((c, i) => <col key={i} style={{ width: c.width }} />)}</colgroup>
       <thead><tr>{columns.map(c => <th key={c.label} scope="col">{c.label}</th>)}</tr></thead>
       <tbody>{children}</tbody>
@@ -23,10 +24,12 @@ export function ObservationFeatureCells({ id, features, disabled, onChange }: {
   id: string; features: FeatureEditor; disabled: boolean; onChange(features: FeatureEditor): void
 }) {
   return <>
-    <td><input aria-label={id + ' 特征 RB Color ID'} inputMode="numeric" placeholder="未知" value={features.color} disabled={disabled}
+    {(['width_studs', 'depth_studs', 'height_brick_units'] as const).map(key => <td key={key}>
+      <input aria-label={id + ' ' + key} type="number" min="0" step="any" placeholder="Unknown"
+        value={features[key] ?? ''} disabled={disabled} onChange={e => onChange(editDimension(features, key, e.target.value))} />
+    </td>)}
+    <td><input aria-label={id + ' 特征 RB Color ID'} inputMode="numeric" placeholder="Unknown" value={features.color} disabled={disabled}
       onChange={e => onChange({ ...features, color: e.target.value })} /></td>
-    <td><input aria-label={id + ' 整体尺寸'} placeholder="未知" value={features.size} disabled={disabled}
-      onChange={e => onChange({ ...features, size: e.target.value })} /></td>
     <td><select aria-label={id + ' Shape'} value={features.shape} disabled={disabled}
       onChange={e => onChange({ ...features, shape: e.target.value })}>
       <option value="">未知</option>{catalogShapes.map(shape => <option key={shape} value={shape}>{shape}</option>)}</select></td>

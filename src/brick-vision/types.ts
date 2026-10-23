@@ -12,7 +12,9 @@ export type Observation = CatalogFeatures & {
 }
 
 export type ObservationCatalogSearch = {
+  method?: 'features' | 'part' | 'manual'; partNumber?: string
   key: string; observationId: string; features: CatalogFeatures; quantity: string
+  onResults?(count: number | null): void
   onChoose(item: InventoryItem, evidence: unknown): void
 }
 export type VisionMatch = {

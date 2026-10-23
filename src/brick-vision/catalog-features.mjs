@@ -30,10 +30,12 @@ export function catalogFeatureParams(features) {
 export function featureEditor(observation) {
   // Missing fields remain empty. Never derive them from old IDs or Evidence.
   return { color: observation.color_id == null ? '' : String(observation.color_id),
-    size: observation.size ?? '', shape: observation.shape ?? '', print: observation.print ?? 'unknown' }
+    size: observation.size ?? '', width_studs: observation.size?.split(/[x×]/)[0] ?? '', depth_studs: observation.size?.split(/[x×]/)[1] ?? '', height_brick_units: '', partNumber: '', shape: observation.shape ?? '', print: observation.print ?? 'unknown' }
 }
 
 export function readFeatureEditor(editor) {
+  validateReviewDimensions(editor)
+  if (Boolean(editor.width_studs) !== Boolean(editor.depth_studs)) throw new Error('Catalog 二维尺寸筛选需要同时填写 Width 和 Depth；单一水平维度尚未支持。')
   const color = editor.color.trim()
   if (color && !/^\d+$/.test(color)) throw new Error('特征颜色请输入非负整数 RB Color ID，未知请留空。')
   const features = { color_id: color ? Number(color) : null, size: editor.size.trim() || null,
@@ -44,4 +46,20 @@ export function readFeatureEditor(editor) {
 export function createObservationDraft(observation) {
   return { id: observation.id, selected: false, part: '', color: '', quantity: String(observation.quantity),
     features: featureEditor(observation), confirmation: null }
+}
+
+// Review dimensions are independent of the immutable Vision observation.
+export function editDimension(editor, key, value) {
+  const next = { ...editor, [key]: value }
+  next.size = next.width_studs && next.depth_studs ? next.width_studs + 'x' + next.depth_studs : ''
+  return next
+}
+export function validateReviewDimensions(editor) {
+  if (editor.partNumber != null && (typeof editor.partNumber !== 'string' || editor.partNumber.length > 100))
+    throw new Error('Part Number 草稿格式无效。')
+  for (const key of ['width_studs', 'depth_studs', 'height_brick_units']) {
+    const value = editor[key]
+    if (value != null && value !== '' && (typeof value !== 'string' || !Number.isFinite(Number(value)) || Number(value) <= 0))
+      throw new Error('尺寸须为正数（可含小数），Unknown 请留空。')
+  }
 }

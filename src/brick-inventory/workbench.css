@@ -95,3 +95,36 @@
 
 .inventory-workbench .brick-reverse .brick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .inventory-workbench .brick-reverse .brick-help { font-size: 12px; line-height: 1.5; }
+
+/* Bounded nested work areas; keep Source's existing scrolling unchanged. */
+.inventory-workbench .three-column-layout__panel:has(> .three-column-layout__content > .explorer-workspace),
+.inventory-workbench .three-column-layout__panel:has(> .three-column-layout__content > .explorer-right) { overflow: hidden; scrollbar-gutter: auto; }
+.inventory-workbench .three-column-layout__content:has(> .explorer-workspace),
+.inventory-workbench .three-column-layout__content:has(> .explorer-right) { height: 100%; min-height: 0; overflow: hidden; }
+.explorer-workspace, .explorer-right { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.explorer-workspace > .inventory-panel-title, .explorer-right-tabs { flex: 0 0 auto; }
+.explorer-workspace-split { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.explorer-workspace-pane { height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.explorer-pane-scroll, .explorer-right-scroll { height: 100%; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.explorer-right-scroll { flex: 1; }
+.explorer-pane-scroll[hidden], .explorer-right-scroll[hidden] { display: none; }
+.explorer-workspace-handle { height: 9px; display: flex; align-items: center; justify-content: center; background: #e4ece7; cursor: row-resize; touch-action: none; }
+.explorer-workspace-handle span { width: 36px; height: 3px; border-radius: 3px; background: #8da89c; }
+.explorer-workspace-handle:hover, .explorer-workspace-handle:focus-visible, .explorer-workspace-handle[data-separator="active"] { background: #bcd3c7; outline: 2px solid #357261; outline-offset: -2px; }
+.explorer-right-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; }
+.inventory-workbench .explorer-right-tabs > button { width: 100%; border-radius: 0; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #48645a; }
+.inventory-workbench .explorer-right-tabs > button[aria-selected="true"] { background: #e7f2ed; border-bottom-color: #357261; color: #214e3f; }
+.inventory-workbench .explorer-right .inventory-grid { overflow-x: visible; }
+.inventory-workbench .explorer-right .inventory-part-row { min-width: 0; grid-template-columns: 48px minmax(0, 1fr); align-items: start; row-gap: 8px; }
+.inventory-workbench .explorer-right .inventory-part-identity { overflow-wrap: anywhere; }
+.inventory-workbench .explorer-right .inventory-part-identity h3,
+.inventory-workbench .explorer-right .inventory-part-identity small,
+.inventory-workbench .explorer-right .inventory-part-identity a { white-space: normal; }
+.inventory-workbench .explorer-right .inventory-part-controls { display: flex; flex-wrap: wrap; grid-column: 1 / -1; gap: 6px; min-width: 0; }
+.inventory-workbench .explorer-right .inventory-part-controls > label { flex: 1 1 120px; }
+.inventory-workbench .explorer-right .inventory-part-controls .inventory-add { display: flex; flex: 1 1 140px; align-items: end; gap: 6px; min-width: 0; }
+.inventory-workbench .explorer-right .inventory-add label { flex: 1; min-width: 0; }
+.inventory-workbench .explorer-right .inventory-part-controls button { white-space: normal; max-width: 100%; }
+.inventory-workbench .explorer-right .inventory-filters, .inventory-workbench .explorer-right .inventory-pagination { flex-wrap: wrap; min-width: 0; }
+.inventory-workbench .explorer-right .inventory-filters > label { min-width: 0; }
+.inventory-workbench .explorer-right pre { max-width: 100%; overflow: auto; }

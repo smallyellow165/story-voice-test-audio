@@ -13,13 +13,13 @@ import { ObservationPreview } from './ObservationPreview'
 import { ObservationActions } from './ObservationActions'
 import { ObservationModal } from './ObservationModal'
 import { bboxStyle } from './observation-view.mjs'
-import { catalogFeatureParams, createObservationDraft, readFeatureEditor } from './catalog-features.mjs'
+import { catalogFeatureParams, createObservationDraft, readFeatureEditor, validateReviewDimensions } from './catalog-features.mjs'
 import { uniqueCatalogIdentity, hasConfirmedIdentity, completeCatalogIdentity } from './catalog-autofill.mjs'
 import type { FeatureEditor } from './catalog-features.mjs'
 import './review.css'
 
 type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
-  features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual' }
+  features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual'; excluded?: boolean }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
 export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy }: {
   active?: boolean; onBusy?(busy: boolean): void
@@ -48,15 +48,37 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   const autoCache = useRef(new Map<string, { expires: number; data: unknown }>())
   const [autoNotes, setAutoNotes] = useState<Record<string, string>>({})
   const [autoSummary, setAutoSummary] = useState('')
+  const [draftNotice, setDraftNotice] = useState('')
   useEffect(() => () => { catalogEpoch.current++ }, [])
   function restoreResult(next: VisionResult) {
     catalogEpoch.current++
     autoCache.current.clear(); setAutoNotes({}); setAutoSummary('')
     setResult(next); setApplied(false); setValidation(null)
-    setRows((next.matches || []).map(m => createObservationDraft(m.observation)))
+    const initial = (next.matches || []).map(m => createObservationDraft(m.observation))
+    setRows(initial); setDraftNotice('')
+    try {
+      const saved = JSON.parse(localStorage.getItem('part-explorer:review:' + next.id) || 'null')
+      if (saved) {
+        if (!Array.isArray(saved.rows) || !saved.rows.every((r: DraftRow) => initial.some(o => o.id === r.id)
+          && typeof r.part === 'string' && typeof r.color === 'string' && typeof r.quantity === 'string'
+          && r.features && typeof r.features.size === 'string' && typeof r.features.color === 'string'
+          && typeof r.features.shape === 'string' && typeof r.features.print === 'string')) throw new Error('审核草稿字段无效')
+        saved.rows.forEach((r: DraftRow) => validateReviewDimensions(r.features))
+        setRows(saved.rows); setDraftNotice('已恢复此浏览器保存的审核草稿；加入 Results 时仍校验 Catalog。')
+      }
+    } catch (e) { setDraftNotice('审核草稿未恢复：' + String(e) + '；原始识别结果仍可审核。') }
+  }
+  function saveDraft() {
+    if (!result) return
+    try {
+      rows.forEach(row => validateReviewDimensions(row.features))
+      localStorage.setItem('part-explorer:review:' + result.id, JSON.stringify({ rows }))
+      setDraftNotice('审核草稿已保存到此浏览器；重新加载相同历史记录可恢复。')
+    } catch (e) { setDraftNotice('保存失败：' + String(e)) }
   }
   function editRow(id: string, changes: Partial<DraftRow>) {
     catalogEpoch.current++
+    setDraftNotice('审核有未保存修改。')
     if (changes.features) autoCache.current.clear()
     setAutoNotes(previous => ({ ...previous, [id]: '' })); setAutoSummary('')
     setValidation(null)
@@ -64,22 +86,28 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       ...(changes.features && r.identityOrigin === 'auto' ? { part: '', color: '', identityOrigin: undefined } : {}),
       ...('part' in changes || 'color' in changes ? { identityOrigin: 'manual' as const } : {}), ...changes } : r))
   }
-  function searchObservation(row: DraftRow) {
+  function searchObservation(row: DraftRow, method: 'features' | 'part' | 'manual' = 'features') {
     if (!onSearchCatalog || !result || lock.current || applied) return
     try {
-      const features = readFeatureEditor(row.features)
-      if (features.color_id === null && features.size === null && features.shape === null && features.print === 'unknown') {
+      const partNumber = method === 'part' ? row.part.trim() : undefined
+      if (method === 'part' && (!partNumber || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(partNumber))) throw new Error('请输入一个有效的 Rebrickable Part Number。')
+      const features = method === 'features' ? readFeatureEditor(row.features) : { color_id: null, size: null, shape: null, print: 'unknown' as const }
+      if (method === 'features' && features.color_id === null && features.size === null && features.shape === null && features.print === 'unknown') {
         throw new Error('没有可检索的已知特征，请先人工填写至少一项；不会使用模型猜测编号代替检索。')
       }
       const epoch = ++catalogEpoch.current
-      setError('')
-      onSearchCatalog({ key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity,
+      setError(''); setAutoNotes(previous => ({ ...previous, [row.id]: '正在检索；结果见右栏' }))
+      onSearchCatalog({ method, partNumber, key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity,
+        onResults(count) {
+          if (catalogEpoch.current !== epoch) return
+          setAutoNotes(previous => ({ ...previous, [row.id]: count == null ? '检索失败；请查看右栏错误' : count ? 'Candidates · 本页 ' + count + ' 个 Catalog 型号' : '没有候选' }))
+        },
         onChoose(item, evidence) {
           if (catalogEpoch.current !== epoch || lock.current) throw new Error('Observation 或人工草稿已改变，请重新点击该行的检索候选。')
           catalogEpoch.current++
           setValidation(null)
           setRows(previous => previous.map(r => r.id === row.id ? { ...r, selected: true, part: item.part_num,
-            color: String(item.color_id), quantity: String(item.quantity), identityOrigin: 'manual' as const, confirmation: { features, item, evidence } } : r))
+            color: String(item.color_id), quantity: String(item.quantity), identityOrigin: 'manual' as const, excluded: false, confirmation: { features, item, evidence } } : r))
           setActiveId(row.id)
         },
       })
@@ -92,7 +120,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     const counts = { filled: 0, multiple: 0, none: 0, failed: 0, skipped: 0 }
     try {
       // Serial requests bound concurrency and share identical feature results.
-      for (const row of requested) {
+      for (const row of requested.filter(r => !r.excluded)) {
         if (catalogEpoch.current !== epoch) return
         const note = (text: string) => setAutoNotes(previous => ({ ...previous, [row.id]: text }))
         if (hasConfirmedIdentity(row)) { counts.skipped++; note('跳过：确认型号和颜色均已填写。'); continue }
@@ -160,7 +188,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     catalogEpoch.current++
     lock.current = true; setBusy(true); setError('')
     try {
-      const items = rows.filter(r => r.selected).reduce<InventoryItem[]>((items, r) => {
+      const items = rows.filter(r => r.selected && !r.excluded).reduce<InventoryItem[]>((items, r) => {
         if (!r.color.trim() || !r.quantity.trim()) throw new Error('请填写颜色 ID 和数量')
         return addItem(items, { part_num: r.part.trim(), color_id: Number(r.color), quantity: Number(r.quantity) })
       }, [])
@@ -169,7 +197,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }, '库存格式 / Catalog 身份检查')
       setValidation(checked)
       if (!checked.valid) throw new Error('草稿存在无效型号或颜色组合；请查看 Catalog 校验详情并修改。')
-      if (window.confirm('将勾选的积木加入当前库存编辑器？不会自动保存，原有积木会保留。')) { onApply(items); setApplied(true) }
+      if (window.confirm('将勾选的积木加入当前库存编辑器？不会自动保存，原有积木会保留。')) {
+        onApply(items); setApplied(true)
+        setRows(previous => previous.map(r => r.selected && !r.excluded
+          ? { ...r, identityOrigin: 'manual' as const, confirmation: { method: 'catalog_validated', evidence: checked } } : r))
+        setDraftNotice('Catalog 已校验并确认；请保存审核草稿以保留此状态。')
+      }
     } catch (e) { setError(String(e)) } finally { setBusy(false); lock.current = false }
   }
   const matches = new Map((result?.matches || []).map(m => [m.observation.id, m]))
@@ -184,42 +217,56 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       <p>{result.prompt_id || '历史记录未标注 Prompt'} {result.prompt_version ? 'v' + result.prompt_version : ''} · {result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
-        <p>编辑视觉特征后，逐行检索下方 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
+        <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。Catalog 不支持 Height 筛选；二维筛选需要成对整数 Width / Depth。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
+        <button disabled={busy} onClick={saveDraft}>保存审核草稿（此浏览器）</button>
+        {draftNotice && <p role="status">{draftNotice}</p>}
         <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
         {autoSummary && <p role="status">{autoSummary}</p>}
-        <ObservationTable hostRef={tableHost} columns={[
-          { label: '选择', width: 40 }, { label: 'ID', width: 90 }, { label: 'Vision / 置信度 · 审核', width: 230 },
-          { label: '特征颜色 ID', width: 88 }, { label: '整体尺寸', width: 86 }, { label: 'Shape', width: 120 }, { label: 'Print', width: 90 },
-          { label: '确认型号', width: 130 }, { label: '确认颜色 ID', width: 90 }, { label: '数量', width: 68 }, { label: '操作', width: 64 },
+        <ObservationTable stickyAction hostRef={tableHost} columns={[
+          { label: 'Action', width: 60 }, { label: 'Observation', width: 110 }, { label: 'Part Number', width: 135 },
+          { label: 'Width (Stud)', width: 85 }, { label: 'Depth (Stud)', width: 85 }, { label: 'Height (Brick)', width: 90 },
+          { label: 'Color', width: 80 }, { label: 'Shape', width: 105 }, { label: 'Print', width: 80 },
+          { label: 'Qty', width: 60 }, { label: 'Match Status', width: 175 },
         ]}>
           {rows.map(row => {
               const match = matches.get(row.id)
               if (!match) return null
               const observation = match.observation
               const note = autoNotes[row.id] || ''
-              const reviewStatus = row.part.trim() && row.color.trim() ? (row.confirmation ? (row.identityOrigin === 'manual' ? '已确认' : '已回填') : '待校验')
-                : note && !note.startsWith('跳过') ? (note.startsWith('存在多个') ? '多候选' : '未匹配/失败') : '待确认'
+              const reviewStatus = row.excluded ? 'Excluded' : row.confirmation && row.identityOrigin === 'manual' && (row.confirmation as { method?: string }).method !== 'catalog_unique' ? 'Confirmed · Catalog 身份'
+                : row.confirmation || note.startsWith('Candidates') ? 'Candidates · 待人工确认' : 'Pending'
               return <tr key={row.id} data-observation-id={row.id} className={activeId === row.id ? 'is-active' : ''}
                 onClick={event => {
                   if (event.target instanceof Element && event.target.closest('input, select, button, [popover]')) return
                   setActiveId(row.id)
                 }}>
-                <td><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied}
-                  onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} /></td>
-                <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id}
-                  title={row.id + (!bboxStyle(observation.bbox) ? ' · 无有效 BBox' : '')}
-                  onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button></td>
-                <td title={note || reviewStatus}><span>{observation.status} / {observation.confidence}</span> <span className="vision-review-badge">{reviewStatus}</span></td>
-                <ObservationFeatureCells id={row.id} features={row.features} disabled={busy || applied}
-                  onChange={features => editRow(row.id, { features })} />
-                {(['part', 'color', 'quantity'] as const).map(key => <td key={key}><input aria-label={row.id + ' ' + (key === 'part' ? '确认 Part Number' : key === 'color' ? '确认 RB Color ID' : 'Quantity')}
-                  title={row[key]} value={row[key]} disabled={busy || applied} onChange={e => editRow(row.id, { [key]: e.target.value })} /></td>)}
                 <td><ObservationActions observationId={row.id} actions={[
-                  { label: '检索候选', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
+                  { label: 'By Part Number', disabled: busy || applied || !row.part.trim() || !onSearchCatalog, run: () => searchObservation(row, 'part') },
+                  { label: 'By Features（Height 未支持）', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
+                  { label: 'Manual Catalog', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row, 'manual') },
                   { label: '检索并回填', disabled: busy || applied, run: () => { void autofill([row]) } },
                   { label: '查看详情', run: () => setDetail({ kind: 'observation', id: row.id }) },
+                  { label: row.excluded ? '恢复审核' : '排除', disabled: busy || applied, run: () => editRow(row.id, { excluded: !row.excluded, selected: false }) },
                   { label: '删除', disabled: busy || applied, run: () => { catalogEpoch.current++; setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') } },
                 ]} /></td>
+                <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id}
+                  title={row.id + (!bboxStyle(observation.bbox) ? ' · 无有效 BBox' : '')}
+                  onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button>
+                  <small>{observation.status} / {observation.confidence}</small></td>
+                <td><input aria-label={row.id + ' 用户 Part Number'} value={row.part} placeholder="输入 RB 型号" disabled={busy || applied}
+                  onChange={e => editRow(row.id, { part: e.target.value })} />
+                  <small>模型参考：{observation.candidates?.map(c => c.part_num).join(', ') || '—'}</small>
+                  <small>确认型号：{reviewStatus.startsWith('Confirmed') ? row.part : '—'}</small>
+                  <label>确认 Color<input aria-label={row.id + ' 确认 RB Color ID'} value={row.color} disabled={busy || applied}
+                    onChange={e => editRow(row.id, { color: e.target.value })} /></label></td>
+                <ObservationFeatureCells id={row.id} features={row.features} disabled={busy || applied}
+                  onChange={features => editRow(row.id, { features })} />
+                <td><input aria-label={row.id + ' Quantity'} value={row.quantity} disabled={busy || applied}
+                  onChange={e => editRow(row.id, { quantity: e.target.value })} /></td>
+                <td className="vision-match-status" title={note}><span className="vision-review-badge">{reviewStatus}</span>
+                  <label><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied || row.excluded}
+                    onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} />加入 Results（需校验）</label>
+                  <small>Height 未经 Catalog 验证</small></td>
               </tr>
           })}
         </ObservationTable>
@@ -257,7 +304,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
           setPreview(next.originalImage ? `data:${next.originalImage.mimeType};base64,${next.originalImage.imageBase64}` : '')
         } catch (e) { setError(String(e)) } finally { lock.current = false; setBusy(false) }
       }}>加载结果（不调用模型）</button>
-      <p>加载恢复原始识别，未加入库存的草稿编辑会被替换；修改和加入库存不会覆盖服务端原始记录。</p>
+      <p>加载原始识别及此浏览器已保存的审核草稿；未保存编辑会被替换。审核草稿不会覆盖服务端原始记录。</p>
     </div>
     <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
       if (lock.current || (chosen.id === model && chosen.provider === provider)) return

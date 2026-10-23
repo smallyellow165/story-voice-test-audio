@@ -51,3 +51,13 @@
 .vision-observation-menu button:focus-visible { outline: 2px solid #db8d0a; outline-offset: -2px; }
 
 .inventory-workbench .vision-observation-table td:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }
+
+/* Only Matching has a sticky action column; Geometry retains its original table. */
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table th:first-child,
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table td:first-child {
+  position: sticky; left: 0; z-index: 2; background: #fffefa; box-shadow: 1px 0 #c6d4ce;
+}
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table tr.is-active td:first-child { background: #e7f2ed; }
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table td { white-space: normal; }
+.vision-matching-table small { display: block; overflow-wrap: anywhere; }
+.vision-matching-table .vision-match-status { white-space: normal; }

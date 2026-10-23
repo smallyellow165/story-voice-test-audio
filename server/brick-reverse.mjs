@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
-import { catalogFeatureParams, validateCatalogFeatures, visionFeatureProperties, featureEditor, readFeatureEditor } from '../src/brick-vision/catalog-features.mjs'
+import { catalogFeatureParams, validateCatalogFeatures, visionFeatureProperties, featureEditor, readFeatureEditor, validateReviewDimensions } from '../src/brick-vision/catalog-features.mjs'
 import { catalog } from './brick-games.mjs'
 import { loadBrickRules, geometrySnapshot } from './brick-rules.mjs'
 import { validateImage, visionErrorDiagnostic } from './brick-vision.mjs'
@@ -121,11 +121,12 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         if (!r || typeof r.quantity !== 'string' || typeof r.excluded !== 'boolean' || typeof r.reason !== 'string'
           || !r.features || ['color', 'size', 'shape', 'print'].some(k => typeof r.features[k] !== 'string')
           || JSON.stringify(r).length > 10000) fail('审核草稿字段无效。')
+        validateReviewDimensions(r.features)
         const row = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
         if (r.searchId) {
           const search = await read(r.searchId)
           if (search.kind !== 'reverse-search' || search.analysisId !== analysis.id || search.observationId !== o.id
-            || hash(readFeatureEditor(r.features)) !== hash(search.features)) fail('候选与当前审核特征不一致。')
+            || (search.partNumber ? search.partNumber !== r.features.partNumber?.trim() : hash(readFeatureEditor(r.features)) !== hash(search.features))) fail('候选与当前审核特征不一致。')
           row.searchId = search.id
           if (r.index !== undefined) {
             if (!Number.isSafeInteger(r.index) || !search.rows[r.index]?.sourceAllowed) fail('确认候选无效。')
@@ -172,7 +173,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
           const search = await read(c.searchId)
           const index = search.rows.findIndex(r => r.source.part_num === c.item.part_num && r.source.color_id === c.item.color_id)
           if (index < 0) throw new Error('确认组合不在已保存候选中')
-          Object.assign(row, { features: featureEditor(c.features), quantity: String(c.item.quantity), search, index })
+          Object.assign(row, { features: { ...featureEditor(c.features), height_brick_units: row.features.height_brick_units }, quantity: String(c.item.quantity), search, index })
         } catch (e) { warnings.push(c.observationId + ' 确认恢复失败：' + e.message) }
       }
       for (const e of artifact?.excluded || []) if (rows[e.observationId]) Object.assign(rows[e.observationId], { excluded: true, reason: e.reason })
@@ -182,11 +183,11 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         updatedAt = review.updatedAt
         for (const [id, r] of Object.entries(review.rows)) {
           if (!rows[id]) continue
-          rows[id] = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
+          rows[id] = { features: { ...featureEditor({ size: r.features.size }), height_brick_units: rows[id].features.height_brick_units, ...r.features }, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
           if (r.searchId) try {
             const search = await read(r.searchId)
             if (search.kind !== 'reverse-search' || search.analysisId !== analysisId || search.observationId !== id
-              || hash(readFeatureEditor(r.features)) !== hash(search.features)) throw new Error('候选与草稿不一致')
+              || (search.partNumber ? search.partNumber !== r.features.partNumber?.trim() : hash(readFeatureEditor(r.features)) !== hash(search.features))) throw new Error('候选与草稿不一致')
             rows[id].search = search
             if (r.index !== undefined && search.rows[r.index]?.sourceAllowed) rows[id].index = r.index
           } catch (e) { warnings.push(id + ' 候选恢复失败：' + e.message) }
@@ -246,16 +247,21 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       const analysis = await analyzed(body.analysisId)
       if (!analysis.analysis.observations.some(o => o.id === body.observationId)) fail('Observation 不存在。')
       const features = validateCatalogFeatures(body.features), params = catalogFeatureParams(features)
-      if (!Object.keys(params).length) fail('请至少确认一个特征后检索，未知条件不参与匹配。')
+      const partNumber = typeof body.partNumber === 'string' ? body.partNumber.trim() : ''
+      if (partNumber && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(partNumber)) fail('Part Number 格式无效。')
+      if (!partNumber && !Object.keys(params).length) fail('请至少确认一个特征后检索，未知条件不参与匹配。')
       const page = body.page ?? 1
       if (!Number.isSafeInteger(page) || page < 1 || page > 10000) fail('页码无效。')
-      const result = await getCatalog('candidates', { ...params, page: String(page), page_size: '6' })
+      const selection = partNumber ? await getCatalog('selection', { part_nums: partNumber }) : null
+      const exactItems = selection?.items?.filter(p => p.part_num === partNumber)
+      const result = partNumber ? { items: page === 1 ? exactItems : [], total: exactItems?.length }
+        : await getCatalog('candidates', { ...params, page: String(page), page_size: '6' })
       if (!Array.isArray(result.items) || !Number.isSafeInteger(result.total)) fail('Catalog 候选响应无效。', 502)
       const items = []
       for (const p of result.items) {
-        if (p.eligible !== true || !Array.isArray(p.colors) || !Array.isArray(p.checks) || !p.checks.length || !p.checks.every(c => c.status === 'matched')) fail('Catalog 缺少严格匹配证据。', 502)
+        if (!Array.isArray(p.colors) || (!partNumber && (p.eligible !== true || !Array.isArray(p.checks) || !p.checks.length || !p.checks.every(c => c.status === 'matched')))) fail('Catalog 缺少严格匹配证据。', 502)
         for (const c of p.colors || []) {
-          if (features.color_id !== null && c.id !== features.color_id) continue
+          if (!partNumber && features.color_id !== null && c.id !== features.color_id) continue
           if (analysis.source.kind === 'today' && !analysis.source.session.items.some(r => r.part_num === p.part_num && r.color_id === c.id)) continue
           items.push({ part_num: p.part_num, color_id: c.id, quantity: 1 })
         }
@@ -272,7 +278,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       if (result.items.length) try { images = (await getCatalog('images', { part_nums: result.items.map(p => p.part_num).join(',') })).images }
       catch { imageError = 'Catalog 图片暂不可用；保留型号和诊断。' }
       const record = { id: randomUUID(), kind: 'reverse-search', analysisId: analysis.id, observationId: body.observationId,
-        createdAt: new Date().toISOString(), features, page, catalogTotal: result.total, pageSize: 6, rows, images, imageError, review }
+        createdAt: new Date().toISOString(), features, partNumber, page, catalogTotal: result.total, pageSize: 6, rows, images, imageError, review }
       await save(record)
       return record
     },
