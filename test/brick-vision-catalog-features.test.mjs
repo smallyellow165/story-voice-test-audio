@@ -1,6 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { catalogFeatureParams, readFeatureEditor, createObservationDraft, validateCatalogFeatures, featureEditor, editDimension, visionFeatureProperties } from '../src/brick-vision/catalog-features.mjs'
+import { catalogFeatureParams, catalogSearchParams, readFeatureEditor, createObservationDraft, validateCatalogFeatures, featureEditor, editDimension, visionFeatureProperties } from '../src/brick-vision/catalog-features.mjs'
+
+test('one Search snapshots all six filters and optional LDraw without empty numeric params', () => {
+  assert.deepEqual(catalogSearchParams({}), { require_ldraw: 'false' })
+  const draft = { search: ' 4066 ', category: '4', color: '0', size: '1×2×2', shape: 'brick', printed: 'no', requireLdraw: true }
+  const submitted = catalogSearchParams(draft)
+  assert.deepEqual(submitted, { search: '4066', category: '4', color: '0', size: '1×2×2', shape: 'brick', printed: 'no', require_ldraw: 'true' })
+  draft.size = '1×2×1'
+  assert.equal(submitted.size, '1×2×2')
+  assert.equal(({ ...submitted, page: '2' }).size, '1×2×2')
+})
+
+test('partial reviewed dimensions stay explicit; a new Size replaces all old axes', () => {
+  const axes = { width: '1', height: '2' }
+  const submitted = catalogSearchParams({ axes })
+  axes.height = '1'
+  assert.deepEqual(submitted, { width: '1', height: '2', require_ldraw: 'false' })
+  assert.deepEqual(catalogSearchParams({ axes, size: '2×4×0.5' }), { size: '2×4×0.5', require_ldraw: 'false' })
+})
 
 const unknown = { color_id: null, size: null, shape: null, print: 'unknown' }
 test('only known features become existing strict Catalog API parameters', () => {

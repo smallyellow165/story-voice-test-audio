@@ -10,6 +10,7 @@ export const catalogPrints: readonly CatalogFeatures['print'][]
 export const visionFeatureProperties: Record<string, unknown>
 export function validateCatalogFeatures(value: unknown): CatalogFeatures
 export function catalogFeatureParams(features: CatalogQuery): Record<string, string>
+export function catalogSearchParams(fields: { search?: string; category?: string; color?: string; size?: string; shape?: string; printed?: string; requireLdraw?: boolean; axes?: Record<string, string> }): Record<string, string>
 export function featureEditor(observation: Partial<CatalogQuery>): FeatureEditor
 export function readFeatureEditor(editor: FeatureEditor): CatalogQuery
 export function createObservationDraft(observation: Partial<CatalogFeatures> & { id: string; quantity: number }): {

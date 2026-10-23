@@ -8,7 +8,7 @@ import { addItem, itemKey, MAX_QUANTITY, newSessionId, parseSession, setQuantity
 import type { InventoryItem, SessionInventory } from './inventory'
 import { loadSessions, saveSession } from './storage'
 import { GamePreparation } from './GamePreparation'
-import { catalogFeatureParams } from '../brick-vision/catalog-features.mjs'
+import { catalogFeatureParams, catalogSearchParams } from '../brick-vision/catalog-features.mjs'
 import type { ObservationCatalogSearch } from '../brick-vision/types'
 import { PartExplorerRecognition } from './PartExplorerRecognition'
 import { ThreeColumnLayout } from '../three-column-layout'
@@ -18,6 +18,7 @@ import './workbench.css'
 type Color = { id: number; name: string; rgb: string }
 type FeatureCheck = { feature: string; expected: unknown; actual: unknown; status: 'matched' | 'mismatched' | 'unknown'; source: string; evidence: string }
 type Part = { part_num: string; name: string; part_cat_id: number; colors: Color[];
+  ldraw?: Record<string, unknown>;
   catalog_geometry?: CatalogBodyMetadata; category_name?: string; features?: Record<string, unknown>; checks?: FeatureCheck[];
   counts?: { matched: number; mismatched: number; unknown: number }; eligible?: boolean }
 type Results = { items: Part[]; total: number; page: number; page_size: number;
@@ -87,12 +88,13 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
     <div className="inventory-part-identity"><small title={specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}>{specific ? '所选颜色图片' : '型号示意图，颜色以选择为准'}</small>
     <h3 title={part.name}>{part.name}</h3><a title={`${part.part_num} · Rebrickable`} href={`https://rebrickable.com/parts/${encodeURIComponent(part.part_num)}/`} target="_blank" rel="noreferrer">{part.part_num} · Rebrickable ↗</a>
       <CatalogGeometryEvidence geometry={part.catalog_geometry} checks={part.checks} />
+      {part.ldraw && <details><summary>LDraw 可加载性（非 Assembly 验证）</summary><pre>{JSON.stringify(part.ldraw, null, 2)}</pre></details>}
       {part.checks && <details className="inventory-feature-evidence"><summary>匹配 {part.counts?.matched} · 不匹配 {part.counts?.mismatched} · 未知 {part.counts?.unknown}</summary>
         <p>类别：{part.category_name || '未知'}（数据库）</p>
         <ul>{part.checks.map(check => <li key={check.feature}>
           <strong>{check.feature}</strong>：{check.status === 'matched' ? '匹配' : check.status === 'mismatched' ? '不匹配' : '未知'}；
           要求 {JSON.stringify(check.expected)}，记录 {JSON.stringify(check.actual)}；
-          来源 {check.source === 'database' ? '数据库明确记录' : check.source === 'name' ? '名称解析' : check.source === 'ldraw-reviewed-body' ? '已审核 LDraw 主体坐标' : '未知'}。
+          来源 {check.source === 'database' ? '数据库明确记录' : check.source === 'name' || check.source === 'rebrickable-name-nominal' ? '名称标称尺寸 / 特征（非物理验证）' : check.source === 'ldraw-reviewed-body' ? '已审核 LDraw 主体坐标' : '未知'}。
           <div>{check.evidence}</div>
         </li>)}</ul>
         <details><summary>全部特征与来源</summary><pre>{JSON.stringify(part.features, null, 2)}</pre></details>
@@ -129,8 +131,9 @@ export function InventoryPage() {
   const [resultReviewKey, setResultReviewKey] = useState('')
   const catalogHost = useRef<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
-  const [featureQuery, setFeatureQuery] = useState<Record<string, string> | null>(null)
+  const [submittedQuery, setSubmittedQuery] = useState<Record<string, string>>({})
+  const [requireLdraw, setRequireLdraw] = useState(false)
+  const [partialDimensions, setPartialDimensions] = useState<Record<string, string>>({})
   const [featureSize, setFeatureSize] = useState(''), [featureShape, setFeatureShape] = useState('')
   const [featurePrint, setFeaturePrint] = useState('unknown')
   const [category, setCategory] = useState('')
@@ -171,9 +174,8 @@ export function InventoryPage() {
   useEffect(() => {
     const controller = new AbortController()
     setResultReviewKey(''); setLoading(true); setCatalogError(''); setImageError(''); setResult(null); setImages({})
-    const params: Record<string, string> = { ...(featureQuery || { search: query }), page: String(page), page_size: '24' }
-    if (category) params.category = category
-    if (colorFilter) params.color = colorFilter
+    const params: Record<string, string> = { ...submittedQuery, page: String(page), page_size: '24' }
+    for (const key of Object.keys(params)) if (params[key] === '') delete params[key]
     void (async () => {
       try {
         const exact = catalogReview?.method === 'part' ? catalogReview.partNumber : undefined
@@ -181,7 +183,7 @@ export function InventoryPage() {
         if (selection && (!Array.isArray(selection.items) || !selection.items.every(p => Array.isArray(p.colors)))) throw new Error('Catalog selection 缺少有效型号或颜色数据。')
         const exactItems = selection?.items.filter(p => p.part_num === exact)
         const data = exactItems ? { items: exactItems, total: exactItems.length, page: 1, page_size: 24 } as Results
-          : await api<Results>(featureQuery ? 'candidates' : 'parts', params, controller.signal)
+          : await api<Results>('parts', params, controller.signal)
         if (controller.signal.aborted) return
         setResult(data); setResultReviewKey(catalogRequestKey); setLoading(false)
         catalogReview?.onResults?.(data.items.length)
@@ -198,7 +200,7 @@ export function InventoryPage() {
       } catch (e) { if (!controller.signal.aborted) { setCatalogError(message(e)); setLoading(false); catalogReview?.onResults?.(null) } }
     })()
     return () => controller.abort()
-  }, [query, featureQuery, category, colorFilter, page, refresh, catalogRequestKey])
+  }, [submittedQuery, page, refresh, catalogRequestKey])
 
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
@@ -229,7 +231,11 @@ export function InventoryPage() {
       const params = catalogFeatureParams(request.features)
       setCatalogReview(request); setCatalogRequestKey(request.key); setResult(null); setLoading(true)
       const { color: requestedColor, ...featureParams } = params
-      setFeatureQuery(request.method === 'part' || request.method === 'manual' ? null : featureParams); setQuery(''); setSearch(request.partNumber || ''); setFeatureSize(request.features.size ?? ([request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].every(n => n != null) ? [request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].join('×') : '')); setFeatureShape(request.features.shape ?? '')
+      setSubmittedQuery(request.method === 'part' ? {} : { ...params, search: request.method === 'manual' ? request.partNumber || '' : '' })
+      setRequireLdraw(false)
+      const completeSize = request.features.size ?? ([request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].every(n => n != null) ? [request.features.width_studs, request.features.depth_studs, request.features.height_brick_units].join('×') : '')
+      setPartialDimensions(completeSize ? {} : Object.fromEntries(Object.entries(featureParams).filter(([key]) => ['width', 'depth', 'height'].includes(key))))
+      setSearch(request.method === 'features' || !request.method ? '' : request.partNumber || ''); setFeatureSize(completeSize); setFeatureShape(request.features.shape ?? '')
       setFeaturePrint(request.features.print); setColorFilter(requestedColor ?? ''); setCategory(''); setPage(1)
       requestAnimationFrame(() => catalogHost.current?.scrollIntoView({ block: 'start' }))
     }} onApply={recognized => {
@@ -258,28 +264,26 @@ export function InventoryPage() {
           <button type="button" onClick={() => setCatalogReview(null)}>退出候选选择</button></p>}
         <div className="catalog-filter-area">
           <div className="catalog-filter-grid">
-        <form id="catalog-name-search" className="catalog-filter-fields" aria-label="型号和名称搜索" onSubmit={e => { e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
+        <form id="catalog-search" className="catalog-filter-fields" aria-label="Catalog Search" onSubmit={e => {
+          e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setPage(1)
+          setSubmittedQuery(catalogSearchParams({ search, category, color: colorFilter, shape: featureShape, printed: featurePrint,
+            requireLdraw, size: featureSize, axes: partialDimensions }))
+        }}>
           <label className="inventory-search">Part Number / Name<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
-          <label>Category / 分类<select value={category} onChange={e => { setCatalogReview(null); setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-          <label>Color / 颜色<select value={colorFilter} onChange={e => { setCatalogReview(null); setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        </form>
-          <form id="catalog-feature-search" className="catalog-filter-fields" aria-label="特征候选检索" onSubmit={e => {
-            e.preventDefault(); setCatalogReview(null); setPage(1)
-            setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint })
-          }}>
-            <label>Size / Width × Depth × Height<input value={featureSize} maxLength={24} placeholder="例如 2×4×0.5；也支持 2×4" onChange={e => setFeatureSize(e.target.value)} /></label>
+          <label>Category / 分类<select value={category} onChange={e => setCategory(e.target.value)}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>Color / 颜色<select value={colorFilter} onChange={e => setColorFilter(e.target.value)}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label>Size / Width × Depth × Height<input value={featureSize} maxLength={24} placeholder="例如 2×4×0.5；也支持 2×4" onChange={e => { setFeatureSize(e.target.value); setPartialDimensions({}) }} />{Object.keys(partialDimensions).length > 0 && <small>审核中的已知维度：{JSON.stringify(partialDimensions)}；输入 Size 可替换</small>}</label>
             <label>Shape / 形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
               <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
             </select></label>
             <label>Print / 印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确印花证据</option><option value="no">明确基础款 / 无印花证据</option></select></label>
           </form>
           <div className="catalog-filter-actions">
-            <button type="submit" form="catalog-name-search">搜索</button>
-            <button type="submit" form="catalog-feature-search">检索候选</button>
-            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setCatalogReview(null); setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input style={{ width: 'auto' }} type="checkbox" checked={requireLdraw} onChange={e => setRequireLdraw(e.target.checked)} /> Require LDraw</label>
+            <button type="submit" form="catalog-search">Search</button>
           </div>
           </div>
-          <p className="inventory-note">“搜索”使用型号 / 名称、Category、Color；“检索候选”使用 Size、Shape、Print、Category、Color，不合并型号 / 名称条件。三维 Size 使用已审核主体几何：Stud × Stud × Brick；高度可为 0.5。两维 Size 保留名称水平尺寸检索。三维缺少 Mapping 或可靠尺寸时排除，不自动补全。候选检索采用 Strict AND：所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。两维 Size 和形状从名称解析，三维尺寸需官方 Mapping 与本地源文件校验，印花结合 P 关系与整件名称证据；冲突或不足为未知。尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
+          <p className="inventory-note">Search 同时应用全部已填条件（Strict AND）；未填条件不限制。尺寸单位 Stud × Stud × Brick，来自明确的 Catalog 名称标称尺寸或已审核主体 Profile；未知或冲突不能满足尺寸条件。名称尺寸不是实物几何验证。Require LDraw 默认关闭；开启时要求至少一个官方数据库 Mapping 的本地模型及引用可加载，不要求 Profile，也不代表 Assembly 验证。修改条件后点击 Search；分页沿用上次提交条件。</p>
         </div>
         <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
@@ -288,13 +292,13 @@ export function InventoryPage() {
         {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
           <button disabled={page <= 1} onClick={() => setPage(n => n - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => setPage(n => n + 1)}>下一页</button></div>
           {result.geometry_report && <div className="inventory-feature-summary">
-            <p>几何条件 Unknown 排除 {result.geometry_report.unknown_total}；尺寸不符排除 {result.geometry_report.mismatched_total}（可能重叠）。Mapping 仅读现有官方缓存，不自动批量请求；Unknown 不代表 Catalog 中不存在该规格。</p>
+            <p>几何条件 Unknown 排除 {result.geometry_report.unknown_total}；尺寸不符排除 {result.geometry_report.mismatched_total}（可能重叠）。Mapping 来自 rb_part_mappings；Unknown 不代表 Catalog 中不存在该规格。</p>
             <details><summary>几何排除原因与示例（最多 12 项）</summary><pre>{JSON.stringify(result.geometry_report, null, 2)}</pre></details>
           </div>}
           {result.criteria && <div className="inventory-feature-summary"><p>SQL 预筛选 {result.prefilter_total}；严格匹配 {result.eligible_total}；解析复核排除（不匹配或未知）{result.excluded_total}。未填写条件不参与筛选；无结果时不自动放宽条件，不自动选择型号。</p>
             <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}
-          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${colorFilter}`} part={part} image={images[part.part_num]} initialColor={colorFilter} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
+          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${submittedQuery.color ?? ''}`} part={part} image={images[part.part_num]} initialColor={submittedQuery.color ?? ''} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
             onAdd={item => {
               if (catalogReview) {
                 if (resultReviewKey !== catalogReview.key || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')

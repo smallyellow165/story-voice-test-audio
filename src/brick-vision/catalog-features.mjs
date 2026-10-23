@@ -2,6 +2,13 @@
 // No candidate matching, identity inference or Evidence parsing lives here.
 export const catalogShapes = ['brick', 'curved_top', 'arch', 'slope']
 export const catalogPrints = ['yes', 'no', 'unknown']
+
+// A submitted snapshot, independent of subsequent edits and pagination.
+export function catalogSearchParams({ search = '', category = '', color = '', size = '', shape = '', printed = 'unknown', requireLdraw = false, axes = {} }) {
+  const params = { search: search.trim(), category, color, shape, printed, require_ldraw: String(requireLdraw),
+    ...(size.trim() ? { size: size.trim() } : Object.fromEntries(['width', 'depth', 'height'].filter(k => axes[k]).map(k => [k, axes[k]]))) }
+  return Object.fromEntries(Object.entries(params).filter(([key, value]) => value !== '' && !(key === 'printed' && value === 'unknown')))
+}
 export const visionFeatureProperties = {
   color_id: { type: 'INTEGER', nullable: true },
   size: { type: 'STRING', nullable: true },

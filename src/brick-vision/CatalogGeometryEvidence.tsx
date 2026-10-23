@@ -7,7 +7,7 @@ export type CatalogBodyMetadata = {
 
 export function CatalogGeometryEvidence({ geometry, checks }: { geometry?: CatalogBodyMetadata; checks?: unknown }) {
   return <div className="inventory-feature-evidence">
-    <small>主体 W × D × H：{geometry?.width_studs?.value ?? 'Unknown'} × {geometry?.depth_studs?.value ?? 'Unknown'} × {geometry?.height_brick_units?.value ?? 'Unknown'}（Stud × Stud × Brick）</small>
+    <small>标称 W × D × H：{geometry?.width_studs?.value ?? 'Unknown'} × {geometry?.depth_studs?.value ?? 'Unknown'} × {geometry?.height_brick_units?.value ?? 'Unknown'}（Stud × Stud × Brick；来源见详情）</small>
     <details><summary>尺寸来源 / 匹配状态</summary><pre>{JSON.stringify({
       dimensions: geometry || { status: 'unknown', reason: '此结果未提供主体几何证据' }, checks,
       scope: 'Catalog 主体尺寸，不代表 Assembly 连接能力或实物公差验证',
