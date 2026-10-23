@@ -253,27 +253,31 @@ export function InventoryPage() {
         <h2>找积木</h2>
         {catalogReview && <p role="status">为 {catalogReview.observationId} 选择候选：确认后填写审核行，不直接加入库存。
           <button type="button" onClick={() => setCatalogReview(null)}>退出候选选择</button></p>}
-        <form className="inventory-filters" onSubmit={e => { e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
-          <label className="inventory-search">搜索型号或名称<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
-          <button type="submit">搜索</button>
-          <label>分类<select value={category} onChange={e => { setCatalogReview(null); setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-          <label>颜色筛选<select value={colorFilter} onChange={e => { setCatalogReview(null); setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <div className="catalog-filter-area">
+          <div className="catalog-filter-grid">
+        <form id="catalog-name-search" className="catalog-filter-fields" aria-label="型号和名称搜索" onSubmit={e => { e.preventDefault(); setCatalogReview(current => current?.method === 'manual' ? current : null); setFeatureQuery(null); setQuery(search.trim()); setPage(1) }}>
+          <label className="inventory-search">Part Number / Name<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
+          <label>Category / 分类<select value={category} onChange={e => { setCatalogReview(null); setCategory(e.target.value); setPage(1) }}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>Color / 颜色<select value={colorFilter} onChange={e => { setCatalogReview(null); setColorFilter(e.target.value); setPage(1) }}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         </form>
-        <details className="inventory-feature-search"><summary>按物理特征检索候选（本地 Catalog，不调用模型）</summary>
-          <form className="inventory-filters" onSubmit={e => {
+          <form id="catalog-feature-search" className="catalog-filter-fields" aria-label="特征候选检索" onSubmit={e => {
             e.preventDefault(); setCatalogReview(null); setPage(1)
             setFeatureQuery({ size: featureSize.trim(), shape: featureShape, printed: featurePrint })
           }}>
-            <label>名称中的尺寸<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
-            <label>名称形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
+            <label>Size / Width × Depth<input value={featureSize} maxLength={24} placeholder="例如 2×4；留空表示未知" onChange={e => setFeatureSize(e.target.value)} /></label>
+            <label>Shape / 形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
               <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
             </select></label>
-            <label>印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确印花证据</option><option value="no">明确基础款 / 无印花证据</option></select></label>
-            <button type="submit">检索候选</button>
-            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setCatalogReview(null); setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
+            <label>Print / 印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确印花证据</option><option value="no">明确基础款 / 无印花证据</option></select></label>
           </form>
-          <p className="inventory-note">颜色和类别复用上方筛选。所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。尺寸和形状从名称解析，印花结合 P 关系与整件名称证据；冲突或不足为未知。尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
-        </details>
+          <div className="catalog-filter-actions">
+            <button type="submit" form="catalog-name-search">搜索</button>
+            <button type="submit" form="catalog-feature-search">检索候选</button>
+            {featureQuery && <button type="button" className="inventory-secondary" onClick={() => { setCatalogReview(null); setFeatureQuery(null); setPage(1) }}>返回编号 / 名称搜索</button>}
+          </div>
+          </div>
+          <p className="inventory-note">“搜索”使用型号 / 名称、Category、Color；“检索候选”使用 Size、Shape、Print、Category、Color，不合并型号 / 名称条件。Size 仅筛选 Width × Depth，Height 尚未支持，不代表完整三维匹配。候选检索采用 Strict AND：所有已填写条件必须有明确匹配证据，任一项不匹配或未知都会排除；未填写条件不参与筛选。尺寸和形状从名称解析，印花结合 P 关系与整件名称证据；冲突或不足为未知。尺寸不等于凸点数量，未写 Print 不等于无印花。严格匹配仅代表现有数据库证据满足条件，不代表物理特征完整验证或游戏支持。</p>
+        </div>
         <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
         {imageError && <p role="alert" className="inventory-error">{imageError}</p>}

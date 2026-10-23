@@ -128,3 +128,19 @@
 .inventory-workbench .explorer-right .inventory-filters, .inventory-workbench .explorer-right .inventory-pagination { flex-wrap: wrap; min-width: 0; }
 .inventory-workbench .explorer-right .inventory-filters > label { min-width: 0; }
 .inventory-workbench .explorer-right pre { max-width: 100%; overflow: auto; }
+
+/* Catalog filters share one visible grid; form ownership preserves both submit paths. */
+.inventory-workbench .catalog-filter-area { container-type: inline-size; container-name: catalog-filters; min-width: 0; }
+.inventory-workbench .catalog-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; align-items: end; }
+.inventory-workbench .catalog-filter-fields { display: contents; }
+.inventory-workbench .catalog-filter-fields > label { min-width: 0; }
+.inventory-workbench .catalog-filter-fields input,
+.inventory-workbench .catalog-filter-fields select { box-sizing: border-box; width: 100%; min-width: 0; }
+.inventory-workbench .catalog-filter-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.inventory-workbench .catalog-filter-actions button { max-width: 100%; }
+@container catalog-filters (min-width: 540px) {
+  .inventory-workbench .catalog-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container catalog-filters (max-width: 299px) {
+  .inventory-workbench .catalog-filter-grid { grid-template-columns: minmax(0, 1fr); }
+}
