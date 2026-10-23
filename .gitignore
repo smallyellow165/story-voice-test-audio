@@ -38,3 +38,8 @@ public/test-videos/*
 *.sw?
 
 dist-module/
+# Local test assets
+/public/test-images/
+/public/test-video-clips/
+/public/test-videos/
+
