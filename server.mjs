@@ -1,3 +1,4 @@
+import { listDesignTraces, loadDesignTrace } from './server/brick-design-history.mjs'
 import { prepareDesignGeneration } from './server/brick-design-input.mjs'
 import { createBrickReverse } from './server/brick-reverse.mjs'
 import { exportTimestampClip } from './server/fish-timestamp-clip.mjs'
@@ -577,6 +578,16 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Cannot read Ring History.' })
     }
+    return
+  }
+
+  if (url.pathname === '/api/brick-test/generations' || url.pathname.startsWith('/api/brick-test/generations/')) {
+    if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET.' }); return }
+    try {
+      sendJson(response, 200, url.pathname === '/api/brick-test/generations'
+        ? { items: await listDesignTraces() }
+        : await loadDesignTrace(url.pathname.slice('/api/brick-test/generations/'.length)))
+    } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 422, { error: error.message }) }
     return
   }
 

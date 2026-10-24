@@ -1,3 +1,6 @@
+import { assessDesignDisplay } from '../brick-design-display.mjs'
+import { validPosition } from './part-geometry'
+import type { DesignReport } from './design-types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { COLORS, PARTS, BODY_LDU, exampleBricks } from './catalog'
@@ -24,6 +27,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [generatedReport, setGeneratedReport] = useState<DesignReport | null>(null)
   const [aiMode, setAiMode] = useState(false)
   const [manualRevision, setManualRevision] = useState(0)
   const [error, setError] = useState('')
@@ -136,11 +140,14 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     return () => { active = false; engine.clearPreview() }
   }, [proposed, proposedValidation.valid, ready, busy, previewRetry, generating, aiMode])
 
-  async function commit(next: Brick[], generated = false) {
+  async function commit(next: Brick[], generated = false, report: DesignReport | null = null) {
     if (!viewer.current || locked.current || !ready || (generating && !generated)) return false
     const validation = validateAssembly(next)
-    setAttempt(validation)
-    if (!validation.valid) return false
+    if (!generated) setAttempt(validation)
+    if (generated) {
+      const display = assessDesignDisplay({ bricks: next }, { PARTS, COLORS, validPosition })
+      if (next.length && !display.renderable) { setError(display.issues.join("；")); return false }
+    } else if (!validation.valid) return false
     if (next.length > 100) { setAttempt(inputError('场景最多 100 块')); return false }
     const token = ++operation.current
     locked.current = true
@@ -150,8 +157,12 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       const applied = await viewer.current.replace(next)
       if (token !== operation.current || !applied) return false
       setBricks(next)
+      setAttempt(null); setGeneratedReport(generated ? report : null)
       setAiMode(generated)
-      if (!generated) setManualRevision((value) => value + 1)
+      if (!generated) {
+        setManualRevision((value) => value + 1)
+        const url = new URL(location.href); url.searchParams.delete('generationId'); window.history.replaceState(window.history.state, '', url)
+      }
       return true
     } catch (reason) {
       if (token === operation.current) setError(reason instanceof Error ? reason.message : String(reason))
@@ -172,8 +183,9 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     ++operation.current
     locked.current = false
     viewer.current?.reset()
+    const url = new URL(location.href); url.searchParams.delete('generationId'); window.history.replaceState(window.history.state, '', url)
     setBricks([]); setError(''); setAttempt(null); setPreviewError(''); setBusy(false)
-    setAiMode(false); setManualRevision((value) => value + 1)
+    setGeneratedReport(null); setAiMode(false); setManualRevision((value) => value + 1)
     setX(0); setZ(0); setLayer(0); setRotation(0); setQuantity(1)
   }
 
@@ -194,12 +206,16 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       <span className="brick-badge">LDraw · AI Generator V3</span>
       <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>LEGO Part Explorer ↗</a>
     </header>
-    <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next) => commit(next, true)} />
+    <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />
       </>}
       center={<>
     {aiMode && <div className="brick-ai-mode">正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
       <section className="brick-stage-panel" aria-label="积木场景">
         <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
+        {generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
+          <strong>{generatedReport.valid ? "Valid" : "Invalid · " + generatedReport.issues.length + " 项错误"}</strong>
+          {!generatedReport.valid && <ul>{generatedReport.issues.slice(0, 3).map((issue, i) => <li key={i}>{issue.code}：{issue.message}</li>)}</ul>}
+        </div>}
         <div className="brick-stage" ref={host} />
         {!aiMode && !generating && <div className="brick-candidate-pages">
           <button disabled={!ready || busy || pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一组位置</button>
@@ -246,7 +262,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       </aside>
       <section className="brick-panel brick-inventory">
         <div className="brick-inventory-title"><h2>当前 Brick 清单</h2><span>{bricks.length} / 100</span></div>
-        <div className={`brick-validation ${currentValidation.valid ? 'is-valid' : 'is-invalid'}`}><strong>当前组合：{currentValidation.valid ? 'Valid' : 'Invalid'}</strong><p>{currentValidation.reason}</p></div>
+        <div className={`brick-validation ${(generatedReport?.valid ?? currentValidation.valid) ? 'is-valid' : 'is-invalid'}`}><strong>当前组合：{(generatedReport?.valid ?? currentValidation.valid) ? 'Valid' : 'Invalid'}</strong><p>{generatedReport && !generatedReport.valid ? generatedReport.issues.map(i => i.code + '：' + i.message).join('；') : currentValidation.reason}</p></div>
         {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">确认添加后，成功加载的积木显示在这里。</p>}
         {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>

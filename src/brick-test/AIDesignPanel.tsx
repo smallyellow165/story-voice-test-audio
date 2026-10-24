@@ -1,3 +1,5 @@
+import { assessDesignDisplay, selectDisplayCandidate } from '../brick-design-display.mjs'
+import { validPosition } from './part-geometry'
 import { ServerImagePicker } from '../brick-vision/ServerImagePicker'
 import type { PreparedSourceImage } from '../brick-vision/ServerImagePicker'
 import type { SessionInventory } from '../brick-inventory/inventory'
@@ -12,7 +14,7 @@ import { createPortal } from 'react-dom'
 import { COLORS, PARTS } from './catalog'
 import { designLimits } from '../brick-design-validation.mjs'
 import type { Brick } from './catalog'
-import type { GenerationResult, InventoryRow } from './design-types'
+import type { GenerationResult, InventoryRow, DesignReport } from './design-types'
 
 type Run = { id: string; createdAt: string; request: { model: string; description: string; inventory: InventoryRow[]; session?: SessionInventory; reference?: unknown; maxRepairAttempts?: number }; httpStatus: number | null; result: GenerationResult }
 type Props = {
@@ -20,7 +22,7 @@ type Props = {
   disabled: boolean
   manualRevision: number
   onGeneratingChange: (busy: boolean) => void
-  onApply: (bricks: Brick[]) => Promise<boolean>
+  onApply: (bricks: Brick[], report: DesignReport | null) => Promise<boolean>
 }
 const endpoint = '/api/brick-test/generate'
 type DesignMode = 'creative' | 'reverse'
@@ -57,6 +59,8 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const [statusRetry, setStatusRetry] = useState(0)
   const [running, setRunning] = useState(false)
   const [runs, setRuns] = useState<Run[]>([])
+  const [history, setHistory] = useState<{ id: string; createdAt: string; model: string; valid: boolean; name: string }[]>([])
+  const historyBoot = useRef(false)
   const [selectedId, setSelectedId] = useState('')
   const [applied, setApplied] = useState<{ runId: string; step: number } | null>(null)
   const [viewError, setViewError] = useState('')
@@ -68,7 +72,9 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   sceneRevision.current = manualRevision
   const run = runs.find((item) => item.id === selectedId) || runs[0]
   const result = run?.result
-  const design = result?.ok && result.validation?.valid ? result.design : undefined
+  const displayedCandidate = selectDisplayCandidate(result)
+  const design = displayedCandidate?.design
+  const displayReport = displayedCandidate?.validation
   const shownStep = applied?.runId === run?.id ? applied?.step : undefined
   const total = inventory.reduce((sum, row) => sum + row.quantity, 0)
   const selectedProvider = status?.models.find(item => item.id === selectedModel)?.provider
@@ -114,23 +120,59 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     return () => { active = false; clearTimeout(timeout); controller.abort() }
   }, [statusRetry])
 
-  async function applyRun(target: Run, count: number) {
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch('/api/brick-test/generations', { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error('读取生成历史失败')
+      const data = await response.json()
+      if (!controller.signal.aborted) setHistory(previous => [...previous, ...data.items.filter((item: { id: string }) => !previous.some(p => p.id === item.id))])
+    }).catch(e => { if (!controller.signal.aborted) setViewError(String(e)) })
+    return () => controller.abort()
+  }, [])
+  useEffect(() => {
+    if (disabled || historyBoot.current) return
+    historyBoot.current = true
+    const id = new URL(location.href).searchParams.get('generationId')
+    if (id) void restoreRun(id)
+  }, [disabled])
+  async function restoreRun(id: string) {
+    if (!id || requestLock.current || disabled) return
+    requestLock.current = true; setRunning(true); onGeneratingChange(true); setViewError('')
+    try {
+      const response = await fetch('/api/brick-test/generations/' + encodeURIComponent(id), { signal: AbortSignal.timeout(30000) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '读取生成记录失败')
+      if (!mounted.current) return
+      const saved: Run = { id: value.id, createdAt: value.createdAt, request: { model: value.model,
+        description: value.requestInput?.description || '', inventory: value.requestInput?.inventory || [] }, httpStatus: value.httpStatus ?? null, result: value }
+      setRuns(previous => [saved, ...previous.filter(r => r.result.id !== value.id)]); setSelectedId(saved.id)
+      await applyRun(saved)
+    } catch (e) { if (mounted.current) setViewError(String(e)) }
+    finally { requestLock.current = false; if (mounted.current) { setRunning(false); onGeneratingChange(false) } }
+  }
+
+  async function applyRun(target: Run, count?: number) {
     if (viewLock.current || !mounted.current) return
-    const value = target.result
-    if (!value.ok || !value.validation?.valid || !value.design) return
+    const value = selectDisplayCandidate(target.result)
+    if (!value?.design) { setViewError(target.result.display?.issues.join('；') || '没有可解析且坐标有效的候选，当前场景保留。'); return }
+    const display = assessDesignDisplay(value.design, { PARTS, COLORS, validPosition })
+    if (!display.renderable) { setViewError(display.issues.join('；')); return }
     viewLock.current = true
     const revision = sceneRevision.current
     setViewError('')
     try {
-      const ordered = value.design.steps.map((step) => {
+      const ordered = count === undefined ? value.design.bricks : value.design.steps.map((step) => {
         const brick = value.design!.bricks.find((item) => item.id === step.brickId)
         if (!brick) throw new Error('步骤引用了缺失的积木，拒绝显示。')
         return brick
       })
-      const ok = await onApply(ordered.slice(0, count))
+      const ok = await onApply(count === undefined ? ordered : ordered.slice(0, count), value.validation || null)
       if (!mounted.current || revision !== sceneRevision.current) return
-      if (ok) setApplied({ runId: target.id, step: count })
-      else setViewError('设计已通过服务端验证，但 Viewer 未能应用；原场景保留。检查模型加载错误后可再次显示，无需重新生成。')
+      if (ok) {
+        setApplied({ runId: target.id, step: count ?? value.design.bricks.length })
+        if (target.result.id) { const url = new URL(location.href); url.searchParams.set('generationId', target.result.id); window.history.replaceState(window.history.state, '', url) }
+      }
+      else setViewError('Viewer 未能加载该候选；原场景保留。检查模型加载错误后可再次显示，无需重新生成。')
     } catch (error) {
       if (mounted.current && revision === sceneRevision.current) setViewError(error instanceof Error ? error.message : String(error))
     } finally { viewLock.current = false }
@@ -166,7 +208,9 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
       if (!mounted.current) return
       const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), request: snapshot, httpStatus, result: responseBody }
       setRuns((previous) => [saved, ...previous]); setSelectedId(saved.id)
-      if (responseBody.ok && responseBody.design && responseBody.validation?.valid) await applyRun(saved, responseBody.design.steps.length)
+      if (responseBody.id) setHistory(previous => [{ id: responseBody.id!, createdAt: responseBody.createdAt || saved.createdAt,
+        model: responseBody.model || selectedModel, valid: responseBody.ok, name: typeof responseBody.design?.name === 'string' ? responseBody.design.name : '' }, ...previous.filter(r => r.id !== responseBody.id)])
+      await applyRun(saved)
     } finally {
       requestLock.current = false
       requestController.current = null
@@ -203,11 +247,12 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
       {referenceSource === 'image' && referenceImage && <img style={{ width: '100%', maxHeight: 260, objectFit: 'contain' }} src={'data:' + referenceImage.mimeType + ';base64,' + referenceImage.imageBase64} alt="生成参考图片" />}
       <div hidden={referenceSource !== 'analysis'}><ReconstructionPanel disabled={disabled || running} onReference={setReferenceAnalysis}
         onBusy={setPreparingReference} onComplete={async value => {
+          if (value.design) value = { ...value, display: assessDesignDisplay(value.design, { PARTS, COLORS, validPosition }) }
           const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
             request: { model: value.model || selectedModel, description: value.requestInput?.description || 'Reference Approximation', inventory: value.requestInput?.inventory || [] },
             httpStatus: value.httpStatus ?? null, result: value }
           setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
-          if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
+          await applyRun(saved)
         }} /></div>
     </div>
     <form onSubmit={generate}>
@@ -227,15 +272,22 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     </div>
+    <label>已保存调用（加载即显示，不调用模型）<select disabled={running || disabled} value={run?.result.id || ''} onChange={e => void restoreRun(e.target.value)}>
+      <option value="">选择生成 / Repair 记录</option>
+      {history.map(h => <option key={h.id} value={h.id}>{h.createdAt} · {h.model} · {h.valid ? 'Valid' : 'Invalid / 失败'} · {h.name}</option>)}
+    </select></label>
+    {viewError && !runs.length && <p role="alert">{viewError}</p>}
     {!!runs.length && <div className="brick-ai-result">
-      <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
-      <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${result.approximation ? 'Approximation · ' : ''}${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
+      <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError(''); const selected = runs.find(r => r.id === event.target.value); if (selected) void applyRun(selected) }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
+      <div className={`brick-validation ${displayReport?.valid ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{displayReport ? (displayReport.valid ? 'Valid' : 'Invalid · ' + displayReport.issues.length + ' 项错误') : '无法显示生成结果'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
       {!!result?.priorAttempts?.length && <p>已执行一次 Repair；初次请求及校验错误见完整诊断中的 priorAttempts，费用与耗时需计入两次调用。</p>}
+      {displayedCandidate && <p>选用候选：{displayedCandidate.id || displayedCandidate.tracePath} {displayedCandidate !== result ? '（Repair 无可显示结果，保留上次候选；未宣称修正成功）' : ''}</p>}
+      <p>Trace 保存状态：{result?.wireStatus || '未捕获网络调用'}<br />记录：{result?.tracePath || '未保存'}<br />Raw Request：{result?.rawRequestPath || '未保存'}<br />Raw Response：{result?.rawResponsePath || '未取得响应或保存失败'}</p>
       <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
       <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? result?.usageMetadata?.input_tokens ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? result?.usageMetadata?.output_tokens_details?.reasoning_tokens ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? result?.usageMetadata?.output_tokens ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? result?.usageMetadata?.total_tokens ?? '未返回'}</p>
       {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens ?? 'Provider 默认'} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || result.generationSettings.reasoning?.effort || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}
-      {!!result?.validation?.issues.length && <ul className="brick-ai-issues">{result.validation.issues.map((issue, index) => <li key={index}><code>{issue.code}</code> {issue.message}</li>)}</ul>}
-      {design && stepsHost && createPortal(<div className="brick-build-steps">
+      {!!displayReport?.issues.length && <ul className="brick-ai-issues">{displayReport.issues.map((issue, index) => <li key={index}><code>{issue.code}</code> {issue.message}</li>)}</ul>}
+      {design && displayedCandidate?.ok && displayReport?.valid && stepsHost && createPortal(<div className="brick-build-steps">
         <p>{shownStep === undefined ? '当前场景未应用这份设计。' : `当前显示：${shownStep} / ${design.steps.length} 步`}</p>
         <div className="brick-actions">
           <button disabled={disabled || running} onClick={() => void applyRun(run, 0)}>从空场景开始</button>
@@ -246,8 +298,8 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
         <ol>{design.steps.map((step, index) => <li key={step.brickId} className={shownStep === index + 1 ? 'is-current' : ''}><button disabled={disabled || running} onClick={() => void applyRun(run, index + 1)}>查看第 {index + 1} 步</button> <strong>{step.brickId}</strong>：{step.instruction}</li>)}</ol>
       </div>, stepsHost)}
       {viewError && <div className="brick-error" role="alert">{viewError}</div>}
-      {!!result?.validation?.usage.length && <details open><summary>完整设计的库存消耗（生成时快照）</summary><table><thead><tr><th>型号 / 颜色</th><th>可用</th><th>使用</th><th>剩余</th></tr></thead><tbody>{result.validation.usage.filter((row) => row.available || row.used).map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part} / {COLORS.find((color) => color.code === row.color)?.label || row.color}</td><td>{row.available}</td><td>{row.used}</td><td>{row.remaining}</td></tr>)}</tbody></table></details>}
-      <details><summary>原始输出与完整诊断</summary><p className="brick-help">本页列表刷新后消失；完整调用诊断另存于服务端，路径见下方 JSON，也可下载保存。失败结果不应用到场景。</p><button onClick={download}>下载本次诊断 JSON</button><h3>LLM 原始可见输出</h3><pre>{result?.rawOutput ?? '本次没有取得模型输出。'}</pre><h3>请求快照、模型信息与 Validator 报告</h3><pre>{JSON.stringify(run, null, 2)}</pre></details>
+      {!!displayReport?.usage.length && <details open><summary>完整设计的库存消耗（生成时快照）</summary><table><thead><tr><th>型号 / 颜色</th><th>可用</th><th>使用</th><th>剩余</th></tr></thead><tbody>{displayReport.usage.filter((row) => row.available || row.used).map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part} / {COLORS.find((color) => color.code === row.color)?.label || row.color}</td><td>{row.available}</td><td>{row.used}</td><td>{row.remaining}</td></tr>)}</tbody></table></details>}
+      <details><summary>原始输出与完整诊断</summary><p className="brick-help">完整调用诊断保存在服务端；可通过已保存调用重新加载。Invalid 可查看，但不代表合法 Assembly。</p><button onClick={download}>下载本次诊断 JSON</button><h3>LLM 原始可见输出</h3><pre>{result?.rawOutput ?? '本次没有取得模型输出。'}</pre><h3>请求快照、模型信息与 Validator 报告</h3><pre>{JSON.stringify(run, null, 2)}</pre></details>
     </div>}
     <p className="brick-help">库存按每次独立设计计算，不会自动扣减。基础限制不等于儿童适用性或抗倾倒认证；请人工检查造型与指导。</p>
   </section>

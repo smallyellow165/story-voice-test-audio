@@ -1,3 +1,4 @@
+import { assessDesignDisplay } from '../src/brick-design-display.mjs'
 import { ApiError } from '@google/genai'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -163,11 +164,17 @@ async function generateBrickDesignOnce(body, { createClient = createGeminiClient
     })
   }
   const complete = output.provider === 'gemini' ? output.finishReason === 'STOP' : output.finishReason === 'completed'
-  if (!complete) return finish(502, { error: { code: 'MODEL_INCOMPLETE', message: '模型未正常完成：' + (output.finishReason || output.blockReason || '无候选输出') + '；未自动重试或切换模型。' } })
+
   let design
   try { design = JSON.parse(output.rawOutput) }
-  catch { return finish(422, { error: { code: 'INVALID_JSON', message: '模型输出不是有效 JSON；原始输出已保留。' } }) }
+  catch {
+    if (!complete) return finish(502, { error: { code: 'MODEL_INCOMPLETE', message: '模型未正常完成：' + (output.finishReason || output.blockReason || '无候选输出') + '；未自动重试或切换模型。' } })
+    return finish(422, { error: { code: 'INVALID_JSON', message: '模型输出不是有效 JSON；原始输出已保留。' } })
+  }
+  output.design = design
+  output.display = assessDesignDisplay(design, rules)
   output.validation = validateBrickDesign(design, input.inventory, rules)
+  if (!complete) return finish(502, { error: { code: 'MODEL_INCOMPLETE', message: '模型未正常完成：' + (output.finishReason || output.blockReason || '无候选输出') + '；未自动重试或切换模型。' } })
   if (!output.validation.valid) return finish(422, { error: { code: 'INVALID_DESIGN', message: '设计未通过验证，未修改或替换模型输出。' } })
   return finish(200, { ok: true, design })
 }
@@ -178,7 +185,7 @@ export async function generateBrickDesign(body, options = {}) {
   if (![0, 1].includes(maximum)) return { status: 400, body: { ok: false, error: { code: 'INVALID_INPUT', message: 'Repair 次数只能为 0 或 1。' } } }
   const first = await generateBrickDesignOnce(body, options)
   if (!maximum || !['INVALID_JSON', 'INVALID_DESIGN'].includes(first.body.error?.code)) return first
-  const prior = { tracePath: first.body.tracePath, rawRequestPath: first.body.rawRequestPath,
+  const prior = { ok: first.body.ok, id: first.body.id, createdAt: first.body.createdAt, design: first.body.design, display: first.body.display, rawOutput: first.body.rawOutput, requestInput: first.body.requestInput, wireStatus: first.body.wireStatus, provider: first.body.provider, tracePath: first.body.tracePath, rawRequestPath: first.body.rawRequestPath,
     rawResponsePath: first.body.rawResponsePath, error: first.body.error, validation: first.body.validation,
     usageMetadata: first.body.usageMetadata, elapsedMs: first.body.elapsedMs, model: first.body.model }
   return generateBrickDesignOnce(body, { ...options, priorAttempts: [prior], repair: {

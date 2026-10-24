@@ -135,7 +135,7 @@ test('reject invalid designs without repairs and preserve original output', asyn
     const result = await invoke(input, reply(raw))
     assert.equal(result.status, 422, code)
     assert.equal(result.body.ok, false, code)
-    assert.equal(result.body.design, undefined, code)
+    assert.deepEqual(result.body.design, design, code)
     assert.equal(result.body.rawOutput, raw, code)
     assert.ok(result.body.validation.issues.some((i) => i.code === code), code)
     assert.equal(result.calls.length, 1, code)
@@ -291,7 +291,7 @@ test('OpenAI design uses the shared adapter and the same inventory/geometry vali
     assert.equal(result.body.provider, 'openai')
     assert.equal(result.body.modelVersion, 'gpt-4.1-test')
     assert.equal(result.body.usageMetadata.total_tokens, 30)
-    if (!valid) assert.equal(result.body.design, undefined)
+    if (!valid) { assert.deepEqual(result.body.design, value); assert.equal(result.body.display.renderable, true) }
   }
 })
 
