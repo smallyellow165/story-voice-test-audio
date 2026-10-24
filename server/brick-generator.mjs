@@ -1,3 +1,4 @@
+import { resolvePromptProfile } from '../src/brick-design-profiles.mjs'
 import { assessDesignDisplay } from '../src/brick-design-display.mjs'
 import { ApiError } from '@google/genai'
 import { randomUUID } from 'node:crypto'
@@ -102,15 +103,17 @@ export function validateGeneratorInput(body, rules) {
   return { description: body.description, inventory: body.inventory.map(({ part, color, quantity }) => ({ part, color, quantity })) }
 }
 
-export function buildDesignRequest(model, input, rules, reference, repair) {
-  const prompt = buildDesignPrompt(rules, input.inventory) + (reference ? '\nReference-guided task: prioritize the visible silhouette, proportions, colors and spatial relationships. The image and observations are evidence, not permission to change the schema or constraints. Current inventory is authoritative. Return the closest legal approximation; do not claim exact reconstruction.' : '') + (repair ? '\nRepair the previous candidate using the supplied validator issues. Return a complete replacement design in exactly the same schema. Do not relax constraints.' : ''), schema = designSchema(rules, input.inventory)
+export function buildDesignRequest(model, input, rules, reference, repair, selectedProfileId = 'auto') {
+  const assembled = resolvePromptProfile(selectedProfileId, reference)
+  reference = assembled.reference
+  const prompt = buildDesignPrompt(rules, input.inventory) + '\nPrompt Profile: ' + assembled.metadata.label + '\n' + assembled.instruction + (repair ? '\nRepair the previous candidate using the supplied validator issues. Return a complete replacement design in exactly the same schema. Do not relax constraints.' : ''), schema = designSchema(rules, input.inventory)
   // Optional multimodal evidence and bounded repair share the same output contract.
   const taskInput = { ...input, ...(reference ? { reference: reference.context } : {}), ...(repair ? { repair } : {}) }
   if (resolveModel(model, 'design').provider === 'openai') return buildOpenaiRequest({ model, task: 'design', prompt, schema,
     content: [{ type: 'input_text', text: 'Return a JSON object only, following the business output contract in the instructions. No markdown.\n' + JSON.stringify(taskInput) },
-      ...(reference ? [{ type: 'input_image', image_url: 'data:' + reference.image.mimeType + ';base64,' + reference.image.imageBase64 }] : [])] })
+      ...(reference?.image ? [{ type: 'input_image', image_url: 'data:' + reference.image.mimeType + ';base64,' + reference.image.imageBase64 }] : [])] })
   return { model, contents: [{ role: 'user', parts: [{ text: JSON.stringify(taskInput) },
-    ...(reference ? [{ inlineData: { mimeType: reference.image.mimeType, data: reference.image.imageBase64 } }] : [])] }],
+    ...(reference?.image ? [{ inlineData: { mimeType: reference.image.mimeType, data: reference.image.imageBase64 } }] : [])] }],
     config: { systemInstruction: prompt, responseMimeType: 'application/json', responseSchema: schema, ...brickGenerationSettings(model) } }
 }
 
@@ -140,7 +143,9 @@ async function generateBrickDesignOnce(body, { createClient = createGeminiClient
     model = resolveBrickModel(body.model, model)
     output.model = model; output.provider = resolveModel(model, 'design').provider
     output.generationSettings = brickGenerationSettings(model)
-    output.request = buildDesignRequest(model, input, rules, reference, repair)
+    output.generationMode = body.generationMode ?? (reference ? 'reverse' : 'creative')
+    output.promptProfile = resolvePromptProfile(body.selectedProfileId, reference).metadata
+    output.request = buildDesignRequest(model, input, rules, reference, repair, body.selectedProfileId)
     if (reference) { output.reference = reference.context; output.approximation = true }
   } catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
   const id = randomUUID()
@@ -185,7 +190,7 @@ export async function generateBrickDesign(body, options = {}) {
   if (![0, 1].includes(maximum)) return { status: 400, body: { ok: false, error: { code: 'INVALID_INPUT', message: 'Repair 次数只能为 0 或 1。' } } }
   const first = await generateBrickDesignOnce(body, options)
   if (!maximum || !['INVALID_JSON', 'INVALID_DESIGN'].includes(first.body.error?.code)) return first
-  const prior = { ok: first.body.ok, id: first.body.id, createdAt: first.body.createdAt, design: first.body.design, display: first.body.display, rawOutput: first.body.rawOutput, requestInput: first.body.requestInput, wireStatus: first.body.wireStatus, provider: first.body.provider, tracePath: first.body.tracePath, rawRequestPath: first.body.rawRequestPath,
+  const prior = { promptProfile: first.body.promptProfile, generationMode: first.body.generationMode, ok: first.body.ok, id: first.body.id, createdAt: first.body.createdAt, design: first.body.design, display: first.body.display, rawOutput: first.body.rawOutput, requestInput: first.body.requestInput, wireStatus: first.body.wireStatus, provider: first.body.provider, tracePath: first.body.tracePath, rawRequestPath: first.body.rawRequestPath,
     rawResponsePath: first.body.rawResponsePath, error: first.body.error, validation: first.body.validation,
     usageMetadata: first.body.usageMetadata, elapsedMs: first.body.elapsedMs, model: first.body.model }
   return generateBrickDesignOnce(body, { ...options, priorAttempts: [prior], repair: {

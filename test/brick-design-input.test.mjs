@@ -37,3 +37,12 @@ test('custom reference is validated; ambiguous or invalid reference is rejected'
   await assert.rejects(prepareDesignGeneration({ reference: { image, analysisId: session.id } }, deps), /请选择/)
   await assert.rejects(prepareDesignGeneration({ reference: { image: { ...image, imageBase64: 'invalid' } } }, deps))
 })
+
+test('profile selection and analysis without image reach the shared generator', async () => {
+  const saved = { analysis: { id: session.id, status: 'complete', analysis: { observations: [{ id: 'neck' }] } }, rows: {}, updatedAt: null }
+  const result = await prepareDesignGeneration({ selectedProfileId: 'reference_relations_v1', generationMode: 'reverse', reference: { analysisId: session.id } }, { reviewInventory: unavailable, restoreAnalysis: async () => saved })
+  assert.equal(result.input.selectedProfileId, 'reference_relations_v1')
+  assert.equal(result.input.generationMode, 'reverse')
+  assert.equal(result.reference.image, undefined)
+  assert.deepEqual(result.reference.context.observations, saved.analysis.analysis)
+})

@@ -1,0 +1,3 @@
+export type PromptProfileMetadata = { selectedProfileId: string; resolvedProfileId: string; version: number; label: string; includedContextBlocks: string[]; missingContextBlocks: string[]; omittedContextBlocks: string[]; validRelationCount: number }
+export const promptProfiles: { id: string; label: string; version: number; level: number; instruction: string }[]
+export function resolvePromptProfile(selectedProfileId?: string, reference?: { image?: { imageBase64?: string; mimeType?: string } | null; context?: { observations?: unknown; review?: unknown; [key: string]: unknown } }): { metadata: PromptProfileMetadata; instruction: string; reference?: unknown }

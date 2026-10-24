@@ -299,7 +299,7 @@ test('OpenAI design uses the shared adapter and the same inventory/geometry vali
 test('reference generation and one opt-in repair share inventory, schema and image', async () => {
   const { input, design } = fixture()
   const calls = []
-  const reference = { image: { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' }, context: { observations: [{ id: 'neck', uncertain: true }] } }
+  const reference = { image: { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' }, context: { observations: { observations: [{ id: 'neck', uncertain: true }] } } }
   const result = await generateBrickDesign({ ...input, maxRepairAttempts: 1 }, {
     model: 'gemini-3.6-flash', traceDirectory, reference,
     createClient: () => ({ models: { generateContent: async request => {
@@ -319,6 +319,8 @@ test('reference generation and one opt-in repair share inventory, schema and ima
   const repair = JSON.parse(calls[1].contents[0].parts[0].text).repair
   assert.equal(repair.previousOutput, '{}')
   assert.ok(repair.issues.length)
+  assert.equal(result.body.promptProfile.resolvedProfileId, 'reference_analysis_v1')
+  assert.deepEqual(result.body.promptProfile, result.body.priorAttempts[0].promptProfile)
   assert.equal(result.body.priorAttempts.length, 1)
   assert.notEqual(result.body.tracePath, result.body.priorAttempts[0].tracePath)
 })
@@ -345,8 +347,31 @@ test('OpenAI reference input retains the free-generation output contract', async
   const guided = buildDesignRequest(model, input, rules, reference)
   const text = JSON.stringify(guided)
   assert.ok(text.includes('data:image/png;base64,iVBORw0KGgo='))
-  assert.ok(text.includes('hidden connections'))
+  assert.equal(text.includes('hidden connections'), false) // Image profile omits analysis context.
   assert.equal(JSON.stringify(free).includes('input_image'), false)
   assert.ok(text.includes('input_image'))
   assert.ok(text.includes('brickId'))
+})
+
+test('profile requests retain schema and full image; analysis-only requests do not require image', async () => {
+  const rules = await loadBrickRules(), { input } = fixture()
+  const image = { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' + 'A'.repeat(20000) }
+  const reference = { image, context: { observations: { observations: [{ id: 'upper' }, { id: 'lower' }], relations: [
+    { from: 'lower', to: 'upper', relation: 'supports', status: 'inferred', confidence: 0.8 },
+  ] }, review: { upper: { confirmedPart: { part_num: '40666', color_id: 14 } } } }
+  const requests = ['reference_image_v1', 'reference_analysis_v1', 'reference_relations_v1'].map(id => buildDesignRequest('gemini-3.6-flash', input, rules, reference, undefined, id))
+  for (const request of requests) {
+    assert.deepEqual(request.config.responseSchema, requests[0].config.responseSchema)
+    assert.equal(request.contents[0].parts[1].inlineData.data, image.imageBase64)
+  }
+  const payloads = requests.map(r => JSON.parse(r.contents[0].parts[0].text))
+  assert.equal(payloads[0].reference.observations, undefined)
+  assert.equal(payloads[1].reference.observations.relations, undefined)
+  assert.deepEqual(payloads[2].reference.observations.relations, reference.context.observations.relations)
+  const noImage = buildDesignRequest('gemini-3.6-flash', input, rules, { context: reference.context }, undefined, 'reference_relations_v1')
+  assert.equal(noImage.contents[0].parts.length, 1)
+  assert.deepEqual(JSON.parse(noImage.contents[0].parts[0].text).reference.review, reference.context.review)
+  const absent = buildDesignRequest('gemini-3.6-flash', input, rules, undefined, undefined, 'reference_relations_v1')
+  assert.ok(absent.config.systemInstruction.includes('Reference Analysis + Relations V1'))
+  assert.equal(absent.contents[0].parts.length, 1)
 })

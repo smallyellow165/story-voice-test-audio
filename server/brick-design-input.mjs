@@ -5,7 +5,7 @@ import { validateImage } from './brick-vision.mjs'
 // Input preparation only. Both paths call the existing Generator V3 afterwards.
 export async function prepareDesignGeneration(body, { reviewInventory, restoreAnalysis }) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('生成输入无效。')
-  const input = { model: body.model, description: body.description, inventory: body.inventory, maxRepairAttempts: body.maxRepairAttempts }
+  const input = { model: body.model, description: body.description, inventory: body.inventory, maxRepairAttempts: body.maxRepairAttempts, selectedProfileId: body.selectedProfileId, generationMode: body.generationMode }
   let source
   if (body.session !== undefined) {
     const session = parseSession(body.session)
@@ -26,7 +26,7 @@ export async function prepareDesignGeneration(body, { reviewInventory, restoreAn
       if (!/^[a-f0-9-]{36}$/.test(ref.analysisId)) throw new Error('参考分析 ID 无效。')
       const saved = await restoreAnalysis(ref.analysisId)
       if (saved.analysis.status !== 'complete' || !saved.analysis.analysis) throw new Error('参考分析尚未完成。')
-      reference = { image: validateImage(saved.analysis.image), context: {
+      reference = { ...(saved.analysis.image?.imageBase64 ? { image: validateImage(saved.analysis.image) } : {}), context: {
         analysisId: saved.analysis.id, image_reference: saved.analysis.image_reference,
         observations: saved.analysis.analysis, source: saved.analysis.source,
         savedReviewAt: saved.updatedAt, review: saved.updatedAt ? Object.fromEntries(Object.entries(saved.rows).map(([id, r]) => {

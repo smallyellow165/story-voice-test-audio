@@ -1,3 +1,4 @@
+import { promptProfiles, resolvePromptProfile } from '../brick-design-profiles.mjs'
 import { assessDesignDisplay, selectDisplayCandidate } from '../brick-design-display.mjs'
 import { validPosition } from './part-geometry'
 import { ServerImagePicker } from '../brick-vision/ServerImagePicker'
@@ -54,6 +55,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const [referenceAnalysis, setReferenceAnalysis] = useState<Restored | null>(null)
   const [referenceImage, setReferenceImage] = useState<PreparedSourceImage | null>(null)
   const [preparingReference, setPreparingReference] = useState(false)
+  const [selectedProfileId, setSelectedProfileId] = useState('auto')
   const [allowRepair, setAllowRepair] = useState(false)
   const [statusError, setStatusError] = useState('')
   const [statusRetry, setStatusRetry] = useState(0)
@@ -82,7 +84,14 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const virtualValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
   const inputValid = (inventorySource === 'saved' ? !!session?.items.length && session.items.reduce((sum, r) => sum + r.quantity, 0) >= designLimits.minBricks && session.items.reduce((sum, r) => sum + r.quantity, 0) <= 100 : virtualValid)
     && description.trim().length > 0 && description.length <= 500
-    && (generationMode === 'creative' || (referenceSource === 'analysis' ? !!referenceAnalysis : !!referenceImage))
+
+
+  const activeAnalysis = generationMode === 'reverse' && referenceSource === 'analysis' ? referenceAnalysis : null
+  const activeImage = generationMode === 'reverse' ? (referenceSource === 'analysis' ? activeAnalysis?.analysis.image : referenceImage) : null
+  const profileInfo = resolvePromptProfile(selectedProfileId, { image: activeImage, context: {
+    observations: activeAnalysis?.analysis.analysis, review: activeAnalysis?.updatedAt ? activeAnalysis.rows : undefined,
+    geometrySnapshot: (activeAnalysis?.artifact as { geometrySnapshot?: unknown } | null | undefined)?.geometrySnapshot,
+  } }).metadata
 
 
   function selectModel(targetMode: DesignMode, id: string) {
@@ -183,11 +192,10 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
     if (requestLock.current || disabled || preparingReference || !inputValid || !selectedConfigured || !status?.models.some((item) => item.id === selectedModel)) return
     requestLock.current = true
     setRunning(true); onGeneratingChange(true); setViewError('')
-    const snapshot = { model: selectedModel, description, inventory: inventory.map((row) => ({ ...row })),
+    const snapshot = { model: selectedModel, selectedProfileId, generationMode, description, inventory: inventory.map((row) => ({ ...row })),
       ...(inventorySource === 'saved' && session ? { session } : {}), maxRepairAttempts: allowRepair ? 1 : 0,
-      ...(generationMode === 'reverse' ? { reference: referenceSource === 'analysis'
-        ? { analysisId: referenceAnalysis!.analysis.id }
-        : { image: { mimeType: referenceImage!.mimeType, imageBase64: referenceImage!.imageBase64 } } } : {}),
+      ...(activeAnalysis ? { reference: { analysisId: activeAnalysis.analysis.id } }
+        : activeImage ? { reference: { image: { mimeType: activeImage.mimeType, imageBase64: activeImage.imageBase64 } } } : {}),
     }
     const controller = new AbortController()
     requestController.current = controller
@@ -262,13 +270,22 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
         }} />}
         <ModelSelector models={status?.models || []}
           value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => selectModel(generationMode, chosen.id)} />
+        <label>Prompt Profile<select value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)}>
+          <option value="auto">Auto</option>{promptProfiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select></label>
+        <p className="brick-help">Profile: {profileInfo.label}</p>
+        <details><summary>Context · {profileInfo.includedContextBlocks.join(' ✓ · ')} ✓</summary>
+          <p>Not provided: {profileInfo.missingContextBlocks.join(' · ') || '无'}</p>
+          <p>此 Profile 省略: {profileInfo.omittedContextBlocks.join(' · ') || '无'}</p>
+          <p>有效关系: {profileInfo.validRelationCount}；关系是局部证据，不代表物理连接已验证。</p>
+        </details>
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <label><input type="checkbox" checked={allowRepair} onChange={e => setAllowRepair(e.target.checked)} />校验失败时允许最多一次 LLM Repair（可能额外计费）</label>
         <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !selectedConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>
     </form>
     <p className="brick-help" role="status">{running ? '正在检查清单、等待模型并验证候选；如已授权，校验失败时最多修正一次。请勿重复提交。' : status ? `配置模型：${selectedModel} · ${selectedConfigured ? 'API Key 已配置' : '缺少服务端 ' + (selectedProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY')}` : '正在读取服务端配置…'}</p>
-    {!inputValid && <p className="brick-help">请选择有效清单（总量 {designLimits.minBricks}–100 块）并填写 Prompt；参考图模式还需加载图片或已有分析。</p>}
+    {!inputValid && <p className="brick-help">请选择有效清单（总量 {designLimits.minBricks}–100 块）并填写 Prompt；图片、分析与关系均可选。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     </div>
@@ -282,6 +299,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
       <div className={`brick-validation ${displayReport?.valid ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{displayReport ? (displayReport.valid ? 'Valid' : 'Invalid · ' + displayReport.issues.length + ' 项错误') : '无法显示生成结果'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
       {!!result?.priorAttempts?.length && <p>已执行一次 Repair；初次请求及校验错误见完整诊断中的 priorAttempts，费用与耗时需计入两次调用。</p>}
       {displayedCandidate && <p>选用候选：{displayedCandidate.id || displayedCandidate.tracePath} {displayedCandidate !== result ? '（Repair 无可显示结果，保留上次候选；未宣称修正成功）' : ''}</p>}
+      {result?.promptProfile && <details><summary>本次 Profile: {result.promptProfile.label}</summary><pre>{JSON.stringify(result.promptProfile, null, 2)}</pre></details>}
       <p>Trace 保存状态：{result?.wireStatus || '未捕获网络调用'}<br />记录：{result?.tracePath || '未保存'}<br />Raw Request：{result?.rawRequestPath || '未保存'}<br />Raw Response：{result?.rawResponsePath || '未取得响应或保存失败'}</p>
       <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
       <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? result?.usageMetadata?.input_tokens ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? result?.usageMetadata?.output_tokens_details?.reasoning_tokens ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? result?.usageMetadata?.output_tokens ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? result?.usageMetadata?.total_tokens ?? '未返回'}</p>

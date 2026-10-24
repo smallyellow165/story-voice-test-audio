@@ -35,7 +35,7 @@ export function ReconstructionPanel({ disabled, onBusy, onComplete, onReference 
     await action(async () => {
       setSaved(null); onReference(null)
       const value = await requestJson<Restored>('/api/brick-reverse/restore/' + encodeURIComponent(target), {}, '加载已保存参考分析')
-      if (value.analysis.status !== 'complete' || !value.analysis.image?.imageBase64) throw new Error('分析未完成或缺少参考图片。')
+      if (value.analysis.status !== 'complete' || !value.analysis.analysis) throw new Error('分析未完成或缺少分析结果。')
       setSaved(value); onReference(value)
     })
   }

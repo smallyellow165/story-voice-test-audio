@@ -1,3 +1,4 @@
+import type { PromptProfileMetadata } from '../brick-design-profiles.mjs'
 import type { Brick } from './catalog'
 import type { Validation } from './assembly'
 
@@ -12,6 +13,8 @@ export type DesignReport = {
 }
 export type GenerationResult = {
   ok: boolean
+  promptProfile?: PromptProfileMetadata
+  generationMode?: string
   id?: string
   createdAt?: string
   display?: { renderable: boolean; issues: string[] }
