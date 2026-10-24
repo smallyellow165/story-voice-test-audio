@@ -119,7 +119,7 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
         try { if (color !== undefined) { await onAdd({ part_num: part.part_num, color_id: color, quantity: Number(quantity) }); setError('') } }
         catch (e) { setError(message(e)) }
         finally { setAdding(false) }
-      }}>{reviewing ? '确认候选' : '加入库存'}</button></div></div>
+      }}>{reviewing ? '确认型号与颜色' : '加入我的积木'}</button></div></div>
   </article>
 }
 
@@ -127,7 +127,6 @@ export function InventoryPage() {
   const [geometryHost, setGeometryHost] = useState<HTMLDivElement | null>(null)
   const [hasGeometry, setHasGeometry] = useState(false)
   const [rightTab, setRightTab] = useState<'catalog' | 'confirmed'>('catalog')
-  const [recognitionResultsHost, setRecognitionResultsHost] = useState<HTMLDivElement | null>(null)
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
   const [catalogRequestKey, setCatalogRequestKey] = useState('')
@@ -234,13 +233,13 @@ export function InventoryPage() {
 
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
-  const canReplace = () => !dirty || window.confirm('当前库存尚未保存，确定放弃这些修改吗？')
+  const canReplace = () => !dirty || window.confirm('当前积木清单尚未保存，确定放弃这些修改吗？')
   const load = async () => {
     if (!selected || !canReplace()) return
     try {
       const sessions = loadSessions(localStorage)
       const session = sessions.find(s => s.id === selected)
-      if (!session) throw new Error('这份库存已不存在，请刷新保存列表。')
+      if (!session) throw new Error('这份积木清单已不存在，请刷新保存列表。')
       setSaved(sessions); setId(session.id); setName(session.name); setItems(session.items); setDirty(false); setStorageError(''); setNotice('已加载，可继续编辑。')
       const partNums = [...new Set(session.items.map(row => row.part_num))]
       // Restore labels from the catalog; labels are not part of inventory truth.
@@ -254,34 +253,35 @@ export function InventoryPage() {
   return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
         left={<>
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
-            <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>今天的库存 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
-          <h2 className="inventory-panel-title">Source</h2>
-    <PartExplorerRecognition geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} resultsHost={recognitionResultsHost} onSearchCatalog={openObservationCatalog} onApply={recognized => {
+            <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
+          <h2 className="inventory-panel-title">图片与识别</h2>
+    <PartExplorerRecognition geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onApply={recognized => {
+      if (!window.confirm('将已确认的 ' + recognized.reduce((sum, item) => sum + item.quantity, 0) + ' 块积木加入当前清单？相同型号和颜色会累计数量；再次加入同一识别结果也会重复累计。此操作不保存审核或清单。')) return false
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
-      changeItems(next); setNotice('图片草稿已加入编辑器，请核对并点击保存库存。')
+      changeItems(next); setNotice('已加入我的积木，清单尚未保存。请核对数量并点击“保存积木清单”。'); return true
     }} />
     <a href={`${import.meta.env.BASE_URL}brick-vision.html`}>打开独立 Step Image Confirmation 测试页 ↗</a>
         </>}
         center={<ExplorerWorkspace hasGeometry={hasGeometry} matchingHost={setVisionWorkspaceHost} geometryHost={setGeometryHost} />}
         right={<section className="explorer-right">
-          <div className="explorer-right-tabs" role="tablist" aria-label="Catalog 与确认零件" onKeyDown={event => {
+          <div className="explorer-right-tabs" role="tablist" aria-label="零件目录与我的积木" onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
             const next = event.key === 'Home' ? 'catalog' : event.key === 'End' ? 'confirmed' : rightTab === 'catalog' ? 'confirmed' : 'catalog'
             setRightTab(next)
             event.currentTarget.querySelector<HTMLButtonElement>('#explorer-tab-' + next)?.focus()
           }}>
-            <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>Catalog Search</button>
-            <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>Confirmed Parts · {total}</button>
+            <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>零件目录</button>
+            <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块</button>
           </div>
           <div id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
       <section ref={catalogHost} className="inventory-catalog" aria-label="DUPLO Catalog">
-        <h2>找积木</h2>
-        {catalogReview && <p role="status">为 {catalogReview.observationId} 选择候选：确认后填写审核行，不直接加入库存。
-          <button type="button" onClick={exitObservationCatalog}>退出关联，普通 Catalog Search</button></p>}
+        <h2>零件目录</h2>
+        {catalogReview && <p role="status">为识别项 {catalogReview.observationId} 选择型号与颜色：确认后填写审核行，不直接加入我的积木。
+          <button type="button" onClick={exitObservationCatalog}>结束当前识别项审核，浏览零件目录</button></p>}
         <div className="catalog-filter-area">
           <div className="catalog-filter-grid">
-        <form id="catalog-search" className="catalog-filter-fields" aria-label="Catalog Search" onSubmit={e => {
+        <form id="catalog-search" className="catalog-filter-fields" aria-label="零件目录" onSubmit={e => {
           e.preventDefault()
           submitCatalog({ search, category, color: colorFilter, shape: featureShape, printed: featurePrint,
             requireLdraw, size: featureSize, axes: partialDimensions },
@@ -319,7 +319,7 @@ export function InventoryPage() {
           {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${submittedQuery.color ?? ''}`} part={part} image={images[part.part_num]} initialColor={submittedQuery.color ?? ''} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
             onAdd={async item => {
               if (catalogReview) {
-                if (resultReviewKey !== catalogRequestKey || String(searchRevision.current) !== catalogRequestKey || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从 Observation 重新检索。')
+                if (resultReviewKey !== catalogRequestKey || String(searchRevision.current) !== catalogRequestKey || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从识别项 重新检索。')
                 if (!part.colors.some(c => c.id === item.color_id) || (submittedQuery.color !== undefined && String(item.color_id) !== submittedQuery.color)) throw new Error('所选颜色不符合本次检索条件；请按本次提交的颜色条件选择或重新搜索。')
                 addItem([], item)
                 const revision = searchRevision.current
@@ -333,15 +333,14 @@ export function InventoryPage() {
       </section>
           </div>
           <div id="explorer-confirmed" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-confirmed" hidden={rightTab !== 'confirmed'}>
-      <div ref={setRecognitionResultsHost} />
-      <aside id="session-inventory" className="inventory-session" aria-label="Session Inventory">
-        <h2>已确认零件 / 库存 <span>{total} 块</span></h2>
-        <label>库存名称<input value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true) }} /></label>
-        <p>{items.length} 种型号 / 颜色组合 · {dirty ? '尚未保存' : '无未保存修改'}</p>
+      <aside id="session-inventory" className="inventory-session" aria-label="我的积木">
+        <h2>当前积木清单 <span>{total} 块</span></h2>
+        <label>清单名称<input value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true) }} /></label>
+        <p>{items.length} 种型号 / 颜色组合 · {dirty ? '清单有未保存修改' : id ? '清单已保存' : '清单尚未保存'}</p>
         <div className="inventory-actions"><button onClick={() => {
           try { const session = snapshot(); const sessions = saveSession(localStorage, session); setSaved(sessions); setId(session.id); setSelected(session.id); setDirty(false); setStorageError(''); setNotice('已保存在此浏览器。') }
           catch (e) { setStorageError(message(e)) }
-        }}>保存库存</button><button className="inventory-secondary" onClick={() => { if (canReplace()) { setId(''); setSelected(''); setItems([]); setName('今天的积木'); setDirty(false); setNotice('已新建空库存。') } }}>新建</button>
+        }}>保存积木清单</button><button className="inventory-secondary" onClick={() => { if (canReplace()) { setId(''); setSelected(''); setItems([]); setName('今天的积木'); setDirty(false); setNotice('已新建空清单。') } }}>新建清单</button>
           <button className="inventory-secondary" onClick={() => {
             try {
             const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' })
@@ -349,12 +348,12 @@ export function InventoryPage() {
             } catch (e) { setStorageError(message(e)) }
           }}>导出 JSON</button></div>
         {id && !dirty && <p><a href={import.meta.env.BASE_URL + 'brick-test.html?sessionId=' + encodeURIComponent(id)}>在 Design Lab 使用此零件集合自由创作 →</a></p>}
-        <label>重新加载已保存库存<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">选择一份库存</option>{saved.map(s => <option key={s.id} value={s.id}>{s.name} · {new Date(s.updated_at).toLocaleString()}</option>)}</select></label>
+        <label>重新加载已保存积木清单<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">选择一份积木清单</option>{saved.map(s => <option key={s.id} value={s.id}>{s.name} · {new Date(s.updated_at).toLocaleString()}</option>)}</select></label>
         <button disabled={!selected} className="inventory-secondary" onClick={() => void load()}>加载并继续编辑</button>
         <p className="inventory-note">保存在当前浏览器和地址下，不会同步到其他设备。离开前请保存；可导出 JSON 备份。</p>
         {storageError && <p role="alert" className="inventory-error">{storageError}</p>}
         <p role="status" aria-live="polite">{notice}</p>
-        {items.length === 0 && <p className="inventory-empty">从 Catalog 加入今天拿出来的积木。</p>}
+        {items.length === 0 && <p className="inventory-empty">从零件目录添加你拥有或本次准备使用的积木。</p>}
         <ul className="inventory-items">{items.map(row => {
           const key = itemKey(row), color = filters.colors.find(c => c.id === row.color_id)
           return <li key={key}><strong>{names[row.part_num] || row.part_num}</strong><small>{row.part_num}</small><span><Swatch color={color} /> {color?.name || `颜色 ${row.color_id}`}</span>
@@ -363,7 +362,7 @@ export function InventoryPage() {
               <button className="inventory-secondary" onClick={() => changeItems(setQuantity(items, key, 0))}>删除</button></div></li>
         })}</ul>
       </aside>
-          <details><summary>可选：从已保存库存准备游戏</summary><GamePreparation /></details>
+          <details><summary>可选：从已保存积木清单准备游戏</summary><GamePreparation /></details>
           </div>
         </section>}
       />

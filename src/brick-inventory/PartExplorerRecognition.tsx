@@ -10,10 +10,10 @@ import type { InventoryRow } from '../brick-test/design-types'
 
 type Strategy = 'loose' | 'geometry_only' | 'catalog_match'
 const preferenceKey = 'story-voice-test-audio:ai-design:model:reverse'
-export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, resultsHost, onApply, onSearchCatalog, onStrategyChange }: {
+export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, onApply, onSearchCatalog, onStrategyChange }: {
   geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void
-  workspaceHost: HTMLElement | null; resultsHost: HTMLElement | null
-  onStrategyChange(): void; onApply(items: InventoryItem[]): void; onSearchCatalog(request: ObservationCatalogSearch): void
+  workspaceHost: HTMLElement | null
+  onStrategyChange(): void; onApply(items: InventoryItem[]): boolean | void; onSearchCatalog(request: ObservationCatalogSearch): void
 }) {
   const [strategy, setStrategy] = useState<Strategy>(() => new URL(location.href).searchParams.has('analysisId') ? 'geometry_only' : 'loose')
   const [assembledMode, setAssembledMode] = useState<'geometry_only' | 'catalog_match'>('geometry_only')
@@ -37,14 +37,14 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometr
     return () => controller.abort()
   }, [retry])
   return <>
-    <label>Prompt Strategy<select value={strategy} disabled={busy || looseBusy || dirty} onChange={event => {
+    <label>识别策略<select value={strategy} disabled={busy || looseBusy || dirty} onChange={event => {
       const next = event.target.value as Strategy
       if (next !== 'loose') { setAssembledOpened(true); setAssembledMode(next) }
       onStrategyChange(); setStrategy(next)
     }}>
-      <option value="loose">Loose Parts</option>
-      <option value="geometry_only">Assembled Geometry</option>
-      <option value="catalog_match">Assembled Catalog</option>
+      <option value="loose">散装积木识别</option>
+      <option value="geometry_only">成品几何识别</option>
+      <option value="catalog_match">成品目录识别</option>
     </select></label>
     {dirty && <p>请保存审核或新建分析后再切换 Strategy。</p>}
     <div hidden={strategy !== 'loose'}><InventoryImagePanel active={strategy === 'loose'} onBusy={setLooseBusy}
@@ -60,7 +60,7 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometr
           try { localStorage.setItem(preferenceKey, JSON.stringify({ provider: selected.provider, id })) } catch { /* Session selection remains. */ }
         }} disabled={false} onBusy={setBusy} onDirty={setDirty}
         analysisMode={assembledMode} onAnalysisMode={mode => { setAssembledMode(mode); setStrategy(mode); onStrategyChange() }}
-        active={strategy !== 'loose'} geometryHost={geometryHost} onGeometryPresence={onGeometryPresence} onSearchCatalog={onSearchCatalog} workspaceHost={workspaceHost} resultsHost={resultsHost} onApply={onApply} />}
+        active={strategy !== 'loose'} geometryHost={geometryHost} onGeometryPresence={onGeometryPresence} onSearchCatalog={onSearchCatalog} workspaceHost={workspaceHost} onApply={onApply} />}
     </div>
   </>
 }

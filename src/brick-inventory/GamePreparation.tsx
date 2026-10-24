@@ -46,22 +46,22 @@ export function GamePreparation() {
     } catch (e) { setError(String(e)) }
   }
   return <section className="inventory-catalog inventory-game-preparation" aria-label="生成正式积木游戏">
-    <h2>从已保存库存生成游戏</h2>
-    <p>仅读取你明确选择并保存的库存。修改库存后请先保存，再刷新列表并重新检查。</p>
+    <h2>从已保存积木清单生成游戏</h2>
+    <p>仅读取你明确选择并保存的积木清单。修改积木清单后请先保存，再刷新列表并重新检查。</p>
     <div className="inventory-filters">
-      <label>已保存 Session<select value={selected} disabled={!!busy} onChange={e => { setSelected(e.target.value); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false) }}>
-        <option value="">请选择库存</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at}</option>)}
+      <label>已保存清单<select value={selected} disabled={!!busy} onChange={e => { setSelected(e.target.value); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false) }}>
+        <option value="">请选择积木清单</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at}</option>)}
       </select></label><button disabled={!!busy} onClick={() => { refresh(); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false) }}>刷新保存列表</button>
       <button disabled={!chosen || !!busy} onClick={async () => {
-        setBusy('读取已保存库存并查询官方映射…'); setError(''); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false)
+        setBusy('读取已保存积木清单并查询官方映射…'); setError(''); setReview(null); setAttempt(null); setQuantities({}); setConfirmed(false)
         try {
           const saved = loadSessions(localStorage).find(s => s.id === selected)
-          if (!saved) throw new Error('所选库存已不存在，请刷新列表。')
+          if (!saved) throw new Error('所选积木清单已不存在，请刷新列表。')
           setSessions(loadSessions(localStorage))
           setReview(await postBrickGame('review', { session: saved }))
           setQuantities({}); setConfirmed(false)
         } catch (e) { setError(String(e)) } finally { setBusy('') }
-      }}>查看库存与映射</button>
+      }}>查看积木清单与映射</button>
     </div>
     {chosen && <details open><summary>读取来源：{chosen.name} · {chosen.id}</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review?.session || chosen, null, 2)}</pre></details>}
     {review && <>
@@ -85,7 +85,7 @@ export function GamePreparation() {
           </td>
           <td>{row.errors.join('；') || '可用于本次游戏，请填写数量'}</td></tr>)}</tbody></table></div>
       {review.mapping.issues.map(issue => <p className="inventory-error" key={issue}>{issue}</p>)}
-      <p>本次选择 {total} 块；需 2–100 块。未选择及不支持的项目仍保留在完整库存中。</p>
+      <p>本次选择 {total} 块；需 2–100 块。未选择及不支持的项目仍保留在完整积木清单中。</p>
       <label><input type="checkbox" checked={confirmed} disabled={!selectionValid || !!busy || !!attempt} onChange={e => setConfirmed(e.target.checked)} />我已核对可用与排除项目，确认仅使用以上数量生成游戏。</label>
       <details><summary>映射原始证据 / 可用性检查</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(review.mapping, null, 2)}</pre></details>
     </>}
@@ -95,15 +95,15 @@ export function GamePreparation() {
         setBusy('所选模型生成及 Validator 验证中；不会自动重试…'); setError('')
         try { setAttempt(await postBrickGame('generate', { reviewId: review!.id, description, model, selection, confirmSelection: true })) }
         catch (e) { setError(String(e)) } finally { setBusy('') }
-      }}>确认库存并生成游戏</button></div>
+      }}>确认积木清单并生成游戏</button></div>
     <p role="status">{busy}</p>{error && <p role="alert" className="inventory-error">{error}</p>}
     {attempt && <>
       <p>Validator：{attempt.generation.validation?.valid ? 'Valid' : 'Invalid'} · 请求模型 {attempt.generation.model} · 返回模型 {attempt.generation.modelVersion} · {attempt.generation.elapsedMs} ms · {attempt.generation.finishReason}</p>
       {attempt.generation.error && <p role="alert">{attempt.generation.error.message}</p>}
-      <details open><summary>实际模型输入 / Design / Steps / 库存消耗 / 原始输出</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(attempt, null, 2)}</pre></details>
+      <details open><summary>实际模型输入 / Design / Steps / 积木清单消耗 / 原始输出</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(attempt, null, 2)}</pre></details>
       {attempt.artifact && <><p>已验证设计：{attempt.artifact.generation.design.name} · ID {attempt.artifact.id} · SHA-256 {attempt.artifact.designHash}</p>
         <label>V4 页面地址<input value={v4Url} onChange={e => setV4Url(e.target.value)} /></label><button onClick={start}>在 V4 启动这个游戏</button></>}
-      <p>如需再次生成，明确点击“查看库存与映射”建立新检查记录后再提交。</p>
+      <p>如需再次生成，明确点击“查看积木清单与映射”建立新检查记录后再提交。</p>
     </>}
   </section>
 }

@@ -1,3 +1,5 @@
+import { ReviewToolbar } from './ReviewToolbar'
+import type { ReviewFilter } from './ReviewToolbar'
 import { ServerImagePicker } from './ServerImagePicker'
 import type { PreparedSourceImage } from './ServerImagePicker'
 import { ObservationTable, ObservationFeatureCells } from './ObservationTable'
@@ -23,7 +25,7 @@ type DraftRow = { id: string; selected: boolean; part: string; color: string; qu
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
 export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy }: {
   active?: boolean; onBusy?(busy: boolean): void
-  onApply(items: InventoryItem[]): void; workspaceHost?: HTMLElement | null
+  onApply(items: InventoryItem[]): boolean | void; workspaceHost?: HTMLElement | null
   onSearchCatalog?(request: ObservationCatalogSearch): void
 }) {
   const [preview, setPreview] = useState('')
@@ -49,13 +51,15 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   const [autoNotes, setAutoNotes] = useState<Record<string, string>>({})
   const [autoSummary, setAutoSummary] = useState('')
   const [draftNotice, setDraftNotice] = useState('')
+  const [reviewSaved, setReviewSaved] = useState(false)
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   useEffect(() => () => { catalogEpoch.current++ }, [])
   function restoreResult(next: VisionResult) {
     catalogEpoch.current++
     autoCache.current.clear(); setAutoNotes({}); setAutoSummary('')
     setResult(next); setApplied(false); setValidation(null)
     const initial = (next.matches || []).map(m => createObservationDraft(m.observation))
-    setRows(initial); setDraftNotice('')
+    setReviewFilter('all'); setRows(initial); setReviewSaved(false); setDraftNotice('')
     try {
       const saved = JSON.parse(localStorage.getItem('part-explorer:review:' + next.id) || 'null')
       if (saved) {
@@ -64,7 +68,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
           && r.features && typeof r.features.size === 'string' && typeof r.features.color === 'string'
           && typeof r.features.shape === 'string' && typeof r.features.print === 'string')) throw new Error('审核草稿字段无效')
         saved.rows.forEach((r: DraftRow) => validateReviewDimensions(r.features))
-        setRows(saved.rows); setDraftNotice('已恢复此浏览器保存的审核草稿；加入 Results 时仍校验 Catalog。')
+        setRows(saved.rows); setReviewSaved(true); setDraftNotice('已恢复此浏览器保存的审核草稿；加入我的积木 时仍校验 Catalog。')
       }
     } catch (e) { setDraftNotice('审核草稿未恢复：' + String(e) + '；原始识别结果仍可审核。') }
   }
@@ -73,12 +77,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     try {
       rows.forEach(row => validateReviewDimensions(row.features))
       localStorage.setItem('part-explorer:review:' + result.id, JSON.stringify({ rows }))
-      setDraftNotice('审核草稿已保存到此浏览器；重新加载相同历史记录可恢复。')
+      setReviewSaved(true); setDraftNotice('审核草稿已保存到此浏览器；重新加载相同历史记录可恢复。')
     } catch (e) { setDraftNotice('保存失败：' + String(e)) }
   }
   function editRow(id: string, changes: Partial<DraftRow>) {
     catalogEpoch.current++
-    setDraftNotice('审核有未保存修改。')
+    setReviewSaved(false); setDraftNotice('审核有未保存修改。')
     if (changes.features) autoCache.current.clear()
     setAutoNotes(previous => ({ ...previous, [id]: '' })); setAutoSummary('')
     setValidation(null)
@@ -100,11 +104,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       onSearchCatalog({ method, partNumber, key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity,
         onResults(count) {
           if (catalogEpoch.current !== epoch) return
-          setAutoNotes(previous => ({ ...previous, [row.id]: count == null ? '检索失败；请查看右栏错误' : count ? 'Candidates · 本页 ' + count + ' 个 Catalog 型号' : '没有候选' }))
+          setAutoNotes(previous => ({ ...previous, [row.id]: count == null ? '检索失败；请查看右栏错误' : count ? '待选择 · 本页 ' + count + ' 个 Catalog 型号' : '没有候选' }))
         },
         onChoose(item, evidence) {
-          if (catalogEpoch.current !== epoch || lock.current) throw new Error('Observation 或人工草稿已改变，请重新点击该行的检索候选。')
+          if (catalogEpoch.current !== epoch || lock.current) throw new Error('识别项或人工草稿已改变，请重新点击该行的检索候选。')
           catalogEpoch.current++
+          setReviewSaved(false); setDraftNotice('审核有未保存修改。')
           setValidation(null)
           setRows(previous => previous.map(r => r.id === row.id ? { ...r, selected: true, part: item.part_num,
             color: String(item.color_id), quantity: String(item.quantity), identityOrigin: 'manual' as const, excluded: false, confirmation: { features, item, evidence } } : r))
@@ -131,13 +136,14 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
           const key = JSON.stringify(params)
           const cached = autoCache.current.get(key)
           const data = cached && cached.expires > Date.now() ? cached.data : await requestJson<unknown>(
-            '/api/brick-catalog/candidates?' + new URLSearchParams({ ...params, page: '1', page_size: '2' }), {}, 'Observation Catalog 检索')
+            '/api/brick-catalog/candidates?' + new URLSearchParams({ ...params, page: '1', page_size: '2' }), {}, '识别项目录检索')
           if (catalogEpoch.current !== epoch) return
           const decision = uniqueCatalogIdentity(data, features.color_id)
           autoCache.current.set(key, { data, expires: cached && cached.expires > Date.now() ? cached.expires : Date.now() + 60000 })
           if (decision.status === 'filled') {
             const completed = completeCatalogIdentity(row, decision)
             counts.filled++
+            setReviewSaved(false); setDraftNotice('审核有未保存修改。')
             setValidation(null)
             setRows(previous => previous.map(current => current.id === row.id && !hasConfirmedIdentity(current)
               && JSON.stringify(current.features) === JSON.stringify(row.features)
@@ -160,7 +166,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     } finally { lock.current = false; setBusy(false) }
   }
   async function refreshHistory() {
-    try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '历史识别')).records) }
+    try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '识别历史')).records) }
     catch (e) { setError(String(e)) }
   }
   useEffect(() => { void refreshHistory() }, [])
@@ -183,7 +189,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       restoreResult(next)
     } catch (e) { setError(String(e)) } finally { setBusy(false); lock.current = false }
   }
-  async function apply() {
+  async function validateSelection() {
     if (lock.current || applied) return
     catalogEpoch.current++
     lock.current = true; setBusy(true); setError('')
@@ -194,16 +200,26 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       }, [])
       if (!items.length) throw new Error('请勾选确认的积木；不确定项可修改后再勾选。')
       const checked = await requestJson<{ valid: boolean }>('/api/brick-vision/validate', { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }, '库存格式 / Catalog 身份检查')
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }, '清单格式 / 目录型号与颜色检查')
       setValidation(checked)
       if (!checked.valid) throw new Error('草稿存在无效型号或颜色组合；请查看 Catalog 校验详情并修改。')
-      if (window.confirm('将勾选的积木加入当前库存编辑器？不会自动保存，原有积木会保留。')) {
-        onApply(items); setApplied(true)
-        setRows(previous => previous.map(r => r.selected && !r.excluded
-          ? { ...r, identityOrigin: 'manual' as const, confirmation: { method: 'catalog_validated', evidence: checked } } : r))
-        setDraftNotice('Catalog 已校验并确认；请保存审核草稿以保留此状态。')
-      }
+      setRows(previous => previous.map(r => r.selected && !r.excluded
+        ? { ...r, identityOrigin: 'manual' as const, confirmation: { method: 'catalog_validated', evidence: checked } } : r))
+      setReviewSaved(false); setDraftNotice('型号与颜色已确认；审核有未保存修改。尚未加入我的积木。')
     } catch (e) { setError(String(e)) } finally { setBusy(false); lock.current = false }
+  }
+  const isConfirmed = (row: DraftRow) => !row.excluded && !!row.confirmation && row.identityOrigin === 'manual'
+    && (row.confirmation as { method?: string }).method !== 'catalog_unique'
+  const confirmedRows = rows.filter(isConfirmed)
+  const selectedConfirmed = confirmedRows.filter(row => row.selected)
+  function addConfirmed() {
+    if (lock.current || applied || !selectedConfirmed.length) return
+    try {
+      const items = selectedConfirmed.reduce<InventoryItem[]>((items, row) => addItem(items, {
+        part_num: row.part, color_id: Number(row.color), quantity: Number(row.quantity),
+      }), [])
+      if (onApply(items) !== false) setApplied(true)
+    } catch (e) { setError(String(e)) }
   }
   const matches = new Map((result?.matches || []).map(m => [m.observation.id, m]))
   const visibleObservations = rows.flatMap(row => { const m = matches.get(row.id); return m ? [m.observation] : [] })
@@ -213,41 +229,51 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
   const review = <div className="inventory-vision-review" hidden={!active}>
+    <ReviewToolbar confirmed={confirmedRows.length} total={rows.length} saved={reviewSaved}
+      filter={reviewFilter} onFilter={setReviewFilter} help={<>
+        <p>从左栏识别或加载历史，在此审核；零件目录位于右栏。</p>
+        <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。填写 Height 时使用可靠主体三维几何检索；Unknown 不匹配。不填 Height 的整数二维 Size 保留现有水平检索。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
+        <p>审核记录保存在此浏览器。加入我的积木只添加已确认且勾选的识别项，不保存审核或清单。手动填写的型号与颜色请先确认。</p>
+        {result && <><p>{result.prompt_id || '历史记录未标注 Prompt'} {result.prompt_version ? 'v' + result.prompt_version : ''} · {result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p></>}
+      </>}>
+      <button disabled={busy || !result} onClick={saveDraft}>保存审核</button>
+      <button disabled={busy || applied || !selectedConfirmed.length} onClick={addConfirmed}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
+    </ReviewToolbar>
     {result && <>
-      <p>{result.prompt_id || '历史记录未标注 Prompt'} {result.prompt_version ? 'v' + result.prompt_version : ''} · {result.status} · Provider {result.provider} · 模型 {result.model} / {result.modelVersion || '未返回'} · HTTP {result.httpStatus ?? 'SDK 未提供'} · {result.elapsedMs} ms · {result.finishReason}</p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
-        <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。填写 Height 时使用可靠主体三维几何检索；Unknown 不匹配。不填 Height 的整数二维 Size 保留现有水平检索。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
-        <button disabled={busy} onClick={saveDraft}>保存审核草稿（此浏览器）</button>
-        {draftNotice && <p role="status">{draftNotice}</p>}
-        <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
+        <div className="vision-review-actions">
+          <button disabled={busy || applied} onClick={() => void autofill(rows)}>检索并回填所有</button>
+          <button disabled={busy || applied || !rows.some(row => row.selected && !row.excluded)} onClick={() => void validateSelection()}>确认勾选项的型号与颜色</button>
+        </div>
+        {/^(保存失败|审核草稿未恢复)/.test(draftNotice) && <p role="alert">{draftNotice}</p>}
         {autoSummary && <p role="status">{autoSummary}</p>}
         <ObservationTable stickyAction hostRef={tableHost} columns={[
-          { label: 'Action', width: 60 }, { label: 'Observation', width: 110 }, { label: 'Part Number', width: 135 },
-          { label: 'Width (Stud)', width: 85 }, { label: 'Depth (Stud)', width: 85 }, { label: 'Height (Brick)', width: 90 },
-          { label: 'Color', width: 80 }, { label: 'Shape', width: 105 }, { label: 'Print', width: 80 },
-          { label: 'Qty', width: 60 }, { label: 'Match Status', width: 175 },
+          { label: '操作', width: 60 }, { label: '识别项', width: 110 }, { label: '型号', width: 135 },
+          { label: '宽 (Stud)', width: 85 }, { label: '深 (Stud)', width: 85 }, { label: '高 (Brick)', width: 90 },
+          { label: '颜色', width: 80 }, { label: '形状', width: 105 }, { label: '印花', width: 80 },
+          { label: '数量', width: 60 }, { label: '审核状态', width: 175 },
         ]}>
           {rows.map(row => {
               const match = matches.get(row.id)
-              if (!match) return null
+              if (!match || (reviewFilter !== 'all' && isConfirmed(row) !== (reviewFilter === 'confirmed'))) return null
               const observation = match.observation
               const note = autoNotes[row.id] || ''
-              const reviewStatus = row.excluded ? 'Excluded' : row.confirmation && row.identityOrigin === 'manual' && (row.confirmation as { method?: string }).method !== 'catalog_unique' ? 'Confirmed · Catalog 身份'
-                : row.confirmation || note.startsWith('Candidates') ? 'Candidates · 待人工确认' : 'Pending'
+              const reviewStatus = row.excluded ? '已排除' : isConfirmed(row) ? '型号与颜色已确认'
+                : row.confirmation || note.startsWith('待选择') ? '待选择' : '待审核'
               return <tr key={row.id} data-observation-id={row.id} className={activeId === row.id ? 'is-active' : ''}
                 onClick={event => {
                   if (event.target instanceof Element && event.target.closest('input, select, button, [popover]')) return
                   setActiveId(row.id)
                 }}>
                 <td><ObservationActions observationId={row.id} actions={[
-                  { label: 'By Part Number', disabled: busy || applied || !row.part.trim() || !onSearchCatalog, run: () => searchObservation(row, 'part') },
-                  { label: 'By Features（含已填 Height）', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
-                  { label: 'Manual Catalog', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row, 'manual') },
+                  { label: '按型号查找', disabled: busy || applied || !row.part.trim() || !onSearchCatalog, run: () => searchObservation(row, 'part') },
+                  { label: '按特征查找', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row) },
+                  { label: '在零件目录中查找', disabled: busy || applied || !onSearchCatalog, run: () => searchObservation(row, 'manual') },
                   { label: '检索并回填', disabled: busy || applied, run: () => { void autofill([row]) } },
                   { label: '查看详情', run: () => setDetail({ kind: 'observation', id: row.id }) },
                   { label: row.excluded ? '恢复审核' : '排除', disabled: busy || applied, run: () => editRow(row.id, { excluded: !row.excluded, selected: false }) },
-                  { label: '删除', disabled: busy || applied, run: () => { catalogEpoch.current++; setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') } },
+                  { label: '删除', disabled: busy || applied, run: () => { catalogEpoch.current++; setReviewSaved(false); setDraftNotice('审核有未保存修改。'); setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') } },
                 ]} /></td>
                 <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id}
                   title={row.id + (!bboxStyle(observation.bbox) ? ' · 无有效 BBox' : '')}
@@ -256,7 +282,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                 <td><input aria-label={row.id + ' 用户 Part Number'} value={row.part} placeholder="输入 RB 型号" disabled={busy || applied}
                   onChange={e => editRow(row.id, { part: e.target.value })} />
                   <small>模型参考：{observation.candidates?.map(c => c.part_num).join(', ') || '—'}</small>
-                  <small>确认型号：{reviewStatus.startsWith('Confirmed') ? row.part : '—'}</small>
+                  <small>确认型号：{reviewStatus.startsWith('型号与颜色已确认') ? row.part : '—'}</small>
                   <label>确认 Color<input aria-label={row.id + ' 确认 RB Color ID'} value={row.color} disabled={busy || applied}
                     onChange={e => editRow(row.id, { color: e.target.value })} /></label></td>
                 <ObservationFeatureCells id={row.id} features={row.features} disabled={busy || applied}
@@ -264,13 +290,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                 <td><input aria-label={row.id + ' Quantity'} value={row.quantity} disabled={busy || applied}
                   onChange={e => editRow(row.id, { quantity: e.target.value })} /></td>
                 <td className="vision-match-status" title={note}><span className="vision-review-badge">{reviewStatus}</span>
-                  <label><input type="checkbox" aria-label={row.id + ' 加入库存'} checked={row.selected} disabled={busy || applied || row.excluded}
-                    onChange={e => setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r))} />加入 Results（需校验）</label>
+                  <label><input type="checkbox" aria-label={row.id + ' 加入我的积木'} checked={row.selected} disabled={busy || applied || row.excluded}
+                    onChange={e => { setReviewSaved(false); setDraftNotice('审核有未保存修改。'); setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r)) }} />勾选加入我的积木</label>
                   <small>尺寸验证范围见候选证据</small></td>
               </tr>
           })}
         </ObservationTable>
-        <button disabled={busy || applied} onClick={() => void apply()}>{applied ? '已加入；请在库存编辑器保存' : '校验并确认加入库存编辑器（不调用模型）'}</button>
       </>}
       <div className="vision-review-actions">
         {validation !== null && <button onClick={() => setDetail({ kind: 'validation' })}>人工草稿校验结果</button>}
@@ -280,7 +305,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     </>}
   </div>
   return <section className="inventory-catalog inventory-source" id="inventory-image">
-    <h2>Loose Parts · Recognition</h2>
+    <h2>散装积木识别</h2>
     <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
     <ServerImagePicker disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
       catalogEpoch.current++
@@ -290,7 +315,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     }} />
     <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
     <div className="inventory-history">
-      <label htmlFor="vision-history-select">历史识别</label>
+      <label htmlFor="vision-history-select">识别历史</label>
       <select id="vision-history-select" aria-label="已成功识别的图片" value={historyId} disabled={busy} onChange={e => setHistoryId(e.target.value)}>
         <option value="">选择成功记录</option>{history.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.provider || '未记录 Provider'} · {r.model} · {r.originalName || r.image.sha256.slice(0, 12)} · {r.id}</option>)}
       </select>
@@ -299,11 +324,11 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
         if (lock.current) return
         lock.current = true; setBusy(true); setError('')
         try {
-          const next = await requestJson<VisionResult>(`/api/brick-vision/history/${encodeURIComponent(historyId)}`, {}, '加载历史识别')
+          const next = await requestJson<VisionResult>(`/api/brick-vision/history/${encodeURIComponent(historyId)}`, {}, '加载识别历史')
           restoreResult(next); setPrepared(null); setImageInfo(next.compression)
           setPreview(next.originalImage ? `data:${next.originalImage.mimeType};base64,${next.originalImage.imageBase64}` : '')
         } catch (e) { setError(String(e)) } finally { lock.current = false; setBusy(false) }
-      }}>加载结果（不调用模型）</button>
+      }}>加载识别结果</button>
       <p>加载原始识别及此浏览器已保存的审核草稿；未保存编辑会被替换。审核草稿不会覆盖服务端原始记录。</p>
     </div>
     <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
@@ -313,14 +338,14 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}
-    <button disabled={!prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : 'Analyze · 识别照片'}</button>
+    <button disabled={!prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : '识别图片'}</button>
     <p>切换模型不会立即识别，需再次点击“识别照片”。相同请求不会自动重试模型。如需重新识别，可明确重新选择图片或切换模型。遮挡、相似模具和光照可能造成误识别。</p>
     {preview && <div ref={previewHost}><ObservationPreview src={preview} observations={visibleObservations} activeId={activeId} onSelect={selectBox} /></div>}
     {result && !preview && <p>此记录没有可显示的原图，未绘制 BBox；原始坐标仍可在详情查看。</p>}
     {error && <p role="alert">{error}</p>}
     {result && <p role="status">{result.status} · {result.provider} · {result.model} · {result.elapsedMs} ms</p>}
     {workspaceHost ? createPortal(review, workspaceHost) : review}
-    {detail && <ObservationModal title={detail.kind === 'observation' ? 'Observation ' + detail.id : detail.kind === 'validation' ? '人工草稿校验结果' : '完整识别诊断'}
+    {detail && <ObservationModal title={detail.kind === 'observation' ? '识别项 ' + detail.id : detail.kind === 'validation' ? '人工草稿校验结果' : '完整识别诊断'}
       data={detail.kind === 'observation' ? { original: matches.get(detail.id), reviewDraft: rows.find(r => r.id === detail.id), catalogSearchNote: autoNotes[detail.id] || null, draftValidation: validation } : detail.kind === 'validation' ? validation : result}
       onClose={() => setDetail(null)} />}
   </section>
