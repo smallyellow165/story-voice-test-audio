@@ -27,10 +27,10 @@ import './review.css'
 type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
   features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual'; excluded?: boolean }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
-export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy, initialScene, initialHistory }: {
+export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchCatalog, active = true, onBusy, initialScene, initialHistory }: {
   active?: boolean; onBusy?(busy: boolean): void
   initialScene?: ExplorerScene; initialHistory?: VisionHistoryItem[]
-  onApply(items: InventoryItem[]): boolean | void; workspaceHost?: HTMLElement | null
+  onApply(items: InventoryItem[]): boolean | void; onReset?(items: InventoryItem[]): boolean | void; workspaceHost?: HTMLElement | null
   onSearchCatalog?(request: ObservationCatalogSearch): void
 }) {
   const [preview, setPreview] = useState('')
@@ -277,6 +277,12 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       </>}>
       <button disabled={busy || !result} onClick={saveDraft}>保存审核</button>
       <button disabled={busy || applied || !selectedConfirmed.length} onClick={addConfirmed}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
+      {onReset && <button disabled={busy || !confirmedRows.length} onClick={() => {
+        try {
+          const confirmedItems = confirmedRows.map(row => ({ part_num: row.part, color_id: Number(row.color), quantity: Number(row.quantity) }))
+          if (onReset(confirmedItems) !== false) setApplied(false)
+        } catch (e) { setError(String(e)) }
+      }}>重置我的积木</button>}
     </ReviewToolbar>
     {result && <>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}

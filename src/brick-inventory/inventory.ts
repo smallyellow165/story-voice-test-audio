@@ -1,7 +1,7 @@
 // Canonical Rebrickable inventory. No rendering, storage, LDraw or game imports.
 // Rebrickable color_id is NOT the LDraw color used by the experimental Generator.
 export type InventoryItem = { part_num: string; color_id: number; quantity: number }
-export type SessionInventory = { schema_version: 1; id: string; name: string; updated_at: string; items: InventoryItem[] }
+export type SessionInventory = { schema_version: 1; id: string; name: string; description?: string; updated_at: string; items: InventoryItem[] }
 export const MAX_QUANTITY = 999
 export const MAX_ROWS = 500
 
@@ -52,8 +52,9 @@ export function parseSession(input: unknown): SessionInventory {
   const value = input as SessionInventory
   if (!value || value.schema_version !== 1 || typeof value.id !== 'string' || !/^[a-f0-9-]{36}$/.test(value.id)
       || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 80
+      || (value.description !== undefined && typeof value.description !== 'string')
       || typeof value.updated_at !== 'string' || !Number.isFinite(Date.parse(value.updated_at))) {
     throw new Error('无法读取这份 Session Inventory，原有保存数据未被修改。')
   }
-  return { schema_version: 1, id: value.id, name: value.name.trim(), updated_at: value.updated_at, items: validateItems(value.items) }
+  return { schema_version: 1, id: value.id, name: value.name.trim(), description: value.description ?? '', updated_at: value.updated_at, items: validateItems(value.items) }
 }

@@ -14,10 +14,10 @@ import type { InventoryRow } from '../brick-test/design-types'
 
 type Strategy = 'loose' | 'geometry_only' | 'catalog_match'
 const preferenceKey = 'story-voice-test-audio:ai-design:model:reverse'
-export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, onApply, onSearchCatalog, onStrategyChange }: {
+export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, onApply, onReset, onSearchCatalog, onStrategyChange }: {
   geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void
   workspaceHost: HTMLElement | null
-  onStrategyChange(): void; onApply(items: InventoryItem[]): boolean | void; onSearchCatalog(request: ObservationCatalogSearch): void
+  onStrategyChange(): void; onApply(items: InventoryItem[]): boolean | void; onReset(items: InventoryItem[]): boolean | void; onSearchCatalog(request: ObservationCatalogSearch): void
 }) {
   const [scene] = useState(() => parseExplorerScene(location.href))
   const [boot, setBoot] = useState<{ ready: boolean; scene: ExplorerScene; strategy: Strategy; looseHistory?: VisionHistoryItem[]; reverseHistory?: History }>({ ready: !scene.analysisId, scene, strategy: scene.strategy || 'loose' })
@@ -81,7 +81,7 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometr
     {dirty && <p>请保存审核或新建分析后再切换 Strategy。</p>}
     <div hidden={strategy !== 'loose'}><InventoryImagePanel active={strategy === 'loose'} onBusy={setLooseBusy}
       initialScene={boot.strategy === 'loose' ? boot.scene : undefined} initialHistory={boot.looseHistory}
-      workspaceHost={workspaceHost || undefined} onApply={onApply} onSearchCatalog={onSearchCatalog} /></div>
+      workspaceHost={workspaceHost || undefined} onApply={onApply} onReset={onReset} onSearchCatalog={onSearchCatalog} /></div>
     <div hidden={strategy === 'loose'}>
       {error && <p role="alert">{error} <button onClick={() => setRetry(n => n + 1)}>重新读取模型配置</button></p>}
       {assembledOpened && <ReverseRecognitionPanel initialScene={boot.strategy !== 'loose' ? boot.scene : undefined} initialHistory={boot.reverseHistory}
@@ -94,7 +94,7 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometr
           try { localStorage.setItem(preferenceKey, JSON.stringify({ provider: selected.provider, id })) } catch { /* Session selection remains. */ }
         }} disabled={false} onBusy={setBusy} onDirty={setDirty}
         analysisMode={assembledMode} onAnalysisMode={mode => { setAssembledMode(mode); setStrategy(mode); onStrategyChange() }}
-        active={strategy !== 'loose'} geometryHost={geometryHost} onGeometryPresence={onGeometryPresence} onSearchCatalog={onSearchCatalog} workspaceHost={workspaceHost} onApply={onApply} />}
+        active={strategy !== 'loose'} geometryHost={geometryHost} onGeometryPresence={onGeometryPresence} onSearchCatalog={onSearchCatalog} workspaceHost={workspaceHost} onApply={onApply} onReset={onReset} />}
     </div>
   </>
 }

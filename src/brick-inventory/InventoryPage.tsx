@@ -154,9 +154,13 @@ export function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<InventoryItem[]>([])
   const [name, setName] = useState('今天的积木')
-  const [id, setId] = useState('')
+  const [description, setDescription] = useState('')
+  const [id, setId] = useState(newSessionId)
   const [saved, setSaved] = useState<SessionInventory[]>([])
-  const [selected, setSelected] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [pendingList, setPendingList] = useState<{ kind: 'load'; id: string } | { kind: 'new' } | null>(null)
+  const switchDialog = useRef<HTMLDialogElement>(null)
+  const labelRevision = useRef(0)
   const [dirty, setDirty] = useState(false)
   const [notice, setNotice] = useState('')
   const [storageError, setStorageError] = useState('')
@@ -164,6 +168,11 @@ export function InventoryPage() {
   useEffect(() => {
     try { setSaved(loadSessions(localStorage)) } catch (e) { setStorageError(message(e)) }
   }, [])
+  useEffect(() => {
+    const dialog = switchDialog.current
+    if (pendingList && dialog && !dialog.open) dialog.showModal()
+    if (!pendingList && dialog?.open) dialog.close()
+  }, [pendingList])
   useEffect(() => {
     if (!dirty) return
     const handler = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
@@ -234,32 +243,63 @@ export function InventoryPage() {
 
   const changeItems = (next: InventoryItem[]) => { setItems(next); setDirty(true); setNotice('') }
   const total = items.reduce((sum, row) => sum + row.quantity, 0)
-  const canReplace = () => !dirty || window.confirm('当前积木清单尚未保存，确定放弃这些修改吗？')
-  const load = async () => {
-    if (!selected || !canReplace()) return
+  const isSavedList = saved.some(session => session.id === id)
+  const snapshot = (): SessionInventory => parseSession({ schema_version: 1, id, name, description, updated_at: new Date().toISOString(), items })
+  function saveCurrent(): boolean {
     try {
-      const sessions = loadSessions(localStorage)
-      const session = sessions.find(s => s.id === selected)
-      if (!session) throw new Error('这份积木清单已不存在，请刷新保存列表。')
-      setSaved(sessions); setId(session.id); setName(session.name); setItems(session.items); setDirty(false); setStorageError(''); setNotice('已加载，可继续编辑。')
-      const partNums = [...new Set(session.items.map(row => row.part_num))]
-      // Restore labels from the catalog; labels are not part of inventory truth.
+      const session = snapshot()
+      const sessions = saveSession(localStorage, session)
+      setSaved(sessions); setName(session.name); setDirty(false); setStorageError(''); setNotice('已保存在此浏览器。')
+      return true
+    } catch (e) { setStorageError(message(e)); return false }
+  }
+  async function restoreLabels(session: SessionInventory, revision: number) {
+    const partNums = [...new Set(session.items.map(row => row.part_num))]
+    try {
       for (let offset = 0; offset < partNums.length; offset += 100) {
+        if (revision !== labelRevision.current) return
         const data = await api<{ items: { part_num: string; name: string }[] }>('selection', { part_nums: partNums.slice(offset, offset + 100).join(',') })
+        if (revision !== labelRevision.current) return
         setNames(old => ({ ...old, ...Object.fromEntries(data.items.map(p => [p.part_num, p.name])) }))
       }
-    } catch (e) { setStorageError(message(e)) }
+    } catch (e) { if (revision === labelRevision.current) setStorageError('清单已加载；型号名称暂不可用：' + message(e)) }
   }
-  const snapshot = (): SessionInventory => parseSession({ schema_version: 1, id: id || newSessionId(), name, updated_at: new Date().toISOString(), items })
+  function replaceCurrent(target: NonNullable<typeof pendingList>): boolean {
+    try {
+      if (target.kind === 'new') {
+        labelRevision.current++
+        setId(newSessionId()); setName('今天的积木'); setDescription(''); setItems([]); setDirty(false); setNotice('已新建空清单，尚未保存。')
+      } else {
+        const sessions = loadSessions(localStorage)
+        const session = sessions.find(row => row.id === target.id)
+        if (!session) throw new Error('这份积木清单已不存在；当前编辑内容未切换。')
+        setSaved(sessions); setId(session.id); setName(session.name); setDescription(session.description ?? ''); setItems(session.items); setDirty(false); setNotice('已加载，可继续编辑。')
+        void restoreLabels(session, ++labelRevision.current)
+      }
+      setEditingName(false); setStorageError(''); setPendingList(null)
+      return true
+    } catch (e) { setStorageError(message(e)); return false }
+  }
+  function requestList(target: NonNullable<typeof pendingList>) {
+    if (target.kind === 'load' && target.id === id) return
+    if (dirty) { setStorageError(''); setPendingList(target) }
+    else replaceCurrent(target)
+  }
   return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
         left={<>
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
             <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
           <h2 className="inventory-panel-title">图片与识别</h2>
-    <PartExplorerRecognition geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onApply={recognized => {
+    <PartExplorerRecognition geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onReset={recognized => {
+      if (!recognized.length) throw new Error('没有有效已确认零件，未重置清单。')
+      // Reuse the canonical accumulator, starting from empty instead of current items.
+      const next = recognized.reduce((draft, item) => addItem(draft, item), [] as InventoryItem[])
+      if (!window.confirm('将用审核表中已确认的 ' + next.reduce((sum, item) => sum + item.quantity, 0) + ' 块积木替换当前清单“' + name + '”的全部零件（当前 ' + total + ' 块）。未保存的零件修改也会被替换；ID、名称和 Description 保留。此操作不会自动保存。是否继续？')) return false
+      changeItems(next); setNotice('已按审核表重置当前清单，请点击“保存清单”持久化。'); return true
+    }} onApply={recognized => {
       if (!window.confirm('将已确认的 ' + recognized.reduce((sum, item) => sum + item.quantity, 0) + ' 块积木加入当前清单？相同型号和颜色会累计数量；再次加入同一识别结果也会重复累计。此操作不保存审核或清单。')) return false
       const next = recognized.reduce((draft, item) => addItem(draft, item), items)
-      changeItems(next); setNotice('已加入我的积木，清单尚未保存。请核对数量并点击“保存积木清单”。'); return true
+      changeItems(next); setNotice('已加入我的积木，清单尚未保存。请核对数量并点击“保存清单”。'); return true
     }} />
     <a href={`${import.meta.env.BASE_URL}brick-vision.html`}>打开独立 Step Image Confirmation 测试页 ↗</a>
         </>}
@@ -336,22 +376,40 @@ export function InventoryPage() {
           <div id="explorer-confirmed" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-confirmed" hidden={rightTab !== 'confirmed'}>
       <aside id="session-inventory" className="inventory-session" aria-label="我的积木">
         <h2>当前积木清单 <span>{total} 块</span></h2>
-        <label>清单名称<input value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true) }} /></label>
-        <p>{items.length} 种型号 / 颜色组合 · {dirty ? '清单有未保存修改' : id ? '清单已保存' : '清单尚未保存'}</p>
-        <div className="inventory-actions"><button onClick={() => {
-          try { const session = snapshot(); const sessions = saveSession(localStorage, session); setSaved(sessions); setId(session.id); setSelected(session.id); setDirty(false); setStorageError(''); setNotice('已保存在此浏览器。') }
-          catch (e) { setStorageError(message(e)) }
-        }}>保存积木清单</button><button className="inventory-secondary" onClick={() => { if (canReplace()) { setId(''); setSelected(''); setItems([]); setName('今天的积木'); setDirty(false); setNotice('已新建空清单。') } }}>新建清单</button>
-          <button className="inventory-secondary" onClick={() => {
+        <div className="inventory-current-list">
+          <label>当前清单<select aria-label="当前清单" value={id} onChange={e => requestList({ kind: 'load', id: e.target.value })}>
+            {!isSavedList && <option value={id}>{name || '未命名清单'}（尚未保存）</option>}
+            {saved.map(session => <option key={session.id} value={session.id}>
+              {session.id === id ? name || '未命名清单' : session.name} · {new Date(session.updated_at).toLocaleString()} · {session.id.slice(-8)}
+            </option>)}
+          </select></label>
+          <button type="button" className="inventory-secondary" aria-expanded={editingName} onClick={() => setEditingName(value => !value)}>{editingName ? '收起清单信息' : '编辑清单信息'}</button>
+          <button type="button" className="inventory-secondary" onClick={() => requestList({ kind: 'new' })}>新建</button>
+        </div>
+        {editingName && <div className="inventory-list-info"><label>清单名称<input autoFocus value={name} maxLength={80} onChange={e => { setName(e.target.value); setDirty(true); setNotice('') }} /></label>
+          <label>Description<textarea rows={3} value={description} onChange={e => { setDescription(e.target.value); setDirty(true); setNotice('') }} /></label>
+        </div>}
+        <div className="inventory-actions">
+          <button type="button" onClick={saveCurrent}>保存清单</button>
+          <button type="button" className="inventory-secondary" onClick={() => {
             try {
-            const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' })
-            const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'duplo-session-inventory.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+              const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'duplo-session-inventory.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
             } catch (e) { setStorageError(message(e)) }
-          }}>导出 JSON</button></div>
-        {id && !dirty && <p><a href={import.meta.env.BASE_URL + 'brick-test.html?sessionId=' + encodeURIComponent(id)}>在 Design Lab 使用此零件集合自由创作 →</a></p>}
-        <label>重新加载已保存积木清单<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">选择一份积木清单</option>{saved.map(s => <option key={s.id} value={s.id}>{s.name} · {new Date(s.updated_at).toLocaleString()}</option>)}</select></label>
-        <button disabled={!selected} className="inventory-secondary" onClick={() => void load()}>加载并继续编辑</button>
-        <p className="inventory-note">保存在当前浏览器和地址下，不会同步到其他设备。离开前请保存；可导出 JSON 备份。</p>
+          }}>导出 JSON</button>
+          <span role="status">{dirty ? '未保存修改' : isSavedList ? '清单已保存' : '清单尚未保存'}</span>
+        </div>
+        {isSavedList && !dirty && <p><a href={import.meta.env.BASE_URL + 'brick-test.html?sessionId=' + encodeURIComponent(id)}>在 Design Lab 使用此零件集合自由创作 →</a></p>}
+        <dialog ref={switchDialog} className="inventory-switch-dialog" aria-labelledby="inventory-switch-title" onCancel={event => { event.preventDefault(); setPendingList(null) }}>
+          <h2 id="inventory-switch-title">当前清单有未保存修改</h2>
+          <p>“{name || '未命名清单'}”尚未保存。{pendingList?.kind === 'new' ? '新建清单' : '切换清单'}前如何处理？</p>
+          {storageError && <p role="alert">{storageError}</p>}
+          <div className="inventory-actions">
+            <button type="button" onClick={() => { if (pendingList && saveCurrent()) replaceCurrent(pendingList) }}>保存并切换</button>
+            <button type="button" className="inventory-secondary" onClick={() => { if (pendingList) replaceCurrent(pendingList) }}>放弃修改并切换</button>
+            <button type="button" className="inventory-secondary" autoFocus onClick={() => setPendingList(null)}>取消</button>
+          </div>
+        </dialog>
         {storageError && <p role="alert" className="inventory-error">{storageError}</p>}
         <p role="status" aria-live="polite">{notice}</p>
         {items.length === 0 && <p className="inventory-empty">从零件目录添加你拥有或本次准备使用的积木。</p>}

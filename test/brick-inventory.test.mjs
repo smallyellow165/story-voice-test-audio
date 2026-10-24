@@ -7,7 +7,7 @@ import { proxyBrickCatalog } from '../server/brick-catalog.mjs'
 const red = { part_num: '3437', color_id: 4, quantity: 2 }
 const blue = { part_num: '3437', color_id: 1, quantity: 1 }
 const session = (id = '00000000-0000-4000-8000-000000000001') => ({
-  schema_version: 1, id, name: '今天的积木', updated_at: '2026-10-21T00:00:00Z', items: [red, blue],
+  schema_version: 1, id, name: '今天的积木', description: '', updated_at: '2026-10-21T00:00:00Z', items: [red, blue],
 })
 function memory() {
   const values = new Map()
@@ -60,4 +60,76 @@ test('proxy permits only catalog GET routes and rejects foreign or malformed ori
     assert.equal(await proxyBrickCatalog({ method, headers }, response, new URL(`http://localhost/api/brick-catalog/${path}`)), true)
     assert.equal(response.status, expected)
   }
+})
+
+
+test('renaming saves by stable ID, while identical names retain independent lists', () => {
+  const storage = memory()
+  const first = session()
+  const second = { ...session('00000000-0000-4000-8000-000000000002'), items: [blue] }
+  saveSession(storage, first)
+  saveSession(storage, second)
+  const edited = { ...first, name: '重命名清单', items: setQuantity(first.items, itemKey(red), 5) }
+  saveSession(storage, edited)
+  let restored = loadSessions(storage)
+  assert.equal(restored.length, 2)
+  assert.deepEqual(restored.find(row => row.id === second.id), second)
+  assert.equal(restored.find(row => row.id === first.id).items[0].quantity, 5)
+  saveSession(storage, { ...edited, name: second.name })
+  restored = loadSessions(storage)
+  assert.equal(restored.length, 2)
+  assert.equal(restored.filter(row => row.name === second.name).length, 2)
+})
+
+test('unsaved edits and rejected saves leave previously stored lists intact', () => {
+  const storage = memory()
+  const original = session()
+  saveSession(storage, original)
+  const draft = { ...loadSessions(storage)[0], items: addItem(original.items, red) }
+  assert.equal(draft.items[0].quantity, 4)
+  assert.deepEqual(loadSessions(storage), [original])
+  assert.throws(() => saveSession(storage, { ...draft, name: '' }))
+  assert.deepEqual(loadSessions(storage), [original])
+  const failingStorage = { getItem: storage.getItem, setItem() { throw new Error('QuotaExceededError') } }
+  assert.throws(() => saveSession(failingStorage, draft), /QuotaExceededError/)
+  assert.deepEqual(loadSessions(storage), [original])
+})
+
+
+test('optional description defaults to empty and survives save, load and JSON export', () => {
+  const storage = memory()
+  const { description, ...legacy } = session()
+  assert.equal(parseSession(legacy).description, '')
+  const described = { ...session(), description: '黄色骆驼\n用于重建测试' }
+  saveSession(storage, described)
+  assert.deepEqual(loadSessions(storage), [described])
+  assert.deepEqual(parseSession(JSON.parse(JSON.stringify(described))), described)
+  saveSession(storage, { ...described, description: '' })
+  assert.equal(loadSessions(storage).length, 1)
+  assert.equal(loadSessions(storage)[0].id, described.id)
+  assert.equal(loadSessions(storage)[0].description, '')
+  for (const invalid of [null, 5, {}, []]) assert.throws(() => parseSession({ ...described, description: invalid }))
+})
+
+test('review replacement uses the same accumulator from empty, preserves metadata and does not save', () => {
+  const storage = memory()
+  const original = { ...session(), description: '保留说明', items: [{ part_num: '3437', color_id: 14, quantity: 10 }] }
+  const other = session('00000000-0000-4000-8000-000000000002')
+  saveSession(storage, original); saveSession(storage, other)
+  const confirmed = [{ part_num: '3437', color_id: 14, quantity: 2 },
+    { part_num: '4066', color_id: 14, quantity: 1 }, { part_num: '4066', color_id: 14, quantity: 2 },
+    { part_num: '40666', color_id: 14, quantity: 2 }]
+  const resetItems = confirmed.reduce((draft, item) => addItem(draft, item), [])
+  const edited = { ...original, items: resetItems }
+  assert.equal(edited.items.length, 3)
+  assert.equal(edited.items.reduce((sum, item) => sum + item.quantity, 0), 7)
+  assert.equal(edited.id, original.id)
+  assert.equal(edited.name, original.name)
+  assert.equal(edited.description, original.description)
+  assert.deepEqual(loadSessions(storage).find(row => row.id === original.id), original)
+  const added = confirmed.reduce((draft, item) => addItem(draft, item), edited.items)
+  assert.equal(added.reduce((sum, item) => sum + item.quantity, 0), 14)
+  saveSession(storage, edited)
+  assert.deepEqual(loadSessions(storage).find(row => row.id === original.id), edited)
+  assert.deepEqual(loadSessions(storage).find(row => row.id === other.id), other)
 })

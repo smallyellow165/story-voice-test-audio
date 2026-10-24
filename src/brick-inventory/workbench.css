@@ -190,3 +190,14 @@
 .inventory-workbench .vision-matching-table .vision-match-status { white-space: nowrap; }
 .inventory-workbench .vision-matching-table th > button { margin-left: 4px; vertical-align: middle; }
 .inventory-workbench .vision-matching-table td:first-child > label { display: inline-block; margin: 0 0 0 3px; }
+
+.inventory-current-list { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+.inventory-current-list > label { flex: 1 1 180px; min-width: 0; }
+.inventory-current-list select { width: 100%; min-width: 0; }
+.inventory-switch-dialog { box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #c6d4ce; border-radius: 8px; padding: 16px; background: #fffefa; color: #243c38; }
+.inventory-switch-dialog::backdrop { background: #152d2980; }
+.inventory-switch-dialog p { overflow-wrap: anywhere; }
+.inventory-switch-dialog .inventory-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.inventory-list-info { display: grid; gap: 6px; margin-top: 8px; }
+.inventory-list-info textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 6px 8px; border: 1px solid #c6d4ce; border-radius: 5px; }
