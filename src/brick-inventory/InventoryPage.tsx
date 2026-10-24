@@ -1,3 +1,4 @@
+import { InventoryPartPhoto } from './InventoryPartPhoto'
 import { CatalogGeometryEvidence } from '../brick-vision/CatalogGeometryEvidence'
 import type { CatalogBodyMetadata } from '../brick-vision/CatalogGeometryEvidence'
 import { ExplorerWorkspace } from './ExplorerWorkspace'
@@ -354,13 +355,26 @@ export function InventoryPage() {
         {storageError && <p role="alert" className="inventory-error">{storageError}</p>}
         <p role="status" aria-live="polite">{notice}</p>
         {items.length === 0 && <p className="inventory-empty">从零件目录添加你拥有或本次准备使用的积木。</p>}
-        <ul className="inventory-items">{items.map(row => {
-          const key = itemKey(row), color = filters.colors.find(c => c.id === row.color_id)
-          return <li key={key}><strong>{names[row.part_num] || row.part_num}</strong><small>{row.part_num}</small><span><Swatch color={color} /> {color?.name || `颜色 ${row.color_id}`}</span>
-            <div className="inventory-quantity"><button aria-label={`减少 ${row.part_num} ${color?.name || row.color_id}`} onClick={() => changeItems(setQuantity(items, key, row.quantity - 1))}>−</button><output>{row.quantity}</output>
-              <button disabled={row.quantity >= MAX_QUANTITY} aria-label={`增加 ${row.part_num} ${color?.name || row.color_id}`} onClick={() => changeItems(setQuantity(items, key, row.quantity + 1))}>＋</button>
-              <button className="inventory-secondary" onClick={() => changeItems(setQuantity(items, key, 0))}>删除</button></div></li>
-        })}</ul>
+        {items.length > 0 && <table className="inventory-items-table" aria-label="我的积木清单">
+          <colgroup><col className="inventory-items-photo-col" /><col /><col className="inventory-items-part-col" /><col className="inventory-items-quantity-col" /></colgroup>
+          <thead><tr><th scope="col">图片</th><th scope="col">颜色</th><th scope="col">Part ID</th><th scope="col">数量</th></tr></thead>
+          <tbody>{items.map(row => {
+            const key = itemKey(row), color = filters.colors.find(c => c.id === row.color_id)
+            const colorName = color?.name || `颜色 ID ${row.color_id}`
+            return <tr key={key}>
+              <td><InventoryPartPhoto key={key} partNum={row.part_num} colorId={row.color_id}
+                name={names[row.part_num] || row.part_num} genericMedia={images[row.part_num]} /></td>
+              <td><span className="inventory-items-color" title={colorName}><Swatch color={color} /><span>{colorName}</span></span></td>
+              <td className="inventory-items-part" title={names[row.part_num] || row.part_num}>{row.part_num}</td>
+              <td><div className="inventory-items-quantity">
+                <button type="button" aria-label={`减少 ${row.part_num} ${colorName}`} onClick={() => changeItems(setQuantity(items, key, row.quantity - 1))}>−</button>
+                <output aria-label={`${row.part_num} ${colorName} 数量`}>{row.quantity}</output>
+                <button type="button" disabled={row.quantity >= MAX_QUANTITY} aria-label={`增加 ${row.part_num} ${colorName}`} onClick={() => changeItems(setQuantity(items, key, row.quantity + 1))}>＋</button>
+                <button type="button" className="inventory-secondary" title="删除" aria-label={`删除 ${row.part_num} ${colorName}`} onClick={() => changeItems(setQuantity(items, key, 0))}>×</button>
+              </div></td>
+            </tr>
+          })}</tbody>
+        </table>}
       </aside>
           <details><summary>可选：从已保存积木清单准备游戏</summary><GamePreparation /></details>
           </div>

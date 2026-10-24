@@ -14,7 +14,7 @@ const imageMessages: Record<string, string> = {
   timeout: '图片等待超时，可手动重试',
 }
 
-export function CatalogPhoto({ media, name }: { media?: Media; name: string }) {
+export function CatalogPhoto({ media, name, onUnavailable }: { media?: Media; name: string; onUnavailable?(): void }) {
   const [failed, setFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [current, setCurrent] = useState(media)
@@ -73,6 +73,9 @@ export function CatalogPhoto({ media, name }: { media?: Media; name: string }) {
       setFailed(state === 'failed')
     })
   }, [current?.url, loadAttempt])
+  useEffect(() => {
+    if (failed || current && current.status !== 'loading' && !current.url) onUnavailable?.()
+  }, [failed, current?.status, current?.url, onUnavailable])
   const retry = async () => {
     if (!current?.part_num || retrying) return
     retryRequest.current?.abort()

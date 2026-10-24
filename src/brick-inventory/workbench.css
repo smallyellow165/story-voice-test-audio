@@ -144,3 +144,28 @@
 @container catalog-filters (max-width: 299px) {
   .inventory-workbench .catalog-filter-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Compact inventory view only; image resolution and quantity ownership stay unchanged. */
+.inventory-workbench .inventory-items-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.inventory-items-photo-col { width: 50px; }
+.inventory-items-part-col { width: 22%; }
+.inventory-items-quantity-col { width: 94px; }
+.inventory-workbench .inventory-items-table th,
+.inventory-workbench .inventory-items-table td { padding: 4px 3px; border-bottom: 1px solid #dce5df; text-align: left; vertical-align: middle; font-size: 12px; overflow-wrap: anywhere; }
+.inventory-workbench .inventory-items-table th { font-size: 11px; }
+.inventory-items-table .inventory-items-color { display: flex; align-items: center; gap: 4px; min-width: 0; line-height: 1.2; }
+.inventory-items-color > span:last-child { min-width: 0; }
+.inventory-items-table .inventory-swatch { width: 14px; height: 14px; }
+.inventory-items-part { font-variant-numeric: tabular-nums; }
+.inventory-workbench .inventory-items-quantity { display: grid; grid-template-columns: 20px minmax(0, 1fr) 20px 20px; align-items: center; gap: 2px; }
+.inventory-workbench .inventory-items-quantity button { box-sizing: border-box; width: 20px; height: 24px; min-height: 24px; padding: 0; font-size: 13px; line-height: 1; }
+.inventory-items-quantity output { min-width: 0; text-align: center; font-variant-numeric: tabular-nums; font-size: 11px; }
+.inventory-workbench .inventory-items-table .inventory-item-photo { width: 44px; max-width: 100%; }
+.inventory-workbench .inventory-items-table .inventory-photo { height: 44px; border-radius: 3px; }
+/* Retain accessible status text and retry actions, with compact visual symbols. */
+.inventory-workbench .inventory-items-table .inventory-photo > span { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 2px; max-width: 100%; padding: 1px; font-size: 0; line-height: 1; }
+.inventory-items-table .inventory-photo > span::before { content: '…'; font-size: 12px; }
+.inventory-items-table .inventory-photo > span[role="status"]::before { content: '—'; }
+.inventory-items-table .inventory-photo > span small { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+.inventory-workbench .inventory-items-table .inventory-photo button { width: 20px; height: 20px; min-height: 20px; padding: 0; font-size: 0; }
+.inventory-items-table .inventory-photo button::after { content: '↻'; font-size: 13px; }
