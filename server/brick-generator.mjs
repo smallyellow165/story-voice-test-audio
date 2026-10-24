@@ -10,9 +10,9 @@ import { captureVisionWire } from './brick-vision-wire.mjs'
 import { createGeminiClient } from './gemini-client.mjs'
 import { loadBrickRules } from './brick-rules.mjs'
 
-import { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
+import { designLimits, designHeightLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
 export { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
-export const promptVersion = 'duplo-design-v3-3'
+export const promptVersion = 'duplo-design-v3-4'
 export const configuredModel = () => process.env.DUPLO_LLM_MODEL?.trim() || defaultBrickModel
 export function brickModelOptions() { return modelOptions('design') }
 export function resolveBrickModel(requested, defaultModel = configuredModel()) {
@@ -33,7 +33,7 @@ Never exceed a part+color quantity. You need not use all inventory. Use ${design
 Supported dimensions are supplied below from the shared assembly capability registry.
 Coordinates x,z are body-bottom-centre positions in stud pitches (40 LDU); layer is bottom elevation in 48 LDU units.
 Use half-stud x/z coordinates and heights whose layer*48 is an integer LDU. Only upright quarter turns are supported.
-Keep x,z within -${designLimits.maxCoordinate}..${designLimits.maxCoordinate}, layer within 0..${designLimits.maxLayer}; body top must not exceed ${designLimits.maxLayer + 1} layers.
+Keep x,z within -${designLimits.maxCoordinate}..${designLimits.maxCoordinate}. Obey the inventory-specific bottom and body-top height bounds supplied below.
 The reviewed profiles below separately specify body size, collision boxes, top studs and bottom mating interfaces in local LDU.
 For yaw 90: (x,z) -> (z,-x); yaw 180: (-x,-z); yaw 270: (-z,x).
 Rotate each profile point, then translate by (x*40,layer*48,z*40) to obtain world LDU.
@@ -54,7 +54,7 @@ Think through inventory counts, occupancy and every construction prefix before r
 
 export function buildDesignPrompt(rules, inventory) {
   const selected = rules.PARTS.filter(p => !inventory || inventory.some(r => r.part === p.id && r.quantity > 0))
-  return designPrompt + '\nReviewed part geometry (LDU): ' + JSON.stringify(selected.map(p => ({ part: p.id,
+  return designPrompt + '\nGeneration height bounds (brick units): ' + JSON.stringify(designHeightLimits(inventory, rules)) + '\nReviewed part geometry (LDU): ' + JSON.stringify(selected.map(p => ({ part: p.id,
     bodySizeLdu: p.geometry.bodySizeLdu, collision: p.geometry.collision,
     top: p.geometry.top, bottom: p.geometry.bottom, rotations: p.geometry.rotations })))
 }
@@ -70,7 +70,7 @@ export function designSchema(rules, inventory) {
           color: { type: 'STRING', enum: inventory ? [...new Set(inventory.filter(r => r.quantity > 0).map(r => r.color))] : rules.COLORS.map((c) => c.code) },
           x: { type: 'NUMBER', minimum: -designLimits.maxCoordinate, maximum: designLimits.maxCoordinate },
           z: { type: 'NUMBER', minimum: -designLimits.maxCoordinate, maximum: designLimits.maxCoordinate },
-          layer: { type: 'NUMBER', minimum: 0, maximum: designLimits.maxLayer },
+          layer: { type: 'NUMBER', minimum: 0, maximum: designHeightLimits(inventory, rules).maxLayer },
           rotation: { type: 'INTEGER', minimum: 0, maximum: 270 },
         },
       } },

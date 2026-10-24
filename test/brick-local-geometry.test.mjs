@@ -37,3 +37,20 @@ test('98223 original-entry redirect preserves four modeled studs without enablin
   assert.equal(geometrySupport('98223').supported, false)
   assert.equal(geometrySupport('98223b').supported, false)
 })
+
+for (const [part, count, bounds] of [
+  ['4066a', 2, { min: [-40, -11, -20], max: [40, 96, 20] }],
+  ['40666', 8, { min: [-80, -11, -40], max: [80, 24, 40] }],
+]) test(part + ' local mesh, source bindings and Viewer transform agree with reviewed profile', async t => {
+  if (!await available(t, part)) return
+  const report = await inspectBrickModel(part, library, { extractGeometry: true })
+  assert.equal(report.available, true, report.errors.join('; '))
+  const g = geometrySupport(part).geometry
+  const studs = report.extraction.primitives.filter(p => p.file === 'p/stud7.dat')
+  assert.equal(studs.length, count)
+  const transform = new Matrix4().makeTranslation(g.ldraw.offsetLdu.x, g.ldraw.offsetLdu.y, g.ldraw.offsetLdu.z)
+    .multiply(new Matrix4().makeRotationX(g.ldraw.rotationX))
+  assert.deepEqual(positions(studs.map(p => new Vector3(...p.origin).applyMatrix4(transform).toArray())), positions(g.top.map(p => [p.x, p.y, p.z])))
+  for (const bound of g.sourceFiles) assert.ok(report.sourceFiles.some(f => f.path === bound.path && f.sha256 === bound.sha256), bound.path)
+  assert.deepEqual(report.extraction.meshBounds, bounds)
+})

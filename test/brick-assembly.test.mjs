@@ -18,9 +18,9 @@ test('empty scene and a single ground brick are valid', () => {
 test('part dimensions and quarter turns map to the correct stud footprint', () => {
   for (const part of PARTS) for (const rotation of [0, 90, 180, 270]) {
     const rotated = rotation % 180 !== 0
-    assert.deepEqual(dimensions(part.id, rotation), { width: rotated ? 2 : part.length, depth: rotated ? part.length : 2 })
+    assert.deepEqual(dimensions(part.id, rotation), { width: rotated ? part.depth : part.length, depth: rotated ? part.length : part.depth })
     const cells = footprint(brick('a', { part: part.id, rotation, x: -3, z: 4 }))
-    assert.equal(cells.length, part.length * 2)
+    assert.equal(cells.length, part.length * part.depth)
     assert.equal(new Set(cells.map(({ x, z }) => `${x},${z}`)).size, cells.length)
   }
 })
@@ -184,7 +184,7 @@ test('official local models agree with catalog dimensions and stud centers', asy
     return { position: fields.slice(2, 5).map(Number), matrix: fields.slice(5, 14).map(Number), file: fields.slice(14).join(' ').replaceAll('\\', '/') }
   })
   const transform = (point, reference) => [0, 1, 2].map((row) => reference.position[row] + point.reduce((sum, value, col) => sum + value * reference.matrix[row * 3 + col], 0))
-  for (const part of PARTS) {
+  for (const part of PARTS.filter(p => ['3437', '3011', '2300', '87084'].includes(p.id))) {
     const source = part.id === '3437' ? source3437 : await readFile(path.join(library, `parts/${part.id}.dat`), 'utf8')
     assert.match(source, new RegExp(`Duplo Brick\\s+2 x\\s+${part.length}`))
     const subfile = references(source).find((reference) => reference.file === `s/${part.id}s01.dat`)

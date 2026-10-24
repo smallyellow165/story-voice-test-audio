@@ -8,6 +8,7 @@ export const designLimits: Readonly<{
   minBricks: number
   maxBricks: number
   maxLayer: number
+  maxConfiguredLayer: number
   maxCoordinate: number
   minSupportFraction: number
 }>
@@ -26,3 +27,9 @@ export function validateBrickDesign(
   inventory: readonly InventoryRow[],
   rules: BrickValidationRules,
 ): DesignReport
+
+/** Bounded generation budget derived from the selected reviewed part heights. */
+export function designHeightLimits(
+  inventory: readonly InventoryRow[] | undefined,
+  rules: Pick<BrickValidationRules, "PARTS">,
+): { maxLayer: number; maxTop: number }

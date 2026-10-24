@@ -26,6 +26,80 @@ export const PARTS: readonly PartDefinition[] = [
       { path: 'p/box5.dat', sha256: 'ccb7b8a1d36692335b10ea6aa196849afcad4b15331683ed8112a10b50977318' },
     ],
   }),
+  // The official RB mapping supplies this ID; no RB identity is inferred here.
+  // Type 2 / Type 3 retain their mappings but are not declared interchangeable profiles.
+  reviewedRectangularPart({
+    "id": "4066a",
+    "label": "2 × 1 × 2 · 高砖 Type 1",
+    "width": 2,
+    "depth": 1,
+    "heightLdu": 96,
+    "evidence": [
+      "parts/4066a.dat front face: x=-40..40, z=-20, y=0..96; subpart outer side faces at z=+20. Body 80×96×40 LDU, not stud-inclusive mesh bounds.",
+      "parts/s/4066as01.dat: stud7 at x=+/-20,z=0 scaled y=2.75; two top interfaces. Inverted inner box at y=96 with half extents36,16 and depth92; perimeter ribs at x=+/-20,z=+/-14 and x=+/-34,z=0 define the standard two bottom mating positions.",
+      "Central web separates the two sockets; nominal upright rectangular DUPLO interface only. LDraw y down becomes body-bottom-centred y up via Rx(PI) and +96 LDU."
+    ],
+    "sourceFiles": [
+      {
+        "path": "parts/4066a.dat",
+        "sha256": "8b17100233c383e8ddb401581a6de2e71fc6385cc2641e79c3254685325e0eea"
+      },
+      {
+        "path": "parts/s/4066as01.dat",
+        "sha256": "79424087f5ef65608ab56995a6cb2f21f254214074f80410d54d7abdb610dc86"
+      },
+      {
+        "path": "p/stud7.dat",
+        "sha256": "250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"
+      },
+      {
+        "path": "p/box5.dat",
+        "sha256": "ccb7b8a1d36692335b10ea6aa196849afcad4b15331683ed8112a10b50977318"
+      },
+      {
+        "path": "p/box4-1.dat",
+        "sha256": "2ed58df5da841827dfc5f9ac11c0bd7ffd8a455e46f166638e635f61a014b44d"
+      },
+      {
+        "path": "p/rect.dat",
+        "sha256": "ffeb2dd3d9b83c38841f18f1f74800fbba9e90c5fb6badfff2a795f08a96cb71"
+      }
+    ]
+  }),
+  reviewedRectangularPart({
+    "id": "40666",
+    "label": "4 × 2 × 0.5 · 薄件",
+    "width": 4,
+    "depth": 2,
+    "heightLdu": 24,
+    "evidence": [
+      "parts/40666.dat: outer box5 at (0,24,0), scale(80,-24,40); body160×24×80 LDU. Inverted cavity scale(76,-20,36), leaving4 LDU roof.",
+      "Eight stud7 placements at x=-60,-20,20,60 and z=+/-20, scale y=2.75. Three underside stud8 tubes at x=-40,0,40,y=4,scale y=-4 plus perimeter ribs; nominal full eight-position rectangular mating interface.",
+      "Plate height is 24/48=0.5 brick units. Same 11 LDU stud engagement contract; no LEGO System plate conversion."
+    ],
+    "sourceFiles": [
+      {
+        "path": "parts/40666.dat",
+        "sha256": "e0e7ca7963e4ca161bb180e6345761f726d526e38f9f1fc7505541a557e34be5"
+      },
+      {
+        "path": "p/stud7.dat",
+        "sha256": "250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"
+      },
+      {
+        "path": "p/stud8.dat",
+        "sha256": "1a3202bf2d8dd8f58f59d09e220cb62f3411db762f88333a82503ab395f9d115"
+      },
+      {
+        "path": "p/box5.dat",
+        "sha256": "ccb7b8a1d36692335b10ea6aa196849afcad4b15331683ed8112a10b50977318"
+      },
+      {
+        "path": "p/box4-1.dat",
+        "sha256": "2ed58df5da841827dfc5f9ac11c0bd7ffd8a455e46f166638e635f61a014b44d"
+      }
+    ]
+  }),
 ]
 export function geometrySupport(part: string) {
   const definition = PARTS.find(p => p.id === part)

@@ -58,7 +58,7 @@ test('unknown or invalid capability data cannot enable assembly', () => {
 })
 test('existing profiles preserve body transforms and the original staircase', () => {
   assert.equal(validateAssembly(exampleBricks()).valid, true)
-  for (const p of PARTS) {
+  for (const p of PARTS.filter(p => ['3437', '3011', '2300', '87084'].includes(p.id))) {
     assert.equal(p.geometry.bodySizeLdu.y, 48)
     assert.deepEqual(p.geometry.ldraw.offsetLdu, { x: 0, y: 48, z: 0 })
     assert.equal(p.geometry.top.length, p.length * p.depth)

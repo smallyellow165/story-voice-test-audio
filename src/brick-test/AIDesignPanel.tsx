@@ -40,7 +40,7 @@ function resolveModelChoice(choice: ModelChoice | null, models: ModelChoice[], d
 }
 
 export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratingChange, onApply }: Props) {
-  const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['1', '14'].includes(color.code) ? 1 : 0 }))))
+  const [inventory, setInventory] = useState<InventoryRow[]>(() => PARTS.flatMap((part) => COLORS.map((color) => ({ part: part.id, color: color.code, quantity: part.id === '3437' ? 2 : part.id === '3011' ? 1 : ['2300', '87084'].includes(part.id) && ['1', '14'].includes(color.code) ? 1 : 0 }))))
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
   const [modelChoices, setModelChoices] = useState<Record<DesignMode, ModelChoice | null>>({ creative: null, reverse: null })
@@ -185,7 +185,7 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
     <div className="brick-creative-design">
     <h2>AI Design · 积木清单 → 搭建设计</h2>
-    <p className="brick-help">同一生成器支持自由设计和参考图重建。生成 {designLimits.minBricks}–{designLimits.maxBricks} 块、顶部最多四层的候选，完整造型和每一步均须通过现有连接、碰撞及库存校验。</p>
+    <p className="brick-help">同一生成器支持自由设计和参考图重建。生成 {designLimits.minBricks}–{designLimits.maxBricks} 块、高度按清单中的已审核零件确定（硬上限八层）的候选，完整造型和每一步均须通过现有连接、碰撞及库存校验。</p>
     <label>生成模式<select disabled={disabled || running || preparingReference} value={generationMode} onChange={e => setGenerationMode(e.target.value as DesignMode)}>
       <option value="creative">自由生成</option><option value="reverse">参考图生成</option>
     </select></label>

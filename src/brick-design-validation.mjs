@@ -1,10 +1,20 @@
 // Shared by the server Generator and browser game. Geometry stays in V2.
-export const designLimits = Object.freeze({ minBricks: 2, maxBricks: 12, maxLayer: 3, maxCoordinate: 6, minSupportFraction: 0.5 })
+export const designLimits = Object.freeze({ minBricks: 2, maxBricks: 12, maxLayer: 3, maxConfiguredLayer: 7, maxCoordinate: 6, minSupportFraction: 0.5 })
+// Generation budget, not a physical constraint. Standard-height inventories retain
+// the original 0..3 bottom / 4 top bounds. Tall reviewed parts add bounded headroom.
+export function designHeightLimits(inventory, rules) {
+  const selected = rules.PARTS.filter(p => p.geometry?.status === 'reviewed'
+    && (!inventory || inventory.some(r => r.part === p.id && r.quantity > 0)))
+  const tallest = Math.max(1, ...selected.map(p => p.geometry.bodySizeLdu.y / 48))
+  const maxLayer = Math.min(designLimits.maxConfiguredLayer, designLimits.maxLayer + 2 * Math.ceil(tallest - 1))
+  return { maxLayer, maxTop: maxLayer + 1 }
+}
 const pairKey = (part, color) => `${part}:${color}`
 const boundedText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value)
 
 export function validateBrickDesign(design, inventory, rules) {
+  const heightLimits = designHeightLimits(inventory, rules)
   const report = { valid: false, issues: [], assembly: null, steps: [], usage: [] }
   const issue = (code, message, extra = {}) => report.issues.push({ code, message, ...extra })
   if (!record(design) || !boundedText(design.name, 80) || !Array.isArray(design.bricks) || !Array.isArray(design.steps)) {
@@ -24,7 +34,7 @@ export function validateBrickDesign(design, inventory, rules) {
     }
     if (ids.has(brick.id)) issue('DUPLICATE_ID', `积木 ID 重复：${brick.id}`)
     ids.add(brick.id)
-    if (Math.abs(brick.x) > designLimits.maxCoordinate || Math.abs(brick.z) > designLimits.maxCoordinate || brick.layer < 0 || brick.layer > designLimits.maxLayer || brick.layer + rules.PARTS.find(p => p.id === brick.part).geometry.bodySizeLdu.y / 48 > designLimits.maxLayer + 1) issue('CHILD_LIMIT', `造型中心坐标需在 ±${designLimits.maxCoordinate} 内，底部层高需在 0–${designLimits.maxLayer} 内，实体顶部不能超过 ${designLimits.maxLayer + 1} 层。`, { brickId: brick.id })
+    if (Math.abs(brick.x) > designLimits.maxCoordinate || Math.abs(brick.z) > designLimits.maxCoordinate || brick.layer < 0 || brick.layer > heightLimits.maxLayer || brick.layer + rules.PARTS.find(p => p.id === brick.part).geometry.bodySizeLdu.y / 48 > heightLimits.maxTop) issue('CHILD_LIMIT', `造型中心坐标需在 ±${designLimits.maxCoordinate} 内，底部层高需在 0–${heightLimits.maxLayer} 内，实体顶部不能超过 ${heightLimits.maxTop} 层。`, { brickId: brick.id })
     const key = pairKey(brick.part, brick.color)
     counts.set(key, (counts.get(key) || 0) + 1)
   }
