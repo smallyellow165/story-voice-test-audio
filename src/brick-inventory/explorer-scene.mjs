@@ -1,4 +1,4 @@
-// URL boot configuration only; never triggers recognition, saving, or inventory changes.
+// Shared URL serialization; never triggers recognition, saving, or inventory changes.
 export function parseExplorerScene(href) {
   const params = new URL(href).searchParams, warnings = []
   const value = key => params.has(key) ? params.get(key).trim() : undefined
@@ -43,11 +43,11 @@ export function selectSceneModel(models, fallback, scene = {}) {
   const chosen = options.find(m => m.id === fallback) || options[0]
   return { id: chosen?.id || fallback, warning: !chosen || invalidProvider ? 'URL Provider / Model 不可用；无效参数已忽略，使用有效选项或已有设置。' : '' }
 }
-export function buildExplorerSceneLink(href, scene) {
+export function buildExplorerSceneLink(href, scene, stripSecrets = true) {
   const url = new URL(href)
   for (const key of ['strategy', 'imageSource', 'image', 'provider', 'model', 'analysisId']) url.searchParams.delete(key)
   // Never propagate credentials accidentally present in a pasted base URL.
-  for (const key of [...url.searchParams.keys()]) if (/^(api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|authorization)$/i.test(key)) url.searchParams.delete(key)
+  for (const key of [...url.searchParams.keys()]) if (stripSecrets && /^(api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|authorization)$/i.test(key)) url.searchParams.delete(key)
   url.searchParams.set('strategy', scene.strategy === 'geometry_only' ? 'assembled' : scene.strategy)
   if (scene.imageSource) url.searchParams.set('imageSource', scene.imageSource === 'server_library' ? 'server' : 'upload')
   if (scene.imageSource === 'server_library' && scene.image) url.searchParams.set('image', scene.image)
@@ -55,4 +55,13 @@ export function buildExplorerSceneLink(href, scene) {
   if (scene.model) url.searchParams.set('model', scene.model)
   if (scene.analysisId) url.searchParams.set('analysisId', scene.analysisId)
   return url.href
+}
+
+// Address-bar synchronization owns only scene parameters; preserve unrelated URL state.
+export function replaceExplorerScene(browser, scene, ready) {
+  if (!ready) return false
+  const next = buildExplorerSceneLink(browser.location.href, scene, false)
+  if (next === browser.location.href) return false
+  browser.history.replaceState(browser.history.state, '', next)
+  return true
 }

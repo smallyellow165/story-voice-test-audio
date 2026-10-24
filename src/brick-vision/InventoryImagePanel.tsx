@@ -38,6 +38,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   const [history, setHistory] = useState<VisionHistoryItem[]>(initialHistory || [])
   const [historyReady, setHistoryReady] = useState(initialHistory !== undefined)
   const [modelsReady, setModelsReady] = useState(false), [pickerReady, setPickerReady] = useState(false)
+  const [sceneRestored, setSceneRestored] = useState(!initialScene?.analysisId)
   const autoRestored = useRef(false), modelBootApplied = useRef(false)
   const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
   const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
@@ -183,8 +184,8 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   useEffect(() => {
     if (!active || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
     autoRestored.current = true
-    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在散装识别历史中，未加载。'); return }
-    void loadHistory(initialScene.analysisId, true)
+    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在散装识别历史中，未加载。'); setSceneRestored(true); return }
+    void loadHistory(initialScene.analysisId, true).finally(() => setSceneRestored(true))
   }, [active, pickerReady, modelsReady, historyReady])
   useEffect(() => {
     const controller = new AbortController()
@@ -365,7 +366,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       catalogEpoch.current++
       setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
     }} />
-    <CopySceneLink disabled={busy || !pickerReady || !modelsReady} dirty={!!result && !reviewSaved} scene={{ strategy: 'loose',
+    <CopySceneLink sync={active && pickerReady && modelsReady && historyReady && sceneRestored} disabled={!historyReady || !sceneRestored || busy || !pickerReady || !modelsReady} dirty={!!result && !reviewSaved} scene={{ strategy: 'loose',
       imageSource: imageSelection.source, image: imageSelection.name, provider, model, analysisId: result?.id }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseExplorerScene, resolveSceneHistory, selectSceneModel, buildExplorerSceneLink } from '../src/brick-inventory/explorer-scene.mjs'
+import { parseExplorerScene, resolveSceneHistory, selectSceneModel, buildExplorerSceneLink, replaceExplorerScene } from '../src/brick-inventory/explorer-scene.mjs'
 
 const id = '0474c775-ae2f-40d7-87d2-dd0e2b4ee3fa'
 const base = 'http://localhost:5173/story-voice-test-audio/brick-inventory.html'
@@ -79,4 +79,69 @@ test('a control-only scene omits an unloaded history ID and local upload filenam
   }))
   assert.equal(url.searchParams.has('analysisId'), false)
   assert.equal(url.searchParams.has('image'), false)
+})
+
+
+function browserAt(href) {
+  const calls = []
+  const browser = { location: { href }, history: { state: { existing: 'router-state' },
+    replaceState(state, title, url) { calls.push({ state, title, url }); browser.location.href = url },
+    pushState() { throw new Error('Scene updates must not add history entries') },
+  } }
+  return { browser, calls }
+}
+
+test('initial defaults and inactive panels cannot overwrite URL before restore is settled', () => {
+  const href = base + '?strategy=assembled&image=camel.jpg&analysisId=' + id
+  const { browser, calls } = browserAt(href)
+  assert.equal(replaceExplorerScene(browser, { strategy: 'loose' }, false), false)
+  assert.equal(browser.location.href, href)
+  assert.equal(calls.length, 0)
+  replaceExplorerScene(browser, { strategy: 'geometry_only', imageSource: 'server_library', image: 'camel.jpg', analysisId: id }, true)
+  assert.equal(parseExplorerScene(browser.location.href).analysisId, id)
+  replaceExplorerScene(browser, { strategy: 'loose' }, false)
+  assert.equal(parseExplorerScene(browser.location.href).strategy, 'geometry_only')
+})
+
+test('replace preserves pathname, hash, unrelated parameters and browser history state; identical snapshots are no-ops', () => {
+  const { browser, calls } = browserAt(base + '?theme=dark#review')
+  const scene = { strategy: 'loose', imageSource: 'server_library', image: 'parts.jpg', provider: 'openai', model: 'openai-other' }
+  assert.equal(replaceExplorerScene(browser, scene, true), true)
+  const url = new URL(browser.location.href)
+  assert.equal(url.pathname, new URL(base).pathname)
+  assert.equal(url.hash, '#review')
+  assert.equal(url.searchParams.get('theme'), 'dark')
+  assert.equal(calls[0].state, browser.history.state)
+  assert.equal(replaceExplorerScene(browser, { ...scene }, true), false)
+  assert.equal(calls.length, 1)
+  assert.equal(buildExplorerSceneLink(browser.location.href, scene), browser.location.href)
+})
+
+test('loaded record changes and clearing a result replace or remove analysisId without encoding draft fields', () => {
+  const { browser } = browserAt(base)
+  const loaded = { strategy: 'geometry_only', analysisId: id }
+  replaceExplorerScene(browser, loaded, true)
+  // A dropdown selection is not a loaded record and never enters the scene snapshot.
+  const selectedHistoryId = '11111111-1111-1111-1111-111111111111'
+  assert.equal(replaceExplorerScene(browser, loaded, true), false)
+  assert.equal(parseExplorerScene(browser.location.href).analysisId, id)
+  replaceExplorerScene(browser, { ...loaded, analysisId: selectedHistoryId }, true)
+  assert.equal(parseExplorerScene(browser.location.href).analysisId, selectedHistoryId)
+  replaceExplorerScene(browser, { strategy: 'loose', imageSource: 'upload', image: 'private.jpg', analysisId: undefined }, true)
+  const params = new URL(browser.location.href).searchParams
+  assert.equal(params.has('analysisId'), false)
+  assert.equal(params.has('image'), false)
+})
+
+test('rapid complete snapshots end at latest controls and do not retain previous model or image', () => {
+  const { browser } = browserAt(base)
+  replaceExplorerScene(browser, { strategy: 'loose', imageSource: 'server_library', image: 'a.jpg', provider: 'openai', model: 'openai-other' }, true)
+  replaceExplorerScene(browser, { strategy: 'geometry_only', imageSource: 'server_library', image: 'b.png', provider: 'gemini', model: 'gemini-default' }, true)
+  replaceExplorerScene(browser, { strategy: 'geometry_only', imageSource: 'upload' }, true)
+  const scene = parseExplorerScene(browser.location.href)
+  assert.equal(scene.strategy, 'geometry_only')
+  assert.equal(scene.imageSource, 'upload')
+  assert.equal(scene.image, undefined)
+  assert.equal(scene.model, undefined)
+  assert.equal(scene.provider, undefined)
 })

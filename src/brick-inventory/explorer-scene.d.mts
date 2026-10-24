@@ -6,3 +6,5 @@ export function parseExplorerScene(href: string): ExplorerScene
 export function resolveSceneHistory(scene: ExplorerScene, loose: readonly { id: string }[], assembled: readonly { id: string; analysis_mode?: string }[]): { strategy: ExplorerStrategy; analysisId?: string; warning: string }
 export function selectSceneModel(models: readonly { id: string; provider: string }[], fallback: string, scene?: Pick<ExplorerScene, 'provider' | 'model'>): { id: string; warning: string }
 export function buildExplorerSceneLink(href: string, scene: SceneLink): string
+
+export function replaceExplorerScene(browser: { location: { href: string }; history: { state: unknown; replaceState(data: unknown, unused: string, url: string): void } }, scene: SceneLink, ready: boolean): boolean

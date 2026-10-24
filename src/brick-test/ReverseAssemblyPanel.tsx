@@ -46,6 +46,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
   const [detailId, setDetailId] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>(initialHistory?.items || []), [historyWarning, setHistoryWarning] = useState(initialHistory?.warnings.join('；') || '')
   const [historyReady, setHistoryReady] = useState(initialHistory !== undefined), [pickerReady, setPickerReady] = useState(false)
+  const [sceneRestored, setSceneRestored] = useState(!initialScene?.analysisId)
   const autoRestored = useRef(false)
   const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
   const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
@@ -76,8 +77,8 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
   useEffect(() => {
     if (!visible || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
     autoRestored.current = true
-    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在成品分析历史中，未加载。'); return }
-    void loadHistory(initialScene.analysisId, true)
+    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在成品分析历史中，未加载。'); setSceneRestored(true); return }
+    void loadHistory(initialScene.analysisId, true).finally(() => setSceneRestored(true))
   }, [visible, pickerReady, modelsReady, historyReady])
   useEffect(() => {
     if (!dirty) return
@@ -344,7 +345,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       </div>
       {historyWarning && <p role="status">{historyWarning}</p>}
     </div>
-    <CopySceneLink disabled={locked || !pickerReady || !modelsReady} dirty={dirty} scene={{ strategy: analysisMode,
+    <CopySceneLink sync={visible && pickerReady && modelsReady && historyReady && sceneRestored && (!record || (record.analysis_mode || 'catalog_match') === analysisMode)} disabled={!historyReady || !sceneRestored || locked || !pickerReady || !modelsReady} dirty={dirty} scene={{ strategy: analysisMode,
       imageSource: imageSelection.source, image: imageSelection.name, model, provider: models.find(m => m.id === model)?.provider,
       analysisId: record?.id }} />
     {preview && <div ref={previewHost}><ObservationPreview

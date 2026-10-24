@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import { buildExplorerSceneLink } from './explorer-scene.mjs'
+import { useEffect, useState } from 'react'
+import { buildExplorerSceneLink, replaceExplorerScene } from './explorer-scene.mjs'
 import type { SceneLink } from './explorer-scene.mjs'
-export function CopySceneLink({ scene, dirty, disabled = false }: { scene: SceneLink; dirty: boolean; disabled?: boolean }) {
+export function CopySceneLink({ scene, dirty, disabled = false, sync = false }: { scene: SceneLink; dirty: boolean; disabled?: boolean; sync?: boolean }) {
   const [notice, setNotice] = useState(''), [manual, setManual] = useState('')
+  const { strategy, imageSource, image, provider, model, analysisId } = scene
+  useEffect(() => {
+    replaceExplorerScene(window, { strategy, imageSource, image, provider, model, analysisId }, sync)
+  }, [sync, strategy, imageSource, image, provider, model, analysisId])
   return <div className="inventory-scene-link">
     <button type="button" disabled={disabled} onClick={async () => {
       const url = buildExplorerSceneLink(window.location.href, scene)
