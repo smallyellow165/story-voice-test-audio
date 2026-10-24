@@ -5,7 +5,7 @@ import './review.css'
 
 /** Presentation only. Callers retain their own drafts, selection and operations. */
 export function ObservationTable({ columns, children, hostRef, stickyAction = false }: {
-  columns: readonly { label: string; width: number }[]
+  columns: readonly { label: string; width: number; header?: ReactNode }[]
   stickyAction?: boolean
   children: ReactNode
   hostRef?: Ref<HTMLDivElement>
@@ -13,7 +13,7 @@ export function ObservationTable({ columns, children, hostRef, stickyAction = fa
   return <div className="vision-observation-scroll" ref={hostRef} tabIndex={0} role="region" aria-label="Observation 审核表，可横向滚动">
     <table className={"vision-observation-table" + (stickyAction ? " vision-matching-table" : "")} style={{ minWidth: columns.reduce((sum, c) => sum + c.width, 0) }}>
       <colgroup>{columns.map((c, i) => <col key={i} style={{ width: c.width }} />)}</colgroup>
-      <thead><tr>{columns.map(c => <th key={c.label} scope="col">{c.label}</th>)}</tr></thead>
+      <thead><tr>{columns.map(c => <th key={c.label} scope="col">{c.label}{c.header}</th>)}</tr></thead>
       <tbody>{children}</tbody>
     </table>
   </div>

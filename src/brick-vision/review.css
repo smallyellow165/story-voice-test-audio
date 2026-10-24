@@ -50,7 +50,7 @@
 :is(.inventory-workbench, .brick-reverse) .vision-observation-menu button:hover { background: #e7f2ed; }
 .vision-observation-menu button:focus-visible { outline: 2px solid #db8d0a; outline-offset: -2px; }
 
-.inventory-workbench .vision-observation-table td:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }
+.inventory-workbench .vision-matching-table td:nth-child(4) { overflow: hidden; text-overflow: ellipsis; }
 
 /* Only Matching has a sticky action column; Geometry retains its original table. */
 :is(.inventory-workbench, .brick-reverse) .vision-matching-table th:first-child,
@@ -69,8 +69,13 @@
 :is(.inventory-workbench, .brick-reverse) .vision-review-info { width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #235f6c; font-size: 18px; }
 .vision-review-controls { margin-bottom: 6px; }
 .vision-review-controls [role="status"] { font-size: 12px; color: #48645a; }
-:is(.inventory-workbench, .brick-reverse) .vision-review-filter { display: flex; align-items: center; gap: 6px; margin: 0; }
-:is(.inventory-workbench, .brick-reverse) .vision-review-filter select { width: auto; min-width: 100px; }
 .vision-review-help { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(480px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; padding: 10px 12px; border: 1px solid #c6d4ce; border-radius: 6px; background: #fffefa; color: #243c38; box-shadow: 0 4px 16px #152d2933; font: 12px/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
 .vision-review-help p { margin: 0 0 8px; }
 .vision-review-help p:last-child { margin-bottom: 0; }
+
+/* Toolbar links remain secondary and wrap as whole items when space permits. */
+.vision-review-controls > .vision-review-design-link { flex: 0 1 auto; max-width: 100%; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.vision-review-controls > [role="status"] { flex: 0 1 auto; }
+/* Keep long observation IDs within their allocated column, with native title tooltips. */
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table td:nth-child(3) { overflow: hidden; }
+:is(.inventory-workbench, .brick-reverse) .vision-matching-table td:nth-child(3) > .vision-observation-id { display: block; width: 100%; text-align: left; white-space: nowrap; }

@@ -1,7 +1,8 @@
+import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from './review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
 import { selectSceneModel } from '../brick-inventory/explorer-scene.mjs'
 import type { ExplorerScene, SceneImageSelection } from '../brick-inventory/explorer-scene.mjs'
-import { ReviewToolbar } from './ReviewToolbar'
+import { ReviewStatusFilter, ReviewToolbar } from './ReviewToolbar'
 import type { ReviewFilter } from './ReviewToolbar'
 import { ServerImagePicker } from './ServerImagePicker'
 import type { PreparedSourceImage } from './ServerImagePicker'
@@ -266,9 +267,9 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
     const row = [...(tableHost.current?.querySelectorAll<HTMLElement>('[data-observation-id]') || [])].find(r => r.dataset.observationId === id)
     row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
-  const review = <div className="inventory-vision-review" hidden={!active}>
+  const review = <div className="inventory-vision-review vision-review-layout" hidden={!active}>
     <ReviewToolbar confirmed={confirmedRows.length} total={rows.length} saved={reviewSaved}
-      filter={reviewFilter} onFilter={setReviewFilter} help={<>
+      help={<>
         <p>从左栏识别或加载历史，在此审核；零件目录位于右栏。</p>
         <p>Width / Depth 使用 Stud（16 mm），Height 使用 Brick（19.2 mm），Unknown 留空。填写 Height 时使用可靠主体三维几何检索；Unknown 不匹配。不填 Height 的整数二维 Size 保留现有水平检索。编辑视觉特征后，逐行检索右栏 Catalog 并人工选择型号与颜色。未知特征不参与检索；所有已传入条件严格匹配。模型编号猜测仅在详情中参考，不预填确认结果。旧记录未提供的特征需手动填写。</p>
         <p>审核记录保存在此浏览器。加入我的积木只添加已确认且勾选的识别项，不保存审核或清单。手动填写的型号与颜色请先确认。</p>
@@ -287,18 +288,17 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
         {/^(保存失败|审核草稿未恢复)/.test(draftNotice) && <p role="alert">{draftNotice}</p>}
         {autoSummary && <p role="status">{autoSummary}</p>}
         <ObservationTable stickyAction hostRef={tableHost} columns={[
-          { label: '操作', width: 60 }, { label: '识别项', width: 110 }, { label: '型号', width: 135 },
-          { label: '宽 (Stud)', width: 85 }, { label: '深 (Stud)', width: 85 }, { label: '高 (Brick)', width: 90 },
-          { label: '颜色', width: 80 }, { label: '形状', width: 105 }, { label: '印花', width: 80 },
-          { label: '数量', width: 60 }, { label: '审核状态', width: 175 },
+          { label: '操作', width: 52 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
+          { label: '宽 (Stud)', width: 72 }, { label: '深 (Stud)', width: 72 }, { label: '高 (Brick)', width: 76 },
+          { label: '颜色', width: 64 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
+          { label: '数量', width: 60 },
         ]}>
           {rows.map(row => {
               const match = matches.get(row.id)
-              if (!match || (reviewFilter !== 'all' && isConfirmed(row) !== (reviewFilter === 'confirmed'))) return null
+              if (!match) return null
+              const status = reviewStatus(row.excluded, isConfirmed(row))
+              if (!matchesReviewFilter(reviewFilter, status)) return null
               const observation = match.observation
-              const note = autoNotes[row.id] || ''
-              const reviewStatus = row.excluded ? '已排除' : isConfirmed(row) ? '型号与颜色已确认'
-                : row.confirmation || note.startsWith('待选择') ? '待选择' : '待审核'
               return <tr key={row.id} data-observation-id={row.id} className={activeId === row.id ? 'is-active' : ''}
                 onClick={event => {
                   if (event.target instanceof Element && event.target.closest('input, select, button, [popover]')) return
@@ -312,7 +312,11 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                   { label: '查看详情', run: () => setDetail({ kind: 'observation', id: row.id }) },
                   { label: row.excluded ? '恢复审核' : '排除', disabled: busy || applied, run: () => editRow(row.id, { excluded: !row.excluded, selected: false }) },
                   { label: '删除', disabled: busy || applied, run: () => { catalogEpoch.current++; setReviewSaved(false); setDraftNotice('审核有未保存修改。'); setValidation(null); setRows(rows.filter(r => r.id !== row.id)); if (activeId === row.id) setActiveId('') } },
-                ]} /></td>
+                ]} />
+                  <label><input type="checkbox" aria-label={row.id + ' 加入我的积木'} checked={row.selected} disabled={busy || applied || row.excluded}
+                    onChange={e => { setReviewSaved(false); setDraftNotice('审核有未保存修改。'); setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r)) }} /></label>
+                </td>
+                <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
                 <td><button type="button" className="vision-observation-id" aria-pressed={activeId === row.id}
                   title={row.id + (!bboxStyle(observation.bbox) ? ' · 无有效 BBox' : '')}
                   onClick={() => { setActiveId(row.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{row.id}</button>
@@ -320,17 +324,14 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
                 <td><input aria-label={row.id + ' 用户 Part Number'} value={row.part} placeholder="输入 RB 型号" disabled={busy || applied}
                   onChange={e => editRow(row.id, { part: e.target.value })} />
                   <small>模型参考：{observation.candidates?.map(c => c.part_num).join(', ') || '—'}</small>
-                  <small>确认型号：{reviewStatus.startsWith('型号与颜色已确认') ? row.part : '—'}</small>
+                  <small>确认型号：{isConfirmed(row) ? row.part : '—'}</small>
                   <label>确认 Color<input aria-label={row.id + ' 确认 RB Color ID'} value={row.color} disabled={busy || applied}
                     onChange={e => editRow(row.id, { color: e.target.value })} /></label></td>
                 <ObservationFeatureCells id={row.id} features={row.features} disabled={busy || applied}
                   onChange={features => editRow(row.id, { features })} />
                 <td><input aria-label={row.id + ' Quantity'} value={row.quantity} disabled={busy || applied}
                   onChange={e => editRow(row.id, { quantity: e.target.value })} /></td>
-                <td className="vision-match-status" title={note}><span className="vision-review-badge">{reviewStatus}</span>
-                  <label><input type="checkbox" aria-label={row.id + ' 加入我的积木'} checked={row.selected} disabled={busy || applied || row.excluded}
-                    onChange={e => { setReviewSaved(false); setDraftNotice('审核有未保存修改。'); setRows(rows.map(r => r.id === row.id ? { ...r, selected: e.target.checked } : r)) }} />勾选加入我的积木</label>
-                  <small>尺寸验证范围见候选证据</small></td>
+
               </tr>
           })}
         </ObservationTable>

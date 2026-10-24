@@ -1,6 +1,7 @@
+import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from '../brick-vision/review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
 import type { ExplorerScene, SceneImageSelection } from '../brick-inventory/explorer-scene.mjs'
-import { ReviewToolbar } from '../brick-vision/ReviewToolbar'
+import { ReviewStatusFilter, ReviewToolbar } from '../brick-vision/ReviewToolbar'
 import type { ReviewFilter } from '../brick-vision/ReviewToolbar'
 import type { ObservationCatalogSearch } from '../brick-vision/types'
 import { createPortal } from 'react-dom'
@@ -234,9 +235,9 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       </details>
     </>}
   </div>
-  const workspace = <div className="brick-reverse" hidden={!visible}>
+  const workspace = <div className="brick-reverse vision-review-layout" hidden={!visible}>
     <ReviewToolbar confirmed={confirmedCount} total={record?.analysis?.observations.length || 0}
-      saved={!dirty && !!savedAt} filter={reviewFilter} onFilter={setReviewFilter} help={<>
+      saved={!dirty && !!savedAt} help={<>
         <p>从左栏识别或加载历史，在此审核；零件目录位于右栏。</p>
         <p>宽、深使用 Stud（16 mm），高使用 Brick（19.2 mm）；未知请留空。按特征查找会重置并填写右栏零件目录。确认型号与颜色不代表已通过拼装验证，原始几何证据保持不变。</p>
         {!geometryOnly && record?.analysis && <p>{record.analysis.appearance}</p>}
@@ -247,20 +248,21 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       <button disabled={locked || applied || !confirmedItems.length} onClick={() => void action('加入我的积木', async () => {
         if (onApply(confirmedItems) !== false) setApplied(true)
       })}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
+      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id)}>在 Design Lab 加载参考分析 ↗</a>}
     </ReviewToolbar>
     {record?.analysis && <>
       <ObservationTable stickyAction hostRef={geometryOnly ? undefined : tableHost} columns={[
-        { label: '操作', width: 60 }, { label: '识别项', width: 110 }, { label: '型号', width: 135 },
-        { label: '宽 (Stud)', width: 85 }, { label: '深 (Stud)', width: 85 }, { label: '高 (Brick)', width: 90 },
-        { label: '颜色', width: 80 }, { label: '形状', width: 105 }, { label: '印花', width: 80 },
-        { label: '数量', width: 60 }, { label: '审核状态', width: 175 },
+        { label: '操作', width: 52 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
+        { label: '宽 (Stud)', width: 72 }, { label: '深 (Stud)', width: 72 }, { label: '高 (Brick)', width: 76 },
+        { label: '颜色', width: 64 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
+        { label: '数量', width: 60 },
       ]}>
         {record.analysis.observations.map(o => {
           const row = rows[o.id]
-          if (!row || (reviewFilter !== 'all' && isConfirmed(row) !== (reviewFilter === 'confirmed'))) return null
+          if (!row) return null
+          const status = reviewStatus(row.excluded, isConfirmed(row))
+          if (!matchesReviewFilter(reviewFilter, status)) return null
           const chosen = row.index === undefined ? undefined : row.search?.rows[row.index]
-          const available = row.search?.rows.filter(r => r.sourceAllowed).length
-          const status = row.excluded ? '已排除' : isConfirmed(row) ? '型号与颜色已确认' : candidateNotes[o.id] || (row.search ? '待选择 · ' + (available || 0) + ' 本页可用' : '待审核')
           return <tr key={o.id} data-observation-id={o.id} className={active === o.id ? 'is-active' : ''} onClick={event => {
             if (event.target instanceof Element && event.target.closest('input, select, button, [popover], a, summary')) return
             setActive(o.id)
@@ -273,27 +275,24 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
               { label: '查看详情', run: () => setDetailId(o.id) },
               { label: row.excluded ? '恢复审核' : '排除', disabled: locked || generationSubmitted, run: () => edit(o.id, { excluded: !row.excluded }) },
             ]} /></td>
+            <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
             <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
               onClick={() => { setActive(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button>
               <small>置信度 {o.confidence}</small></td>
             <td><input aria-label={o.id + ' 用户 Part Number'} value={row.features.partNumber ?? ''} placeholder="输入 RB 型号" disabled={locked}
               onChange={e => edit(o.id, { features: { ...row.features, partNumber: e.target.value }, search: undefined, index: undefined })} />
               <small>确认：{chosen?.source.part_num || '—'} / 颜色 ID {chosen?.source.color_id ?? '—'}</small>
-              <small>模型参考见详情；不自动确认</small></td>
+              {row.excluded && <input aria-label={o.id + ' 排除原因'} value={row.reason} placeholder="请填写排除原因" disabled={locked}
+                onChange={e => edit(o.id, { reason: e.target.value })} />}
+            </td>
             <ObservationFeatureCells id={o.id} features={row.features} disabled={locked}
               onChange={features => edit(o.id, { features, search: undefined, index: undefined })} />
             <td><input aria-label={o.id + ' 确认可见数量'} type="number" min="1" max="100" value={row.quantity}
               disabled={locked || generationSubmitted} onChange={e => edit(o.id, { quantity: e.target.value })} /></td>
-            <td className="vision-match-status"><span className="vision-review-badge">{status}</span>
-              <small>尺寸验证范围见候选证据</small>
-              <small title={'可见凸点 ' + (o.visible_studs ?? 'Unknown') + ' · ' + o.occlusion}>可见凸点 {o.visible_studs ?? 'Unknown'} · 遮挡见详情</small>
-              {row.excluded && <input aria-label={o.id + ' 排除原因'} value={row.reason} placeholder="请填写排除原因" disabled={locked}
-                onChange={e => edit(o.id, { reason: e.target.value })} />}
-            </td>
+
           </tr>
         })}
       </ObservationTable>
-      {!dirty && !!savedAt && record.status === 'complete' && <p><a href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id)}>在 Design Lab 加载参考分析 →</a></p>}
     </>}
     {generationSubmitted && <p className="brick-help">此识别结果已提交生成；可以继续保存审核或读取已有方案。原有防重复生成保护仍生效，不覆盖 Artifact。</p>}
     {artifact && <div role="status"><p>Approximation · {artifact.status} · {artifact.error || artifact.generation?.error?.message || '请在 Viewer 与原图对比；Validator 不验证外观相似度。'}</p>
@@ -362,6 +361,8 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     {detailId && <ObservationModal title={'识别项 ' + detailId} data={{
       observation: record?.analysis?.observations.find(o => o.id === detailId),
       review: rows[detailId],
+      candidateStatus: candidateNotes[detailId],
+      dimensionNote: '尺寸验证范围见候选证据',
       relations: record?.analysis?.relations,
     }} onClose={() => setDetailId('')} />}
     {busy && <p role="status">{busy}… 不自动重试。</p>}

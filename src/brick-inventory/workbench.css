@@ -173,3 +173,20 @@
 .inventory-scene-link { margin: 8px 0; min-width: 0; }
 .inventory-scene-link small { display: block; margin-top: 4px; }
 .inventory-workbench .inventory-scene-link input { box-sizing: border-box; width: 100%; }
+
+/* One bounded native scroller owns both axes of the matching table. */
+.inventory-workbench .explorer-matching-pane { overflow: hidden; scrollbar-gutter: auto; }
+.explorer-matching-host { height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.explorer-matching-host > .vision-review-layout { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.explorer-matching-host > .vision-review-layout[hidden] { display: none; }
+.explorer-matching-host > .vision-review-layout > * { flex: 0 0 auto; }
+.explorer-matching-host > .vision-review-layout > .vision-observation-scroll {
+  flex: 1 1 0; min-height: 0; overflow: scroll; margin: 4px 0; scrollbar-gutter: stable; overscroll-behavior: contain;
+}
+/* Long diagnostics remain reachable without displacing the table's scrollbar. */
+.explorer-matching-host > .vision-review-layout > [role="status"] { max-height: 20%; overflow: auto; }
+.inventory-workbench .vision-matching-table thead th { position: sticky; top: 0; z-index: 3; background: #fffefa; }
+.inventory-workbench .vision-matching-table thead th:first-child { z-index: 4; }
+.inventory-workbench .vision-matching-table .vision-match-status { white-space: nowrap; }
+.inventory-workbench .vision-matching-table th > button { margin-left: 4px; vertical-align: middle; }
+.inventory-workbench .vision-matching-table td:first-child > label { display: inline-block; margin: 0 0 0 3px; }

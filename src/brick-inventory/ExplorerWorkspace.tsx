@@ -13,8 +13,8 @@ export function ExplorerWorkspace({ hasGeometry, matchingHost, geometryHost }: {
   return <section className="explorer-workspace" aria-label="零件审核工作区">
     <Group orientation="vertical" className="explorer-workspace-split">
       <Panel id="part-matching" defaultSize="55%" minSize="20%" className="explorer-workspace-pane">
-        <section className="explorer-pane-scroll" aria-label="零件审核">
-          <div ref={matchingHost} />
+        <section className="explorer-pane-scroll explorer-matching-pane" aria-label="零件审核">
+          <div className="explorer-matching-host" ref={matchingHost} />
         </section>
       </Panel>
       <Separator className="explorer-workspace-handle" disabled={!hasGeometry} style={{ display: hasGeometry ? undefined : 'none' }}
