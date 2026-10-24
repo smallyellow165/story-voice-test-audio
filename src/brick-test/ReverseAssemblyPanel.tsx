@@ -1,3 +1,5 @@
+import { CopySceneLink } from '../brick-inventory/CopySceneLink'
+import type { ExplorerScene, SceneImageSelection } from '../brick-inventory/explorer-scene.mjs'
 import { ReviewToolbar } from '../brick-vision/ReviewToolbar'
 import type { ReviewFilter } from '../brick-vision/ReviewToolbar'
 import type { ObservationCatalogSearch } from '../brick-vision/types'
@@ -23,7 +25,7 @@ import { AvailableInventory } from './AvailableInventory'
 import type { InventoryRow } from './design-types'
 import './reverse.css'
 
-type Props = { inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
+type Props = { initialScene?: ExplorerScene; initialHistory?: History; modelsReady?: boolean; onRestoreModel?(id: string): void; inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
   onModel(model: string): void; disabled: boolean; onBusy(busy: boolean): void;
   analysisMode: AnalysisMode; onAnalysisMode(mode: AnalysisMode): void; onDirty(dirty: boolean): void;
   active: boolean; geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void; onSearchCatalog(request: ObservationCatalogSearch): void; workspaceHost: HTMLElement | null; onApply(items: InventoryItem[]): boolean | void }
@@ -31,18 +33,22 @@ const post = <T,>(action: string, body: unknown) => requestJson<T>('/api/brick-r
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000),
 }, 'Reverse ' + action)
 
-export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply }: Props) {
+export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply, initialScene, initialHistory, modelsReady = true, onRestoreModel }: Props) {
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
   const [active, setActive] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState('')
-  const [recordId, setRecordId] = useState(() => new URL(location.href).searchParams.get('analysisId') || ''), [submitted, setSubmitted] = useState(false)
+  const [recordId, setRecordId] = useState(initialScene?.analysisId || ''), [submitted, setSubmitted] = useState(false)
   const [applied, setApplied] = useState(false)
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   const [artifact, setArtifact] = useState<Artifact | null>(null)
   const [generationSubmitted, setGenerationSubmitted] = useState(false)
   const [detailId, setDetailId] = useState('')
-  const [history, setHistory] = useState<HistoryItem[]>([]), [historyWarning, setHistoryWarning] = useState('')
+  const [history, setHistory] = useState<HistoryItem[]>(initialHistory?.items || []), [historyWarning, setHistoryWarning] = useState(initialHistory?.warnings.join('；') || '')
+  const [historyReady, setHistoryReady] = useState(initialHistory !== undefined), [pickerReady, setPickerReady] = useState(false)
+  const autoRestored = useRef(false)
+  const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
+  const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
   const [dirty, setDirty] = useState(false), [savedAt, setSavedAt] = useState(''), [restoreWarning, setRestoreWarning] = useState('')
   const tableHost = useRef<HTMLDivElement>(null), previewHost = useRef<HTMLDivElement>(null)
   const gate = useRef(false)
@@ -57,15 +63,22 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
 
   async function refreshHistory() {
     const value = await requestJson<History>('/api/brick-reverse/history', {}, '识别历史')
-    setHistory(value.items); setHistoryWarning(value.warnings.join('；'))
+    setHistory(value.items); setHistoryWarning(value.warnings.join('；')); setHistoryReady(true)
   }
   useEffect(() => {
+    if (initialHistory !== undefined) return
     let cancelled = false
     void requestJson<History>('/api/brick-reverse/history', {}, '识别历史').then(value => {
       if (!cancelled) { setHistory(value.items); setHistoryWarning(value.warnings.join('；')) }
-    }).catch(e => { if (!cancelled) setHistoryWarning(String(e)) })
+    }).catch(e => { if (!cancelled) setHistoryWarning(String(e)) }).finally(() => { if (!cancelled) setHistoryReady(true) })
     return () => { cancelled = true }
   }, [])
+  useEffect(() => {
+    if (!visible || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
+    autoRestored.current = true
+    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在成品分析历史中，未加载。'); return }
+    void loadHistory(initialScene.analysisId, true)
+  }, [visible, pickerReady, modelsReady, historyReady])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
@@ -93,7 +106,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     catalogEpoch.current++; setCandidateNotes({})
     setDirty(false); setSavedAt(''); setRestoreWarning('')
     setDetailId('')
-    if (record?.image && record.originalImage && record.compression) setImage({ ...record.image,
+    if (!initialScene?.image && record?.image && record.originalImage && record.compression) setImage({ ...record.image,
       originalImage: record.originalImage, compression: record.compression,
       imageReference: { kind: record.image_reference?.kind === 'server_library' ? 'server_library' : 'upload',
         name: record.image_reference?.name || record.originalImage.name } })
@@ -109,6 +122,24 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     gate.current = true; setBusy(name); onBusy(true); setError('')
     try { await work() } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { gate.current = false; setBusy(''); onBusy(false) }
+  }
+  async function loadHistory(id: string, automatic = false) {
+    await action('加载识别结果', async () => {
+      const value = await requestJson<Restored>('/api/brick-reverse/restore/' + encodeURIComponent(id), {}, '恢复识别结果与审核')
+      if (value.analysis.kind !== 'reverse-analysis') throw new Error('请选择成品分析历史。')
+      const mode = value.analysis.analysis_mode || 'catalog_match'
+      if (automatic && initialScene?.strategy && initialScene.strategy !== mode) throw new Error('URL 策略与历史类型不兼容；未加载。')
+      await acceptAnalysis(value.analysis, value.rows)
+      if (!automatic || !initialScene?.image) {
+        setImage(null)
+        setRestoredSelection({ source: (automatic && initialScene?.imageSource) || (value.analysis.image_reference?.kind === 'server_library' ? 'server_library' : 'upload'),
+          name: value.analysis.image_reference?.name || value.analysis.originalImage?.name || '' })
+      }
+      if (!automatic || (!initialScene?.provider && !initialScene?.model)) onRestoreModel?.(value.analysis.model)
+      setSavedAt(value.updatedAt || '')
+      setArtifact(value.artifact); setGenerationSubmitted(value.generationStatus !== 'none')
+      setRestoreWarning([...(mode === 'geometry_only' ? ['已恢复 Geometry 原始分析；未调用模型。'] : ['生成状态：' + value.generationStatus]), ...value.warnings].join('；'))
+    })
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
     setReviewFilter('all')
@@ -272,7 +303,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
     <h2>{geometryOnly ? '成品几何识别' : '成品目录识别'}</h2>
     <p className="brick-help">{geometryOnly ? '先分析宽、深、高；仅在你手动检索时使用 Catalog。原始几何观察独立保存。' : '分析可见特征，再检索候选、人工确认；组装生成在 Design Lab 中继续。'} 单张照片无法确认的结构保持 Unknown。</p>
     <fieldset disabled={locked || submitted}>
-      <ServerImagePicker disabled={locked || submitted} onChange={setImage} onBusy={value => { gate.current = value; setBusy(value ? '准备图片' : ''); onBusy(value) }} />
+      <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onSelectionChange={setImageSelection} onReady={() => setPickerReady(true)} disabled={locked || submitted} onChange={setImage} onBusy={value => { gate.current = value; setBusy(value ? '准备图片' : ''); onBusy(value) }} />
       {!geometryOnly && <>
       <label>可用零件范围<select value={source} onChange={e => { setSource(e.target.value); reset() }}>
         <option value="virtual">虚拟积木清单</option><option value="today">我的积木 · 已保存清单</option><option value="full">零件目录 · 全部 DUPLO</option>
@@ -284,8 +315,9 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
           {sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at} · {s.id}</option>)}</select></label>
       </>)}
       </>}
-      <ModelSelector models={models} value={{ id: record?.model || model, provider: record?.provider || models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
-      <p>当前图片：{record?.image_reference?.name || image?.imageReference.name || '未选择'}</p>
+      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
+      <p>当前图片：{imageSelection.name || record?.image_reference?.name || image?.imageReference.name || '未选择'}</p>
+      {record?.image_reference?.name && imageSelection.name && record.image_reference.name !== imageSelection.name && <small>历史识别与标注仍使用参考图片：{record.image_reference.name}。</small>}
       <small title={image ? JSON.stringify(image.compression) : '自动按 EXIF 方向处理，最长边 1024px，JPEG 80%；压缩失败不发送原图。'}>ⓘ 图片压缩信息</small>
       <button type="button" disabled={!image || !model || !geometryOnly && source === 'today' && !sessionId} onClick={() => void action('分析照片', async () => {
         const selected = source === 'today' ? sessions.find(s => s.id === sessionId) : undefined
@@ -308,16 +340,13 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       </select></label>
       <div className="brick-actions">
         <button type="button" disabled={locked} onClick={() => void action('刷新历史', refreshHistory)}>刷新</button>
-        <button type="button" disabled={locked || !recordId || dirty} onClick={() => void action('加载分析', async () => {
-          const value = await requestJson<Restored>('/api/brick-reverse/restore/' + recordId, {}, '恢复 Reverse 分析')
-          await acceptAnalysis(value.analysis, value.rows)
-          setImage(null); setSavedAt(value.updatedAt || '')
-          setArtifact(value.artifact); setGenerationSubmitted(value.generationStatus !== 'none')
-          setRestoreWarning([...(value.analysis.analysis_mode === 'geometry_only' ? ['已恢复 Geometry 原始分析；未调用模型。'] : ['生成状态：' + value.generationStatus]), ...value.warnings].join('；'))
-        })}>加载识别结果</button>
+        <button type="button" disabled={locked || !recordId || dirty} onClick={() => void loadHistory(recordId)}>加载识别结果</button>
       </div>
       {historyWarning && <p role="status">{historyWarning}</p>}
     </div>
+    <CopySceneLink disabled={locked || !pickerReady || !modelsReady} dirty={dirty} scene={{ strategy: analysisMode,
+      imageSource: imageSelection.source, image: imageSelection.name, model, provider: models.find(m => m.id === model)?.provider,
+      analysisId: record?.id }} />
     {preview && <div ref={previewHost}><ObservationPreview
       src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="Reverse 实际发送图片及识别项标注"
       observations={record?.analysis?.observations || []} activeId={active} onSelect={selectBox} /></div>}

@@ -34,3 +34,5 @@ export type VisionResult = {
   evaluation?: { verdict: 'confirm' | 'retry' | 'uncertain'; reason: string } | null
   error?: { stage: string; message: string; httpStatus?: number | null }
 }
+
+export type VisionHistoryItem = Pick<VisionResult, 'id' | 'provider' | 'model' | 'image'> & { createdAt: string; originalName?: string }

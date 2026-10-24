@@ -1,3 +1,6 @@
+import { CopySceneLink } from '../brick-inventory/CopySceneLink'
+import { selectSceneModel } from '../brick-inventory/explorer-scene.mjs'
+import type { ExplorerScene, SceneImageSelection } from '../brick-inventory/explorer-scene.mjs'
 import { ReviewToolbar } from './ReviewToolbar'
 import type { ReviewFilter } from './ReviewToolbar'
 import { ServerImagePicker } from './ServerImagePicker'
@@ -10,7 +13,7 @@ import { addItem, newSessionId } from '../brick-inventory/inventory'
 import type { InventoryItem } from '../brick-inventory/inventory'
 import { requestJson } from '../brick-inventory/api.mjs'
 import { recognizeImage, downloadVision } from './upload'
-import type { ObservationCatalogSearch, VisionResult } from './types'
+import type { ObservationCatalogSearch, VisionResult, VisionHistoryItem } from './types'
 import { ObservationPreview } from './ObservationPreview'
 import { ObservationActions } from './ObservationActions'
 import { ObservationModal } from './ObservationModal'
@@ -23,16 +26,22 @@ import './review.css'
 type DraftRow = { id: string; selected: boolean; part: string; color: string; quantity: string;
   features: FeatureEditor; confirmation: unknown; identityOrigin?: 'auto' | 'manual'; excluded?: boolean }
 type ModelStatus = { model: string; openaiApiKeyConfigured: boolean; models: { id: string; label: string; provider: 'gemini' | 'openai' }[] }
-export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy }: {
+export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, active = true, onBusy, initialScene, initialHistory }: {
   active?: boolean; onBusy?(busy: boolean): void
+  initialScene?: ExplorerScene; initialHistory?: VisionHistoryItem[]
   onApply(items: InventoryItem[]): boolean | void; workspaceHost?: HTMLElement | null
   onSearchCatalog?(request: ObservationCatalogSearch): void
 }) {
   const [preview, setPreview] = useState('')
   const [prepared, setPrepared] = useState<PreparedSourceImage | null>(null)
   const [imageInfo, setImageInfo] = useState<VisionResult['compression']>(null)
-  const [history, setHistory] = useState<{ id: string; createdAt: string; provider: string; model: string; image: VisionResult['image']; originalName?: string }[]>([])
-  const [historyId, setHistoryId] = useState('')
+  const [history, setHistory] = useState<VisionHistoryItem[]>(initialHistory || [])
+  const [historyReady, setHistoryReady] = useState(initialHistory !== undefined)
+  const [modelsReady, setModelsReady] = useState(false), [pickerReady, setPickerReady] = useState(false)
+  const autoRestored = useRef(false), modelBootApplied = useRef(false)
+  const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
+  const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
+  const [historyId, setHistoryId] = useState(initialScene?.analysisId || '')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [applied, setApplied] = useState(false)
   useEffect(() => { onBusy?.(busy) }, [busy, onBusy])
   const [result, setResult] = useState<VisionResult | null>(null), [rows, setRows] = useState<DraftRow[]>([])
@@ -168,18 +177,46 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   async function refreshHistory() {
     try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '识别历史')).records) }
     catch (e) { setError(String(e)) }
+    finally { setHistoryReady(true) }
   }
-  useEffect(() => { void refreshHistory() }, [])
+  useEffect(() => { if (initialHistory === undefined) void refreshHistory() }, [])
+  useEffect(() => {
+    if (!active || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
+    autoRestored.current = true
+    if (!history.some(row => row.id === initialScene.analysisId)) { setError('URL 历史不在散装识别历史中，未加载。'); return }
+    void loadHistory(initialScene.analysisId, true)
+  }, [active, pickerReady, modelsReady, historyReady])
   useEffect(() => {
     const controller = new AbortController()
     setModelError('')
     void requestJson<ModelStatus>('/api/brick-vision', { signal: controller.signal }, 'Vision 模型配置').then(status => {
       if (!Array.isArray(status.models) || !status.models.every(m => m && typeof m.id === 'string' && typeof m.label === 'string' && ['gemini', 'openai'].includes(m.provider))
         || !status.models.some(m => m.id === status.model)) throw new Error('Vision 模型配置无效')
-      if (!controller.signal.aborted) { setModels(status.models); setModel(status.model); setProvider(status.models.find(m => m.id === status.model)!.provider); setOpenaiConfigured(status.openaiApiKeyConfigured) }
-    }).catch(e => { if (!controller.signal.aborted) setModelError(String(e)) })
+      if (!controller.signal.aborted) {
+        const choice = selectSceneModel(status.models, status.model, modelBootApplied.current ? undefined : initialScene)
+        modelBootApplied.current = true
+        setModels(status.models); setModel(choice.id); setProvider(status.models.find(m => m.id === choice.id)!.provider)
+        setOpenaiConfigured(status.openaiApiKeyConfigured)
+        if (choice.warning) setModelError(choice.warning)
+      }
+    }).catch(e => { if (!controller.signal.aborted) setModelError(String(e)) }).finally(() => { if (!controller.signal.aborted) setModelsReady(true) })
     return () => controller.abort()
   }, [configRevision])
+  async function loadHistory(id: string, automatic = false) {
+    if (lock.current) return
+    lock.current = true; setBusy(true); setError('')
+    try {
+      const next = await requestJson<VisionResult>('/api/brick-vision/history/' + encodeURIComponent(id), {}, '加载识别历史')
+      if (next.mode !== 'inventory' || next.status !== 'complete') throw new Error('请选择成功的散装识别历史。')
+      restoreResult(next); setHistoryId(next.id); setPrepared(null); setImageInfo(next.compression)
+      setPreview(next.originalImage ? 'data:' + next.originalImage.mimeType + ';base64,' + next.originalImage.imageBase64 : '')
+      if (!automatic || !initialScene?.image) setRestoredSelection({ source: automatic ? initialScene?.imageSource || 'upload' : 'upload', name: next.originalImage?.name || '' })
+      if (!automatic || (!initialScene?.provider && !initialScene?.model)) {
+        const chosen = models.find(m => m.id === next.model && m.provider === next.provider)
+        if (chosen) { setModel(chosen.id); setProvider(chosen.provider) }
+      }
+    } catch (e) { setError(String(e)) } finally { lock.current = false; setBusy(false) }
+  }
   async function recognize() {
     if (!prepared || lock.current || !models.some(m => m.id === model && m.provider === provider)) return
     catalogEpoch.current++
@@ -307,7 +344,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
   return <section className="inventory-catalog inventory-source" id="inventory-image">
     <h2>散装积木识别</h2>
     <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
-    <ServerImagePicker disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
+    <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onReady={() => setPickerReady(true)} onSelectionChange={setImageSelection} disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
       catalogEpoch.current++
       setPrepared(image); setImageInfo(image?.compression || null); requestId.current = newSessionId()
       setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
@@ -320,15 +357,7 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
         <option value="">选择成功记录</option>{history.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.provider || '未记录 Provider'} · {r.model} · {r.originalName || r.image.sha256.slice(0, 12)} · {r.id}</option>)}
       </select>
       <button disabled={busy} onClick={() => void refreshHistory()}>刷新</button>
-      <button disabled={busy || !historyId} onClick={async () => {
-        if (lock.current) return
-        lock.current = true; setBusy(true); setError('')
-        try {
-          const next = await requestJson<VisionResult>(`/api/brick-vision/history/${encodeURIComponent(historyId)}`, {}, '加载识别历史')
-          restoreResult(next); setPrepared(null); setImageInfo(next.compression)
-          setPreview(next.originalImage ? `data:${next.originalImage.mimeType};base64,${next.originalImage.imageBase64}` : '')
-        } catch (e) { setError(String(e)) } finally { lock.current = false; setBusy(false) }
-      }}>加载识别结果</button>
+      <button disabled={busy || !historyId} onClick={() => void loadHistory(historyId)}>加载识别结果</button>
       <p>加载原始识别及此浏览器已保存的审核草稿；未保存编辑会被替换。审核草稿不会覆盖服务端原始记录。</p>
     </div>
     <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
@@ -336,10 +365,13 @@ export function InventoryImagePanel({ onApply, workspaceHost, onSearchCatalog, a
       catalogEpoch.current++
       setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
     }} />
+    <CopySceneLink disabled={busy || !pickerReady || !modelsReady} dirty={!!result && !reviewSaved} scene={{ strategy: 'loose',
+      imageSource: imageSelection.source, image: imageSelection.name, provider, model, analysisId: result?.id }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}
     <button disabled={!prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : '识别图片'}</button>
     <p>切换模型不会立即识别，需再次点击“识别照片”。相同请求不会自动重试模型。如需重新识别，可明确重新选择图片或切换模型。遮挡、相似模具和光照可能造成误识别。</p>
+    {result?.originalImage?.name && imageSelection.name && result.originalImage.name !== imageSelection.name && <small>历史识别与标注仍使用参考图片：{result.originalImage.name}。</small>}
     {preview && <div ref={previewHost}><ObservationPreview src={preview} observations={visibleObservations} activeId={activeId} onSelect={selectBox} /></div>}
     {result && !preview && <p>此记录没有可显示的原图，未绘制 BBox；原始坐标仍可在详情查看。</p>}
     {error && <p role="alert">{error}</p>}

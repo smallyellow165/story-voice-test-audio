@@ -169,3 +169,7 @@
 .inventory-items-table .inventory-photo > span small { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
 .inventory-workbench .inventory-items-table .inventory-photo button { width: 20px; height: 20px; min-height: 20px; padding: 0; font-size: 0; }
 .inventory-items-table .inventory-photo button::after { content: '↻'; font-size: 13px; }
+
+.inventory-scene-link { margin: 8px 0; min-width: 0; }
+.inventory-scene-link small { display: block; margin-top: 4px; }
+.inventory-workbench .inventory-scene-link input { box-sizing: border-box; width: 100%; }
