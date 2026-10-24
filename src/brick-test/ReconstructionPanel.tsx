@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { requestJson } from '../brick-inventory/api.mjs'
-import { ModelSelector } from '../model-selector'
-import type { Artifact, History, HistoryItem, Model, Restored } from './reverse-types'
+import type { Artifact, History, HistoryItem, Restored } from './reverse-types'
 import type { GenerationResult } from './design-types'
 
-export function ReconstructionPanel({ models, model, onModel, disabled, onBusy, onComplete }: {
-  models: Model[]; model: string; onModel(id: string): void; disabled: boolean
-  onBusy(busy: boolean): void; onComplete(result: GenerationResult): Promise<void>
+export function ReconstructionPanel({ disabled, onBusy, onComplete, onReference }: {
+  disabled: boolean; onBusy(busy: boolean): void; onComplete(result: GenerationResult): Promise<void>
+  onReference(value: Restored | null): void
 }) {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [id, setId] = useState(() => new URL(location.href).searchParams.get('analysisId') || '')
   const [saved, setSaved] = useState<Restored | null>(null)
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const gate = useRef(false)
   async function action(work: () => Promise<void>) {
     if (gate.current || disabled) return
@@ -32,12 +31,18 @@ export function ReconstructionPanel({ models, model, onModel, disabled, onBusy, 
     return () => controller.abort()
   }, [])
   const observations = saved?.analysis.analysis?.observations || []
-  const ready = saved?.analysis.status === 'complete' && observations.length > 0 && observations.every(o => {
-    const r = saved.rows[o.id]
-    if (!r) return false
-    if (r.excluded) return !!r.reason.trim()
-    return r.index !== undefined && !!r.search?.rows[r.index]?.eligible && Number.isSafeInteger(Number(r.quantity)) && Number(r.quantity) > 0 && Number(r.quantity) <= 100
-  }) && observations.some(o => !saved.rows[o.id]?.excluded)
+  async function loadReference(target: string) {
+    await action(async () => {
+      setSaved(null); onReference(null)
+      const value = await requestJson<Restored>('/api/brick-reverse/restore/' + encodeURIComponent(target), {}, '加载已保存参考分析')
+      if (value.analysis.status !== 'complete' || !value.analysis.image?.imageBase64) throw new Error('分析未完成或缺少参考图片。')
+      setSaved(value); onReference(value)
+    })
+  }
+  const autoLoaded = useRef(false)
+  useEffect(() => {
+    if (!disabled && !autoLoaded.current && id) { autoLoaded.current = true; void loadReference(id) }
+  }, [disabled])
   function downloadArtifact() {
     if (!saved?.artifact) return
     const url = URL.createObjectURL(new Blob([JSON.stringify(saved.artifact, null, 2)], { type: 'application/json' }))
@@ -46,18 +51,15 @@ export function ReconstructionPanel({ models, model, onModel, disabled, onBusy, 
   }
   const locked = disabled || busy
   return <section className="brick-reconstruction">
-    <h2>参考作品重建 · Assembly Reconstruction</h2>
+    <h2>已有参考分析（可选）</h2>
     <p>读取 Part Explorer 已保存的完整分析与人工确认，不重新识别图片。只有点击生成才调用模型。</p>
-    <label>参考分析<select value={id} disabled={locked} onChange={e => { setId(e.target.value); setSaved(null); setConfirmed(false) }}>
+    <label>参考分析<select value={id} disabled={locked} onChange={e => { setId(e.target.value); setSaved(null); onReference(null) }}>
       <option value="">选择已保存分析</option>
       {id && !history.some(h => h.id === id) && <option value={id}>{id}</option>}
       {history.map(h => <option key={h.id} value={h.id}>{h.createdAt} · {h.analysis_mode || 'catalog_match'} · {h.model} · {h.appearance || h.status}</option>)}
     </select></label>
     <div className="brick-actions"><button disabled={locked} onClick={() => void action(refresh)}>刷新列表</button>
-      <button disabled={locked || !id} onClick={() => void action(async () => {
-        setSaved(null); setConfirmed(false)
-        setSaved(await requestJson<Restored>('/api/brick-reverse/restore/' + encodeURIComponent(id), {}, '加载已保存参考分析'))
-      })}>加载完整参考（不调用模型）</button></div>
+      <button disabled={locked || !id} onClick={() => void loadReference(id)}>加载完整参考（不调用模型）</button></div>
     {saved && <>
       <p>Analysis {saved.analysis.id} · 审核保存于 {saved.updatedAt || '尚无审核草稿'} · 生成状态 {saved.generationStatus}</p>
       {saved.analysis.image?.imageBase64 && <img style={{ width: '100%', maxHeight: 260, objectFit: 'contain' }}
@@ -73,22 +75,7 @@ export function ReconstructionPanel({ models, model, onModel, disabled, onBusy, 
         observations: saved.analysis.analysis, review: saved.rows, artifact: saved.artifact,
       }, null, 2)}</pre></details>
       {saved.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
-      {!ready && <p>需在 Part Explorer 保存每项的候选确认或明确排除，且保留的零件必须通过现有 Mapping / Assembly 能力检查。几何观察可独立保存；不自动补全型号或忽略不支持的零件。</p>}
-      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} disabled={locked || !models.length} onChange={m => onModel(m.id)} />
-      <label><input type="checkbox" checked={confirmed} disabled={locked || !ready || saved.generationStatus !== 'none'} onChange={e => setConfirmed(e.target.checked)} />确认使用已保存的零件及空间参考生成 Approximation，不保证精确复原。</label>
-      <button disabled={locked || !ready || !confirmed || !models.some(m => m.id === model) || saved.generationStatus !== 'none'} onClick={() => void action(async () => {
-        const snapshot = saved
-        setSaved({ ...snapshot, generationStatus: 'submitted' })
-        const choices = observations.filter(o => !snapshot.rows[o.id].excluded).map(o => {
-          const r = snapshot.rows[o.id]
-          return { observationId: o.id, searchId: r.search!.id, index: r.index, quantity: Number(r.quantity) }
-        })
-        const excluded = observations.filter(o => snapshot.rows[o.id].excluded).map(o => ({ observationId: o.id, reason: snapshot.rows[o.id].reason }))
-        const artifact = await requestJson<Artifact>('/api/brick-reverse/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId: snapshot.analysis.id, model, choices, excluded, confirmApproximation: true }), signal: AbortSignal.timeout(240000) }, '参考作品生成')
-        setSaved({ ...snapshot, artifact, generationStatus: artifact.status })
-        if (artifact.generation) await onComplete(artifact.generation)
-      })}>生成并验证 Approximation（调用模型）</button>
+      <p>参考图片及已保存审核将交给下方同一个 Generate；当前积木清单决定可用零件。未确认观察仅作为不确定证据。</p>
       <button disabled={locked} onClick={() => void action(async () => {
         const artifact = await requestJson<Artifact>('/api/brick-reverse/attempt/' + saved.analysis.id, {}, '读取已有 Assembly Artifact')
         setSaved({ ...saved, artifact, generationStatus: artifact.status })

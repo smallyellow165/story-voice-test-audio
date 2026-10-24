@@ -14,7 +14,8 @@ import type { InventoryRow } from '../brick-test/design-types'
 
 type Strategy = 'loose' | 'geometry_only' | 'catalog_match'
 const preferenceKey = 'story-voice-test-audio:ai-design:model:reverse'
-export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometryPresence, onApply, onReset, onSearchCatalog, onStrategyChange }: {
+export function PartExplorerRecognition({ designSessionId, workspaceHost, geometryHost, onGeometryPresence, onApply, onReset, onSearchCatalog, onStrategyChange }: {
+  designSessionId?: string
   geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void
   workspaceHost: HTMLElement | null
   onStrategyChange(): void; onApply(items: InventoryItem[]): boolean | void; onReset(items: InventoryItem[]): boolean | void; onSearchCatalog(request: ObservationCatalogSearch): void
@@ -84,7 +85,7 @@ export function PartExplorerRecognition({ workspaceHost, geometryHost, onGeometr
       workspaceHost={workspaceHost || undefined} onApply={onApply} onReset={onReset} onSearchCatalog={onSearchCatalog} /></div>
     <div hidden={strategy === 'loose'}>
       {error && <p role="alert">{error} <button onClick={() => setRetry(n => n + 1)}>重新读取模型配置</button></p>}
-      {assembledOpened && <ReverseRecognitionPanel initialScene={boot.strategy !== 'loose' ? boot.scene : undefined} initialHistory={boot.reverseHistory}
+      {assembledOpened && <ReverseRecognitionPanel designSessionId={designSessionId} initialScene={boot.strategy !== 'loose' ? boot.scene : undefined} initialHistory={boot.reverseHistory}
         modelsReady={modelsReady} onRestoreModel={id => { if (models.some(m => m.id === id)) setModel(id) }} inventory={inventory}
         onQuantity={(row, quantity) => setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))}
         models={models} model={model} onModel={id => {

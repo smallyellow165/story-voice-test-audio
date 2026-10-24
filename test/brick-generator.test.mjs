@@ -6,7 +6,7 @@ const traceDirectory = await mkdtemp(path.join(tmpdir(), 'brick-design-test-'))
 after(() => rm(traceDirectory, { recursive: true, force: true }))
 import assert from 'node:assert/strict'
 import { loadBrickRules, loadTranspiledBrickRules } from '../server/brick-rules.mjs'
-import { generateBrickDesign, validateBrickDesign, validateGeneratorInput, brickModelOptions, resolveBrickModel } from '../server/brick-generator.mjs'
+import { buildDesignRequest, generateBrickDesign, validateBrickDesign, validateGeneratorInput, brickModelOptions, resolveBrickModel } from '../server/brick-generator.mjs'
 
 // Fixtures only; production generation has no template or fallback design.
 function fixture() {
@@ -293,4 +293,60 @@ test('OpenAI design uses the shared adapter and the same inventory/geometry vali
     assert.equal(result.body.usageMetadata.total_tokens, 30)
     if (!valid) assert.equal(result.body.design, undefined)
   }
+})
+
+
+test('reference generation and one opt-in repair share inventory, schema and image', async () => {
+  const { input, design } = fixture()
+  const calls = []
+  const reference = { image: { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' }, context: { observations: [{ id: 'neck', uncertain: true }] } }
+  const result = await generateBrickDesign({ ...input, maxRepairAttempts: 1 }, {
+    model: 'gemini-3.6-flash', traceDirectory, reference,
+    createClient: () => ({ models: { generateContent: async request => {
+      calls.push(request)
+      return reply(calls.length === 1 ? '{}' : JSON.stringify(design))
+    } } }),
+  })
+  assert.equal(result.body.ok, true)
+  assert.equal(calls.length, 2)
+  assert.deepEqual(calls[0].config.responseSchema, calls[1].config.responseSchema)
+  for (const request of calls) {
+    const payload = JSON.parse(request.contents[0].parts[0].text)
+    assert.deepEqual(payload.inventory, input.inventory)
+    assert.deepEqual(payload.reference, reference.context)
+    assert.deepEqual(request.contents[0].parts[1].inlineData, { mimeType: 'image/png', data: reference.image.imageBase64 })
+  }
+  const repair = JSON.parse(calls[1].contents[0].parts[0].text).repair
+  assert.equal(repair.previousOutput, '{}')
+  assert.ok(repair.issues.length)
+  assert.equal(result.body.priorAttempts.length, 1)
+  assert.notEqual(result.body.tracePath, result.body.priorAttempts[0].tracePath)
+})
+
+test('repair is bounded and never retries transport failures', async () => {
+  const { input } = fixture()
+  const invalid = await invoke({ ...input, maxRepairAttempts: 1 }, reply('{}'))
+  assert.equal(invalid.calls.length, 2)
+  assert.equal(invalid.body.ok, false)
+  const transport = await invoke({ ...input, maxRepairAttempts: 1 }, new Error('offline'))
+  assert.equal(transport.calls.length, 1)
+  const excessive = await invoke({ ...input, maxRepairAttempts: 2 }, reply('{}'))
+  assert.equal(excessive.status, 400)
+  assert.equal(excessive.calls.length, 0)
+})
+
+
+test('OpenAI reference input retains the free-generation output contract', async () => {
+  const rules = await loadBrickRules()
+  const { input } = fixture()
+  const model = brickModelOptions().find(m => m.provider === 'openai').id
+  const reference = { image: { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' }, context: { unknowns: ['hidden connections'] } }
+  const free = buildDesignRequest(model, input, rules)
+  const guided = buildDesignRequest(model, input, rules, reference)
+  const text = JSON.stringify(guided)
+  assert.ok(text.includes('data:image/png;base64,iVBORw0KGgo='))
+  assert.ok(text.includes('hidden connections'))
+  assert.equal(JSON.stringify(free).includes('input_image'), false)
+  assert.ok(text.includes('input_image'))
+  assert.ok(text.includes('brickId'))
 })

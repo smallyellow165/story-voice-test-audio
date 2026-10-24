@@ -12,6 +12,7 @@ export type DesignReport = {
 }
 export type GenerationResult = {
   ok: boolean
+  priorAttempts?: { tracePath?: string; error?: { code: string; message: string }; validation?: DesignReport | null; usageMetadata?: unknown; elapsedMs?: number }[]
   approximation?: boolean
   requestInput?: { description: string; inventory: InventoryRow[] }
   provider?: 'gemini' | 'openai'

@@ -1,3 +1,7 @@
+import { ServerImagePicker } from '../brick-vision/ServerImagePicker'
+import type { PreparedSourceImage } from '../brick-vision/ServerImagePicker'
+import type { SessionInventory } from '../brick-inventory/inventory'
+import type { Restored } from './reverse-types'
 import { ReconstructionPanel } from './ReconstructionPanel'
 import { SavedPartsInput } from './SavedPartsInput'
 import { ModelSelector } from '../model-selector'
@@ -10,7 +14,7 @@ import { designLimits } from '../brick-design-validation.mjs'
 import type { Brick } from './catalog'
 import type { GenerationResult, InventoryRow } from './design-types'
 
-type Run = { id: string; createdAt: string; request: { model: string; description: string; inventory: InventoryRow[] }; httpStatus: number | null; result: GenerationResult }
+type Run = { id: string; createdAt: string; request: { model: string; description: string; inventory: InventoryRow[]; session?: SessionInventory; reference?: unknown; maxRepairAttempts?: number }; httpStatus: number | null; result: GenerationResult }
 type Props = {
   stepsHost: HTMLDivElement | null
   disabled: boolean
@@ -40,8 +44,15 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const [description, setDescription] = useState('设计一个孩子容易认出来的小动物，造型简单，给出简短的中文搭建指导。')
   const [status, setStatus] = useState<{ model: string; models: { id: string; label: string; provider: 'gemini' | 'openai' }[]; apiKeyConfigured: boolean; providers: { gemini: boolean; openai: boolean } } | null>(null)
   const [modelChoices, setModelChoices] = useState<Record<DesignMode, ModelChoice | null>>({ creative: null, reverse: null })
-  const selectedModel = modelChoices.creative?.id || ''
-  const reverseModel = modelChoices.reverse?.id || ''
+  const [generationMode, setGenerationMode] = useState<DesignMode>(() => new URL(location.href).searchParams.has('analysisId') ? 'reverse' : 'creative')
+  const selectedModel = modelChoices[generationMode]?.id || ''
+  const [inventorySource, setInventorySource] = useState<'saved' | 'virtual'>(() => (new URL(location.href).searchParams.has('sessionId') || new URL(location.href).searchParams.has('analysisId')) ? 'saved' : 'virtual')
+  const [session, setSession] = useState<SessionInventory | null>(null)
+  const [referenceSource, setReferenceSource] = useState<'analysis' | 'image'>(() => new URL(location.href).searchParams.has('analysisId') ? 'analysis' : 'image')
+  const [referenceAnalysis, setReferenceAnalysis] = useState<Restored | null>(null)
+  const [referenceImage, setReferenceImage] = useState<PreparedSourceImage | null>(null)
+  const [preparingReference, setPreparingReference] = useState(false)
+  const [allowRepair, setAllowRepair] = useState(false)
   const [statusError, setStatusError] = useState('')
   const [statusRetry, setStatusRetry] = useState(0)
   const [running, setRunning] = useState(false)
@@ -62,7 +73,11 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   const total = inventory.reduce((sum, row) => sum + row.quantity, 0)
   const selectedProvider = status?.models.find(item => item.id === selectedModel)?.provider
   const selectedConfigured = !!selectedProvider && !!status?.providers[selectedProvider]
-  const inputValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
+  const virtualValid = inventory.every((row) => Number.isInteger(row.quantity) && row.quantity >= 0 && row.quantity <= 100) && total >= designLimits.minBricks && total <= 100 && description.trim().length > 0 && description.length <= 500
+  const inputValid = (inventorySource === 'saved' ? !!session?.items.length && session.items.reduce((sum, r) => sum + r.quantity, 0) >= designLimits.minBricks && session.items.reduce((sum, r) => sum + r.quantity, 0) <= 100 : virtualValid)
+    && description.trim().length > 0 && description.length <= 500
+    && (generationMode === 'creative' || (referenceSource === 'analysis' ? !!referenceAnalysis : !!referenceImage))
+
 
   function selectModel(targetMode: DesignMode, id: string) {
     const model = status?.models.find(item => item.id === id)
@@ -123,13 +138,18 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
 
   async function generate(event: FormEvent) {
     event.preventDefault()
-    if (requestLock.current || disabled || !inputValid || !selectedConfigured || !status?.models.some((item) => item.id === selectedModel)) return
+    if (requestLock.current || disabled || preparingReference || !inputValid || !selectedConfigured || !status?.models.some((item) => item.id === selectedModel)) return
     requestLock.current = true
     setRunning(true); onGeneratingChange(true); setViewError('')
-    const snapshot = { model: selectedModel, description, inventory: inventory.map((row) => ({ ...row })) }
+    const snapshot = { model: selectedModel, description, inventory: inventory.map((row) => ({ ...row })),
+      ...(inventorySource === 'saved' && session ? { session } : {}), maxRepairAttempts: allowRepair ? 1 : 0,
+      ...(generationMode === 'reverse' ? { reference: referenceSource === 'analysis'
+        ? { analysisId: referenceAnalysis!.analysis.id }
+        : { image: { mimeType: referenceImage!.mimeType, imageBase64: referenceImage!.imageBase64 } } } : {}),
+    }
     const controller = new AbortController()
     requestController.current = controller
-    const timeout = setTimeout(() => controller.abort(), 195000)
+    const timeout = setTimeout(() => controller.abort(), (allowRepair ? 480000 : 280000))
     let responseBody: GenerationResult
     let httpStatus: number | null = null
     try {
@@ -163,37 +183,54 @@ export function AIDesignPanel({ stepsHost, disabled, manualRevision, onGeneratin
   }
 
   return <section className="brick-panel brick-ai" aria-label="AI 积木设计">
-    <ReconstructionPanel models={status?.models || []} model={reverseModel} onModel={id => selectModel('reverse', id)} disabled={disabled || running}
-      onBusy={value => { setRunning(value); onGeneratingChange(value) }} onComplete={async value => {
-        const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
-          request: { model: value.model || reverseModel, description: value.requestInput?.description || 'Reverse Approximation', inventory: value.requestInput?.inventory || [] },
-          httpStatus: value.httpStatus ?? null, result: value }
-        setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
-        if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
-      }} />
     <div className="brick-creative-design">
-    <h2>AI Design · 虚拟库存 → 造型</h2>
-    <p className="brick-help">每次生成自由设计一个 {designLimits.minBricks}–{designLimits.maxBricks} 块、最多四层的造型。一次点击只请求一次模型；通过库存、连接及步骤校验后才替换场景。</p>
-    <SavedPartsInput disabled={disabled || running} onInventory={setInventory} />
+    <h2>AI Design · 积木清单 → 搭建设计</h2>
+    <p className="brick-help">同一生成器支持自由设计和参考图重建。生成 {designLimits.minBricks}–{designLimits.maxBricks} 块、顶部最多四层的候选，完整造型和每一步均须通过现有连接、碰撞及库存校验。</p>
+    <label>生成模式<select disabled={disabled || running || preparingReference} value={generationMode} onChange={e => setGenerationMode(e.target.value as DesignMode)}>
+      <option value="creative">自由生成</option><option value="reverse">参考图生成</option>
+    </select></label>
+    <label>积木清单来源<select disabled={disabled || running} value={inventorySource} onChange={e => setInventorySource(e.target.value as 'saved' | 'virtual')}>
+      <option value="saved">Part Explorer 已保存清单</option><option value="virtual">现有虚拟库存编辑器</option>
+    </select></label>
+    <div hidden={inventorySource !== 'saved'}><SavedPartsInput disabled={disabled || running} onSession={setSession} /></div>
+    {inventorySource === 'saved' && session && <><p>{session.name} · 共 {session.items.reduce((n, r) => n + r.quantity, 0)} 块</p>
+      <ul>{session.items.map(r => <li key={r.part_num + ':' + r.color_id}>{r.part_num} / RB Color {r.color_id} × {r.quantity}</li>)}</ul></>}
+    <div hidden={generationMode !== 'reverse'}>
+      <label>参考来源<select disabled={disabled || running || preparingReference} value={referenceSource} onChange={e => setReferenceSource(e.target.value as 'analysis' | 'image')}>
+        <option value="image">服务器图片 / Upload</option><option value="analysis">Part Explorer 已有分析与原图</option>
+      </select></label>
+      <div hidden={referenceSource !== 'image'}><ServerImagePicker disabled={disabled || running} onChange={setReferenceImage} onBusy={setPreparingReference} /></div>
+      {referenceSource === 'image' && referenceImage && <img style={{ width: '100%', maxHeight: 260, objectFit: 'contain' }} src={'data:' + referenceImage.mimeType + ';base64,' + referenceImage.imageBase64} alt="生成参考图片" />}
+      <div hidden={referenceSource !== 'analysis'}><ReconstructionPanel disabled={disabled || running} onReference={setReferenceAnalysis}
+        onBusy={setPreparingReference} onComplete={async value => {
+          const saved: Run = { id: crypto.randomUUID(), createdAt: new Date().toISOString(),
+            request: { model: value.model || selectedModel, description: value.requestInput?.description || 'Reference Approximation', inventory: value.requestInput?.inventory || [] },
+            httpStatus: value.httpStatus ?? null, result: value }
+          setRuns(previous => [saved, ...previous]); setSelectedId(saved.id)
+          if (value.ok && value.validation?.valid && value.design) await applyRun(saved, value.design.steps.length)
+        }} /></div>
+    </div>
     <form onSubmit={generate}>
-      <fieldset disabled={disabled || running}>
-        <AvailableInventory inventory={inventory} total={total} onQuantity={(row, quantity) => {
+      <fieldset disabled={disabled || running || preparingReference}>
+        {inventorySource === 'virtual' && <AvailableInventory inventory={inventory} total={total} onQuantity={(row, quantity) => {
           setInventory(items => items.map(item => item === row ? { ...item, quantity } : item))
-        }} />
+        }} />}
         <ModelSelector models={status?.models || []}
-          value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => selectModel('creative', chosen.id)} />
+          value={{ provider: selectedProvider || '', id: selectedModel }} disabled={!status} onChange={chosen => selectModel(generationMode, chosen.id)} />
         <label>想搭什么？<textarea required maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        <label><input type="checkbox" checked={allowRepair} onChange={e => setAllowRepair(e.target.checked)} />校验失败时允许最多一次 LLM Repair（可能额外计费）</label>
         <div className="brick-actions"><button className="brick-primary" type="submit" disabled={!inputValid || !selectedConfigured || !selectedModel}>{running ? 'Generating…' : 'Generate'}</button></div>
       </fieldset>
     </form>
-    <p className="brick-help" role="status">{running ? '正在等待所选模型并验证设计，请勿重复提交。' : status ? `配置模型：${selectedModel} · ${selectedConfigured ? 'API Key 已配置' : '缺少服务端 ' + (selectedProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY')}` : '正在读取服务端配置…'}</p>
-    {!inputValid && <p className="brick-help">库存总量需为 {designLimits.minBricks}–100 块，每项为非负整数；请填写造型描述。</p>}
+    <p className="brick-help" role="status">{running ? '正在检查清单、等待模型并验证候选；如已授权，校验失败时最多修正一次。请勿重复提交。' : status ? `配置模型：${selectedModel} · ${selectedConfigured ? 'API Key 已配置' : '缺少服务端 ' + (selectedProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY')}` : '正在读取服务端配置…'}</p>
+    {!inputValid && <p className="brick-help">请选择有效清单（总量 {designLimits.minBricks}–100 块）并填写 Prompt；参考图模式还需加载图片或已有分析。</p>}
     {statusError && <div className="brick-error" role="alert">{statusError}</div>}
     <button type="button" disabled={disabled || running} onClick={() => setStatusRetry((value) => value + 1)}>刷新模型配置（不生成）</button>
     </div>
     {!!runs.length && <div className="brick-ai-result">
       <label>本页生成记录<select disabled={running || disabled} value={run.id} onChange={(event) => { setSelectedId(event.target.value); setViewError('') }}>{runs.map((item) => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleTimeString()} · {item.request.model} · {item.result.ok ? item.result.design?.name || '已验证' : '失败'}</option>)}</select></label>
       <div className={`brick-validation ${result?.ok ? 'is-valid' : 'is-invalid'}`} role="status"><strong>{result?.ok ? `Valid · ${result.approximation ? 'Approximation · ' : ''}${design?.name}` : '生成失败 · Invalid'}</strong><p>{result?.error?.message || '库存、完整几何、逐步顺序及基础难度限制已通过。'}</p><p>Provider：{result?.provider || '未返回'} · 请求模型：{result?.model || '未知'} · 返回版本：{result?.modelVersion || '未返回'} · {result?.elapsedMs ?? '—'} ms</p></div>
+      {!!result?.priorAttempts?.length && <p>已执行一次 Repair；初次请求及校验错误见完整诊断中的 priorAttempts，费用与耗时需计入两次调用。</p>}
       <p>结束原因：{result?.finishReason || '未返回'} · 阻止原因：{result?.blockReason || '无 / 未返回'}</p>
       <p>Token：输入 {result?.usageMetadata?.promptTokenCount ?? result?.usageMetadata?.input_tokens ?? '未返回'} · 推理 {result?.usageMetadata?.thoughtsTokenCount ?? result?.usageMetadata?.output_tokens_details?.reasoning_tokens ?? '未返回'} · 输出 {result?.usageMetadata?.candidatesTokenCount ?? result?.usageMetadata?.output_tokens ?? '未返回'} · 总计 {result?.usageMetadata?.totalTokenCount ?? result?.usageMetadata?.total_tokens ?? '未返回'}</p>
       {result?.generationSettings && <p className="brick-help">推理与输出合计上限：{result.generationSettings.maxOutputTokens ?? 'Provider 默认'} · 推理级别：{result.generationSettings.thinkingConfig?.thinkingLevel || result.generationSettings.reasoning?.effort || '服务默认'}。级别不保证固定的 JSON 预留额度。</p>}

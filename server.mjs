@@ -1,3 +1,4 @@
+import { prepareDesignGeneration } from './server/brick-design-input.mjs'
 import { createBrickReverse } from './server/brick-reverse.mjs'
 import { exportTimestampClip } from './server/fish-timestamp-clip.mjs'
 import { createTimestampHistory } from './server/fish-timestamp-history.mjs'
@@ -583,7 +584,11 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET') { sendJson(response, 200, brickGeneratorStatus()); return }
     if (request.method !== 'POST') { sendJson(response, 405, { ok: false, error: { code: 'METHOD', message: 'Use GET or POST.' } }); return }
     try {
-      const result = await generateBrickDesign(await readJsonBody(request, 64 * 1024))
+      const body = await readJsonBody(request, 9 * 1024 * 1024)
+      let prepared
+      try { prepared = await prepareDesignGeneration(body, { reviewInventory: input => brickGames.review(input), restoreAnalysis: id => brickReverse.restore(id) }) }
+      catch (error) { sendJson(response, 400, { ok: false, error: { code: 'INVALID_INPUT', message: error.message } }); return }
+      const result = await generateBrickDesign(prepared.input, { reference: prepared.reference, source: prepared.source })
       sendJson(response, result.status, result.body)
     } catch (error) {
       sendJson(response, error.statusCode || 500, { ok: false, error: { code: 'GENERATOR_ERROR', message: error.statusCode ? error.message : 'DUPLO Generator failed before producing a validated design.' } })

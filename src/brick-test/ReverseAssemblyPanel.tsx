@@ -26,7 +26,7 @@ import { AvailableInventory } from './AvailableInventory'
 import type { InventoryRow } from './design-types'
 import './reverse.css'
 
-type Props = { initialScene?: ExplorerScene; initialHistory?: History; modelsReady?: boolean; onRestoreModel?(id: string): void; inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
+type Props = { designSessionId?: string; initialScene?: ExplorerScene; initialHistory?: History; modelsReady?: boolean; onRestoreModel?(id: string): void; inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
   onModel(model: string): void; disabled: boolean; onBusy(busy: boolean): void;
   analysisMode: AnalysisMode; onAnalysisMode(mode: AnalysisMode): void; onDirty(dirty: boolean): void;
   active: boolean; geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void; onSearchCatalog(request: ObservationCatalogSearch): void; workspaceHost: HTMLElement | null; onApply(items: InventoryItem[]): boolean | void; onReset?(items: InventoryItem[]): boolean | void }
@@ -34,7 +34,7 @@ const post = <T,>(action: string, body: unknown) => requestJson<T>('/api/brick-r
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000),
 }, 'Reverse ' + action)
 
-export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply, onReset, initialScene, initialHistory, modelsReady = true, onRestoreModel }: Props) {
+export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply, onReset, initialScene, initialHistory, modelsReady = true, onRestoreModel }: Props) {
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
@@ -251,7 +251,7 @@ export function ReverseRecognitionPanel({ inventory, onQuantity, models, model, 
       {onReset && <button disabled={locked || !confirmedItems.length} onClick={() => void action('重置我的积木', async () => {
         if (onReset(confirmedItems) !== false) setApplied(false)
       })}>重置我的积木</button>}
-      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id)}>在 Design Lab 加载参考分析 ↗</a>}
+      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id) + (designSessionId ? '&sessionId=' + encodeURIComponent(designSessionId) : '')}>在 Design Lab 加载参考分析 ↗</a>}
     </ReviewToolbar>
     {record?.analysis && <>
       <ObservationTable stickyAction hostRef={geometryOnly ? undefined : tableHost} columns={[

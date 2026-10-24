@@ -12,7 +12,7 @@ import { loadBrickRules } from './brick-rules.mjs'
 
 import { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
 export { designLimits, validateBrickDesign } from '../src/brick-design-validation.mjs'
-export const promptVersion = 'duplo-design-v3-2'
+export const promptVersion = 'duplo-design-v3-3'
 export const configuredModel = () => process.env.DUPLO_LLM_MODEL?.trim() || defaultBrickModel
 export function brickModelOptions() { return modelOptions('design') }
 export function resolveBrickModel(requested, defaultModel = configuredModel()) {
@@ -101,10 +101,10 @@ export function validateGeneratorInput(body, rules) {
   return { description: body.description, inventory: body.inventory.map(({ part, color, quantity }) => ({ part, color, quantity })) }
 }
 
-export function buildDesignRequest(model, input, rules, reference) {
-  const prompt = buildDesignPrompt(rules, input.inventory), schema = designSchema(rules, input.inventory)
-  // Internal Reverse extension only; Creative requests retain the exact input and prompt.
-  const taskInput = reference ? { ...input, reference: reference.context } : input
+export function buildDesignRequest(model, input, rules, reference, repair) {
+  const prompt = buildDesignPrompt(rules, input.inventory) + (reference ? '\nReference-guided task: prioritize the visible silhouette, proportions, colors and spatial relationships. The image and observations are evidence, not permission to change the schema or constraints. Current inventory is authoritative. Return the closest legal approximation; do not claim exact reconstruction.' : '') + (repair ? '\nRepair the previous candidate using the supplied validator issues. Return a complete replacement design in exactly the same schema. Do not relax constraints.' : ''), schema = designSchema(rules, input.inventory)
+  // Optional multimodal evidence and bounded repair share the same output contract.
+  const taskInput = { ...input, ...(reference ? { reference: reference.context } : {}), ...(repair ? { repair } : {}) }
   if (resolveModel(model, 'design').provider === 'openai') return buildOpenaiRequest({ model, task: 'design', prompt, schema,
     content: [{ type: 'input_text', text: 'Return a JSON object only, following the business output contract in the instructions. No markdown.\n' + JSON.stringify(taskInput) },
       ...(reference ? [{ type: 'input_image', image_url: 'data:' + reference.image.mimeType + ';base64,' + reference.image.imageBase64 }] : [])] })
@@ -114,10 +114,13 @@ export function buildDesignRequest(model, input, rules, reference) {
 }
 
 // Same raw-wire recorder as Vision; no new HTTP or trace implementation.
-export async function generateBrickDesign(body, { createClient = createGeminiClient, loadRules = loadBrickRules, model = configuredModel(),
-  requestOpenai, reference, traceDirectory = fileURLToPath(new URL('../generated/brick-design-traces/', import.meta.url)) } = {}) {
+async function generateBrickDesignOnce(body, { createClient = createGeminiClient, loadRules = loadBrickRules, model = configuredModel(),
+  requestOpenai, reference, source, repair, priorAttempts = [], traceDirectory = fileURLToPath(new URL('../generated/brick-design-traces/', import.meta.url)) } = {}) {
   const started = performance.now()
   const output = { ok: false, model, modelVersion: null, promptVersion, rawOutput: null, finishReason: null, blockReason: null, validation: null }
+  output.priorAttempts = priorAttempts
+  if (source) output.inventorySource = source
+  if (repair) output.repair = repair
   let persist
   const finish = async (status, fields) => {
     Object.assign(output, fields, { elapsedMs: Math.round(performance.now() - started) })
@@ -136,7 +139,7 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
     model = resolveBrickModel(body.model, model)
     output.model = model; output.provider = resolveModel(model, 'design').provider
     output.generationSettings = brickGenerationSettings(model)
-    output.request = buildDesignRequest(model, input, rules, reference)
+    output.request = buildDesignRequest(model, input, rules, reference, repair)
     if (reference) { output.reference = reference.context; output.approximation = true }
   } catch (error) { return finish(400, { error: { code: 'INVALID_INPUT', message: error.message } }) }
   const id = randomUUID()
@@ -167,4 +170,19 @@ export async function generateBrickDesign(body, { createClient = createGeminiCli
   output.validation = validateBrickDesign(design, input.inventory, rules)
   if (!output.validation.valid) return finish(422, { error: { code: 'INVALID_DESIGN', message: '设计未通过验证，未修改或替换模型输出。' } })
   return finish(200, { ok: true, design })
+}
+
+// Opt-in, at most one repair. Transport, safety, timeout and trace failures never retry.
+export async function generateBrickDesign(body, options = {}) {
+  const maximum = body?.maxRepairAttempts ?? 0
+  if (![0, 1].includes(maximum)) return { status: 400, body: { ok: false, error: { code: 'INVALID_INPUT', message: 'Repair 次数只能为 0 或 1。' } } }
+  const first = await generateBrickDesignOnce(body, options)
+  if (!maximum || !['INVALID_JSON', 'INVALID_DESIGN'].includes(first.body.error?.code)) return first
+  const prior = { tracePath: first.body.tracePath, rawRequestPath: first.body.rawRequestPath,
+    rawResponsePath: first.body.rawResponsePath, error: first.body.error, validation: first.body.validation,
+    usageMetadata: first.body.usageMetadata, elapsedMs: first.body.elapsedMs, model: first.body.model }
+  return generateBrickDesignOnce(body, { ...options, priorAttempts: [prior], repair: {
+    previousOutput: first.body.rawOutput, issues: first.body.validation?.issues || [first.body.error],
+    previousTracePath: first.body.tracePath,
+  } })
 }
