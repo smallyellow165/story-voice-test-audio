@@ -39,6 +39,9 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
+  const [promptVersion, setPromptVersion] = useState(3)
+  const [guidedIds, setGuidedIds] = useState<Set<string>>(() => new Set())
+  const [hint, setHint] = useState('')
   const [hiddenBoxes, setHiddenBoxes] = useState<Set<string>>(() => new Set())
   const [active, setActive] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState('')
   const [recordId, setRecordId] = useState(initialScene?.analysisId || ''), [submitted, setSubmitted] = useState(false)
@@ -161,6 +164,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
     setHiddenBoxes(new Set())
+    setGuidedIds(new Set()); setHint('')
     if (value.status === 'failed' && value.analysis_mode === 'geometry_only' && !value.outputValidation) {
       // Rehydrate diagnostics when a historical response has no structured report.
       try { value = { ...value, outputValidation: await post<NonNullable<Analysis['outputValidation']>>('revalidate', { analysisId: value.id }) } }
@@ -287,7 +291,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         <small>仅控制照片标注；总开关关闭时不显示。</small>
       </div>
       <ObservationTable stickyAction hostRef={reviewHost} columns={[
-        { label: '操作', width: 52 }, { label: 'BBox', width: 54 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
+        { label: '操作', width: 52 }, { label: 'BBox', width: 54 }, { label: '再识别', width: 62 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
         { label: '宽 (Stud)', width: 72 }, { label: '深 (Stud)', width: 72 }, { label: '高 (Brick)', width: 76 },
         { label: '颜色（Rebrickable）', width: 180 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
         { label: '数量', width: 60 },
@@ -313,6 +317,10 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             <td><input type="checkbox" aria-label={o.id + ' 显示 BBox'} checked={!hiddenBoxes.has(o.id)} style={{ width: 'auto' }} onChange={e => {
               const visible = e.target.checked
               setHiddenBoxes(previous => { const next = new Set(previous); if (visible) next.delete(o.id); else next.add(o.id); return next })
+            }} /></td>
+            <td><input type="checkbox" aria-label={o.id + ' Guided 再识别'} disabled={locked || !geometryOnly} checked={guidedIds.has(o.id)} style={{ width: 'auto' }} onChange={e => {
+              const selected = e.target.checked
+              setGuidedIds(previous => { const next = new Set(previous); if (selected) next.add(o.id); else next.delete(o.id); return next })
             }} /></td>
             <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
             <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
@@ -341,6 +349,9 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   return <section className="brick-reverse" aria-label="Assembled Recognition">
     <h2>{geometryOnly ? '成品几何识别' : '成品目录识别'}</h2>
     <p className="brick-help">{geometryOnly ? '先分析宽、深、高；仅在你手动检索时使用 Catalog。原始几何观察独立保存。' : '分析可见特征，再检索候选、人工确认；组装生成在 Design Lab 中继续。'} 单张照片无法确认的结构保持 Unknown。</p>
+    {geometryOnly && <label>Reverse Geometry Prompt Version<select aria-label="Reverse Geometry Prompt Version" disabled={locked} value={promptVersion} onChange={e => setPromptVersion(Number(e.target.value))}>
+      <option value={3}>reverse_geometry_v1 · v3（当前默认）</option><option value={4}>reverse_geometry_v1 · v4（遮挡与连续结构，待验证）</option>
+    </select></label>}
     <fieldset disabled={locked || submitted}>
       <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onSelectionChange={setImageSelection} onReady={() => setPickerReady(true)} disabled={locked || submitted} onChange={setImage} onBusy={value => { gate.current = value; setBusy(value ? '准备图片' : ''); onBusy(value) }} />
       {!geometryOnly && <>
@@ -362,19 +373,34 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         const selected = source === 'today' ? sessions.find(s => s.id === sessionId) : undefined
         if (!geometryOnly && source === 'today' && !selected) throw new Error('请先选择已保存积木清单。')
         setSubmitted(true); setRecordId(requestId.current)
-        await acceptAnalysis(await post<Analysis>('analyze', { ...image, model, analysis_mode: analysisMode, requestId: requestId.current,
+        await acceptAnalysis(await post<Analysis>('analyze', { ...image, model, promptVersion: geometryOnly ? promptVersion : undefined, analysis_mode: analysisMode, requestId: requestId.current,
           source: geometryOnly ? { kind: 'full' } : source === 'virtual' ? { kind: source, inventory } : source === 'today' ? { kind: source, session: selected } : { kind: source } }))
         await refreshHistory()
       })}>识别图片（调用模型）</button>
     </fieldset>
     <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button>
+    {geometryOnly && record?.status === 'complete' && <fieldset disabled={locked}>
+      <legend>Guided Re-analysis · 定向再识别</legend>
+      <p>已选 {guidedIds.size} 项：{[...guidedIds].join('、') || '请在审核表的“再识别”列选择'}。BBox 仅控制显示，与此选择无关。</p>
+      <label>用户 Hint<textarea aria-label="Guided Hint" value={hint} maxLength={4000} onChange={e => setHint(e.target.value)} /></label>
+      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
+      <p>使用上方选择的 Prompt v{promptVersion} 与来源原图。Hint 是待核对假设。将调用一次模型并保存独立 Analysis；原审核保留在来源中，新结果全部待审核。</p>
+      {dirty && <p>请先保存当前审核草稿。</p>}
+      <button type="button" disabled={!guidedIds.size || !hint.trim() || !model || dirty} onClick={() => void action('根据 Hint 重新分析', async () => {
+        const result = await post<Analysis>('analyze', { requestId: newSessionId(), model, analysis_mode: 'geometry_only', promptVersion,
+          guidance: { analysisId: record.id, observationIds: [...guidedIds], hint } })
+        await acceptAnalysis(result)
+        await refreshHistory()
+      })}>根据 Hint 重新分析（调用模型）</button>
+    </fieldset>}
+
 
     <div className="brick-reverse-recovery">
       <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
         <option value="">选择历史分析</option>
         {recordId && !history.some(r => r.id === recordId) && <option value={recordId}>{recordId}</option>}
         {history.map(r => <option key={r.id} value={r.id}>
-          {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.appearance || r.status} · {r.count} 个识别项
+          {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.isGuided ? 'Guided · ' : ''}{r.appearance || r.status} · {r.count} 个识别项
         </option>)}
       </select></label>
       <div className="brick-actions">
@@ -401,6 +427,13 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     </div>}
     {record && <>
       <p>{record.analysis_mode || 'catalog_match'} · {record.prompt_id || 'reverse_catalog_v1'} v{record.prompt_version || 1} · {record.image_reference?.name} · {record.revision ? (record.status === 'complete' ? 'Recovered' : 'Revision Validation Failed') : record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
+      {record.guidance && <section aria-label="Guided 来源与变更">
+        <strong>Guided Re-analysis · 独立结果，需重新人工审核</strong>
+        <p>来源：{record.guidance.sourceAnalysisId} · 选中：{record.guidance.observationIds.join('、')}</p>
+        <p>用户 Hint：{record.guidance.hint}</p>
+        <button disabled={locked || dirty} onClick={() => void loadHistory(record.guidance!.sourceAnalysisId)}>查看 Guided 来源 Analysis</button>
+        <details open><summary>Observation 与 Relations 变更</summary><pre>{JSON.stringify(record.guidedChanges || '尚无通过校验的结果', null, 2)}</pre></details>
+      </section>}
       {record.revision && <section aria-label="Revision status">
         <strong>{record.status === 'complete' ? 'Recovered / Ready for Review · 修订已恢复，型号与颜色仍需逐块审核' : 'Revision Validation Failed · 修订校验失败'}</strong>
         <p>当前修订：{record.id} · 来源：{record.revision.parentAnalysisId}</p>

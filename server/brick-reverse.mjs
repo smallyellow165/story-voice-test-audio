@@ -1,7 +1,7 @@
 import { reverseFeatureEditor } from '../src/brick-vision/reverse-review.mjs'
 import { reviseAnchorReference } from './brick-reverse-revision.mjs'
 import { inspectGeometryOutput } from './brick-reverse-output.mjs'
-import { reversePrompts } from './brick-reverse-prompts.mjs'
+import { reversePrompts, selectReversePrompt } from './brick-reverse-prompts.mjs'
 import { geometrySchema, validateGeometryAnalysis } from './brick-reverse-geometry.mjs'
 // Reverse orchestration only; Catalog, Mapping, geometry and validation stay shared.
 import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
@@ -142,7 +142,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
           if (r.kind !== 'reverse-analysis') continue
           items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model,
             analysis_mode: r.analysis_mode || 'catalog_match', prompt_id: r.prompt_id || 'reverse_catalog_v1', prompt_version: r.prompt_version || 1, image_reference: r.image_reference || { kind: 'upload', name: r.originalImage?.name || null, sha256: r.image?.sha256 },
-            status: r.status, isRevision: !!r.revision, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
+            status: r.status, isRevision: !!r.revision, isGuided: !!r.guidance, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
         } catch { warnings.push(name + ' 无法读取；原文件保留。') }
       }
       items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))
@@ -241,8 +241,20 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     async analyze(body) {
       const analysisMode = body.analysis_mode ?? 'catalog_match' // Legacy API callers keep their existing contract.
       if (typeof analysisMode !== 'string' || !Object.hasOwn(reversePrompts, analysisMode)) fail('Analysis Mode 无效。')
-      const prompt = reversePrompts[analysisMode], schema = analysisMode === 'geometry_only' ? geometrySchema : reverseSchema
+      const prompt = selectReversePrompt(analysisMode, body.promptVersion), schema = analysisMode === 'geometry_only' ? geometrySchema : reverseSchema
       const validate = analysisMode === 'geometry_only' ? validateGeometryAnalysis : validateReverseAnalysis
+      let guidance = null
+      if (body.guidance) {
+        if (analysisMode !== 'geometry_only') fail('Guided Re-analysis 仅支持 Geometry。')
+        const parent = await analyzed(body.guidance.analysisId)
+        if (parent.analysis_mode !== 'geometry_only') fail('来源必须是 Geometry Analysis。')
+        const ids = body.guidance.observationIds, hint = body.guidance.hint
+        if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id => !parent.analysis.observations.some(o => o.id === id))) fail('请选择来源 Analysis 中的 Observation。')
+        if (typeof hint !== 'string' || !hint.trim() || hint.length > 4000) fail('Hint 需为 1–4000 字符。')
+        guidance = { sourceAnalysisId: parent.id, sourceAnalysisHash: hash(parent.analysis), observationIds: ids, hint: hint.trim(), sourceAnalysis: parent.analysis,
+          instruction: 'Reconsider only the selected observations and affected neighboring relations using the reference image. The user hint is a hypothesis, not validated fact. Merge, split or replace selected pieces only when supported by evidence. Preserve other observations and relations wherever possible. Return a COMPLETE independent analysis in the existing JSON schema, with consistent IDs, anchors and relations. Do not output a patch. Unselected changes also require human review. Do not infer Catalog identity or reuse prior approvals.' }
+        body = { ...body, ...parent.image, originalImage: parent.originalImage, compression: parent.compression, imageReference: parent.image_reference }
+      }
       const definition = resolveModel(body.model, 'reverse'), image = validateImage(body)
       const rules = analysisMode === 'catalog_match' ? await loadRules() : null
       let source
@@ -252,7 +264,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       else if (body.source?.kind === 'virtual') source = { kind: 'virtual', inventory: validateGeneratorInput({ description: 'Reverse source', inventory: body.source.inventory }, rules).inventory }
       else fail('请选择有效的 Part Source。')
       if (source.kind === 'today' && !source.session.items.length) fail('所选真实库存为空，未调用模型。')
-      const fingerprint = hash({ model: body.model, source, image: image.sha256, analysisMode, prompt: prompt.text, schema, settings: modelSettings(body.model, 'reverse') })
+      const fingerprint = hash({ model: body.model, source, image: image.sha256, analysisMode, guidance, prompt: prompt.text, schema, settings: modelSettings(body.model, 'reverse') })
       file(body.requestId)
       try { const old = await read(body.requestId); if (old.fingerprint !== fingerprint) fail('请求 ID 对应另一份输入。', 409); return old }
       catch (e) { if (e.statusCode !== 404) throw e }
@@ -262,11 +274,11 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         image_reference: { kind: body.imageReference?.kind === 'server_library' ? 'server_library' : 'upload',
           name: typeof body.imageReference?.name === 'string' ? body.imageReference.name.slice(0,255) : body.originalImage?.name || null, sha256: image.sha256 },
         provider: definition.provider, model: body.model, source, fingerprint, image, originalImage: body.originalImage ?? null,
-        compression: body.compression ?? null, request: null, analysis: null }
+        compression: body.compression ?? null, guidance, request: null, analysis: null }
       await save(record)
       const started = performance.now()
       try {
-        const input = analysisMode === 'geometry_only' ? 'Analyze the reference photograph using anchor-based geometry reasoning.'
+        const input = guidance ? JSON.stringify(guidance) : analysisMode === 'geometry_only' ? 'Analyze the reference photograph using anchor-based geometry reasoning.'
           : JSON.stringify({ colors: (await getCatalog('filters', {})).colors })
         record.request = definition.provider === 'openai'
           ? buildOpenaiRequest({ model: body.model, task: 'reverse', prompt: prompt.text, schema, content: [
@@ -277,6 +289,11 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         await captureVisionWire(directory, record, () => save(record), () => callModel({ model: body.model, task: 'reverse', request: record.request, record }))
         if (record.finishReason !== (definition.provider === 'openai' ? 'completed' : 'STOP')) fail('Reverse 模型输出未完成。', 422)
         record.analysis = validate(JSON.parse(record.rawOutput))
+        if (guidance) {
+          const before = new Map(guidance.sourceAnalysis.observations.map(o => [o.id, o])), after = new Map(record.analysis.observations.map(o => [o.id, o]))
+          const changedOutsideSelection = [...before.keys()].filter(id => !guidance.observationIds.includes(id) && (!after.has(id) || hash(before.get(id)) !== hash(after.get(id))))
+          record.guidedChanges = { changedOutsideSelection, added: [...after.keys()].filter(id => !before.has(id)), removed: [...before.keys()].filter(id => !after.has(id)), changed: [...after.keys()].filter(id => before.has(id) && hash(before.get(id)) !== hash(after.get(id))), unchanged: [...after.keys()].filter(id => before.has(id) && hash(before.get(id)) === hash(after.get(id))), relationsChanged: hash(guidance.sourceAnalysis.relations) !== hash(record.analysis.relations) }
+        }
         record.status = 'complete'
       } catch (error) { record.status = 'failed'; record.error = visionErrorDiagnostic(error, 'Reverse Analysis'); record.outputValidation = inspectGeometryOutput(record) }
       record.elapsedMs = Math.round(performance.now() - started)

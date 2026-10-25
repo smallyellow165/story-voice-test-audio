@@ -32,3 +32,21 @@ export const reversePrompts = Object.freeze({
   geometry_only: Object.freeze({ id: 'reverse_geometry_v1', version: 3, text: geometryPrompt }),
   catalog_match: Object.freeze({ id: 'reverse_catalog_v1', version: 1, text: catalogPrompt }),
 })
+
+// V3 remains byte-for-byte available and remains the default until V4 is evaluated.
+export const geometryPromptVersions = Object.freeze({
+  3: reversePrompts.geometry_only,
+  4: Object.freeze({ id: 'reverse_geometry_v1', version: 4, text: geometryPrompt
+    .replace('One observation per identifiable visible piece; ambiguous segmentation belongs in alternatives/unknowns, not invented hidden pieces.', 'One observation per identifiable piece. Separate visible evidence from inferred hidden hypotheses; ambiguous segmentation belongs in alternatives/unknowns.')
+    .replace('Never complete invisible structure.', 'Do not assert invisible structure as fact; express evidence-backed hypotheses with inferred/unknown status.') + '\n' + [
+      'Occlusion: an invisible portion is not necessarily absent. Consider visible contour continuity, adjacent pieces, standard geometry and the overall silhouette. A lateral support plate may continue behind a hand or other bricks. Unsupported hidden parts remain alternatives/unknowns; any evidence-backed hidden-piece observation must explicitly state that it is hypothetical, use inferred/unknown dimensions and relations, and use bbox:null and visible_studs:null when wholly hidden. Never label hidden evidence observed.',
+      'Symmetry is a soft hypothesis only: compare the visible side with a potentially occluded counterpart, but allow asymmetric builds. Never mechanically duplicate a part or invent one just to satisfy a connection.',
+      'Avoid over-segmentation: a diagonal ridge, corner, shading boundary or differently oriented face may belong to a single special-shaped part. Require actual seam evidence before splitting. Record competing single-piece/multiple-piece interpretations in alternatives and uncertainty.',
+      'Infer the WHOLE footprint using visible stud spacing, scale anchors, overall width and support relationships, not just the visible fragment. Consider continuous broad support plates beneath multiple pieces without assuming their presence or forcing dimensions to make connections work. Preserve all existing units, evidence statuses, declared-anchor references and JSON schema rules.',
+    ].join('\n') }),
+})
+export function selectReversePrompt(mode, version) {
+  const prompt = mode === 'geometry_only' ? ([3, 4].includes(version ?? 3) ? geometryPromptVersions[version ?? 3] : null) : version == null || version === 1 ? reversePrompts.catalog_match : null
+  if (!prompt) throw Object.assign(new Error('不支持的 Prompt Version。'), { statusCode: 400 })
+  return prompt
+}
