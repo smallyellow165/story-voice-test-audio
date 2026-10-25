@@ -1,0 +1,44 @@
+import {useContext,useEffect,useMemo,useState} from 'react'
+import {InspectorContext,InspectorContent} from './SpatialInspector'
+import {geometryIssuesForDisplay,expectedConnections} from './geometry-issues.mjs'
+import type {SpatialPreview} from './SpatialAssemblyPanel'
+export function GeometryIssues({geometryId,refinement,onPreview}:{geometryId:string;refinement:any;onPreview(value:SpatialPreview|null):void}){
+ const context=useContext(InspectorContext),[report,setReport]=useState<any>(null),[error,setError]=useState(''),[selected,setSelected]=useState('')
+ useEffect(()=>{let live=true;setReport(null);setError('');setSelected('');context.highlight([])
+  fetch('/api/brick-spatial/geometry/'+geometryId+'/report').then(async r=>{if(!r.ok)throw Error('无法读取已保存诊断');return r.json()}).then(r=>{if(live)setReport(r)}).catch(e=>{if(live)setError(String(e))})
+  return()=>{live=false}
+ },[geometryId])
+ const matched=refinement?.geometryId===geometryId?refinement:null
+ const issues=useMemo(()=>geometryIssuesForDisplay(report,matched),[report,matched])
+ const issue=issues.find(i=>i.key===selected&&i.ids.join('|')===context.highlightIds.join('|'))
+ function choose(i:any){
+  const layout=report?.diagnosticAssembly
+  if(!layout)return
+  onPreview({bricks:layout.bricks,label:'Diagnostic / '+geometryId,review:'原始诊断布局 · 非合法候选',geometry:layout.geometry})
+  setSelected(i.key);context.highlight(i.ids)
+ }
+ function clear(){setSelected('');context.highlight([])}
+ const content=<section className="geometry-issues" aria-label="Geometry Issues">
+  <h3>Geometry Issues · {issues.length}</h3>
+  <p className="brick-help">来源：原始 Geometry {geometryId.slice(0,8)}{matched?' / Refinement '+matched.id.slice(0,8):''}。点击问题切回原始诊断布局；不修改积木。</p>
+  {error&&<p role="alert">{error}</p>}
+  {!issues.length&&<p>当前记录未提供可定位到两个零件的问题；不代表 Geometry Valid。</p>}
+  {issues.map(i=><button type="button" className={'geometry-issue '+(issue?.key===i.key?'selected':'')} aria-pressed={issue?.key===i.key} key={i.key} onClick={()=>choose(i)} disabled={!report?.diagnosticAssembly}>
+   <strong>{i.ids.join(' ↔ ')}</strong><br/>{i.type} · {i.scope==='layout'?'当前记录布局的碰撞':'原搜索域内无法满足'}
+   {i.details[0].minimumAxisGapLdu&&<span className="issue-gap">{Object.entries(i.details[0].minimumAxisGapLdu).filter(([,v])=>typeof v==='number'&&v>0).map(([a,v])=>`${a==='y'?'高度 Y':a==='z'?'深度 Z':'水平 X'} 差 ${v} LDU`).join('；')||'指定接口无法同时对齐'}</span>}
+  </button>)}
+  {context.highlightIds.length>0&&<button type="button" onClick={clear}>取消问题选择 · 恢复显示</button>}
+  {issue&&<div className="geometry-issue-detail" data-testid="geometry-issue-detail">
+   <p><span style={{color:'#007bb8'}}>蓝色：{issue.ids[0]}</span><br/><span style={{color:'#bd1765'}}>洋红：{issue.ids[1]}</span></p>
+   <h4>Expected · 计划声明</h4>
+   {expectedConnections(report.sourcePlan,issue.ids).map((c:any,i:number)=><div key={i}><code>{c.id}.{c.ownSurface}[{c.ownConnector??'Unknown'}] → {c.other}.{c.otherSurface}[{c.otherConnector??'Unknown'}]</code><p>{c.intent} · {c.visibility||'Unknown'}<br/>{c.evidence||'Unknown'}</p></div>)}
+   {!expectedConnections(report.sourcePlan,issue.ids).length&&<p>Unknown · 未声明直接连接</p>}
+   <h4>Actual · 已保存的检测结果</h4>
+   <p>{issue.scope==='layout'?'该记录的碰撞验证失败。重叠量：Unknown（记录未保存测量值）。':'当前允许的姿态搜索域无法满足此指定条件；不表示两种真实零件绝对无法连接。'}</p>
+   {issue.details[0].minimumAxisGapLdu&&<p>独立坐标最小差：{Object.entries(issue.details[0].minimumAxisGapLdu).map(([a,v])=>`${a.toUpperCase()} = ${v??'Unknown'}`).join('，')} LDU。各轴最小值可能来自不同姿态，不能作为三维修正向量。</p>}
+   <p className="brick-help">未进行自动修复。搜索域结论不是当前布局距离测量；二维照片不能证明三维碰撞。</p>
+   <details><summary>原始 Issue 技术细节</summary><pre>{JSON.stringify(issue.details,null,2)}</pre></details>
+  </div>}
+ </section>
+ return <><InspectorContent step="geometry">{content}</InspectorContent><InspectorContent step="refinement">{content}</InspectorContent></>
+}

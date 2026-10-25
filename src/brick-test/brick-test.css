@@ -151,3 +151,9 @@ body { margin: 0; }
 }
 .brick-spatial [data-testid="planning-state"] small { display:block; margin-top:3px; }
 .spatial-inspector nav button { flex:1 1 100px; overflow-wrap:normal; }
+
+.geometry-issues .geometry-issue { display:block; width:100%; text-align:left; margin:6px 0; padding:10px; white-space:normal; overflow-wrap:anywhere; border:1px solid #bdc9df; background:#fff; color:#183454; }
+.geometry-issues .geometry-issue.selected { border:2px solid #315fcb; background:#e9f0ff; }
+.geometry-issues .issue-gap { display:block; margin-top:5px; color:#a33a0c; }
+.geometry-issue-detail { padding:10px; border:1px solid #bdc9df; border-radius:6px; margin-top:10px; overflow-wrap:anywhere; }
+.geometry-issue-detail code { white-space:normal; }

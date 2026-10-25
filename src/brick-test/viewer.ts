@@ -17,6 +17,9 @@ export class BrickViewer {
   private templates = new Map<string, Promise<THREE.Group>>()
   private geometries = new Set<THREE.BufferGeometry>()
   private materials = new Set<THREE.Material>()
+  private highlightIds: string[] = []
+  private debugMaterials = new Set<THREE.Material>()
+  private originalMaterials = new Map<THREE.Mesh | THREE.LineSegments, THREE.Material | THREE.Material[]>()
   private disposed = false
   private revision = 0
   private frame = 0
@@ -252,16 +255,57 @@ export class BrickViewer {
       object.name = brick.id
       return object
     })
+    this.restoreHighlight()
     this.assembly.clear()
     this.assembly.add(...objects)
     this.fit()
+    if(this.highlightIds.length)this.highlight(this.highlightIds)
     return true
+  }
+
+  private restoreHighlight() {
+    this.originalMaterials.forEach((material,object)=>{object.material=material})
+    this.originalMaterials.clear()
+    this.debugMaterials.forEach(material=>material.dispose());this.debugMaterials.clear()
+    delete this.host.dataset.highlightIds
+  }
+
+  highlight(ids: string[]) {
+    const wasHighlighted=this.highlightIds.length>0
+    this.highlightIds=[...ids]
+    this.restoreHighlight()
+    const selected=this.assembly.children.filter(object=>ids.includes(object.name))
+    if(!ids.length){if(wasHighlighted)this.fit({x:-0.85,y:0.8,z:2.2});return}
+    if(selected.length!==ids.length)return // Never substitute another part by index or colour.
+    const box=new THREE.Box3()
+    for(const object of this.assembly.children){
+      const index=ids.indexOf(object.name),clones=new Map<THREE.Material,THREE.Material>()
+      if(index>=0)box.union(new THREE.Box3().setFromObject(object))
+      object.traverse(child=>{
+        const renderable=child as THREE.Mesh | THREE.LineSegments
+        if(!renderable.material)return
+        this.originalMaterials.set(renderable,renderable.material)
+        const style=(material:THREE.Material)=>{
+          let clone=clones.get(material)
+          if(!clone){
+            clone=material.clone();clones.set(material,clone);this.debugMaterials.add(clone)
+            if(index>=0){const coloured=clone as THREE.MeshStandardMaterial;if(coloured.color)coloured.color.set(index===0?'#00aaff':'#ff248f')}
+            else {clone.transparent=true;clone.opacity=0.16;clone.depthWrite=false}
+          }
+          return clone
+        }
+        renderable.material=Array.isArray(renderable.material)?renderable.material.map(style):style(renderable.material)
+      })
+    }
+    this.host.dataset.highlightIds=JSON.stringify(ids)
+    this.focusBox(box,this.camera.position.clone().sub(this.controls.target))
   }
 
   reset() {
     ++this.revision
     this.clearCandidates()
     this.clearPreview()
+    this.restoreHighlight()
     this.assembly.clear()
     this.home()
   }
@@ -278,6 +322,10 @@ export class BrickViewer {
     if (!this.assembly.children.length && !this.preview.children.length) return this.home()
     const box = new THREE.Box3().setFromObject(this.assembly)
     if (this.preview.children.length) box.union(new THREE.Box3().setFromObject(this.preview))
+    this.focusBox(box,viewDirection)
+  }
+
+  private focusBox(box:THREE.Box3,viewDirection:THREE.Vector3){
     const sphere = box.getBoundingSphere(new THREE.Sphere())
     const vertical = THREE.MathUtils.degToRad(this.camera.fov) / 2
     const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect)
@@ -288,6 +336,7 @@ export class BrickViewer {
   }
 
   dispose() {
+    this.restoreHighlight()
     this.disposed = true
     ++this.revision
     cancelAnimationFrame(this.frame)

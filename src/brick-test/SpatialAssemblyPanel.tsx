@@ -1,3 +1,4 @@
+import {GeometryIssues} from './GeometryIssues'
 import {InspectorContent,InspectButton,InspectorContext} from './SpatialInspector'
 import {GeometryRefinementPanel} from './GeometryRefinementPanel'
 import { useContext, useEffect, useRef, useState } from 'react'
@@ -16,6 +17,7 @@ const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
 function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
 export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:Props){
+ const [debugRefinement,setDebugRefinement]=useState<any>(null)
  const inspector=useContext(InspectorContext)
  const [analyses,setAnalyses]=useState<{id:string;appearance:string}[]>([]),[analysisId,setAnalysisId]=useState(new URL(location.href).searchParams.get('analysisId')||'')
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
@@ -117,7 +119,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <InspectorContent step="planning">{!plan&&<p>尚未加载 Spatial Plan；可先查看审核或选择历史记录。</p>}</InspectorContent>
    <InspectorContent step="geometry">{!geometry&&<><p>{geometryStatus.reason}</p><p>Not Run · 尚未加载 Geometry Result；没有候选或诊断布局。</p></>}</InspectorContent>
    {!geometry&&<InspectorContent step="refinement"><p>Not Run · 先选择 Geometry Result，再查看 Refinement 历史。</p></InspectorContent>}
-   {geometry&&<><InspectorContent step="geometry" disabled={disabled||busy}><p>{geometryStatus.reason}</p>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
+   {geometry&&<><GeometryIssues geometryId={geometry.id} refinement={debugRefinement} onPreview={onPreview}/><InspectorContent step="geometry" disabled={disabled||busy}><p>{geometryStatus.reason}</p>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
 </InspectorContent>
     {!!geometry.candidates.length&&<label>Geometry Candidate<select aria-label="Spatial candidate" value={candidate} onChange={e=>{if(e.target.value)void action(()=>showCandidate(geometry,e.target.value))}}><option value="">选择候选</option>{geometry.candidates.map(c=><option key={c.id} value={c.id}>{c.id} / {c.layoutId} · {c.unverifiedCount?'有未验证约束':'已验证几何与可执行约束'}</option>)}</select></label>}
     <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">Geometry {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
@@ -127,7 +129,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
     {geometry.diagnosticAvailable&&<p><a target="_blank" rel="noreferrer" href={import.meta.env.BASE_URL+'experiments/geometry-execution/viewer.html?result='+encodeURIComponent(api+'geometry/'+geometry.id+'/viewer')}>查看零件原始布局诊断（非合法候选） ↗</a></p>}
     <a href={api+'geometry/'+geometry.id+'/report'} download>下载完整 Geometry Report</a>
 </InspectorContent>
-    {plan&&<GeometryRefinementPanel onPreview={onPreview} key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
+    {plan&&<GeometryRefinementPanel onDiagnostics={setDebugRefinement} onPreview={onPreview} key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
    </>}
   </fieldset>
   {busy&&<p role="status">处理中，请勿重复提交。不会自动 Repair 或重新调用模型。</p>}

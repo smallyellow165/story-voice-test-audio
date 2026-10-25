@@ -2,7 +2,7 @@ import {createContext,useContext,type ReactNode} from 'react'
 import {createPortal} from 'react-dom'
 
 export type InspectorStep='planning'|'geometry'|'refinement'
-export const InspectorContext=createContext<{host:HTMLElement|null;step:InspectorStep;select(step:InspectorStep,open?:boolean):void}>({host:null,step:'planning',select:()=>{}})
+export const InspectorContext=createContext<{host:HTMLElement|null;step:InspectorStep;highlightIds:string[];highlight(ids:string[]):void;select(step:InspectorStep,open?:boolean):void}>({host:null,step:'planning',highlightIds:[],highlight:()=>{},select:()=>{}})
 // Move presentation only. Workflow/form state remains in its original owner;
 // hidden panels stay mounted, and portal fieldsets retain operation locks.
 export function InspectorContent({step,disabled=false,children}:{step:InspectorStep;disabled?:boolean;children:ReactNode}){

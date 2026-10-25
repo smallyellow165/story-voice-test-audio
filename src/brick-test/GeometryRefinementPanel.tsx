@@ -7,17 +7,18 @@ type Diff={id:string;original:{x:number;y:number;z:number;rotation:number};propo
 type Proposal={assembly:{bricks:SpatialPreview['bricks']};id:string;hash:string;classification:string;geometry:{valid:boolean;code:string;reason:string};score:{totalTranslationLdu:number};diffs:Diff[];reviewReasons:string[];constraints:unknown;supportDiagnostics:unknown}
 type Refinement={originalAssembly?:{bricks:SpatialPreview['bricks']};id:string;planId:string;geometryId:string;status:string;completeSearch:boolean;diagnostics:unknown[];proposals:Proposal[];stats:unknown;policy:unknown}
 type Revision={id:string;proposalId:string;proposalHash:string;preflightStatus:string;approval:{reviewNote:string}}
-type Props={onPreview(value:SpatialPreview|null):void;planId:string;geometryId:string;eligible:boolean;disabled:boolean;onBusy(value:boolean):void;onExecuted(id:string):Promise<void>}
+type Props={onDiagnostics(value:Refinement|null):void;onPreview(value:SpatialPreview|null):void;planId:string;geometryId:string;eligible:boolean;disabled:boolean;onBusy(value:boolean):void;onExecuted(id:string):Promise<void>}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const r=await fetch(api+route,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),data=await r.json();if(!r.ok)throw Error(data.error||'请求失败');return data}
 const draftKey=(rid:string,p:Proposal)=>'spatial-review-note:'+rid+':'+p.id+':'+p.hash
 const readNote=(rid:string,p?:Proposal)=>{try{return p?sessionStorage.getItem(draftKey(rid,p))||'':''}catch{return ''}}
 const pose=(p:Diff['original'])=>`(${p.x}, ${p.y}, ${p.z}) / ${p.rotation}°`
-export function GeometryRefinementPanel({planId,geometryId,eligible,disabled,onBusy,onExecuted,onPreview}:Props){
+export function GeometryRefinementPanel({onDiagnostics,planId,geometryId,eligible,disabled,onBusy,onExecuted,onPreview}:Props){
  const inspector=useContext(InspectorContext)
  const [history,setHistory]=useState<{id:string;status:string;createdAt:string;count:number}[]>([]),[result,setResult]=useState<Refinement|null>(null),[selected,setSelected]=useState(''),[revisions,setRevisions]=useState<Revision[]>([])
  const [radius,setRadius]=useState(20),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[confirmed,setConfirmed]=useState(false),[ackInvalid,setAckInvalid]=useState(false)
  const gate=useRef(false),generation=useRef(0)
+ useEffect(()=>{onDiagnostics(result)},[result,onDiagnostics])
  const savedProposal=result?.proposals.find(p=>p.id===selected)
  const proposal=savedProposal?{...savedProposal,geometry:validateFinalAssembly(savedProposal.assembly.bricks)}:undefined
  function previewOriginal(){inspector.select('geometry');if(!result?.originalAssembly)return;const u=new URL(location.href);u.searchParams.set('spatialPreview','geometry');window.history.replaceState(null,'',u);onPreview({bricks:result.originalAssembly.bricks,label:'Diagnostic / '+geometryId,review:'原始诊断布局',geometry:validateFinalAssembly(result.originalAssembly.bricks)})}

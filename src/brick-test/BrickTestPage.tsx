@@ -37,6 +37,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   const [generating, setGenerating] = useState(false)
   const [generatedReport, setGeneratedReport] = useState<DesignReport | null>(null)
   const [aiMode, setAiMode] = useState(false)
+  const [highlightIds,setHighlightIds]=useState<string[]>([])
   const [spatialPreview,setSpatialPreview] = useState<SpatialPreview|null>(null)
   const [spatialLoaded,setSpatialLoaded] = useState(false)
   const [spatialLoadError,setSpatialLoadError] = useState('')
@@ -170,6 +171,8 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     return () => {active=false}
   }, [workflow,spatialPreview,ready])
 
+  useEffect(()=>{viewer.current?.highlight(workflow==='spatial'?highlightIds:[])},[highlightIds,workflow,spatialLoaded])
+
   async function commit(next: Brick[], generated = false, report: DesignReport | null = null, spatial = false) {
     if (!viewer.current || locked.current || !ready || (generating && !generated)) return false
     const validation = validateAssembly(next)
@@ -229,7 +232,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   }, new Map<string, { part: string; color: string; count: number }>()).values()]
   const numberValue = (value: number) => Number.isFinite(value) ? value : ''
 
-  return <InspectorContext.Provider value={{host:inspectorHost,step:inspectorStep,select:inspect}}><main className="brick-page">
+  return <InspectorContext.Provider value={{host:inspectorHost,step:inspectorStep,select:inspect,highlightIds,highlight:setHighlightIds}}><main className="brick-page">
     <ThreeColumnLayout className="brick-workbench" defaultSizes={['25%', '48%', '27%']}
       left={<>
     <header className="brick-header">
@@ -242,7 +245,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       const url = new URL(location.href); url.searchParams.set('workflow', e.target.value); window.history.replaceState(null, '', url)
     }}><option value="generator">Generator V3 · 自由 / 参考图生成</option><option value="spatial">Spatial Assembly · 已审核照片复原</option></select></label>
     {workflow === 'spatial'
-      ? <SpatialAssemblyPanel onPreview={setSpatialPreview} manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} />
+      ? <SpatialAssemblyPanel onPreview={value=>{setHighlightIds([]);setSpatialPreview(value)}} manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} />
       : <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />}
       </>}
       center={<>
