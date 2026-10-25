@@ -1,3 +1,4 @@
+import { spatialMapping } from './brick-spatial-mapping.mjs'
 import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
@@ -23,16 +24,16 @@ export function reviewedSource(saved){
  for(const r of rows.filter(r=>!r.excluded))if(!r.confirmedPart||r.quantity!==1)errors.push(r.id+'：需确认型号/颜色，且每个 Observation 恰好一块（V1 不猜测重复实例位置）')
  return {analysisId:saved.analysis.id,updatedAt:saved.updatedAt,rows,errors,ready:!errors.length,reviewVersion:hash({updatedAt:saved.updatedAt,rows}),warnings:saved.warnings||[]}
 }
-export function prepareReviewedSource(saved,mapping,rules,includeEvidence=true){
+export function prepareReviewedSource(saved,mapping,rules,includeEvidence=true,allowUnknownGeometry=false){
  const source=reviewedSource(saved);if(!source.ready)fail(source.errors.join('；'),422)
  const kept=new Set(source.rows.filter(r=>!r.excluded).map(r=>r.id))
  const analysis={...saved.analysis,analysis:{...saved.analysis.analysis,observations:saved.analysis.analysis.observations.filter(o=>kept.has(o.id)),relations:(saved.analysis.analysis.relations||[]).filter(r=>kept.has(r.from)&&kept.has(r.to))}}
  const inventory=new Map()
- for(const m of mapping.mapping.rows){if(!m.target||m.errors.length)fail('正式 Mapping 不可用：'+m.source.part_num,422);const key=m.target.part+':'+m.target.color;const row=inventory.get(key)||{part:m.target.part,color:m.target.color,quantity:0};row.quantity+=m.source.quantity;inventory.set(key,row)}
+ for(const m of mapping.mapping.rows){if(!m.target||m.errors.length)fail('正式 Mapping 不可用：'+m.source.part_num+' / RB Color '+m.source.color_id+'：'+m.errors.join('；'),422);const key=m.target.part+':'+m.target.color;const row=inventory.get(key)||{part:m.target.part,color:m.target.color,quantity:0};row.quantity+=m.source.quantity;inventory.set(key,row)}
  // Adapt the saved Review + official Mapping snapshot to the existing audited input builder.
  // This is not a legacy schema fallback and does not use any prior LLM placement.
  const snapshot={id:mapping.id,reference:{analysisId:analysis.id,review:Object.fromEntries(source.rows.filter(r=>!r.excluded).map(r=>[r.id,r]))},inventorySource:{reviewId:mapping.id,mapping:mapping.mapping.rows},requestInput:{inventory:[...inventory.values()]}}
- const prepared=prepareInput(analysis,snapshot,rules,{includeEvidence})
+ const prepared=prepareInput(analysis,snapshot,rules,{includeEvidence,allowUnknownGeometry})
  prepared.input.provenance={analysisId:analysis.id,reviewId:mapping.id,reviewVersion:source.reviewVersion,savedReviewAt:source.updatedAt,excludedIds:source.rows.filter(r=>r.excluded).map(r=>r.id),mappingSource:'saved Part Explorer review + official inventory mapping review'}
  return prepared
 }
@@ -48,7 +49,7 @@ function planView(r){
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,completeSearch:r.completeSearch,
  diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
  candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
-export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan}={}){
+export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,resolveMapping=spatialMapping}={}){
  const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests')
  const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
@@ -82,16 +83,16 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    }
    return geometryView(r)
   }
-  if(method==='POST'&&route==='plan'){
+  if(method==='POST'&&['plan','prepare'].includes(route)){
    id(body.analysisId);if(typeof body.model!=='string'||typeof body.includeEvidence!=='boolean'||typeof body.reviewVersion!=='string')fail('规划输入无效')
-   return operation(body,'planning',async()=>{
+   return operation(body,route==='prepare'?'prepare':'planning',async()=>{
     const saved=await reverse.restore(body.analysisId),source=reviewedSource(saved)
     if(!source.ready)fail(source.errors.join('；'),422)
     if(source.reviewVersion!==body.reviewVersion)fail('审核已变化，请重新加载',409)
     const items=new Map();for(const r of source.rows.filter(r=>!r.excluded)){const p=r.confirmedPart,k=p.part_num+':'+p.color_id;const item=items.get(k)||{part_num:p.part_num,color_id:p.color_id,quantity:0};item.quantity++;items.set(k,item)}
-    const mapping=await games.review({session:{schema_version:1,id:randomUUID(),name:'Spatial Review '+saved.analysis.id,updated_at:new Date().toISOString(),items:[...items.values()]}})
-    const prepared=prepareReviewedSource(saved,mapping,await loadRules(),body.includeEvidence)
-    const r=await runPlanning(prepared,{model:body.model,directory:plans,execute:true,sources:[{analysisId:body.analysisId,reviewVersion:source.reviewVersion,mappingReviewId:mapping.id}]})
+    const mapping=await resolveMapping({schema_version:1,id:randomUUID(),name:'Spatial Review '+saved.analysis.id,updated_at:new Date().toISOString(),items:[...items.values()]},await loadRules())
+    const prepared=prepareReviewedSource(saved,mapping,await loadRules(),body.includeEvidence,true)
+    const r=await runPlanning(prepared,{model:body.model,directory:plans,execute:route==='plan',sources:[{analysisId:body.analysisId,reviewVersion:source.reviewVersion,mappingReviewId:mapping.id,mappingReview:mapping}]})
     return {planId:r.id,resultStatus:r.status}
    })
   }

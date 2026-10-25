@@ -73,12 +73,18 @@ test('saved Part Explorer review prepares original photo, official mapping and s
  assert.deepEqual(p.input.observations.map(o=>[o.id,o.part,o.color]),trace.requestInput.observations.map(o=>[o.id,o.part,o.color]))
  assert.equal(JSON.stringify({saved,mapping}),before)
  const dir=await fixture(t);let called=0
- const s=createSpatialWorkflow(dir,{reverse:{restore:async()=>saved},games:{review:async()=>mapping},loadRules:async()=>rules,runPlanning:async(input,options)=>{called++;assert.equal(input.input.observations.length,7);assert.equal(options.execute,true);return trace}})
+ const s=createSpatialWorkflow(dir,{reverse:{restore:async()=>saved},resolveMapping:async()=>mapping,loadRules:async()=>rules,runPlanning:async(input,options)=>{called++;assert.equal(input.input.observations.length,7);assert.equal(options.execute,true);return trace}})
  const body={requestId:randomUUID(),analysisId:analysis.id,reviewVersion:reviewedSource(saved).reviewVersion,model:'gpt-6.1-sol',includeEvidence:true}
  const op=await s.dispatch('POST','plan',body);assert.equal(op.state,'complete');assert.equal(called,1)
  assert.deepEqual(await s.dispatch('POST','plan',body),op);assert.equal(called,1)
  const changed=await s.dispatch('POST','plan',{...body,requestId:randomUUID(),reviewVersion:'stale'})
  assert.equal(changed.state,'failed');assert.equal(called,1)
+ const prepareService=createSpatialWorkflow(dir,{reverse:{restore:async()=>saved},resolveMapping:async()=>mapping,loadRules:async()=>rules})
+ const preparation=await prepareService.dispatch('POST','prepare',{...body,requestId:randomUUID()})
+ assert.equal(preparation.state,'complete');assert.equal(preparation.resultStatus,'prepared')
+ const preparedTrace=await prepareService.dispatch('GET','plans/'+preparation.planId+'/trace')
+ assert.equal(preparedTrace.rawOutput,null);assert.equal(preparedTrace.wireStatus,undefined);assert.equal(preparedTrace.requestInput.observations.length,7)
+ assert.equal((await prepareService.dispatch('GET','plans/'+preparation.planId)).usable,false)
 })
 test('trace download includes exact saved HTTP bodies; altered plan cannot be executed',async t=>{
  const dir=await fixture(t),s=createSpatialWorkflow(dir)

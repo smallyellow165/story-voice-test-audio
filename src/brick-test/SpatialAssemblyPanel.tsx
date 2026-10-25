@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../model-selector'
 import { validateAssembly } from './assembly'
-import type { Brick } from './catalog'
+import { COLORS, type Brick } from './catalog'
 
 type Props={manualRevision:number;disabled:boolean;onBusy(busy:boolean):void;onApply(bricks:Brick[]):Promise<boolean>}
 type History={id:string;analysisId?:string;createdAt:string;status:string;model?:string;usable?:boolean;state?:string;count?:number}
 type Source={ready:boolean;reviewVersion:string;updatedAt:string;errors:string[];warnings:string[];rows:{id:string;excluded:boolean;quantity:number;confirmedPart:{part_num:string;color_id:number}|null}[]}
-type Plan={id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}}[]}}
+type Plan={id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null}[]}}
 type Geometry={id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:{id:string;layoutId:string;bricks:Brick[];unverifiedCount:number}[]}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
@@ -54,10 +54,10 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onApply}:Pr
   setModels(s.models);setProviders(s.providers);setModel(s.models[0]?.id||'');setAnalyses(h.items)
   const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
  })},[disabled])
- async function generate(){if(!source?.ready||!model)return;await action(async()=>{
-  const op=await request('plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence})
+ async function generate(prepareOnly=false){if(!source?.ready||!model)return;await action(async()=>{
+  const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence})
   await refresh();if(op.state!=='complete'||!op.planId)throw new Error(op.error||'请求仍未完成；请刷新历史，勿重复生成')
-  await loadPlan(op.planId);setNotice('Spatial Plan 已保存。Geometry Execution 需要另行点击。')
+  await loadPlan(op.planId);setNotice(prepareOnly?'请求已准备并保存，未调用 LLM；缺少几何 Profile 的零件仍保留为未知。':'Spatial Plan 已保存。Geometry Execution 需要另行点击。')
  })}
  async function execute(){if(!plan?.usable)return;await action(async()=>{
   const op=await request('execute',{requestId:crypto.randomUUID(),planId:plan.id,analysisId:plan.analysisId})
@@ -77,12 +77,14 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onApply}:Pr
    <h3>1 · Spatial Planning</h3>
    <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} onChange={m=>setModel(m.id)}/>
    <label><input type="checkbox" checked={evidence} onChange={e=>setEvidence(e.target.checked)}/>使用已保存 Analysis / Relations 视觉证据</label>
+   <button type="button" disabled={!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
    <button type="button" className="brick-primary" disabled={!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
    <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
    {plan&&<><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>
     {plan.image&&<img className="spatial-reference" src={'data:'+plan.image.mimeType+';base64,'+plan.image.imageBase64} alt="Spatial Assembly 原始参考照片"/>}
-    <details open><summary>本计划的确认零件快照 · {(plan.requestInput?.observations||[]).length} 块</summary><ul>{(plan.requestInput?.observations||[]).map(o=><li key={o.id}>{o.id} · {o.part} / {o.color} · LDU {JSON.stringify(o.geometry.bodySizeLdu)}</li>)}</ul><small>历史计划使用生成时的审核快照；重新审核不会覆盖旧计划。</small></details>
+    <details open><summary>本计划的确认零件快照 · {(plan.requestInput?.observations||[]).length} 块</summary><ul>{(plan.requestInput?.observations||[]).map(o=><li key={o.id}>{o.id} · {o.part} / {o.color} · LDU {o.geometry?JSON.stringify(o.geometry.bodySizeLdu):'未知：缺少经审核几何 Profile，禁止假定尺寸/接口'}</li>)}</ul><small>历史计划使用生成时的审核快照；重新审核不会覆盖旧计划。</small></details>
+    {(plan.requestInput?.observations||[]).some(o=>!o.geometry||!COLORS.some(c=>c.code===o.color))&&<p role="status">请求准备不等于几何可执行。下列项仍缺少共享几何 Profile 或执行色板支持：{(plan.requestInput?.observations||[]).filter(o=>!o.geometry||!COLORS.some(c=>c.code===o.color)).map(o=>o.id).join('、')}。未补齐前不会得到合法 Assembly。</p>}
     <details><summary>查看 Spatial Plan 与不确定性（只读）</summary><pre>{JSON.stringify({plan:plan.plan,validation:plan.validation,conversion:plan.conversion,error:plan.error},null,2)}</pre></details>
     <details><summary>LLM 原始回答</summary><pre>{plan.rawOutput||'尚无模型输出'}</pre></details>
     <a href={api+'plans/'+plan.id+'/trace'} download>下载完整 Spatial Trace（含 Raw Request/Response）</a>
