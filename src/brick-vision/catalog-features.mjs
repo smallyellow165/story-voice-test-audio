@@ -1,6 +1,6 @@
 // Parameter contract for the existing /brick-catalog/candidates API.
 // No candidate matching, identity inference or Evidence parsing lives here.
-export const catalogShapes = ['brick', 'curved_top', 'arch', 'slope']
+export const catalogShapes = ['brick', 'curved_top', 'curved_bottom', 'arch', 'slope']
 export const catalogPrints = ['yes', 'no', 'unknown']
 
 // A submitted snapshot, independent of subsequent edits and pagination.

@@ -333,7 +333,7 @@ export function InventoryPage() {
           <label>Color / 颜色<select value={colorFilter} onChange={e => setColorFilter(e.target.value)}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label>Size / Width × Depth × Height<input value={featureSize} maxLength={24} placeholder="例如 2×4×0.5；也支持 2×4" onChange={e => { setFeatureSize(e.target.value); setPartialDimensions({}) }} />{Object.keys(partialDimensions).length > 0 && <small>审核中的已知维度：{JSON.stringify(partialDimensions)}；输入 Size 可替换</small>}</label>
             <label>Shape / 形状<select value={featureShape} onChange={e => setFeatureShape(e.target.value)}>
-              <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="arch">Arch</option><option value="slope">Slope</option>
+              <option value="">未知 / 不限制</option><option value="brick">Brick</option><option value="curved_top">Curved Top</option><option value="curved_bottom">Curved Bottom</option><option value="arch">Arch</option><option value="slope">Slope</option>
             </select></label>
             <label>Print / 印花<select value={featurePrint} onChange={e => setFeaturePrint(e.target.value)}><option value="unknown">未知 / 不限制</option><option value="yes">有明确印花证据</option><option value="no">明确基础款 / 无印花证据</option></select></label>
           </form>

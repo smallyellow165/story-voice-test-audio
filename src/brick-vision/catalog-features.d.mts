@@ -1,6 +1,6 @@
 export type CatalogFeatures = {
   color_id: number | null; size: string | null
-  shape: 'brick' | 'curved_top' | 'arch' | 'slope' | null
+  shape: 'brick' | 'curved_top' | 'curved_bottom' | 'arch' | 'slope' | null
   print: 'yes' | 'no' | 'unknown'
 }
 export type CatalogQuery = CatalogFeatures & { width_studs?: number; depth_studs?: number; height_brick_units?: number }

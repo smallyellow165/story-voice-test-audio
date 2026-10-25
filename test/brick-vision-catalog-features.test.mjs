@@ -73,3 +73,10 @@ test('persisted search features preserve all three dimensions when made editable
   const query = { ...unknown, width_studs: 1, depth_studs: 2, height_brick_units: 2 }
   assert.deepEqual(readFeatureEditor(featureEditor(query)), query)
 })
+
+test('Curved Bottom survives schema validation and combined catalog query', () => {
+  const value = { color_id: 15, size: '2x4', shape: 'curved_bottom', print: 'yes' }
+  assert.doesNotThrow(() => validateCatalogFeatures(value))
+  assert.deepEqual(catalogFeatureParams(value), {color:'15',size:'2x4',shape:'curved_bottom',printed:'yes'})
+  assert.ok(visionFeatureProperties.shape.enum.includes('curved_bottom'))
+})
