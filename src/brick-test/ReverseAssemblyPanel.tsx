@@ -41,6 +41,12 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [active, setActive] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState('')
   const [recordId, setRecordId] = useState(initialScene?.analysisId || ''), [submitted, setSubmitted] = useState(false)
   const [applied, setApplied] = useState(false)
+  const [reviewColors, setReviewColors] = useState<{id:number;name:string}[]>([])
+  useEffect(() => {
+    let active = true
+    void requestJson<{colors:{id:number;name:string}[]}>('/api/brick-catalog/filters', {}, '审核颜色').then(r => {if(active)setReviewColors(r.colors)}).catch(() => {})
+    return () => {active = false}
+  }, [])
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   const [artifact, setArtifact] = useState<Artifact | null>(null)
   const [generationSubmitted, setGenerationSubmitted] = useState(false)
@@ -52,6 +58,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
   const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
   const [dirty, setDirty] = useState(false), [savedAt, setSavedAt] = useState(''), [restoreWarning, setRestoreWarning] = useState('')
+  const reviewHost = useRef<HTMLDivElement>(null)
+  const [reviewFocus, setReviewFocus] = useState(0)
   const tableHost = useRef<HTMLDivElement>(null), previewHost = useRef<HTMLDivElement>(null)
   const gate = useRef(false)
   const requestId = useRef(newSessionId())
@@ -100,9 +108,15 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
 
   function selectBox(id: string) {
     setActive(id)
-    const row = [...(tableHost.current?.querySelectorAll<HTMLElement>('[data-observation-id]') || [])].find(r => r.dataset.observationId === id)
-    row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    setReviewFilter('all')
+    setReviewFocus(value => value + 1)
   }
+  useEffect(() => {
+    if (!reviewFocus) return
+    const row = [...(reviewHost.current?.querySelectorAll<HTMLElement>('[data-observation-id]') || [])].find(r => r.dataset.observationId === active)
+    row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    row?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
+  }, [reviewFocus])
   function reset() {
     if (dirty && !window.confirm('存在未保存的审核修改。确定放弃并新建分析？')) return
     catalogEpoch.current++; setCandidateNotes({})
@@ -196,7 +210,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             if (catalogEpoch.current !== epoch || !isCurrent()) throw new Error('搜索目标已改变，本次结果未回填。')
             const index = resolved.rows.findIndex(r => r.source.part_num === item.part_num && r.source.color_id === item.color_id && r.sourceAllowed)
             if (index < 0) throw new Error('该型号 / 颜色未通过现有 Catalog 身份或 可用零件范围检查。')
-            edit(id, { features: { ...row.features, partNumber: item.part_num }, quantity: String(item.quantity),
+            edit(id, { features: { ...row.features, partNumber: item.part_num, color: String(item.color_id) }, quantity: String(item.quantity),
               search: resolved, index, excluded: false })
             setActive(id)
           } finally { gate.current = false; setBusy(''); onBusy(false) }
@@ -219,7 +233,9 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       ? [{ ...chosen.source, quantity }] : []
   })
   const displayedInventory = record?.source.kind === 'virtual' ? record.source.inventory : inventory
-  const preview = record ? record.image?.imageBase64 ? record.image : null : image
+  const preview = record ? record.originalImage?.imageBase64 ? record.originalImage : record.image?.imageBase64 ? record.image : null : image
+  const selectedReview = rows[active]
+  const selectedPart = selectedReview?.index === undefined ? undefined : selectedReview.search?.rows[selectedReview.index]?.source
   const geometry = <div className="brick-reverse" hidden={!visible}>
     {record?.analysis && geometryOnly && <>
       <p>{record.analysis.appearance}</p>
@@ -255,10 +271,10 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
     {record?.analysis && <>
-      <ObservationTable stickyAction hostRef={geometryOnly ? undefined : tableHost} columns={[
+      <ObservationTable stickyAction hostRef={reviewHost} columns={[
         { label: '操作', width: 52 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
         { label: '宽 (Stud)', width: 72 }, { label: '深 (Stud)', width: 72 }, { label: '高 (Brick)', width: 76 },
-        { label: '颜色', width: 64 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
+        { label: '颜色（Rebrickable）', width: 180 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
         { label: '数量', width: 60 },
       ]}>
         {record.analysis.observations.map(o => {
@@ -289,7 +305,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
               {row.excluded && <input aria-label={o.id + ' 排除原因'} value={row.reason} placeholder="请填写排除原因" disabled={locked}
                 onChange={e => edit(o.id, { reason: e.target.value })} />}
             </td>
-            <ObservationFeatureCells id={o.id} features={row.features} disabled={locked}
+            <ObservationFeatureCells id={o.id} features={row.features} disabled={locked} colors={reviewColors}
               onChange={features => edit(o.id, { features, search: undefined, index: undefined })} />
             <td><input aria-label={o.id + ' 确认可见数量'} type="number" min="1" max="100" value={row.quantity}
               disabled={locked || generationSubmitted} onChange={e => edit(o.id, { quantity: e.target.value })} /></td>
@@ -352,8 +368,18 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       imageSource: imageSelection.source, image: imageSelection.name, model, provider: models.find(m => m.id === model)?.provider,
       analysisId: record?.id }} />
     {preview && <div ref={previewHost}><ObservationPreview
-      src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="Reverse 实际发送图片及识别项标注"
-      observations={record?.analysis?.observations || []} activeId={active} onSelect={selectBox} /></div>}
+      src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="原始参考照片及识别项标注"
+      observations={record?.analysis?.observations || []} activeId={active} onSelect={selectBox} />
+      {record && <div className="vision-selected-review">
+        <p>点击照片框选积木，再修改审核型号或颜色；照片框是模型标注，可能有偏差。</p>
+        <label>照片中的识别项<select aria-label="照片中的识别项" value={active} onChange={e => selectBox(e.target.value)}>
+          {record.analysis?.observations.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
+        </select></label>
+        <p>当前审核：{selectedPart ? `${selectedPart.part_num} / ${reviewColors.find(c => c.id === selectedPart.color_id)?.name || '颜色'} · RB ${selectedPart.color_id}` : '尚未确认'}。型号或颜色修改后需重新选择候选并保存审核。</p>
+        <button type="button" disabled={locked || !active} onClick={() => selectBox(active)}>定位并修改型号 / 颜色</button>
+        <button type="button" disabled={locked || !active} onClick={() => find(active, 'manual')}>为此积木选择型号与颜色</button>
+      </div>}
+    </div>}
     {record && <>
       <p>{record.analysis_mode || 'catalog_match'} · {record.prompt_id || 'reverse_catalog_v1'} v{record.prompt_version || 1} · {record.image_reference?.name} · {record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
       <button type="button" onClick={() => download(record, 'reverse-analysis-' + record.id)}>下载完整分析诊断 / Raw Trace 路径</button>

@@ -34,8 +34,9 @@ export function InventoryPartPhoto({ partNum, colorId, name, genericMedia }: {
     })
     return () => { active = false }
   }, [partNum, colorId, phase])
-  return <div className="inventory-item-photo" title={phase === 'color' ? '所选颜色图片' : '型号示意图，颜色以清单为准'}>
-    <CatalogPhoto key={phase} media={media} name={name}
+  return <div className={'inventory-item-photo' + (phase === 'generic' ? ' is-generic' : '')} title={phase === 'color' ? '所选颜色图片' : '型号示意图，颜色以清单为准'}>
+    <CatalogPhoto key={phase} media={media} name={phase === 'generic' ? name + '（型号示意，非所选颜色）' : name}
       onUnavailable={phase === 'color' ? useGeneric : undefined} />
+    {phase === 'generic' && <small className="inventory-generic-label">型号示意<br/>非所选颜色</small>}
   </div>
 }

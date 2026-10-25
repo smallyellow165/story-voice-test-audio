@@ -201,3 +201,7 @@
 
 .inventory-list-info { display: grid; gap: 6px; margin-top: 8px; }
 .inventory-list-info textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 6px 8px; border: 1px solid #c6d4ce; border-radius: 5px; }
+
+/* A generic part photo must never masquerade as the selected inventory color. */
+.inventory-item-photo.is-generic .inventory-photo img { filter: grayscale(1); }
+.inventory-workbench .inventory-items-table .inventory-generic-label { display: block; text-align: center; font-size: 10px; line-height: 1.3; color: #5c4930; white-space: nowrap; }

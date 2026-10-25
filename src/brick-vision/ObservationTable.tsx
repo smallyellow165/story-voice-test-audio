@@ -20,16 +20,21 @@ export function ObservationTable({ columns, children, hostRef, stickyAction = fa
 }
 
 /** Same controlled feature editors; no parsing, matching or local copy of state. */
-export function ObservationFeatureCells({ id, features, disabled, onChange }: {
-  id: string; features: FeatureEditor; disabled: boolean; onChange(features: FeatureEditor): void
+export function ObservationFeatureCells({ id, features, disabled, onChange, colors }: {
+  id: string; features: FeatureEditor; disabled: boolean; onChange(features: FeatureEditor): void; colors?: {id:number;name:string}[]
 }) {
   return <>
     {(['width_studs', 'depth_studs', 'height_brick_units'] as const).map(key => <td key={key}>
       <input aria-label={id + ' ' + key} type="number" min="0" step="any" placeholder="Unknown"
         value={features[key] ?? ''} disabled={disabled} onChange={e => onChange(editDimension(features, key, e.target.value))} />
     </td>)}
-    <td><input aria-label={id + ' 特征 RB Color ID'} inputMode="numeric" placeholder="Unknown" value={features.color} disabled={disabled}
-      onChange={e => onChange({ ...features, color: e.target.value })} /></td>
+    <td>{colors?.length ? <select aria-label={id + ' 特征 RB Color ID'} value={features.color} disabled={disabled}
+      onChange={e => onChange({ ...features, color: e.target.value })}>
+      <option value="">未知 / 未指定</option>
+      {features.color && !colors.some(c => String(c.id) === features.color) && <option value={features.color}>RB {features.color}</option>}
+      {colors.map(c => <option key={c.id} value={c.id}>{c.name} · RB {c.id}</option>)}
+    </select> : <input aria-label={id + ' 特征 RB Color ID'} inputMode="numeric" placeholder="Unknown" value={features.color} disabled={disabled}
+      onChange={e => onChange({ ...features, color: e.target.value })} />}</td>
     <td><select aria-label={id + ' Shape'} value={features.shape} disabled={disabled}
       onChange={e => onChange({ ...features, shape: e.target.value })}>
       <option value="">未知</option>{catalogShapes.map(shape => <option key={shape} value={shape}>{shape}</option>)}</select></td>
