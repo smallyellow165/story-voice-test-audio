@@ -153,9 +153,128 @@ const curved98224: PartDefinition = {
 }
 if (geometryIssues(curved98224.geometry).length) throw new Error('Invalid 98224 profile')
 
+// 11170 official entry has an offset footprint and only TWO top studs.
+// The reviewed facet steps enclose its curved front; they are not a box substitute.
+const front11170 = [[0,72], ...[
+  [.6088,.7934],[.7071,.7071],[.7934,.6088],[.866,.5],
+  [.9239,.3827],[.9659,.2588],[.9914,.1305],[1,0],
+].map(([cos,sin])=>[80*cos-40,2.72+80*sin])]
+const curved11170: PartDefinition = {
+  id:'11170',label:'2 × 2 × 1.5 · 弧形前面（顶部 2 凸点）',length:2,depth:2,
+  geometry:{
+    family:'explicit-duplo',status:'reviewed',bodySizeLdu:{x:80,y:72,z:80},
+    outerBoundsLdu:{min:{x:-40,y:0,z:-40},max:{x:40,y:83,z:40}},
+    collision:{kind:'conservative-boxes',boxes:[
+      {min:{x:-40,y:0,z:-40},max:{x:40,y:72,z:0.003}},
+      ...front11170.slice(0,-1).map(([z,h],i)=>({min:{x:-40,y:0,z:Math.max(0,z-0.003)},
+        max:{x:40,y:Math.min(72,h+0.003),z:Math.min(40,front11170[i+1][0]+0.003)}})),
+    ]},
+    top:[-20,20].map(x=>({x,y:72,z:-20,type:'duplo-stud' as const,direction:'up' as const,radiusLdu:12,depthLdu:11})),
+    bottom:[-20,20].flatMap(x=>[-20,20].map(z=>({x,y:0,z,type:'duplo-stud' as const,direction:'down' as const,radiusLdu:12,depthLdu:11}))),
+    rotations:[0,90,180,270],placement:'upright',ldraw:{rotationX:Math.PI,offsetLdu:{x:0,y:72,z:-20}},
+    sourceFiles:[
+      {"path":"parts/11170.dat","sha256":"c6d4b41ff27a20b31aa79649b75c125c1768e95b76bcbc9ace64c25408971f98"},
+      {"path":"p/48/1-6cyli.dat","sha256":"e6acc0794a9b5e6bd2a0e59fa408903077d97179e8bb5dbd7f57c2dc30042e9c"},
+      {"path":"parts/s/11170s01.dat","sha256":"69379e8bf066cd80266391dad18dab3e099e040457086a2f48a43bc2eda67068"},
+      {"path":"p/stug7-1x2.dat","sha256":"7c6e66e0625b1ea764d4e04f20f9113d23b9fcae3c17d586482b7180a8cefe23"},
+      {"path":"p/stud7.dat","sha256":"250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"},
+      {"path":"p/4-4ring3.dat","sha256":"1f2835ac308154edc2d6f479d8e742a55be981f6167b20bfa100c195bc0731dd"},
+      {"path":"p/4-4cylo.dat","sha256":"d6ca97ee2e75918b3309a5c88aafcd2455b3a316f7cef8963517c19f1d86b38f"},
+      {"path":"p/4-4edge.dat","sha256":"54a52196e421fd1717d291ff52ea57553b1fb238907c1678cc1f1a84c698b1da"},
+      {"path":"p/4-4cyli.dat","sha256":"4a742c2765b6ebf98245baaf8a160a4ff587fc93d36c8ee2b9074712a2f968c4"},
+      {"path":"p/recte3.dat","sha256":"e7f5ccbb040191aaa4cd469a25b086299cba4a3eaa8d3b0fbf71240e3de0359a"},
+      {"path":"p/box2-5.dat","sha256":"8f297b754f87da1dbe19eec8704a5ce03a23b794ccd7cd015508e3758a206174"},
+      {"path":"p/48/1-24chrd.dat","sha256":"9c1442d69aa0acfe4de87e4b9cdce8b164c88289640c9aa980afafb7b4aabd74"},
+      {"path":"p/48/1-6edge.dat","sha256":"91d8e78d97ae0ae1e0a21d7b1c7d2e50ee931d9eee798b3f9d0cff5034369ab9"},
+      {"path":"p/recte4.dat","sha256":"183b28b7586ffce3049e9248301668b4e16a84671b0f423efd792fb84a969dfe"},
+      {"path":"p/1-8cylo.dat","sha256":"870bbbf6052e075598de7dce7efe7a139ea5189820e7a296442fe2b3318c18bf"},
+      {"path":"p/1-8edge.dat","sha256":"50436a0bce461198c342dccbccb658a1bffae13e44b7c48689b158c946c2c2ab"},
+      {"path":"p/1-8cyli.dat","sha256":"46def63dc8293ad9a2dd1d1a5cb720b9ba883850e65d3280d2093c664a6140c4"},
+      {"path":"p/rect2p.dat","sha256":"faac2b36241a9de0c0108471e59c45734df6c79813332d9cacf97f6391886acc"},
+      {"path":"p/rect.dat","sha256":"ffeb2dd3d9b83c38841f18f1f74800fbba9e90c5fb6badfff2a795f08a96cb71"},
+      {"path":"p/1-8chrd.dat","sha256":"7694157b725563188a6efd69b3f558b00533b375b8a4e82f469497a03e471e74"},
+      {"path":"p/stud8a.dat","sha256":"291cbfdb54441d6457a3e17155a8741cc8424a01f8e9b99a7c9a015085aacfb9"},
+      {"path":"p/4-4ring7.dat","sha256":"67b27c082eec7286888ac427f11db06c5eca6c9bcec76c7e2b2014841afa83f3"},
+      {"path":"p/2-4cyli.dat","sha256":"d486780f0f84893899d9eadcd13150f13a42e15e77a3cda38cdf24ded98862c6"},
+      {"path":"p/1-4cyls.dat","sha256":"aaee6ffe6e4a191d6cad4496677132eb0349303d6e48c13c7a2240dcea1db621"},
+      {"path":"p/2-4edge.dat","sha256":"665400f76566b161c28303cdadce40d17d979a8ff9a8a133675af2d17fbe6763"},
+      {"path":"p/3-8edge.dat","sha256":"a590f230678d592d514a9c5e307c6a30945e50e4c529fc06accf37530d0e0ed5"},
+      {"path":"p/box4-1.dat","sha256":"2ed58df5da841827dfc5f9ac11c0bd7ffd8a455e46f166638e635f61a014b44d"},
+      {"path":"p/box4-4a.dat","sha256":"58c69e00462c0a74c1bd6d75d757d826ae13e98bd3928b0e685209003bfbee54"},
+      {"path":"p/box3u5p.dat","sha256":"0f52d5c372a303f508113ace2c7cba6d52b46171052e76a88266679a74f17ea5"},
+    ],
+    evidence:[
+      '11170.dat body x=-40..40,y=0..72,z=-60..20. Rx(PI)+[0,72,-20] makes bottom-centred assembly (x,72-y,-z-20); curved front is local +Z, flat high rear is -Z.',
+      '11170s01 stug7-1x2 at y=0, Y scale 2.75 gives two top studs x=+/-20,z=-20 after transform, contact y=72, exposed height11. There are no studs on the curved front half.',
+      'Underside rectangular rim x=+/-40,z=-60..20 (inner x=+/-36,z=-56..16), central stud8a at (0,19,-20), Y scale -12.25 ending y=68, and ribs at x=+/-20 and side z=0,-40 establish four standard bottom mating cells. Assembly x/z=+/-20; socket cells are not tube counts.',
+      'Official 48/1-6cyli front: assembly z=80*cos(theta)-40, y=2.72+80*sin(theta), theta=0..60 degrees. Facet steps use the maximum height per interval and outward 0.003 LDU rounding (side/chord vertices differ by up to 0.0021 LDU from cylinder-rounded samples). Final vertical nose reaches y=2.72 at z=40.',
+    ],
+    unknown:['Conservative facet-step envelope may reject close surface clearances; cavities follow nominal DUPLO mating exemptions, not arbitrary insertions.','No physical stability or clutch-force certification.'],
+  },
+}
+if(geometryIssues(curved11170.geometry).length)throw new Error('Invalid 11170 profile')
+
+// 98223 MOVED rotation and its subpart rotation cancel: entry long axis is X.
+const crown98223 = [[40,48], ...[
+  [.2588,.9659],[.3827,.9239],[.5,.866],[.6088,.7934],[.7071,.7071],
+  [.7934,.6088],[.866,.5],[.9239,.3827],[.9659,.2588],[.9914,.1305],[1,0],
+].map(([cos,sin])=>[32+48*cos,48.8*sin])]
+const curved98223: PartDefinition = {
+  id:'98223',label:'2 × 4 · 双端弧形顶（顶部中央 2×2）',length:4,depth:2,
+  geometry:{
+    family:'explicit-duplo',status:'reviewed',bodySizeLdu:{x:160,y:48,z:80},
+    outerBoundsLdu:{min:{x:-80,y:0,z:-40},max:{x:80,y:59,z:40}},
+    collision:{kind:'conservative-boxes',boxes:[
+      {min:{x:-40,y:0,z:-40},max:{x:40,y:48,z:40}},
+      ...crown98223.slice(0,-1).flatMap(([x,h],i)=>{
+        const end=Math.min(80,crown98223[i+1][0]+0.001),start=Math.max(40,x-0.001),height=Math.min(48,h+0.001)
+        return [{min:{x:start,y:0,z:-40},max:{x:end,y:height,z:40}},
+          {min:{x:-end,y:0,z:-40},max:{x:-start,y:height,z:40}}]
+      }),
+    ]},
+    top:[-20,20].flatMap(x=>[-20,20].map(z=>({x,y:48,z,type:'duplo-stud' as const,direction:'up' as const,radiusLdu:12,depthLdu:11}))),
+    bottom:[-60,-20,20,60].flatMap(x=>[-20,20].map(z=>({x,y:0,z,type:'duplo-stud' as const,direction:'down' as const,radiusLdu:12,depthLdu:11}))),
+    rotations:[0,90,180,270],placement:'upright',ldraw:{rotationX:Math.PI,offsetLdu:{x:0,y:48,z:0}},
+    sourceFiles:[
+      {"path":"parts/98223.dat","sha256":"fe875349699b0c0078284fecf0b919dd7aa75757105949a7fdf3db8228ea1d32"},
+      {"path":"parts/98223b.dat","sha256":"cf2f8aae45be5e41354ede552b04a4f92dd28e327402b17146cf4469f3ca048b"},
+      {"path":"parts/s/98223s01.dat","sha256":"ae002ac0d16b7e01afb96ba5b8d6511cfc318baf32d2dcbd3ce893680df348ef"},
+      {"path":"p/stug7-2x2.dat","sha256":"409fe27186afedd30d6b65e83063fba99380218d4067a4b0359e4250911726ca"},
+      {"path":"p/stud7.dat","sha256":"250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"},
+      {"path":"p/4-4ring3.dat","sha256":"1f2835ac308154edc2d6f479d8e742a55be981f6167b20bfa100c195bc0731dd"},
+      {"path":"p/4-4cylo.dat","sha256":"d6ca97ee2e75918b3309a5c88aafcd2455b3a316f7cef8963517c19f1d86b38f"},
+      {"path":"p/4-4edge.dat","sha256":"54a52196e421fd1717d291ff52ea57553b1fb238907c1678cc1f1a84c698b1da"},
+      {"path":"p/4-4cyli.dat","sha256":"4a742c2765b6ebf98245baaf8a160a4ff587fc93d36c8ee2b9074712a2f968c4"},
+      {"path":"p/stud8.dat","sha256":"1a3202bf2d8dd8f58f59d09e220cb62f3411db762f88333a82503ab395f9d115"},
+      {"path":"p/4-4ring7.dat","sha256":"67b27c082eec7286888ac427f11db06c5eca6c9bcec76c7e2b2014841afa83f3"},
+      {"path":"p/stud8a.dat","sha256":"291cbfdb54441d6457a3e17155a8741cc8424a01f8e9b99a7c9a015085aacfb9"},
+      {"path":"p/2-4cyli.dat","sha256":"d486780f0f84893899d9eadcd13150f13a42e15e77a3cda38cdf24ded98862c6"},
+      {"path":"p/2-4edge.dat","sha256":"665400f76566b161c28303cdadce40d17d979a8ff9a8a133675af2d17fbe6763"},
+      {"path":"p/rect.dat","sha256":"ffeb2dd3d9b83c38841f18f1f74800fbba9e90c5fb6badfff2a795f08a96cb71"},
+      {"path":"p/48/5-24edge.dat","sha256":"98f6635f6593350b1a5987341291fc1cf17674c28ced8a421a69d1ec17b39575"},
+      {"path":"p/1-4chrd.dat","sha256":"ccba3a97b5cc358754e476b78b4ce61cce5f404cd15e37471b73df3e81784aec"},
+      {"path":"p/1-4cyli.dat","sha256":"5a7168952a5a3570327873b9a5802fa7b3be40967ab78c03b6a2bfd4419a1f10"},
+      {"path":"p/rect2p.dat","sha256":"faac2b36241a9de0c0108471e59c45734df6c79813332d9cacf97f6391886acc"},
+      {"path":"p/1-4edge.dat","sha256":"9ce2de7e67bbac575d52cfdc771b9d00856efc9b88002d97db8e665e50f4d467"},
+      {"path":"p/box4-1.dat","sha256":"2ed58df5da841827dfc5f9ac11c0bd7ffd8a455e46f166638e635f61a014b44d"},
+      {"path":"p/rect3.dat","sha256":"07ac46908b6668d993b6de0fb001a34cd996542106b80ebc7de63317d8dde865"},
+      {"path":"p/48/5-24chrd.dat","sha256":"1d95e3c2613cb23c7ee2731d8157ba2ac850641fe8ac890eb98f1d9da4a6f936"},
+      {"path":"p/48/5-24cyli.dat","sha256":"32b15a6570d6f5534a620e667a26b86298596ed9d064a0a9b1886d413c345658"},
+    ],
+    evidence:[
+      '98223.dat MOVED maps (x,y,z)=(z_b,y_b,-x_b); 98223b subpart rotation cancels this. Entry body +/-80 X, +/-40 Z, y=0..48. Viewer Rx(PI)+[0,48,0] preserves X long axis.',
+      '98223s01 stug7-2x2 at y=0 with Y scale2.75 yields four central top studs x/z=+/-20, contact y=48. Curved ends have no top studs.',
+      'Full underside rim x=+/-80,z=+/-40 at y=48, central stud8 ending y=44, stud8a at x=+/-40 ending y=44, and perimeter ribs at x=+/-20,+/-60 plus end x=+/-72,z=+/-20 establish eight standard bottom mating cells, x=-60,-20,20,60 and z=+/-20.',
+      'Both official 48/5-24cyli curves have |x|=32+48*cos(theta), assembly y=48.8*sin(theta), theta=0..75 degrees, plus flat join at (40,48). Conservative steps use facet maxima and 0.001 LDU outward rounding.',
+    ],
+    unknown:['Conservative facet-step envelope may reject very close curved-surface clearance.','Nominal socket cells do not certify physical stability or clutch force.'],
+  },
+}
+if(geometryIssues(curved98223.geometry).length)throw new Error('Invalid 98223 profile')
+
 // Reviewed data profiles, not per-part assembly algorithms. Unknown parts stay excluded.
 export const PARTS: readonly PartDefinition[] = [
-  curved2302, curved98224,
+  curved2302, curved98224, curved11170, curved98223,
   { id: '3437', label: '2 × 2', length: 2, depth: 2, geometry: rectangularGeometry(2, 2, 48,
     ['parts/3437.dat: body +/-40, y=0..48', 'parts/s/3437s01.dat: stug7-2x2, underside tube/ribs; existing standard DUPLO interface contract']) },
   { id: '3011', label: '2 × 4', length: 4, depth: 2, geometry: rectangularGeometry(4, 2, 48,

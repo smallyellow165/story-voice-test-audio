@@ -54,7 +54,7 @@ test('unknown or invalid capability data cannot enable assembly', () => {
   p.geometry.status = 'reviewed'; p.geometry.top[0].y = 999
   assert.ok(geometryIssues(p.geometry).length)
   assert.equal(createAssemblyRules([p]).validateAssembly([brick('a', 'unknown')]).code, 'PART')
-  assert.equal(geometrySupport('98223').supported, false)
+  assert.equal(geometrySupport('98223b').supported, false)
 })
 test('existing profiles preserve body transforms and the original staircase', () => {
   assert.equal(validateAssembly(exampleBricks()).valid, true)
@@ -90,6 +90,6 @@ test('87084 has six interfaces and uses half-stud alignment with even-length bri
   const inventory = [{ part: '3437', color: '4', quantity: 1 }, { part: '87084', color: '4', quantity: 1 }]
   assert.equal(validateBrickDesign(design, inventory, { ...rules, PARTS, COLORS, validPosition }).valid, true)
   assert.equal(validateBrickDesign(design, inventory.slice(0, 1), { ...rules, PARTS, COLORS, validPosition }).valid, false)
-  assert.equal(geometrySupport('98223').supported, false)
+  assert.equal(geometrySupport('98223').supported, true)
   assert.equal(geometrySupport('98223b').supported, false)
 })

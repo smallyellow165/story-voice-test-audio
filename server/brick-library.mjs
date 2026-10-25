@@ -30,15 +30,17 @@ export async function resolveLibraryFile(root, relative) {
 
 // Follow type-1 references without changing candidate identity or resolving aliases
 // to different Part IDs. Results are scoped to one Review, never cached globally.
-export async function inspectBrickModel(part, library = brickLibraryRoot(), { extractGeometry = false } = {}) {
+export async function inspectBrickModel(part, library = brickLibraryRoot(), { extractGeometry = false, includeFaces = false } = {}) {
   const files = new Set(), active = new Set(), entryReferences = []
   const connectionMetadataFiles = [], sourceFiles = [], primitives = [], snapping = []
   const sources = new Map(), resolved = new Map(), bounds = new Box3()
+  const surfaceFaces = [] // Optional offline Profile audit; not collision/runtime geometry.
   let instances = 0
   const extraction = () => extractGeometry ? {
     coordinateSystem: 'Original LDraw entry coordinates, LDU, +Y down; all type-1 transforms composed',
     meshBounds: bounds.isEmpty() ? null : { min: bounds.min.toArray(), max: bounds.max.toArray() },
     primitives, snapping, instances,
+    ...(includeFaces ? { surfaceFaces } : {}),
     status: 'needs-review',
     unknown: ['Body envelope is not the full mesh bounds', 'Primitive observations are not approved mating interfaces',
       'Bottom sockets, allowed placement, collision decomposition and physical stability need review'],
@@ -84,8 +86,15 @@ export async function inspectBrickModel(part, library = brickLibraryRoot(), { ex
         } else if (tokens[0] === '3' || tokens[0] === '4') {
           if (tokens.length !== (tokens[0] === '3' ? 11 : 14) || !tokens.slice(2).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的几何记录：${relative}`)
           geometry = true
-          if (extractGeometry) for (let i = 2; i < tokens.length; i += 3)
-            bounds.expandByPoint(new Vector3(...tokens.slice(i, i + 3).map(Number)).applyMatrix4(transform))
+          if (extractGeometry) {
+            const face = []
+            for (let i = 2; i < tokens.length; i += 3) {
+              const vertex = new Vector3(...tokens.slice(i, i + 3).map(Number)).applyMatrix4(transform)
+              bounds.expandByPoint(vertex)
+              if (includeFaces) face.push(vertex.toArray())
+            }
+            if (includeFaces) surfaceFaces.push(face)
+          }
         }
       }
       active.delete(file)

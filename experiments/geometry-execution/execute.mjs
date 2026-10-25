@@ -78,6 +78,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     return {...result,status:'budget_exceeded',diagnostics:['Cartesian domain exceeds budget; no no-solution claim']}
   }
   const pById=new Map(plan.parts.map(p=>[p.id,p]))
+  let firstLayout
   const evaluate=positions=>{
     const shiftY=-Math.min(...positions.map(b=>b.y))
     const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,
@@ -91,6 +92,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     const attempt={index:result.attempts.length+1,positions,groundTranslationLdu:shiftY,ranges,accepted:false}
     if(ranges.some(r=>!r.satisfied)){attempt.failure='RELATIVE_INTERVAL';result.attempts.push(attempt);return}
     const geometry=rules.validateFinalAssembly(bricks)
+    if(!firstLayout)firstLayout={bricks,geometry,note:'原始计划首组允许姿态；仅供失败诊断，不是合法候选，也未修正布局。'}
     attempt.geometry=geometry
     // Shared validator checks all body/stud collision envelopes before support/connectivity.
     attempt.collision={status:geometry.code==='COLLISION'?'collision':geometry.valid||['UNSUPPORTED','DISCONNECTED'].includes(geometry.code)?'clear':'not_established',reason:geometry.reason,brickIds:geometry.brickIds}
@@ -163,7 +165,10 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     failures.get(a.failure).count++
   }
   result.rejectionSummary=[...failures.values()]
-  if(!result.candidates.length)result.diagnostics.push(...result.rejectionSummary)
+  if(!result.candidates.length){
+    result.diagnostics.push(...result.rejectionSummary)
+    if(firstLayout)result.diagnosticAssembly=firstLayout
+  }
   result.completeSearch=true
   result.status=result.candidates.length ? result.candidates.some(c=>c.unverifiedConstraints.length)?'candidates_with_unverified_constraints':'candidates_found' : 'no_solution'
   return result

@@ -26,7 +26,7 @@ test('87084 actual stud instances agree with the shared nominal profile and View
   for (const bound of g.sourceFiles) assert.ok(report.sourceFiles.some(f => f.path === bound.path && f.sha256 === bound.sha256), bound.path)
   assert.deepEqual(report.extraction.meshBounds, { min: [-60, -11, -40], max: [60, 48, 40] })
 })
-test('98223 original-entry redirect preserves four modeled studs without enabling assembly', async t => {
+test('98223 original-entry redirect preserves four modeled studs with a reviewed original-entry profile', async t => {
   if (!await available(t, '98223')) return
   const report = await inspectBrickModel('98223', library, { extractGeometry: true })
   assert.equal(report.available, true, report.errors.join('; '))
@@ -34,7 +34,7 @@ test('98223 original-entry redirect preserves four modeled studs without enablin
   assert.deepEqual(positions(report.extraction.primitives.filter(p => p.file === 'p/stud7.dat').map(p => p.origin)),
     positions([[-20, 0, -20], [-20, 0, 20], [20, 0, -20], [20, 0, 20]]))
   assert.equal(report.extraction.status, 'needs-review')
-  assert.equal(geometrySupport('98223').supported, false)
+  assert.equal(geometrySupport('98223').supported, true)
   assert.equal(geometrySupport('98223b').supported, false)
 })
 
