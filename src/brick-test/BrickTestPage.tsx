@@ -31,6 +31,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   const [generating, setGenerating] = useState(false)
   const [generatedReport, setGeneratedReport] = useState<DesignReport | null>(null)
   const [aiMode, setAiMode] = useState(false)
+  const [spatialScene,setSpatialScene] = useState('')
   const [manualRevision, setManualRevision] = useState(0)
   const [error, setError] = useState('')
   const [previewError, setPreviewError] = useState('')
@@ -142,11 +143,12 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     return () => { active = false; engine.clearPreview() }
   }, [proposed, proposedValidation.valid, ready, busy, previewRetry, generating, aiMode])
 
-  async function commit(next: Brick[], generated = false, report: DesignReport | null = null) {
+  async function commit(next: Brick[], generated = false, report: DesignReport | null = null, spatial = false) {
     if (!viewer.current || locked.current || !ready || (generating && !generated)) return false
     const validation = validateAssembly(next)
     if (!generated) setAttempt(validation)
-    if (generated) {
+    if (spatial && !validation.valid) { setError(validation.reason); return false }
+    if (generated && !spatial) {
       const display = assessDesignDisplay({ bricks: next }, { PARTS, COLORS, validPosition })
       if (next.length && !display.renderable) { setError(display.issues.join("；")); return false }
     } else if (!validation.valid) return false
@@ -213,17 +215,18 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       const url = new URL(location.href); url.searchParams.set('workflow', e.target.value); window.history.replaceState(null, '', url)
     }}><option value="generator">Generator V3 · 自由 / 参考图生成</option><option value="spatial">Spatial Assembly · 已审核照片复原</option></select></label>
     {workflow === 'spatial'
-      ? <SpatialAssemblyPanel manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} onApply={async next => {
+      ? <SpatialAssemblyPanel onSceneChange={setSpatialScene} manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} onApply={async next => {
         if (!validateAssembly(next).valid) return false
-        const ok = await commit(next, true, null)
+        const ok = await commit(next, true, null, true)
         if (ok) viewer.current?.fit({ x: -0.85, y: 0.8, z: 2.2 })
         return ok
       }} />
       : <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />}
       </>}
       center={<>
-    {aiMode && <div className="brick-ai-mode">{workflow === 'spatial' ? '正在查看 Spatial Assembly 最终组合；未检查 Build Order。' : '正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。'}<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
+    {aiMode && <div className="brick-ai-mode">{workflow === 'spatial' ? (spatialScene ? '正在查看 Spatial Assembly 候选 '+spatialScene+'；未检查 Build Order。' : '当前为旧场景，非所选计划的 Geometry 结果。') : '正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。'}<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
       <section className="brick-stage-panel" aria-label="积木场景">
+        {workflow==='spatial'&&<div data-testid="spatial-scene-provenance" className={"spatial-state "+(spatialScene?'success':'review')}>{spatialScene?'Spatial Assembly 已加载：'+spatialScene:'当前显示：手动编辑场景或旧场景，不是当前 Spatial Assembly 结果。'}</div>}
         <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
         {generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
           <strong>{generatedReport.valid ? "Valid" : "Invalid · " + generatedReport.issues.length + " 项错误"}</strong>

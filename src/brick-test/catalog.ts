@@ -2,8 +2,71 @@ import { rectangularGeometry, reviewedRectangularPart, geometryIssues } from './
 import type { PartDefinition } from './part-geometry.ts'
 export { STUD_LDU, BODY_LDU, MM_PER_LDU, ROTATIONS, validPosition } from './part-geometry.ts'
 
+// Reviewed 2302 entry includes the official MOVED transform to 2302b.
+// Coordinates below are in body-bottom-centred space, not 2302b's origin.
+const curve2302 = [[20,48], ...[
+  [.2588,.9659],[.3827,.9239],[.5,.866],[.6088,.7934],[.7071,.7071],
+  [.7934,.6088],[.866,.5],[.9239,.3827],[.9659,.2588],[.9914,.1305],[1,0],
+].map(([cos,sin]) => [12+48*cos,48.8*sin])]
+const curved2302: PartDefinition = {
+  id:'2302', label:'2 × 3 · 弧形顶', length:3, depth:2,
+  geometry:{
+    family:'explicit-duplo',status:'reviewed',bodySizeLdu:{x:120,y:48,z:80},
+    outerBoundsLdu:{min:{x:-60,y:0,z:-40},max:{x:60,y:59,z:40}},
+    collision:{kind:'conservative-boxes',boxes:[
+      {min:{x:-60,y:0,z:-40},max:{x:20,y:48,z:40}},
+      ...curve2302.slice(0,-1).map(([x,y],i)=>({min:{x,y:0,z:-40},max:{x:curve2302[i+1][0],y:Math.min(48,y+0.001),z:40}})),
+    ]},
+    top:[-40,0].flatMap(x=>[-20,20].map(z=>({x,y:48,z,type:'duplo-stud' as const,direction:'up' as const,radiusLdu:12,depthLdu:11}))),
+    bottom:[-40,0,40].flatMap(x=>[-20,20].map(z=>({x,y:0,z,type:'duplo-stud' as const,direction:'down' as const,radiusLdu:12,depthLdu:11}))),
+    rotations:[0,90,180,270],placement:'upright',ldraw:{rotationX:Math.PI,offsetLdu:{x:-20,y:48,z:0}},
+    sourceFiles: [
+      {
+            "path": "parts/2302.dat",
+            "sha256": "55bb72e90e277c9a266429703722e100f1fe3a52c0dfb68e46b12140dd6d32fa"
+      },
+      {
+            "path": "parts/2302b.dat",
+            "sha256": "91d7d0849a274a941ced1dae11e484baa06c2228ba369c292fb9999f28959ffa"
+      },
+      {
+            "path": "parts/s/2302s01.dat",
+            "sha256": "49adedd781138cf39c7d78e5eb30c6d470f48251dc294a0449314970e39e6c64"
+      },
+      {
+            "path": "p/48/5-24cyli.dat",
+            "sha256": "32b15a6570d6f5534a620e667a26b86298596ed9d064a0a9b1886d413c345658"
+      },
+      {
+            "path": "p/stug7-2x2.dat",
+            "sha256": "409fe27186afedd30d6b65e83063fba99380218d4067a4b0359e4250911726ca"
+      },
+      {
+            "path": "p/stud7.dat",
+            "sha256": "250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"
+      },
+      {
+            "path": "p/stud8.dat",
+            "sha256": "1a3202bf2d8dd8f58f59d09e220cb62f3411db762f88333a82503ab395f9d115"
+      },
+      {
+            "path": "p/stud8a.dat",
+            "sha256": "291cbfdb54441d6457a3e17155a8741cc8424a01f8e9b99a7c9a015085aacfb9"
+      }
+],
+    evidence:[
+      '2302.dat maps to 2302b using (x,y,z)=(-z_b,y_b,x_b). Entry body x=-40..80; shift x=-20 after Rx(PI) to centre its bottom footprint.',
+      '2302b outer curve: x=12+48*cos(theta), y=48.8*sin(theta), theta=0..75 degrees; exact rounded vertices of 48/5-24cyli plus flat join (20,48). Each interval uses its maximum height, conservatively enclosing the actual facets, with 0.001 LDU allowance for rounded side-face vertices.',
+      '2302s01: stug7-2x2 gives four top studs at x=-40,0/z=+/-20. Two underside tubes stud8/stud8a and six perimeter rib positions define six nominal sockets x=-40,0,40/z=+/-20; no studs on the curved nose.',
+    ],
+    unknown:['Conservative stair envelopes may reject near-curve clearance; no mesh-solid collision or physical stability certification.'],
+  },
+}
+if (geometryIssues(curved2302.geometry).length) throw new Error('Invalid 2302 profile')
+
 // Reviewed data profiles, not per-part assembly algorithms. Unknown parts stay excluded.
 export const PARTS: readonly PartDefinition[] = [
+  curved2302,
   { id: '3437', label: '2 × 2', length: 2, depth: 2, geometry: rectangularGeometry(2, 2, 48,
     ['parts/3437.dat: body +/-40, y=0..48', 'parts/s/3437s01.dat: stug7-2x2, underside tube/ribs; existing standard DUPLO interface contract']) },
   { id: '3011', label: '2 × 4', length: 4, depth: 2, geometry: rectangularGeometry(4, 2, 48,

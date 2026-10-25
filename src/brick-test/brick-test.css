@@ -103,3 +103,11 @@ body { margin: 0; }
 .brick-spatial h3 { margin-top: 20px; }
 .brick-spatial select { max-width: 100%; }
 .brick-spatial li { overflow-wrap: anywhere; }
+
+.spatial-state { padding: .7rem; margin: .6rem 0; border: 1px solid; border-radius: .4rem; overflow-wrap: anywhere; }
+.spatial-state p { margin: .35rem 0 0; }
+.spatial-state.idle { color: #475569; background: #f1f5f9; border-color: #cbd5e1; }
+.spatial-state.running { color: #1e40af; background: #eff6ff; border-color: #60a5fa; }
+.spatial-state.success { color: #166534; background: #f0fdf4; border-color: #86efac; }
+.spatial-state.failed { color: #991b1b; background: #fef2f2; border: 2px solid #dc2626; }
+.spatial-state.review { color: #92400e; background: #fffbeb; border-color: #fbbf24; }

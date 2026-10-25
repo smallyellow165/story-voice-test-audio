@@ -127,8 +127,9 @@ test('generated candidates equal exhaustive legal upward placements for every su
     const actual = connectionCandidates(scene, draft).map((candidate) => candidate.key).sort()
     const expected = []
     const maxLayer = Math.max(...scene.map((item) => item.layer)) + 1
+    // Include half-stud centres: odd-width and asymmetric profiles mate on this grid.
     // All scene extents plus the maximum candidate half-width fit this domain.
-    for (let layer = 1; layer <= maxLayer; layer++) for (let x = -8; x <= 8; x++) for (let z = -8; z <= 8; z++) {
+    for (let layer = 1; layer <= maxLayer; layer++) for (let x = -8; x <= 8; x += .5) for (let z = -8; z <= 8; z += .5) {
       if (validatePlacement(scene, { ...draft, x, z, layer }).valid) expected.push(`${x},${z},${layer}`)
     }
     assert.deepEqual(actual, expected.sort(), `${part.id} / ${rotation}`)

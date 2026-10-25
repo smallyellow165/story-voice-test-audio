@@ -20,7 +20,8 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
   if (observations.size!==input.observations.length) return {...result,diagnostics:['Duplicate input identities']}
   for(const o of observations.values()) {
     const capability=rules.geometrySupport(o.part)
-    if (!capability.supported || !rules.COLORS.some(c=>c.code===o.color)) return {...result,diagnostics:['Unsupported part/color: '+o.id]}
+    if (!capability.supported) return {...result,diagnostics:['Unsupported geometry profile: '+o.id]}
+    if (!/^(0|[1-9]\d*)$/.test(o.color)) return {...result,diagnostics:['Invalid LDraw color code: '+o.id]}
     if (JSON.stringify(capability.geometry)!==JSON.stringify(o.geometry)) return {...result,diagnostics:['Saved/current geometry mismatch: '+o.id+'; no silent migration']}
   }
   const actual=new Map(), stock=new Map()
@@ -48,7 +49,34 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
   const count=result.domains.reduce((n,d)=>n*d.count,1)
   result.combinationCount=count
   if (!count)return {...result,status:'no_solution',completeSearch:true,diagnostics:['No legal grid point in one or more original intervals']}
-  if(count>maxCombinations)return {...result,status:'budget_exceeded',diagnostics:['Cartesian domain exceeds budget; no no-solution claim']}
+  if(count>maxCombinations){
+    // A failed necessary mating condition proves unsatisfiability without
+    // materializing every full assembly. A possible pair is NOT a valid assembly.
+    const domainGround=-Math.min(...result.domains.flatMap(d=>d.axes.y))
+    const poses=d=>d.axes.x.flatMap(x=>d.axes.y.flatMap(y=>d.axes.z.flatMap(z=>d.yaw.map(rotation=>({id:d.id,part:observations.get(d.id).part,color:observations.get(d.id).color,x:x/rules.STUD_LDU,layer:(y+domainGround)/rules.BODY_LDU,z:z/rules.STUD_LDU,rotation})))))
+    result.pairChecks=[]
+    for(const p of plan.parts)for(const c of p.connections.filter(c=>c.intent==='mates')){
+      const a=result.domains.find(d=>d.id===p.id),b=result.domains.find(d=>d.id===c.other)
+      if(a.count*b.count>maxCombinations)continue
+      const certificate={id:p.id,...c,pairCount:a.count*b.count,possible:false,ownPoints:[],otherPoints:[]}
+      if(['top','bottom'].includes(c.ownSurface)&&['top','bottom'].includes(c.otherSurface)&&c.ownSurface!==c.otherSurface){
+        const points=(d,s,index)=>poses(d).flatMap(brick=>rules.connectors(brick,s).filter((_,i)=>index===null||i===index))
+        const own=points(a,c.ownSurface,c.ownConnector),other=points(b,c.otherSurface,c.otherConnector)
+        certificate.ownPoints=own;certificate.otherPoints=other
+        certificate.possible=own.some(u=>other.some(v=>same(u.x,v.x)&&same(u.y,v.y)&&same(u.z,v.z)))
+      }
+      result.pairChecks.push(certificate)
+    }
+    const conflicts=result.pairChecks.filter(c=>!c.possible)
+    if(conflicts.length){
+      const positions=result.domains.map(d=>({id:d.id,x:d.axes.x[0],y:d.axes.y[0],z:d.axes.z[0],rotation:d.yaw[0]}))
+      const shift=-Math.min(...positions.map(b=>b.y))
+      const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,x:b.x/rules.STUD_LDU,z:b.z/rules.STUD_LDU,layer:(b.y+shift)/rules.BODY_LDU,rotation:b.rotation}))
+      result.diagnosticAssembly={bricks,geometry:rules.validateAssembly(bricks),note:'First allowed poses for failure inspection only; not a candidate or a repaired assembly'}
+      return {...result,status:'no_solution',completeSearch:true,proof:'Necessary hard mating condition impossible across the full endpoint domains',diagnostics:conflicts.map(c=>({code:'IMPOSSIBLE_MATING',id:c.id,other:c.other,reason:'原始位置区间及朝向内，指定连接器无任何重合点',pairCount:c.pairCount}))}
+    }
+    return {...result,status:'budget_exceeded',diagnostics:['Cartesian domain exceeds budget; no no-solution claim']}
+  }
   const pById=new Map(plan.parts.map(p=>[p.id,p]))
   const evaluate=positions=>{
     const shiftY=-Math.min(...positions.map(b=>b.y))

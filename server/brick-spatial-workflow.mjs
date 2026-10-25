@@ -1,3 +1,4 @@
+import { prepareGeometryInput } from './brick-geometry-input.mjs'
 import { spatialMapping } from './brick-spatial-mapping.mjs'
 import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
@@ -47,7 +48,7 @@ function planView(r){
   plan:r.plan,rawOutput:r.rawOutput,image:r.image,requestInput:r.requestInput,conversion:r.conversion,error:r.error,usage:r.usageMetadata,tracePath:r.tracePath,rawRequestPath:r.rawRequestPath,rawResponsePath:r.rawResponsePath}
 }
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,completeSearch:r.completeSearch,
- diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
+ diagnosticAvailable:!!r.diagnosticAssembly,diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
  candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
 export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,resolveMapping=spatialMapping}={}){
  const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests')
@@ -74,6 +75,11 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   if(method==='GET'&&route.startsWith('geometry/')){
    const [,value,action,candidateId]=route.split('/'),r=await getGeometry(value)
    if(action==='report')return r
+   if(action==='viewer'){
+    const plan=await getPlan(r.planId)
+    return {status:r.status,completeSearch:r.completeSearch,diagnostics:r.diagnostics||[],groups:r.groups||[],image:plan.image,sourcePlan:r.sourcePlan,
+     diagnosticAssembly:r.diagnosticAssembly,candidates:geometryView(r).candidates.map(c=>({...c,file:'candidates/'+c.id}))}
+   }
    if(action==='candidates'){
     if(r.state!=='complete'||!['candidates_found','candidates_with_unverified_constraints'].includes(r.status))fail('此结果未完成或没有可用候选',422)
     const c=r.candidates.find(c=>c.id===candidateId);if(!c)fail('候选不存在',404)
@@ -102,7 +108,9 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
     const plan=await getPlan(body.planId);if(!planView(plan).usable)fail('Spatial Plan 未完成或无效，禁止执行',422)
     const geometryId=randomUUID(),file=path.join(geometries,geometryId+'.json'),base={version:'geometry-execution-v1',id:geometryId,planId:plan.id,createdAt:new Date().toISOString(),state:'running',sourcePlanHash:hash(plan.plan)}
     await write(file,base,true)
-    try{const result=execute(plan.plan,plan.requestInput,await loadRules());await write(file,{...base,...result,state:'complete',sourcePlan:plan.plan,input:plan.requestInput});return {geometryId,resultStatus:result.status}}
+    try{const rules=await loadRules(),prepared=await prepareGeometryInput(plan.requestInput,rules)
+     const result=prepared.issues.length?{status:'invalid_input',completeSearch:false,diagnostics:prepared.issues,candidates:[],groups:[]}:execute(plan.plan,prepared.input,rules)
+     await write(file,{...base,...result,state:'complete',sourcePlan:plan.plan,sourceInput:plan.requestInput,input:prepared.input,enrichments:prepared.enrichments});return {geometryId,resultStatus:result.status}}
     catch(e){await write(file,{...base,state:'failed',status:'execution_failed',error:String(e.message)});return {geometryId,resultStatus:'execution_failed'}}
    })
   }

@@ -1,3 +1,4 @@
+import {prepareGeometryInput} from '../../server/brick-geometry-input.mjs'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -19,15 +20,17 @@ async function main() {
   const plan=await json(args.plan),trace=await json(args.trace)
   if(JSON.stringify(plan)!==JSON.stringify(trace.plan))throw new Error('Plan does not match the supplied original trace; refusing to silently replace the source')
   const rules=await loadBrickRules()
-  const result=executePlan(plan,trace.requestInput,rules)
+  const prepared=await prepareGeometryInput(trace.requestInput,rules)
+  if(prepared.issues.length)throw new Error(prepared.issues.join('; '))
+  const result=executePlan(plan,prepared.input,rules)
   const directory=path.join(args.output,randomUUID());await mkdir(directory,{recursive:true})
   const save=(name,data)=>writeFile(path.join(directory,name),JSON.stringify(data,null,2),{flag:'wx'})
-  const report={...result,sources,sourceTraceId:trace.id,sourcePlan:plan,input:trace.requestInput,geometrySnapshot:geometrySnapshot(rules,trace.requestInput.inventory),image:trace.image,
+  const report={...result,sources,sourceTraceId:trace.id,sourcePlan:plan,sourceInput:trace.requestInput,input:prepared.input,enrichments:prepared.enrichments,geometrySnapshot:geometrySnapshot(rules,trace.requestInput.inventory),image:trace.image,
     limitations:['Single-view fidelity requires visual review.','Shared conservative body/stud envelopes, not mesh-solid or stability simulation.','No build order or intermediate support threshold tested.']}
   await save('report.json',report)
   for(const c of result.candidates)await save(c.id+'.json',c)
   // Small browser index; full source, every attempted candidate and failures stay in report.json.
-  await save('viewer.json',{status:result.status,completeSearch:result.completeSearch,diagnostics:result.diagnostics,groups:result.groups,image:trace.image,
+  await save('viewer.json',{status:result.status,completeSearch:result.completeSearch,diagnostics:result.diagnostics,groups:result.groups,diagnosticAssembly:result.diagnosticAssembly,image:trace.image,
     candidates:result.candidates.map(c=>({id:c.id,layoutId:c.layoutId,file:c.id+'.json',bricks:c.assembly.bricks})),sourcePlan:plan})
   const relative=path.relative(root,path.join(directory,'viewer.json')).split(path.sep).join('/')
   console.log(JSON.stringify({status:result.status,completeSearch:result.completeSearch,attempts:result.attempts.length,candidates:result.candidates.length,layouts:result.groups.length,
