@@ -5,7 +5,6 @@ const EPS=1e-7,axes=['x','y','z']
 const inside=(v,r)=>v>=r.min-EPS&&v<=r.max+EPS
 const same=(a,b)=>Math.abs(a-b)<EPS
 const angle=(a,b)=>Math.min((a-b+360)%360,(b-a+360)%360)
-const point=b=>({x:b.x*40,y:b.layer*48,z:b.z*40})
 
 // This adapter proposes poses. Only the existing strict executor grants validity.
 export function planAtPoses(original,poses){
@@ -19,12 +18,14 @@ export function planAtPoses(original,poses){
 
 export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,maxProposals=6}={}){
  if(![20,40].includes(radiusLdu)||!Number.isInteger(maxNodes)||maxNodes<1||maxNodes>50000||!Number.isInteger(maxProposals)||maxProposals<1||maxProposals>8)throw new Error('Invalid bounded refinement policy')
- const result={version:'geometry-refinement-v1',status:'invalid_input',policy:{radiusLdu:{x:radiusLdu,y:0,z:0},maxNodes,maxProposals,
+ const result={version:'geometry-refinement-v1',status:'invalid_input',policy:{rangeExpansionLdu:{x:radiusLdu,y:0,z:0},maxNodes,maxProposals,maxPairChecks:100000,
   anchor:'Original anchor stays fixed; upright and original yaw candidates only.',
   preserved:'Original height/depth intervals, all original nonzero horizontal ordering, explicit world relations, definite mating indices and rectangular side-touch contacts.',
+  representation:'Limited representatives per translation/interface-envelope layout; other yaw appearances are not certified equivalent.',
   ranking:'Strictly valid proposals first; then smallest total L1 translation, maximum per-part translation, rotation change. Retain different asymmetric orientations for review.',
   limitations:'Single-view occlusion/projection and photo-facing curved direction require human review. No vertical/depth expansion, automatic approval, collision relaxation or build order.'},
   diagnostics:[],proposals:[],stats:{nodes:0,leaves:0,collisionPruned:0,constraintPruned:0},completeSearch:false}
+ if(input.observations.length>16)return {...result,diagnostics:['V1 bounded refinement supports at most 16 observations']}
  const validation=validatePlan(plan,input)
  if(!validation.valid)return {...result,diagnostics:validation.issues}
  const original=executePlan(plan,input,rules)
@@ -52,7 +53,10 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
  }
  result.domains=[...domains].map(([id,d])=>({id,poses:d.map(p=>p.pose)}))
  result.originalPoses=base
- result.originalAssembly=base.every(p=>rules.validPosition(brick(p)))?{bricks:base.map(brick)}:null
+ const grounded=poses=>{const floor=Math.min(...poses.map(p=>p.y));return poses.map(p=>({...brick(p),layer:(p.y-floor)/rules.BODY_LDU}))}
+ result.originalAssembly=grounded(base).every(b=>rules.validPosition(b))?{bricks:grounded(base)}:null
+ const sizes=[...domains.values()].map(d=>d.length)
+ if(sizes.reduce((n,a,i)=>n+sizes.slice(i+1).reduce((s,b)=>s+2*a*b,0),0)>result.policy.maxPairChecks)return {...result,status:'budget_exceeded',diagnostics:['Pair domain exceeds the fixed refinement budget; no no-solution claim']}
  const allIntents=plan.parts.flatMap(p=>p.connections.map(c=>({id:p.id,...c})))
  const mating=(a,b,c)=>{
   if(!['top','bottom'].includes(c.ownSurface)||!['top','bottom'].includes(c.otherSurface)||c.ownSurface===c.otherSurface)return false
@@ -73,10 +77,15 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
   const key=a.pose.id+':'+a.index+'/'+b.pose.id+':'+b.index
   if(memo.has(key))return memo.get(key)
   let reason=null
-  const ba=baseById.get(a.pose.id),bb=baseById.get(b.pose.id)
-  // Preserve ordering for every interval pair whose X order is unambiguous.
-  const wa=conversion.candidates.find(c=>c.id===a.pose.id).worldOffsetLdu.x,wb=conversion.candidates.find(c=>c.id===b.pose.id).worldOffsetLdu.x
-  if(wa.max<wb.min-EPS&&a.pose.x>=b.pose.x-EPS||wb.max<wa.min-EPS&&b.pose.x>=a.pose.x-EPS)reason='HORIZONTAL_ORDER'
+  // Keep every unambiguous world-axis ordering and original relative Y/Z
+  // intervals. Expanded X intervals alone may require human confirmation.
+  for(const axis of axes){
+   const wa=conversion.candidates.find(c=>c.id===a.pose.id).worldOffsetLdu[axis],wb=conversion.candidates.find(c=>c.id===b.pose.id).worldOffsetLdu[axis]
+   if(wa.max<wb.min-EPS&&a.pose[axis]>=b.pose[axis]-EPS||wb.max<wa.min-EPS&&b.pose[axis]>=a.pose[axis]-EPS)reason='WORLD_AXIS_ORDER'
+  }
+  for(const [own,other] of [[a,b],[b,a]])if(parts.get(own.pose.id).pose.relativeTo===other.pose.id){
+   for(const axis of ['y','z'])if(!inside(own.pose[axis]-other.pose[axis],parts.get(own.pose.id).pose.offsetLdu[axis]))reason='ORIGINAL_HEIGHT_DEPTH_INTERVAL'
+  }
   for(const c of allIntents){
    const own=c.id===a.pose.id&&c.other===b.pose.id?a:c.id===b.pose.id&&c.other===a.pose.id?b:null
    if(!own)continue;const other=own===a?b:a
@@ -114,18 +123,20 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
   if(!geometry.valid)failures.set(geometry.code,(failures.get(geometry.code)||0)+1)
   const diffs=poses.map(p=>{const original=baseById.get(p.id),relativeTo=parts.get(p.id).pose.relativeTo,relative=refinedPlan.parts.find(b=>b.id===p.id).pose.offsetLdu
    return {id:p.id,original:{x:original.x,y:original.y,z:original.z,rotation:original.rotation},proposed:{x:p.x,y:p.y,z:p.z,rotation:p.rotation},deltaLdu:Object.fromEntries(axes.map(a=>[a,p[a]-original[a]])),rotationDeltaDegrees:angle(p.rotation,original.rotation),relativeTo,
-    originalIntervals:parts.get(p.id).pose.offsetLdu,proposedRelativeOffsetLdu:Object.fromEntries(axes.map(a=>[a,relative[a].min])),outsideOriginalIntervals:axes.filter(a=>!inside(relative[a].min,parts.get(p.id).pose.offsetLdu[a]))}
+    originalYawCandidates:parts.get(p.id).pose.yawCandidates,originalWorldIntervals:conversion.candidates.find(c=>c.id===p.id).worldOffsetLdu,originalIntervals:parts.get(p.id).pose.offsetLdu,proposedRelativeOffsetLdu:Object.fromEntries(axes.map(a=>[a,relative[a].min])),outsideOriginalIntervals:axes.filter(a=>!inside(relative[a].min,parts.get(p.id).pose.offsetLdu[a]))}
   })
   const camera=plan.relations.filter(r=>['occludes','overlaps_projection'].includes(r.kind))
   const contacts=allIntents.filter(c=>c.intent!=='mates').map(c=>({...c,satisfied:c.intent==='touches'&&c.ownSurface==='side'&&c.otherSurface==='side'?sideContact(selected.get(c.id),selected.get(c.other)):null}))
   const outside=diffs.filter(d=>d.outsideOriginalIntervals.length)
   const classification=outside.length||camera.length||contacts.some(c=>c.satisfied===null)?'requires_review':'within_evidence'
   const score={totalTranslationLdu:diffs.reduce((s,d)=>s+axes.reduce((n,a)=>n+Math.abs(d.deltaLdu[a]),0),0),maxTranslationLdu:Math.max(...diffs.map(d=>axes.reduce((n,a)=>n+Math.abs(d.deltaLdu[a]),0))),rotationDegrees:diffs.reduce((s,d)=>s+d.rotationDeltaDegrees,0)}
-  const proposal={poses,refinedPlan,assembly:{bricks:poses.map(brick)},geometry,strictExecution:execution,classification,approved:false,score,diffs,
+  const supportDiagnostics=poses.filter(p=>p.y>Math.min(...poses.map(p=>p.y))+EPS).map(p=>({id:p.id,hasBottomSupport:poses.some(other=>other.id!==p.id&&mating(selected.get(p.id),selected.get(other.id),{ownSurface:'bottom',otherSurface:'top',ownConnector:null,otherConnector:null}))}))
+  const proposal={supportDiagnostics,poses,refinedPlan,assembly:{bricks:grounded(poses)},geometry,strictExecution:execution,classification,approved:false,score,diffs,
    constraints:{mating:allIntents.filter(c=>c.intent==='mates').map(c=>({...c,aligned:mating(selected.get(c.id),selected.get(c.other),c),scope:'Necessary interface alignment; not whole-assembly validity'})),contacts,relations:attempt.relations,cameraReview:camera,preservedHorizontalOrder:true},
    reviewReasons:[...(outside.length?['Original relative intervals exceeded: '+outside.map(d=>d.id).join(', ')]:[]),...(camera.length?['Occlusion/projection cannot be certified without camera calibration']:[]),...(!geometry.valid?['Strict Geometry remains Invalid: '+geometry.reason]:[])]}
-  // Collapse only display-equivalent yaw choices of reviewed rectangular parts.
-  // Every evaluated proposal still obeys the original indexed mating intents.
+  // Keep a minimum-cost representative for each translation/interface-envelope
+  // layout, retaining asymmetric profiles separately. This is a display limit,
+  // NOT a claim that rectangular LDraw meshes have identical appearances.
   const layout=JSON.stringify(poses.map(p=>({...p,rotation:rules.geometrySupport(observations.get(p.id).part).geometry.family==='rectangular-duplo'?p.rotation%180===0?0:rules.geometrySupport(observations.get(p.id).part).geometry.bodySizeLdu.x===rules.geometrySupport(observations.get(p.id).part).geometry.bodySizeLdu.z?0:90:p.rotation})))
   if(!retained.has(layout)||compare(proposal,retained.get(layout))<0)retained.set(layout,proposal)
   if(retained.size>maxProposals*4){const best=[...retained].sort((a,b)=>compare(a[1],b[1])).slice(0,maxProposals*2);retained.clear();best.forEach(([k,v])=>retained.set(k,v))}

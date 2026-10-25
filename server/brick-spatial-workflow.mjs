@@ -1,3 +1,4 @@
+import {createRefinementStore} from './brick-refinement.mjs'
 import { prepareGeometryInput } from './brick-geometry-input.mjs'
 import { spatialMapping } from './brick-spatial-mapping.mjs'
 import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
@@ -47,13 +48,14 @@ function planView(r){
  return {id:r.id,analysisId:r.requestInput?.provenance?.analysisId,createdAt:r.createdAt,model:r.model,status:r.status,usable,validation,
   plan:r.plan,rawOutput:r.rawOutput,image:r.image,requestInput:r.requestInput,conversion:r.conversion,error:r.error,usage:r.usageMetadata,tracePath:r.tracePath,rawRequestPath:r.rawRequestPath,rawResponsePath:r.rawResponsePath}
 }
-export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,completeSearch:r.completeSearch,
+export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,revisionId:r.revisionId,completeSearch:r.completeSearch,
  diagnosticAvailable:!!r.diagnosticAssembly,diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
  candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
 export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,resolveMapping=spatialMapping}={}){
  const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests')
  const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
+ const refinement=createRefinementStore(directory,{getPlan,getGeometry,loadRules})
  async function operation(body,kind,work){
   const requestId=id(body.requestId),file=path.join(requests,requestId+'.json'),fingerprint=hash({kind,...body})
   const pending={id:requestId,kind,fingerprint,state:'running',createdAt:new Date().toISOString(),analysisId:body.analysisId??null,planId:body.planId??null}
@@ -62,6 +64,20 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   catch(e){const failed={...pending,state:'failed',error:e.statusCode?e.message:'执行失败；记录已保留，未自动重试。'};await write(file,failed);return failed}
  }
  return {async dispatch(method,route,body={},query=new URLSearchParams()){
+  if(method==='GET'&&route==='refinements')return refinement.list(query.get('geometryId'))
+  if(method==='GET'&&route.startsWith('refinements/')){
+   const [,rid,action,pid]=route.split('/')
+   if(action==='viewer')return refinement.viewer(rid)
+   if(action==='revisions')return refinement.revisions(rid)
+   const r=await refinement.get(rid)
+   if(action==='proposals'){const p=r.proposals.find(p=>p.id===pid);if(!p)fail('Refinement 建议不存在',404);return p}
+   return r
+  }
+  if(method==='GET'&&route.startsWith('revisions/'))return refinement.revision(route.split('/')[1])
+  if(method==='POST'&&['refine','approve-refinement','execute-revision'].includes(route)){
+   if(route==='refine'&&!planView(await getPlan(body.planId)).usable)fail('Spatial Plan 不可执行',422)
+   return operation(body,route,()=>route==='refine'?refinement.run(body):route==='approve-refinement'?refinement.approve(body):refinement.execute(body))
+  }
   if(method==='GET'&&route==='status')return {models:modelOptions('design'),providers:providerStatus()}
   if(method==='GET'&&route==='requests'){const items=[];for(const f of await records(requests)){try{const r=await read(path.join(requests,f));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')||r.planId===query.get('planId'))items.push(r)}catch{}}return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}}
   if(method==='GET'&&route.startsWith('source/'))return reviewedSource(await reverse.restore(id(route.slice(7))))

@@ -1,3 +1,4 @@
+import {GeometryRefinementPanel} from './GeometryRefinementPanel'
 import { useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../model-selector'
 import { validateAssembly } from './assembly'
@@ -8,7 +9,7 @@ type Props={manualRevision:number;disabled:boolean;onBusy(busy:boolean):void;onS
 type History={id:string;analysisId?:string;createdAt:string;status:string;model?:string;usable?:boolean;state?:string;count?:number}
 type Source={ready:boolean;reviewVersion:string;updatedAt:string;errors:string[];warnings:string[];rows:{id:string;excluded:boolean;quantity:number;confirmedPart:{part_num:string;color_id:number}|null}[]}
 type Plan={id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null}[]}}
-type Geometry={diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:{id:string;layoutId:string;bricks:Brick[];unverifiedCount:number}[]}
+type Geometry={revisionId?:string;diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:{id:string;layoutId:string;bricks:Brick[];unverifiedCount:number}[]}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
 function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
@@ -33,7 +34,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onApply,onS
   const c=await request('geometry/'+g.id+'/candidates/'+cid)
   if(!c.currentGeometry?.valid||!validateAssembly(c.assembly.bricks).valid)throw new Error('候选当前几何校验失败')
   if(!await onApply(c.assembly.bricks))throw new Error('Viewer 未完整加载，未标为显示成功')
-  setCandidate(cid);setDetail(c);onSceneChange(cid);urlPatch({spatialPlanId:g.planId,geometryId:g.id,candidateId:cid})
+  setCandidate(cid);setDetail(c);onSceneChange((g.revisionId?'人工修订 '+g.revisionId+' / ':'')+cid);urlPatch({spatialPlanId:g.planId,geometryId:g.id,candidateId:cid})
  }
  async function loadGeometry(gid:string,expectedPlan:string,cid?:string){
   setGeometry(null);setCandidate('');setDetail(null);onSceneChange('')
@@ -99,7 +100,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onApply,onS
     <label>已保存 Geometry Result<select aria-label="Geometry history" value={geometry?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadGeometry(e.target.value,plan.id))}}><option value="">选择已保存几何结果</option>{runs.map(r=><option key={r.id} value={r.id}>{r.createdAt} · {r.state} / {r.status} · {r.count} 候选</option>)}</select></label>
    </>}
    {!candidate&&<p>当前场景尚未加载所选计划的候选；已有积木不代表本计划执行成功。</p>}
-   {geometry&&<><p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
+   {geometry&&<>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
     {!!geometry.candidates.length&&<label>Geometry Candidate<select aria-label="Spatial candidate" value={candidate} onChange={e=>{if(e.target.value)void action(()=>showCandidate(geometry,e.target.value))}}><option value="">选择候选</option>{geometry.candidates.map(c=><option key={c.id} value={c.id}>{c.id} / {c.layoutId} · {c.unverifiedCount?'有未验证约束':'已验证几何与可执行约束'}</option>)}</select></label>}
     {detail&&candidate&&<p data-testid="spatial-connection-status">Geometry {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
     <p data-testid="spatial-viewer-status">{candidate?'已在共享 BrickViewer 显示 '+candidate+'；未检查 Build Order。':'此结果尚未显示；场景可能仍是之前的内容。'}</p>
@@ -107,6 +108,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onApply,onS
     <details><summary>连接、碰撞、差异与失败原因</summary><pre>{JSON.stringify({differencesFromFirst: differences,completeSearch:geometry.completeSearch,diagnostics:geometry.diagnostics,rejectionSummary:geometry.rejectionSummary,error:geometry.error,candidate:detail},null,2)}</pre></details>
     {geometry.diagnosticAvailable&&<p><a target="_blank" rel="noreferrer" href={import.meta.env.BASE_URL+'experiments/geometry-execution/viewer.html?result='+encodeURIComponent(api+'geometry/'+geometry.id+'/viewer')}>查看零件原始布局诊断（非合法候选，不替换当前场景） ↗</a></p>}
     <a href={api+'geometry/'+geometry.id+'/report'} download>下载完整 Geometry Report</a>
+    {plan&&<GeometryRefinementPanel key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
    </>}
   </fieldset>
   {busy&&<p role="status">处理中，请勿重复提交。不会自动 Repair 或重新调用模型。</p>}

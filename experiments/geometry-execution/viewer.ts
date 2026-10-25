@@ -10,7 +10,7 @@ const select=document.querySelector<HTMLSelectElement>('#candidate')!
 const report=document.querySelector<HTMLPreElement>('#report')!
 const viewer=new BrickViewer(document.querySelector<HTMLElement>('#scene')!,import.meta.env.BASE_URL+'brick-ldraw/',message=>{error.textContent=message})
 type Entry={id:string;layoutId:string;file:string;bricks:Brick[]}
-type Index={diagnosticAssembly?:{bricks:Brick[];note:string};status:string;completeSearch:boolean;diagnostics:unknown[];groups:unknown[];candidates:Entry[];image:{mimeType:string;imageBase64:string};sourcePlan:unknown}
+type Index={purpose?:'refinement-review';diagnosticAssembly?:{bricks:Brick[];note:string};status:string;completeSearch:boolean;diagnostics:unknown[];groups:unknown[];candidates:Entry[];image:{mimeType:string;imageBase64:string};sourcePlan:unknown}
 let diagnostic=false
 let index:Index,base:URL|undefined, revision=0
 const pose={x:-0.85,y:0.8,z:2.2}
@@ -33,10 +33,10 @@ async function show() {
       return JSON.stringify(first)===JSON.stringify(b)?'':b.id+' '+JSON.stringify({x:b.x,z:b.z,layer:b.layer,yaw:b.rotation})
     }).filter(Boolean).join('；')||'无（默认首候选）')
     report.textContent=JSON.stringify({currentGeometry:geometry,recorded:detail??'选择本地 viewer.json 时只做当前几何复核；完整记录请打开同目录 report.json。'},null,2)
-    status.style.color=diagnostic||!geometry.valid?'#991b1b':'#166534'
+    status.style.color=diagnostic||!geometry.valid?'#991b1b':index.purpose==='refinement-review'?'#92400e':'#166534'
     status.style.background=diagnostic||!geometry.valid?'#fef2f2':'#f0fdf4'
     status.style.padding='12px'
-    status.textContent=(diagnostic?'失败布局诊断 · 非合法候选 · ':'')+'Geometry '+(geometry.valid?'Valid':'Invalid')+' · '+c.bricks.length+' 块 · '+(geometry.valid?geometry.connections.length+' 对连接 · '+geometry.connections.reduce((n,c)=>n+c.points.length,0)+' 个接合点':geometry.reason+'；连接总数未完成统计')+' · '+index.candidates.length+' 个候选 / '+index.groups.length+' 个位置布局；未测试 Build Order。'
+    status.textContent=(index.purpose==='refinement-review'?'Refinement 审核预览 · 未批准 · '+c.id+' / '+c.layoutId+' · ':'')+(diagnostic?'失败布局诊断 · 非合法候选 · ':'')+'Geometry '+(geometry.valid?'Valid':'Invalid')+' · '+c.bricks.length+' 块 · '+(geometry.valid?geometry.connections.length+' 对连接 · '+geometry.connections.reduce((n,c)=>n+c.points.length,0)+' 个接合点':geometry.reason+'；连接总数未完成统计')+' · '+index.candidates.length+(index.purpose==='refinement-review'?' 个审核布局（含原始布局）':' 个候选 / '+index.groups.length+' 个位置布局')+'；未测试 Build Order。'
     document.body.dataset.ready='true'
     document.body.dataset.candidate=c.id
   }catch(e){error.textContent=String(e);status.textContent='加载或校验失败';document.body.dataset.ready='error'}
