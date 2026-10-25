@@ -1,3 +1,4 @@
+import { AnchorRevisionForm } from './AnchorRevisionForm'
 import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from '../brick-vision/review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
 import type { ExplorerScene, SceneImageSelection } from '../brick-inventory/explorer-scene.mjs'
@@ -38,6 +39,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
+  const [hiddenBoxes, setHiddenBoxes] = useState<Set<string>>(() => new Set())
   const [active, setActive] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState('')
   const [recordId, setRecordId] = useState(initialScene?.analysisId || ''), [submitted, setSubmitted] = useState(false)
   const [applied, setApplied] = useState(false)
@@ -154,10 +156,18 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       if (!automatic || (!initialScene?.provider && !initialScene?.model)) onRestoreModel?.(value.analysis.model)
       setSavedAt(value.updatedAt || '')
       setArtifact(value.artifact); setGenerationSubmitted(value.generationStatus !== 'none')
-      setRestoreWarning([...(mode === 'geometry_only' ? ['已恢复 Geometry 原始分析；未调用模型。'] : ['生成状态：' + value.generationStatus]), ...value.warnings].join('；'))
+      setRestoreWarning([...(mode === 'geometry_only' ? [value.analysis.revision ? '已恢复独立人工修订；未调用模型。' : '已恢复 Geometry 原始分析；未调用模型。'] : ['生成状态：' + value.generationStatus]), ...value.warnings].join('；'))
     })
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
+    setHiddenBoxes(new Set())
+    if (value.status === 'failed' && value.analysis_mode === 'geometry_only' && !value.outputValidation) {
+      // Rehydrate diagnostics when a historical response has no structured report.
+      try { value = { ...value, outputValidation: await post<NonNullable<Analysis['outputValidation']>>('revalidate', { analysisId: value.id }) } }
+      catch { /* Provider/no-output failures retain their original error. */ }
+    }
+    setError('')
+
     setReviewFilter('all')
     catalogEpoch.current++; setCandidateNotes({})
     setDetailId(''); setDirty(false); setSavedAt(''); setRestoreWarning('')
@@ -271,8 +281,13 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
     {record?.analysis && <>
+      <div className="brick-actions" aria-label="照片 BBox 显示控制">
+        <button type="button" onClick={() => setHiddenBoxes(new Set())}>全部显示 BBox</button>
+        <button type="button" onClick={() => setHiddenBoxes(new Set(record.analysis!.observations.map(o => o.id)))}>全部隐藏 BBox</button>
+        <small>仅控制照片标注；总开关关闭时不显示。</small>
+      </div>
       <ObservationTable stickyAction hostRef={reviewHost} columns={[
-        { label: '操作', width: 52 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
+        { label: '操作', width: 52 }, { label: 'BBox', width: 54 }, { label: '审核状态', width: 96, header: <ReviewStatusFilter value={reviewFilter} onChange={setReviewFilter} /> }, { label: '识别项', width: 104 }, { label: '型号', width: 128 },
         { label: '宽 (Stud)', width: 72 }, { label: '深 (Stud)', width: 72 }, { label: '高 (Brick)', width: 76 },
         { label: '颜色（Rebrickable）', width: 180 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
         { label: '数量', width: 60 },
@@ -295,6 +310,10 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
               { label: '查看详情', run: () => setDetailId(o.id) },
               { label: row.excluded ? '恢复审核' : '排除', disabled: locked || generationSubmitted, run: () => edit(o.id, { excluded: !row.excluded }) },
             ]} /></td>
+            <td><input type="checkbox" aria-label={o.id + ' 显示 BBox'} checked={!hiddenBoxes.has(o.id)} style={{ width: 'auto' }} onChange={e => {
+              const visible = e.target.checked
+              setHiddenBoxes(previous => { const next = new Set(previous); if (visible) next.delete(o.id); else next.add(o.id); return next })
+            }} /></td>
             <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
             <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
               onClick={() => { setActive(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button>
@@ -355,7 +374,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         <option value="">选择历史分析</option>
         {recordId && !history.some(r => r.id === recordId) && <option value={recordId}>{recordId}</option>}
         {history.map(r => <option key={r.id} value={r.id}>
-          {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.appearance || r.status} · {r.count} 个识别项
+          {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.appearance || r.status} · {r.count} 个识别项
         </option>)}
       </select></label>
       <div className="brick-actions">
@@ -369,7 +388,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       analysisId: record?.id }} />
     {preview && <div ref={previewHost}><ObservationPreview
       src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="原始参考照片及识别项标注"
-      observations={record?.analysis?.observations || []} activeId={active} onSelect={selectBox} />
+      observations={record?.analysis?.observations || []} hiddenIds={hiddenBoxes} activeId={active} onSelect={selectBox} />
       {record && <div className="vision-selected-review">
         <p>点击照片框选积木，再修改审核型号或颜色；照片框是模型标注，可能有偏差。</p>
         <label>照片中的识别项<select aria-label="照片中的识别项" value={active} onChange={e => selectBox(e.target.value)}>
@@ -381,12 +400,20 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       </div>}
     </div>}
     {record && <>
-      <p>{record.analysis_mode || 'catalog_match'} · {record.prompt_id || 'reverse_catalog_v1'} v{record.prompt_version || 1} · {record.image_reference?.name} · {record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
+      <p>{record.analysis_mode || 'catalog_match'} · {record.prompt_id || 'reverse_catalog_v1'} v{record.prompt_version || 1} · {record.image_reference?.name} · {record.revision ? (record.status === 'complete' ? 'Recovered' : 'Revision Validation Failed') : record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
+      {record.revision && <section aria-label="Revision status">
+        <strong>{record.status === 'complete' ? 'Recovered / Ready for Review · 修订已恢复，型号与颜色仍需逐块审核' : 'Revision Validation Failed · 修订校验失败'}</strong>
+        <p>当前修订：{record.id} · 来源：{record.revision.parentAnalysisId}</p>
+        <button disabled={locked || dirty} onClick={() => void loadHistory(record.revision!.originalAnalysisId)}>查看原始 Failed Analysis</button>
+        <details><summary>修订记录</summary><pre>{JSON.stringify(record.revision, null, 2)}</pre></details>
+      </section>}
+      {record.status === 'failed' && !record.outputValidation && <p role="alert">Provider Failed / No Output · {record.error?.message}</p>}
       {record.outputValidation && <section aria-label="Output Validation" style={{ padding: 12, border: '1px solid', borderColor: record.outputValidation.valid ? '#a6c9b4' : '#f1c2bd', background: record.outputValidation.valid ? '#f0faf4' : '#fff0ee', color: record.outputValidation.valid ? '#245c42' : '#913c30', overflowWrap: 'anywhere' }}>
-        <strong>{record.outputValidation.valid ? '离线校验通过（历史状态未修改）' : 'Output Validation Failed · 输出校验失败'}</strong>
-        <p>模型已返回并保存 Raw Output；{record.outputValidation.parsed ? 'JSON 解析成功' : 'JSON 解析失败'}。{record.outputValidation.observationCount} 个 Observation / {record.outputValidation.relationCount} 条 Relations。</p>
+        <strong>{record.outputValidation.valid ? (record.revision ? 'Revision Validation Passed · 待人工审核' : '离线校验通过（历史状态未修改）') : record.outputValidation.stage === 'provider_failed' ? 'Provider Failed · 模型调用未完成' : !record.outputValidation.parsed ? 'JSON Parse Failed · JSON 解析失败' : record.revision ? 'Revision Validation Failed · 修订输出校验失败' : 'Original Analysis Failed · Output Validation Failed · 输出校验失败'}</strong>
+        <p>原始模型输出已保存；{record.outputValidation.parsed ? 'JSON 解析成功' : 'JSON 解析失败'}。{record.outputValidation.observationCount} 个 Observation / {record.outputValidation.relationCount} 条 Relations。</p>
         {record.outputValidation.issues.map((issue, i) => <div key={i}>
           <code>{issue.path}</code><p>{issue.message}</p>
+          {issue.context != null && <details><summary>此尺寸的原始证据与不确定性</summary><pre>{JSON.stringify(issue.context, null, 2)}</pre></details>}
           <p>期望：{JSON.stringify(issue.expected)}；实际：{JSON.stringify(issue.actual)}</p>
         </div>)}
         <p>离线校验不调用模型、不修改原始输出、不自动确认零件。校验失败时无法进入正式审核。</p>
@@ -395,6 +422,11 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
           setRecord({ ...record, outputValidation })
         })}>离线重新校验（不调用 LLM）</button>
         <button onClick={() => download(record.outputValidation, 'output-validation-' + record.id)}>下载校验报告</button>
+        {record.status === 'failed' && <AnchorRevisionForm key={record.id} report={record.outputValidation} disabled={locked} onSubmit={operation => void action('保存独立修订并校验', async () => {
+          const revised = await post<Analysis>('revise', { analysisId: record.id, requestId: newSessionId(), operation })
+          await acceptAnalysis(revised)
+          await refreshHistory()
+        })} />}
         <details><summary>完整输出校验诊断</summary><pre>{JSON.stringify(record.outputValidation, null, 2)}</pre></details>
       </section>}
       <button type="button" onClick={() => download(record, 'reverse-analysis-' + record.id)}>下载完整分析诊断 / Raw Trace 路径</button>

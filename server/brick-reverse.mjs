@@ -1,4 +1,5 @@
 import { reverseFeatureEditor } from '../src/brick-vision/reverse-review.mjs'
+import { reviseAnchorReference } from './brick-reverse-revision.mjs'
 import { inspectGeometryOutput } from './brick-reverse-output.mjs'
 import { reversePrompts } from './brick-reverse-prompts.mjs'
 import { geometrySchema, validateGeometryAnalysis } from './brick-reverse-geometry.mjs'
@@ -105,6 +106,32 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       return report
     },
 
+    async revise(body) {
+      const source = await read(body.analysisId)
+      if (source.kind !== 'reverse-analysis' || source.analysis_mode !== 'geometry_only' || source.status !== 'failed') fail('只能修订失败的 Geometry Analysis。', 422)
+      const report = inspectGeometryOutput(source)
+      if (!report?.parsed || report.valid) fail('此记录没有可修订的输出校验错误。', 422)
+      const input = source.revision ? source.revisionOutput : JSON.parse(source.rawOutput)
+      const { output, change } = reviseAnchorReference(input, body.operation)
+      const fingerprint = hash({ sourceId: source.id, input, change })
+      const id = body.requestId
+      file(id)
+      try { const previous = await read(id); if (previous.revision?.fingerprint !== fingerprint) fail('修订请求 ID 已用于其他操作。', 409); return previous }
+      catch (e) { if (e.statusCode !== 404) throw e }
+      await lock(id)
+      const record = { ...source, id, createdAt: new Date().toISOString(), status: 'failed', analysis: null,
+        revisionOutput: output, revision: { parentAnalysisId: source.id,
+          originalAnalysisId: source.revision?.originalAnalysisId || source.id,
+          parentSha256: createHash('sha256').update(await readFile(file(source.id))).digest('hex'),
+          rawOutputSha256: report.rawOutputSha256, fingerprint, change, createdAt: new Date().toISOString() } }
+      delete record.error
+      try { record.analysis = validateGeometryAnalysis(output); record.status = 'complete' }
+      catch (e) { record.error = visionErrorDiagnostic(e, 'Revision Validation') }
+      record.outputValidation = inspectGeometryOutput(record)
+      await save(record)
+      return record
+    },
+
     async history() {
       let names
       try { names = await readdir(directory) } catch (e) { if (e.code === 'ENOENT') return { items: [], warnings: [] }; throw e }
@@ -115,7 +142,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
           if (r.kind !== 'reverse-analysis') continue
           items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model,
             analysis_mode: r.analysis_mode || 'catalog_match', prompt_id: r.prompt_id || 'reverse_catalog_v1', prompt_version: r.prompt_version || 1, image_reference: r.image_reference || { kind: 'upload', name: r.originalImage?.name || null, sha256: r.image?.sha256 },
-            status: r.status, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
+            status: r.status, isRevision: !!r.revision, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
         } catch { warnings.push(name + ' 无法读取；原文件保留。') }
       }
       items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))

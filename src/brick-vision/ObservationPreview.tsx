@@ -2,8 +2,8 @@ import { useState } from 'react'
 import './review.css'
 import { bboxStyle } from './observation-view.mjs'
 
-export function ObservationPreview({ src, observations, activeId, onSelect, alt = '本次识别原图及 Observation 标注' }: {
-  src: string; observations: readonly { id: string; bbox?: unknown; status?: string }[]; activeId: string; onSelect(id: string): void; alt?: string
+export function ObservationPreview({ src, observations, activeId, onSelect, hiddenIds, alt = '本次识别原图及 Observation 标注' }: {
+  hiddenIds?: ReadonlySet<string>; src: string; observations: readonly { id: string; bbox?: unknown; status?: string }[]; activeId: string; onSelect(id: string): void; alt?: string
 }) {
   const [show, setShow] = useState(true)
   const [loadedSource, setLoadedSource] = useState(''), [failedSource, setFailedSource] = useState('')
@@ -14,7 +14,7 @@ export function ObservationPreview({ src, observations, activeId, onSelect, alt 
       <img src={src} alt={alt} onLoad={() => { setLoadedSource(src); setFailedSource('') }} onError={() => setFailedSource(src)} />
       {show && loadedSource === src && failedSource !== src && observations.map(o => {
         const style = bboxStyle(o.bbox)
-        return style && <button key={o.id} type="button" className={`vision-bbox${o.id === activeId ? ' is-active' : ''}`}
+        return style && !hiddenIds?.has(o.id) && <button key={o.id} type="button" className={`vision-bbox${o.id === activeId ? ' is-active' : ''}`}
           style={style} aria-label={`高亮 Observation ${o.id}`} aria-pressed={o.id === activeId}
           title={o.status ? `${o.id} · 模型 ${o.status}` : o.id} onClick={() => onSelect(o.id)}><span>{o.id}</span></button>
       })}
