@@ -10,7 +10,7 @@ const centre = (b,rules) => ({x:b.x*rules.STUD_LDU,y:b.layer*rules.BODY_LDU,z:b.
 export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}) {
   if (!Number.isSafeInteger(maxCombinations) || maxCombinations < 1 || maxCombinations > 100000) throw new Error('maxCombinations must be 1..100000')
   const result = {version:'geometry-execution-v1',status:'invalid_input',completeSearch:false,
-    policy:{gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,
+    policy:{validation:'final-assembly-connectivity-v1',gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,
       constraints:'All numeric intervals, yaw choices, definite mating intents and executable spatial relations are hard constraints. No rounding, repair or build order.',
       selection:'Keep all accepted candidates in deterministic input/grid/yaw order; first is display default, not a best-photo claim.'},
     diagnostics:[],domains:[],attempts:[],candidates:[],groups:[]}
@@ -72,7 +72,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
       const positions=result.domains.map(d=>({id:d.id,x:d.axes.x[0],y:d.axes.y[0],z:d.axes.z[0],rotation:d.yaw[0]}))
       const shift=-Math.min(...positions.map(b=>b.y))
       const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,x:b.x/rules.STUD_LDU,z:b.z/rules.STUD_LDU,layer:(b.y+shift)/rules.BODY_LDU,rotation:b.rotation}))
-      result.diagnosticAssembly={bricks,geometry:rules.validateAssembly(bricks),note:'First allowed poses for failure inspection only; not a candidate or a repaired assembly'}
+      result.diagnosticAssembly={bricks,geometry:rules.validateFinalAssembly(bricks),note:'First allowed poses for failure inspection only; not a candidate or a repaired assembly'}
       return {...result,status:'no_solution',completeSearch:true,proof:'Necessary hard mating condition impossible across the full endpoint domains',diagnostics:conflicts.map(c=>({code:'IMPOSSIBLE_MATING',id:c.id,other:c.other,reason:'原始位置区间及朝向内，指定连接器无任何重合点',pairCount:c.pairCount}))}
     }
     return {...result,status:'budget_exceeded',diagnostics:['Cartesian domain exceeds budget; no no-solution claim']}
@@ -90,7 +90,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     })
     const attempt={index:result.attempts.length+1,positions,groundTranslationLdu:shiftY,ranges,accepted:false}
     if(ranges.some(r=>!r.satisfied)){attempt.failure='RELATIVE_INTERVAL';result.attempts.push(attempt);return}
-    const geometry=rules.validateAssembly(bricks)
+    const geometry=rules.validateFinalAssembly(bricks)
     attempt.geometry=geometry
     // Shared validator checks all body/stud collision envelopes before support/connectivity.
     attempt.collision={status:geometry.code==='COLLISION'?'collision':geometry.valid||['UNSUPPORTED','DISCONNECTED'].includes(geometry.code)?'clear':'not_established',reason:geometry.reason,brickIds:geometry.brickIds}

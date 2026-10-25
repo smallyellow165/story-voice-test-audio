@@ -14,13 +14,13 @@ const old=JSON.parse(await readFile(new URL('generated/brick-spatial-geometry/94
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const run=(options)=>refineGeometry(original.plan,old.input,rules,options)
 
-test('rooster bounded search aligns all declared mating indices, retains side contacts, clears collision; does not lower support requirements',()=>{
+test('rooster bounded search aligns all declared mating indices, retains side contacts, clears collision; final graph permits hanging connections without weakening mates or collision',()=>{
  const before=JSON.stringify({original,old}),r=run()
- assert.equal(r.status,'unresolved');assert.equal(r.completeSearch,true);assert.equal(r.proposals.length,2);assert.ok(r.stats.nodes<=r.policy.maxNodes)
+ assert.equal(r.status,'proposals_found');assert.equal(r.completeSearch,true);assert.equal(r.proposals.length,2);assert.ok(r.stats.nodes<=r.policy.maxNodes)
  for(const p of r.proposals){
   assert.equal(p.classification,'requires_review');assert.equal(p.approved,false)
   assert.equal(p.score.totalTranslationLdu,40)
-  assert.equal(p.geometry.valid,false);assert.equal(p.geometry.code,'UNSUPPORTED');assert.ok(p.geometry.brickIds.includes('yellow_front'))
+  assert.equal(p.geometry.valid,true);assert.equal(p.geometry.code,'VALID');assert.equal(rules.validateAssembly(p.assembly.bricks).code,'UNSUPPORTED')
   assert.equal(p.strictExecution.attempts[0].collision.status,'clear')
   assert.ok(p.constraints.mating.every(c=>c.aligned));assert.ok(p.constraints.contacts.every(c=>c.satisfied))
   assert.ok(p.constraints.relations.every(c=>c.satisfied!==false));assert.equal(p.constraints.cameraReview.length,1)
@@ -31,7 +31,7 @@ test('rooster bounded search aligns all declared mating indices, retains side co
   assert.equal(p.diffs.find(d=>d.id==='brown_upright').outsideOriginalIntervals.length,0)
   assert.deepEqual(p.refinedPlan.relations,original.plan.relations)
   assert.deepEqual(p.refinedPlan.parts.map(p=>p.connections),original.plan.parts.map(p=>p.connections))
-  assert.equal(executePlan(p.refinedPlan,old.input,rules).candidates.length,0)
+  assert.equal(executePlan(p.refinedPlan,old.input,rules).candidates.length,1)
  }
  assert.deepEqual(r.proposals.map(p=>p.poses.find(p=>p.id==='orange_base').rotation),[0,180])
  assert.equal(JSON.stringify({original,old}),before)
@@ -63,16 +63,16 @@ test('immutable refinement, explicit approval, independent revision and strict e
  const r=await s.dispatch('GET','refinements/'+op.refinementId),p=r.proposals[1],rBefore=JSON.stringify(r)
  assert.equal((await s.dispatch('GET','refinements/'+r.id+'/revisions')).items.length,0)
  const approve={requestId:randomUUID(),refinementId:r.id,proposalId:p.id,proposalHash:p.hash,confirmed:true,acknowledgeInvalid:true,reviewNote:'Isolated automated test only; not real user approval'}
- for(const patch of [{confirmed:false},{reviewNote:''},{acknowledgeInvalid:false},{proposalHash:'stale'}])assert.equal((await s.dispatch('POST','approve-refinement',{...approve,...patch,requestId:randomUUID()})).state,'failed')
- const approved=await s.dispatch('POST','approve-refinement',approve);assert.equal(approved.state,'complete');assert.equal(approved.geometryValid,false)
+ for(const patch of [{confirmed:false},{reviewNote:''},{proposalHash:'stale'}])assert.equal((await s.dispatch('POST','approve-refinement',{...approve,...patch,requestId:randomUUID()})).state,'failed')
+ const approved=await s.dispatch('POST','approve-refinement',approve);assert.equal(approved.state,'complete');assert.equal(approved.geometryValid,true)
  assert.deepEqual(await s.dispatch('POST','approve-refinement',approve),approved)
  const restarted=createSpatialWorkflow(dir),revision=await restarted.dispatch('GET','revisions/'+approved.revisionId)
  assert.deepEqual(revision.refinedPlan,planAtPoses(original.plan,p.poses));assert.equal(revision.approval.confirmed,true)
  const exec=await restarted.dispatch('POST','execute-revision',{requestId:randomUUID(),revisionId:revision.id})
- assert.equal(exec.resultStatus,'no_solution')
+ assert.equal(exec.resultStatus,'candidates_with_unverified_constraints')
  const geometry=await restarted.dispatch('GET','geometry/'+exec.geometryId)
- assert.equal(geometry.revisionId,revision.id);assert.equal(geometry.candidates.length,0)
- await assert.rejects(restarted.dispatch('GET','geometry/'+exec.geometryId+'/candidates/candidate-1'),/没有可用候选/)
+ assert.equal(geometry.revisionId,revision.id);assert.equal(geometry.candidates.length,1)
+ assert.equal((await restarted.dispatch('GET','geometry/'+exec.geometryId+'/candidates/candidate-1')).currentGeometry.valid,true)
  assert.equal(JSON.stringify(await restarted.dispatch('GET','refinements/'+r.id)),rBefore)
  assert.deepEqual(await readFile(path.join(dir,'brick-spatial-geometry',old.id+'.json')),before)
  assert.deepEqual(JSON.parse(await readFile(path.join(dir,'brick-spatial-traces',original.id+'.json'))),original)

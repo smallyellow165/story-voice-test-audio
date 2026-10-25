@@ -9,7 +9,7 @@ import { connectionCandidates, validateAssembly } from './assembly'
 import type { Candidate, Validation } from './assembly'
 import { BrickViewer } from './viewer'
 import { AIDesignPanel } from './AIDesignPanel'
-import { SpatialAssemblyPanel } from './SpatialAssemblyPanel'
+import { SpatialAssemblyPanel, type SpatialPreview } from './SpatialAssemblyPanel'
 import { ThreeColumnLayout } from '../three-column-layout'
 import './brick-test.css'
 
@@ -31,7 +31,10 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   const [generating, setGenerating] = useState(false)
   const [generatedReport, setGeneratedReport] = useState<DesignReport | null>(null)
   const [aiMode, setAiMode] = useState(false)
-  const [spatialScene,setSpatialScene] = useState('')
+  const [spatialPreview,setSpatialPreview] = useState<SpatialPreview|null>(null)
+  const [spatialLoaded,setSpatialLoaded] = useState(false)
+  const [spatialLoadError,setSpatialLoadError] = useState('')
+  const [sceneRevision,setSceneRevision] = useState(0)
   const [manualRevision, setManualRevision] = useState(0)
   const [error, setError] = useState('')
   const [previewError, setPreviewError] = useState('')
@@ -121,13 +124,13 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   useEffect(() => {
     const engine = viewer.current
     if (!engine) return
-    if (!ready || busy || generating || aiMode) { engine.clearCandidates(); engine.clearPreview(); return }
+    if (!ready || busy || generating || aiMode || workflow === 'spatial') { engine.clearCandidates(); engine.clearPreview(); return }
     engine.showCandidates(visibleCandidates, selected?.key || null, (key) => {
       const candidate = visibleCandidates.find((item) => item.key === key)
       if (candidate) selectCandidate(candidate)
     })
     return () => engine.clearCandidates()
-  }, [visibleCandidates, selected?.key, ready, busy, generating, aiMode])
+  }, [visibleCandidates, selected?.key, ready, busy, generating, aiMode, workflow, sceneRevision])
 
   useEffect(() => {
     const engine = viewer.current
@@ -135,13 +138,31 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
     let active = true
     setPreviewError('')
     engine.clearPreview()
-    if (ready && !busy && !generating && !aiMode && proposedValidation.valid) {
+    if (ready && !busy && !generating && !aiMode && workflow !== 'spatial' && proposedValidation.valid) {
       engine.showPreview(proposed).catch((reason) => {
         if (active) setPreviewError(`预览模型加载失败：${String(reason.message || reason)}`)
       })
     }
     return () => { active = false; engine.clearPreview() }
-  }, [proposed, proposedValidation.valid, ready, busy, previewRetry, generating, aiMode])
+  }, [proposed, proposedValidation.valid, ready, busy, previewRetry, generating, aiMode, workflow, sceneRevision])
+
+  // Spatial previews never commit to the manual inventory. The same renderer
+  // switches content; manual bricks and Generator report retain their own state.
+  useEffect(() => {
+    if (!ready || !viewer.current) return
+    let active = true
+    const engine = viewer.current
+    engine.clearPreview(); engine.clearCandidates();setSpatialLoaded(false);setSpatialLoadError('')
+    if(workflow==='spatial')engine.reset()
+    const next = workflow === 'spatial' ? spatialPreview?.bricks || [] : bricks
+    void engine.replace(next).then(ok => {
+      if (!active) return
+      if (!ok) {setSpatialLoadError('Viewer 未完整加载');return}
+      if (workflow === 'spatial') {setSpatialLoaded(true);engine.fit({x:-0.85,y:0.8,z:2.2})}
+      else setSceneRevision(v=>v+1)
+    }).catch(e => {if(active){setError(String(e));setSpatialLoadError(String(e))}})
+    return () => {active=false}
+  }, [workflow,spatialPreview,ready])
 
   async function commit(next: Brick[], generated = false, report: DesignReport | null = null, spatial = false) {
     if (!viewer.current || locked.current || !ready || (generating && !generated)) return false
@@ -215,30 +236,27 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       const url = new URL(location.href); url.searchParams.set('workflow', e.target.value); window.history.replaceState(null, '', url)
     }}><option value="generator">Generator V3 · 自由 / 参考图生成</option><option value="spatial">Spatial Assembly · 已审核照片复原</option></select></label>
     {workflow === 'spatial'
-      ? <SpatialAssemblyPanel onSceneChange={setSpatialScene} manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} onApply={async next => {
-        if (!validateAssembly(next).valid) return false
-        const ok = await commit(next, true, null, true)
-        if (ok) viewer.current?.fit({ x: -0.85, y: 0.8, z: 2.2 })
-        return ok
-      }} />
+      ? <SpatialAssemblyPanel onPreview={setSpatialPreview} manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} />
       : <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />}
       </>}
       center={<>
-    {aiMode && <div className="brick-ai-mode">{workflow === 'spatial' ? (spatialScene ? '正在查看 Spatial Assembly 候选 '+spatialScene+'；未检查 Build Order。' : '当前为旧场景，非所选计划的 Geometry 结果。') : '正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。'}<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
+    {aiMode && workflow!=='spatial' && <div className="brick-ai-mode">正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
       <section className="brick-stage-panel" aria-label="积木场景">
-        {workflow==='spatial'&&<div data-testid="spatial-scene-provenance" className={"spatial-state "+(spatialScene?'success':'review')}>{spatialScene?'Spatial Assembly 已加载：'+spatialScene:'当前显示：手动编辑场景或旧场景，不是当前 Spatial Assembly 结果。'}</div>}
-        <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
-        {generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
+        {workflow==='spatial'&&<div data-testid="spatial-scene-provenance" className={'spatial-state '+(spatialLoadError?'failed':!spatialLoaded?'running':!spatialPreview?'idle':!spatialPreview.geometry.valid?'failed':spatialPreview.review.includes('Requires Review')?'review':'success')}>
+          {spatialLoadError?'预览失败：'+spatialLoadError:!spatialLoaded?'正在加载当前只读预览…':spatialPreview?<><strong>{spatialPreview.label} · {spatialPreview.review} · Geometry {spatialPreview.geometry.valid?'Valid':'Invalid'}</strong><p>{spatialPreview.geometry.reason} · 只读；未验证物理稳定性或 Build Order。</p><details><summary>当前积木与连接诊断</summary><pre>{JSON.stringify({bricks:spatialPreview.bricks,geometry:spatialPreview.geometry},null,2)}</pre></details></>:'等待 Geometry Execution 或选择已保存布局；当前无三维结果。'}
+        </div>}
+        <div className="brick-stage-toolbar"><span>{workflow==='spatial'?(spatialLoaded?spatialPreview?.bricks.length||0:0):bricks.length} 块{workflow==='spatial'?'只读预览':'已添加'}</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
+        {workflow!=='spatial' && generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
           <strong>{generatedReport.valid ? "Valid" : "Invalid · " + generatedReport.issues.length + " 项错误"}</strong>
           {!generatedReport.valid && <ul>{generatedReport.issues.slice(0, 3).map((issue, i) => <li key={i}>{issue.code}：{issue.message}</li>)}</ul>}
         </div>}
         <div className="brick-stage" ref={host} />
-        {!aiMode && !generating && <div className="brick-candidate-pages">
+        {workflow!=='spatial' && !aiMode && !generating && <div className="brick-candidate-pages">
           <button disabled={!ready || busy || pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一组位置</button>
           <span>场景候选 {pageIndex + 1} / {pages} · 每组最多 {PAGE_SIZE} 点</span>
           <button disabled={!ready || busy || pageIndex + 1 >= pages} onClick={() => setPage(pageIndex + 1)}>下一组位置</button>
         </div>}
-        <div className="brick-status" role="status" aria-live="polite">{busy ? '正在读取真实模型及子文件…' : aiMode ? 'AI 设计查看 · 拖动旋转 · 滚轮缩放 · 右键平移' : generating ? '正在生成新设计，当前场景保留' : '点击蓝点吸附预览 · 拖动旋转 · 滚轮缩放 · 右键平移'}</div>
+        <div className="brick-status" role="status" aria-live="polite">{workflow==='spatial' ? '只读预览 · 拖动旋转 · 滚轮缩放 · 右键平移' : busy ? '正在读取真实模型及子文件…' : aiMode ? 'AI 设计查看 · 拖动旋转 · 滚轮缩放 · 右键平移' : generating ? '正在生成新设计，当前场景保留' : '点击蓝点吸附预览 · 拖动旋转 · 滚轮缩放 · 右键平移'}</div>
         {(error || previewError) && <div className="brick-error" role="alert"><strong>模型加载失败</strong><p>{error || previewError}</p><small>检查本地 LDraw 库和 Network 请求。几何规则 Valid 不代表模型已加载；失败不会写入清单。</small><button disabled={!ready || busy} onClick={() => { setError(''); setPreviewRetry((value) => value + 1) }}>重试预览</button></div>}
         {attempt && !attempt.valid && <div className="brick-error" role="alert"><strong>操作被拒绝 · Invalid</strong><p>{attempt.reason}</p><small>已保留原组合。</small></div>}
       </section>
@@ -248,7 +266,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       <aside className="brick-panel">
         <h2>添加积木</h2>
         <form onSubmit={add}>
-          <fieldset disabled={!ready || busy || generating || aiMode}>
+          <fieldset disabled={workflow==='spatial' || !ready || busy || generating || aiMode}>
             <label>Brick 型号<select value={part} onChange={(event) => setPart(event.target.value)}>{PARTS.map((item) => <option key={item.id} value={item.id}>{item.label} — {item.id}.dat</option>)}</select></label>
             <label>颜色<select value={color} onChange={(event) => setColor(event.target.value)}>{COLORS.map((item) => <option key={item.code} value={item.code}>{item.label} · LDraw {item.code}</option>)}</select></label>
             <div className="brick-fields">
@@ -273,14 +291,14 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
             <button className="brick-primary" type="submit" disabled={!proposedValidation.valid}>确认添加 {numberValue(quantity)} 块</button>
           </fieldset>
         </form>
-        <div className="brick-actions"><button disabled={!ready || busy || generating} onClick={() => void commit(exampleBricks())}>载入阶梯示例</button><button disabled={!ready || generating} onClick={reset}>Reset</button></div>
+        <div className="brick-actions"><button disabled={workflow==='spatial' || !ready || busy || generating} onClick={() => void commit(exampleBricks())}>载入阶梯示例</button><button disabled={workflow==='spatial' || !ready || generating} onClick={reset}>Reset</button></div>
         <p className="brick-help">Reset 清空已提交组合，保留第一块的地面候选预览。本轮仅正放、整格、从下向上拼装；不保证抗倾倒。</p>
       </aside>
       <section className="brick-panel brick-inventory">
-        <div className="brick-inventory-title"><h2>当前 Brick 清单</h2><span>{bricks.length} / 100</span></div>
+        <div className="brick-inventory-title"><h2>{workflow==='spatial'?'手动 Brick 清单（保留，非当前预览）':'当前 Brick 清单'}</h2><span>{bricks.length} / 100</span></div>
         <div className={`brick-validation ${(generatedReport?.valid ?? currentValidation.valid) ? 'is-valid' : 'is-invalid'}`}><strong>当前组合：{(generatedReport?.valid ?? currentValidation.valid) ? 'Valid' : 'Invalid'}</strong><p>{generatedReport && !generatedReport.valid ? generatedReport.issues.map(i => i.code + '：' + i.message).join('；') : currentValidation.reason}</p></div>
         {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">确认添加后，成功加载的积木显示在这里。</p>}
-        {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
+        {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={workflow==='spatial' || busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>
     <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。{workflow === 'spatial' ? 'Spatial Plan 与 Geometry Result 按当前链接恢复；手动编辑不自动保存。' : '刷新后重置。'}</footer>
       </>}

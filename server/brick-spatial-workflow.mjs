@@ -99,7 +99,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    if(action==='candidates'){
     if(r.state!=='complete'||!['candidates_found','candidates_with_unverified_constraints'].includes(r.status))fail('此结果未完成或没有可用候选',422)
     const c=r.candidates.find(c=>c.id===candidateId);if(!c)fail('候选不存在',404)
-    const geometry=(await loadRules()).validateAssembly(c.assembly.bricks)
+    const geometry=(await loadRules()).validateFinalAssembly(c.assembly.bricks)
     if(!geometry.valid||!c.geometry.valid)fail('候选未通过当前几何复核：'+geometry.reason,422)
     return {...c,currentGeometry:geometry}
    }

@@ -1,5 +1,5 @@
 import { BrickViewer } from '../../src/brick-test/viewer'
-import { validateAssembly } from '../../src/brick-test/assembly'
+import { validateFinalAssembly } from '../../src/brick-test/assembly'
 import { PARTS, validPosition } from '../../src/brick-test/catalog'
 import type { Brick } from '../../src/brick-test/catalog'
 import { assessDesignDisplay } from '../../src/brick-design-display.mjs'
@@ -22,7 +22,7 @@ async function show() {
     if(!c)throw new Error('没有可显示候选')
     const display=assessDesignDisplay({bricks:c.bricks},{PARTS,COLORS:c.bricks.filter(b=>/^(0|[1-9]\d*)$/.test(b.color)).map(b=>({code:b.color})),validPosition})
     if(!display.renderable)throw new Error(display.issues.join('; '))
-    const geometry=validateAssembly(c.bricks)
+    const geometry=validateFinalAssembly(c.bricks)
     const detail=base && !diagnostic ? await fetch(new URL(c.file,base)).then(r=>{if(!r.ok)throw new Error('Candidate HTTP '+r.status);return r.json()}) : null
     if(token!==revision)return
     if(!await viewer.replace(c.bricks))throw new Error('模型未完整加载')

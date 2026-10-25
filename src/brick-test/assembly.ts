@@ -70,7 +70,7 @@ export function createAssemblyRules(definitions: readonly PartDefinition[]) {
   function footprint(brick: Brick): Cell[] {
     return connectors(brick, 'bottom').map(p => ({ x: p.x / STUD_LDU - 0.5, z: p.z / STUD_LDU - 0.5 }))
   }
-  function validateAssembly(bricks: readonly Brick[]): Validation {
+  function validateAssembly(bricks: readonly Brick[], finalAssembly = false): Validation {
     if (!Array.isArray(bricks)) return invalid('INPUT', '组合必须为积木数组')
     const ids = new Set<string>()
     for (const b of bricks) {
@@ -118,7 +118,7 @@ export function createAssemblyRules(definitions: readonly PartDefinition[]) {
           graph.get(lower.id)!.add(upper.id); graph.get(upper.id)!.add(lower.id)
         }
       }
-      if (!supported.size) return invalid('UNSUPPORTED', '积木 ' + upper.id + ' 没有方向、类型与位置吻合的底部连接', [upper.id])
+      if (!finalAssembly && !supported.size) return invalid('UNSUPPORTED', '积木 ' + upper.id + ' 没有方向、类型与位置吻合的底部连接', [upper.id])
     }
     if (bricks.length) {
       const seen = new Set<string>(), queue = [bricks[0].id]
@@ -153,6 +153,9 @@ export function createAssemblyRules(definitions: readonly PartDefinition[]) {
     }
     return result.sort((a, b) => b.contactCount - a.contactCount || a.brick.layer - b.brick.layer || a.brick.x - b.brick.x || a.brick.z - b.brick.z)
   }
-  return { dimensions, footprint, connectors, validateAssembly, validatePlacement, connectionCandidates }
+  // Final assemblies may hang from upper mates. Keep the placement rule for
+  // Manual / Generator; both modes share collision, socket and graph checks.
+  const validateFinalAssembly = (bricks: readonly Brick[]) => validateAssembly(bricks, true)
+  return { dimensions, footprint, connectors, validateAssembly, validateFinalAssembly, validatePlacement, connectionCandidates }
 }
-export const { dimensions, footprint, connectors, validateAssembly, validatePlacement, connectionCandidates } = createAssemblyRules(PARTS)
+export const { dimensions, footprint, connectors, validateAssembly, validateFinalAssembly, validatePlacement, connectionCandidates } = createAssemblyRules(PARTS)

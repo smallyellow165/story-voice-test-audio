@@ -41,12 +41,12 @@ export function createRefinementStore(directory,{getPlan,getGeometry,loadRules})
    if(!p||body.proposalHash!==p.hash)fail('候选或内容哈希不匹配，请重新加载')
    verifyProposal(p)
    if(body.confirmed!==true||typeof body.reviewNote!=='string'||!body.reviewNote.trim()||body.reviewNote.length>2000)fail('需要用户明确确认并填写照片审核说明')
-   if(!p.geometry.valid&&body.acknowledgeInvalid!==true)fail('候选仍是 Geometry Invalid，需明确确认剩余问题；批准不能代替几何校验')
    const {rules,input}=await currentInput(source)
    if(hash(input)!==hash(r.input))fail('几何输入已变化，请重新 Refinement')
    const refinedPlan=planAtPoses(source.plan,p.poses)
    if(hash(refinedPlan)!==hash(p.refinedPlan))fail('候选修订内容不一致')
    const strict=executePlan(refinedPlan,input,rules)
+   if(!strict.candidates.length&&body.acknowledgeInvalid!==true)fail('候选仍是 Geometry Invalid，需明确确认剩余问题；批准不能代替几何校验')
    if(p.geometry.valid&&!strict.candidates.length)fail('候选不再通过严格校验，不能使用旧的有效标记')
    const record={version:'spatial-revision-v1',id:randomUUID(),createdAt:new Date().toISOString(),refinementId:r.id,proposalId:p.id,proposalHash:p.hash,planId:r.planId,geometryId:r.geometryId,sourcePlanHash:r.sourcePlanHash,sourceInputHash:r.sourceInputHash,sourceGeometryHash:r.sourceGeometryHash,
     refinedPlan,input,diffs:p.diffs,classification:p.classification,reviewReasons:p.reviewReasons,approval:{confirmed:true,reviewNote:body.reviewNote.trim(),acknowledgeInvalid:body.acknowledgeInvalid===true},preflightStatus:strict.status}
@@ -61,7 +61,7 @@ export function createRefinementStore(directory,{getPlan,getGeometry,loadRules})
    const result=executePlan(rev.refinedPlan,input,rules)
    const record={...result,id:randomUUID(),createdAt:new Date().toISOString(),state:'complete',planId:rev.planId,revisionId:rev.id,refinementId:r.id,sourcePlan:rev.refinedPlan,sourcePlanHash:hash(rev.refinedPlan),originalPlanHash:rev.sourcePlanHash,input}
    // Preserve an inspectable failed layout, never expose it as a legal candidate.
-   if(!result.candidates.length)record.diagnosticAssembly={...p.assembly,geometry:rules.validateAssembly(p.assembly.bricks),note:'Approved layout revision; strict Geometry remains invalid. Not a successful Assembly.'}
+   if(!result.candidates.length)record.diagnosticAssembly={...p.assembly,geometry:rules.validateFinalAssembly(p.assembly.bricks),note:'Approved layout revision; strict Geometry remains invalid. Not a successful Assembly.'}
    await save(geometries,record);return {geometryId:record.id,resultStatus:record.status,revisionId:rev.id}
   },
   async viewer(refinementId){
