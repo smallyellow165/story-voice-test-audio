@@ -26,48 +26,59 @@ export const geometrySchema = obj({
     relation: { type: 'STRING', enum: ['above', 'below', 'left', 'right', 'front', 'behind', 'contact', 'supports', 'connected', 'unknown'] },
     status, confidence: number, evidence: text })),
 })
-const fail = () => { throw Object.assign(new Error('Geometry Observation 结构或证据状态无效；模型推断不能标为 Validated。'), { statusCode: 422 }) }
-const string = s => typeof s === 'string' && s.length <= 2000
-const array = (a, max = 200) => Array.isArray(a) && a.length <= max
-const strings = a => array(a) && a.every(string)
-const confidence = n => Number.isFinite(n) && n >= 0 && n <= 1
-const positive = n => Number.isFinite(n) && n > 0 && n <= 100
-const state = s => ['observed', 'inferred', 'unknown'].includes(s)
-export function validateGeometryAnalysis(value) {
-  if (!value || !string(value.appearance) || !string(value.scale_evidence) || !strings(value.unknowns)
-    || !array(value.anchors, 100) || !array(value.observations, 100) || !array(value.relations, 300)) fail()
-  const ids = new Set()
-  for (const o of value.observations) {
-    if (!o || typeof o.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(o.id) || ids.has(o.id)
-      || !string(o.color) || !confidence(o.confidence) || !string(o.evidence) || !string(o.occlusion)
-      || !strings(o.visible_seams) || !strings(o.unknowns) || !strings(o.alternatives)
-      || !(o.visible_studs === null || Number.isSafeInteger(o.visible_studs) && o.visible_studs >= 0)
-      || !(o.bbox === null || Array.isArray(o.bbox) && o.bbox.length === 4 && o.bbox.every(confidence) && o.bbox[0] < o.bbox[2] && o.bbox[1] < o.bbox[3])) fail()
-    const orientation = o.orientation
-    if (!orientation || !string(orientation.description) || !string(orientation.evidence) || !state(orientation.status)
-      || !(orientation.yaw_degrees === null || [0, 90, 180, 270].includes(orientation.yaw_degrees))
-      || orientation.status === 'unknown' && orientation.yaw_degrees !== null) fail()
-    for (const key of ['width_studs', 'depth_studs', 'height_brick_units']) {
-      const d = o.dimensions?.[key]
-      if (!d || !state(d.status) || !confidence(d.confidence) || !string(d.evidence) || !strings(d.anchor_ids)
-        || !array(d.alternatives, 20) || !d.alternatives.every(a => a && positive(a.value) && string(a.evidence))
-        || !(d.status === 'unknown' ? d.value === null : positive(d.value) && d.evidence.trim())) fail()
+export const geometryValidationVersion = 'geometry-observation-v1-diagnostics-1'
+// This walks the published shape, then checks the existing semantic constraints.
+// It never normalizes evidence, fills unknowns or promotes an observation to an anchor.
+export function geometryAnalysisIssues(value) {
+  const issues = []
+  const issue = (path, expected, actual, message) => issues.push({path, expected, actual: actual === undefined ? '(missing)' : actual, message})
+  function walk(v, schema, path) {
+    if (v === null && schema.nullable) return
+    const type = schema.type
+    if (type === 'OBJECT') {
+      if (!v || typeof v !== 'object' || Array.isArray(v)) { issue(path, 'object', v, 'Expected an object'); return }
+      for (const [key, child] of Object.entries(schema.properties)) walk(v[key], child, path+'.'+key)
+    } else if (type === 'ARRAY') {
+      const max = path === '$.relations' ? 300 : ['$.anchors','$.observations'].includes(path) ? 100 : /dimensions\.[^.]+\.alternatives$/.test(path) ? 20 : 200
+      if (!Array.isArray(v) || v.length > max) {issue(path, `array, max ${max} items`, v, 'Invalid array'); return}
+      v.forEach((entry,i)=>walk(entry,schema.items,`${path}[${i}]`))
+    } else if (type === 'STRING') {
+      if (typeof v !== 'string' || v.length > 2000) issue(path, 'string, max 2000 characters', v, 'Invalid text')
+      else if (schema.enum && !schema.enum.includes(v)) issue(path, schema.enum, v, 'Value outside allowed enum; visual claims cannot be validated')
+    } else if (!Number.isFinite(v) || type === 'INTEGER' && !Number.isSafeInteger(v)) issue(path, schema.nullable ? `${type.toLowerCase()} or null` : type.toLowerCase(), v, 'Invalid number')
+  }
+  walk(value, geometrySchema, '$')
+  // Structural faults are explicit; do not traverse malformed containers.
+  if (issues.length) return issues
+  const ids = new Set(), anchors = new Set(value.anchors.map(a=>a.observation_id))
+  const confidence = (v,path) => {if(v<0||v>1)issue(path,'number in [0,1]',v,'Confidence out of range')}
+  const positive = v => Number.isFinite(v)&&v>0&&v<=100
+  value.observations.forEach((o,i)=>{
+    const p=`$.observations[${i}]`
+    if(!/^[a-zA-Z0-9_-]{1,40}$/.test(o.id)||ids.has(o.id))issue(p+'.id','unique ID, 1..40 letters/digits/_/-',o.id,'Invalid or duplicate Observation ID')
+    ids.add(o.id);confidence(o.confidence,p+'.confidence')
+    if(o.visible_studs!==null&&o.visible_studs<0)issue(p+'.visible_studs','nonnegative integer or null',o.visible_studs,'Invalid visible count')
+    if(o.bbox!==null&&(o.bbox.length!==4||o.bbox.some(n=>n<0||n>1)||o.bbox[0]>=o.bbox[2]||o.bbox[1]>=o.bbox[3]))issue(p+'.bbox','[left,top,right,bottom] in [0,1], positive area, or null',o.bbox,'Invalid bounding box')
+    const orientation=o.orientation
+    if(!(orientation.yaw_degrees===null||[0,90,180,270].includes(orientation.yaw_degrees))||orientation.status==='unknown'&&orientation.yaw_degrees!==null)issue(p+'.orientation.yaw_degrees',orientation.status==='unknown'?'null':'null or 0/90/180/270',orientation.yaw_degrees,'Unknown orientation must not carry a definite yaw')
+    for(const key of ['width_studs','depth_studs','height_brick_units']){
+      const d=o.dimensions[key],dp=p+'.dimensions.'+key
+      confidence(d.confidence,dp+'.confidence')
+      if(!(d.status==='unknown'?d.value===null:positive(d.value)))issue(dp+'.value',d.status==='unknown'?'null':'positive number <=100',d.value,'Dimension value must agree with evidence status')
+      if(d.status!=='unknown'&&!d.evidence.trim())issue(dp+'.evidence','nonempty evidence',d.evidence,'Observed/inferred values require evidence')
+      d.alternatives.forEach((a,j)=>{if(!positive(a.value))issue(`${dp}.alternatives[${j}].value`,'positive number <=100',a.value,'Invalid alternative dimension')})
+      d.anchor_ids.forEach((id,j)=>{if(!anchors.has(id))issue(`${dp}.anchor_ids[${j}]`,[...anchors],id,'Reference must name a declared anchors[].observation_id; an existing Observation is not automatically an anchor')})
     }
-    ids.add(o.id)
-  }
-  const anchors = new Set()
-  for (const a of value.anchors) {
-    if (!a || !ids.has(a.observation_id) || anchors.has(a.observation_id) || !string(a.evidence) || !a.evidence.trim() || !confidence(a.confidence)) fail()
-    anchors.add(a.observation_id)
-  }
-  for (const o of value.observations) for (const d of Object.values(o.dimensions)) {
-    if (!d || !Array.isArray(d.anchor_ids) || d.anchor_ids.some(id => !anchors.has(id))) fail()
-  }
-  for (const r of value.relations) {
-    if (!r || !ids.has(r.from) || !ids.has(r.to) || r.from === r.to || !state(r.status)
-      || !['above','below','left','right','front','behind','contact','supports','connected','unknown'].includes(r.relation)
-      || !confidence(r.confidence) || !string(r.evidence)
-      || r.relation === 'connected' && r.status === 'observed') fail()
-  }
+    // Preserve the previous rejection of malformed additional dimension fields.
+    for(const key of Object.keys(o.dimensions).filter(k=>!['width_studs','depth_studs','height_brick_units'].includes(k))){const d=o.dimensions[key];if(!d||!Array.isArray(d.anchor_ids)||d.anchor_ids.some(id=>!anchors.has(id)))issue(p+'.dimensions.'+key,'dimension with declared anchor references',d,'Invalid dimension references')}
+  })
+  const seenAnchors=new Set()
+  value.anchors.forEach((a,i)=>{const p=`$.anchors[${i}]`;if(!ids.has(a.observation_id)||seenAnchors.has(a.observation_id))issue(p+'.observation_id','unique existing Observation ID',a.observation_id,'Invalid anchor identity');seenAnchors.add(a.observation_id);confidence(a.confidence,p+'.confidence');if(!a.evidence.trim())issue(p+'.evidence','nonempty evidence',a.evidence,'Anchor needs evidence')})
+  value.relations.forEach((r,i)=>{const p=`$.relations[${i}]`;for(const key of ['from','to'])if(!ids.has(r[key]))issue(p+'.'+key,[...ids],r[key],'Unknown Observation reference');if(r.from===r.to)issue(p+'.to','different from from',r.to,'Self relation');confidence(r.confidence,p+'.confidence');if(r.relation==='connected'&&r.status==='observed')issue(p+'.status',['inferred','unknown'],r.status,'Visual stud engagement cannot be marked observed')})
+  return issues
+}
+export function validateGeometryAnalysis(value) {
+  const issues=geometryAnalysisIssues(value)
+  if(issues.length)throw Object.assign(new Error('Output Validation Failed: '+issues.map(i=>i.path+': '+i.message).join('; ')),{statusCode:422,code:'OUTPUT_VALIDATION_FAILED',validationIssues:issues})
   return value
 }

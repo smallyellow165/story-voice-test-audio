@@ -382,6 +382,21 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     </div>}
     {record && <>
       <p>{record.analysis_mode || 'catalog_match'} · {record.prompt_id || 'reverse_catalog_v1'} v{record.prompt_version || 1} · {record.image_reference?.name} · {record.status} · {record.provider} · {record.model} / {record.modelVersion || '未返回'} · Source {record.source.kind}</p>
+      {record.outputValidation && <section aria-label="Output Validation" style={{ padding: 12, border: '1px solid', borderColor: record.outputValidation.valid ? '#a6c9b4' : '#f1c2bd', background: record.outputValidation.valid ? '#f0faf4' : '#fff0ee', color: record.outputValidation.valid ? '#245c42' : '#913c30', overflowWrap: 'anywhere' }}>
+        <strong>{record.outputValidation.valid ? '离线校验通过（历史状态未修改）' : 'Output Validation Failed · 输出校验失败'}</strong>
+        <p>模型已返回并保存 Raw Output；{record.outputValidation.parsed ? 'JSON 解析成功' : 'JSON 解析失败'}。{record.outputValidation.observationCount} 个 Observation / {record.outputValidation.relationCount} 条 Relations。</p>
+        {record.outputValidation.issues.map((issue, i) => <div key={i}>
+          <code>{issue.path}</code><p>{issue.message}</p>
+          <p>期望：{JSON.stringify(issue.expected)}；实际：{JSON.stringify(issue.actual)}</p>
+        </div>)}
+        <p>离线校验不调用模型、不修改原始输出、不自动确认零件。校验失败时无法进入正式审核。</p>
+        <button disabled={locked} onClick={() => void action('离线重新校验', async () => {
+          const outputValidation = await post<NonNullable<Analysis['outputValidation']>>('revalidate', { analysisId: record.id })
+          setRecord({ ...record, outputValidation })
+        })}>离线重新校验（不调用 LLM）</button>
+        <button onClick={() => download(record.outputValidation, 'output-validation-' + record.id)}>下载校验报告</button>
+        <details><summary>完整输出校验诊断</summary><pre>{JSON.stringify(record.outputValidation, null, 2)}</pre></details>
+      </section>}
       <button type="button" onClick={() => download(record, 'reverse-analysis-' + record.id)}>下载完整分析诊断 / Raw Trace 路径</button>
       <details><summary>识别结果 ID、清单快照、原始证据与未知项</summary><pre>{JSON.stringify({ id: record.id, source: record.source, analysis: record.analysis, error: record.error }, null, 2)}</pre></details>
     </>}

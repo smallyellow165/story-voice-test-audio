@@ -1,4 +1,5 @@
 import { reverseFeatureEditor } from '../src/brick-vision/reverse-review.mjs'
+import { inspectGeometryOutput } from './brick-reverse-output.mjs'
 import { reversePrompts } from './brick-reverse-prompts.mjs'
 import { geometrySchema, validateGeometryAnalysis } from './brick-reverse-geometry.mjs'
 // Reverse orchestration only; Catalog, Mapping, geometry and validation stay shared.
@@ -75,6 +76,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
           || JSON.stringify(value.geometrySnapshot) !== JSON.stringify(geometrySnapshot(rules, value.generatorInput.inventory))
           || !validateBrickDesign(value.generation.design, value.generatorInput.inventory, rules).valid) fail('Reverse Artifact 与当前几何或设计校验不一致，拒绝应用。', 422)
       }
+      if (value.kind === 'reverse-analysis' && value.status === 'failed') value.outputValidation = inspectGeometryOutput(value)
       return value
     }
     catch (e) { if (e.code === 'ENOENT') fail('Reverse 记录不存在。', 404); throw e }
@@ -96,6 +98,12 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
   }
   return {
     read,
+    async revalidate(body) {
+      const record = await read(body.analysisId)
+      const report = inspectGeometryOutput(record)
+      if (!report) fail('此记录没有可离线校验的 Geometry Raw Output。', 422)
+      return report
+    },
 
     async history() {
       let names
@@ -243,7 +251,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         if (record.finishReason !== (definition.provider === 'openai' ? 'completed' : 'STOP')) fail('Reverse 模型输出未完成。', 422)
         record.analysis = validate(JSON.parse(record.rawOutput))
         record.status = 'complete'
-      } catch (error) { record.status = 'failed'; record.error = visionErrorDiagnostic(error, 'Reverse Analysis') }
+      } catch (error) { record.status = 'failed'; record.error = visionErrorDiagnostic(error, 'Reverse Analysis'); record.outputValidation = inspectGeometryOutput(record) }
       record.elapsedMs = Math.round(performance.now() - started)
       await save(record)
       return record
