@@ -100,6 +100,22 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
   if(!reason&&rules.validateAssembly([a.brick,b.brick]).code==='COLLISION')reason='COLLISION'
   memo.set(key,reason);return reason
  }
+ // Explain every independently impossible declared mate before propagation
+ // removes domains. This does not relax constraints or enlarge the search.
+ const impossibleMates=[]
+ for(const c of allIntents.filter(c=>c.intent==='mates')){
+  const own=domains.get(c.id),other=domains.get(c.other)
+  if(own.some(a=>other.some(b=>mating(a,b,c))))continue
+  const points=(domain,surface,index)=>domain.flatMap(p=>(p[surface]||[]).filter((_,i)=>index===null||i===index))
+  const a=points(own,c.ownSurface,c.ownConnector),b=points(other,c.otherSurface,c.otherConnector)
+  const gaps=Object.fromEntries(axes.map(axis=>[axis,a.length&&b.length?a.reduce((best,u)=>b.reduce((n,v)=>Math.min(n,Math.abs(u[axis]-v[axis])),best),Infinity):null]))
+  impossibleMates.push({code:'IMPOSSIBLE_MATING_IN_DOMAIN',id:c.id,other:c.other,
+   ownSurface:c.ownSurface,otherSurface:c.otherSurface,ownConnector:c.ownConnector,otherConnector:c.otherConnector,
+   minimumAxisGapLdu:gaps,minimumL1GapLdu:a.length&&b.length?a.reduce((best,u)=>b.reduce((n,v)=>Math.min(n,axes.reduce((sum,axis)=>sum+Math.abs(u[axis]-v[axis]),0)),best),Infinity):null,
+   reason:'Declared connector pair cannot coincide in the allowed pose domain. Review plan indices, height/depth intervals and yaw candidates; no permitted pose satisfies this mate within the stated bounds.',
+   scope:'Independent necessary mating condition; zero axis gaps do not prove a simultaneous valid pose.'})
+ }
+ if(impossibleMates.length)return {...result,status:'no_solution_in_bounds',completeSearch:true,diagnostics:impossibleMates}
  // Arc consistency preserves every solution in the bounded domain. No guesses
  // about part names, repaired connector indices or hidden support are made.
  let changed=true
