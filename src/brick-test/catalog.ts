@@ -64,9 +64,98 @@ const curved2302: PartDefinition = {
 }
 if (geometryIssues(curved2302.geometry).length) throw new Error('Invalid 2302 profile')
 
+// 98224: retain the official entry and its MOVED rotation. The full top and central
+// planar 2x2 bottom interfaces are certified; recessed end cavities are not sockets.
+// Outer curve vertices are from 98224b/s98252bs01, transformed to +Y-up.
+const curve98224 = [[40,0], [45.1636,48-46.653], [50.9869,48-44.6244],
+  [56.5,48-41.8278], [61.6136,48-38.3212], [66.2337,48-34.1529],
+  ...[[.7934,.6088],[.866,.5],[.9239,.3827],[.9659,.2588],[.9914,.1305],[1,0]]
+    .map(([cos,sin])=>[33+47*cos,48-48.3*sin])]
+const curved98224: PartDefinition = {
+  id:'98224',label:'2 × 4 · 弧形底（底部中央 2×2 接口）',length:4,depth:2,
+  geometry:{
+    family:'explicit-duplo',status:'reviewed',bodySizeLdu:{x:160,y:48,z:80},
+    outerBoundsLdu:{min:{x:-80,y:0,z:-40},max:{x:80,y:59,z:40}},
+    collision:{kind:'conservative-boxes',boxes:[
+      {min:{x:-40,y:0,z:-40},max:{x:40,y:48,z:40}},
+      ...curve98224.slice(0,-1).flatMap(([x,y],i)=>{
+        const next=curve98224[i+1][0],floor=Math.max(0,y-0.001)
+        return [{min:{x,y:floor,z:-40},max:{x:next,y:48,z:40}},
+          {min:{x:-next,y:floor,z:-40},max:{x:-x,y:48,z:40}}]
+      }),
+    ]},
+    top:[-60,-20,20,60].flatMap(x=>[-20,20].map(z=>({x,y:48,z,type:'duplo-stud' as const,direction:'up' as const,radiusLdu:12,depthLdu:11}))),
+    bottom:[-20,20].flatMap(x=>[-20,20].map(z=>({x,y:0,z,type:'duplo-stud' as const,direction:'down' as const,radiusLdu:12,depthLdu:11}))),
+    rotations:[0,90,180,270],placement:'upright',ldraw:{rotationX:Math.PI,offsetLdu:{x:0,y:48,z:0}},
+    sourceFiles:[
+      {
+            "path": "parts/98224.dat",
+            "sha256": "5db274e006b237ddbe426cf1105d04c06bb2c06789ef67642308fcf34a6f39ef"
+      },
+      {
+            "path": "parts/98224b.dat",
+            "sha256": "dec35e6f86a5acd25a877a9f7dd4a170a59949a0c1e24ede1f18be265941d274"
+      },
+      {
+            "path": "parts/s/98224s01.dat",
+            "sha256": "23ef20d697066a82df21a28d7f8a387394ef8f8542f2fa851a042076715ad797"
+      },
+      {
+            "path": "parts/s/98252bs01.dat",
+            "sha256": "e106b4d76180e3358b5b4d28fa4a2760c03cb63a3bb5e24cb95548e4f48157fa"
+      },
+      {
+            "path": "p/stug7-2x2.dat",
+            "sha256": "409fe27186afedd30d6b65e83063fba99380218d4067a4b0359e4250911726ca"
+      },
+      {
+            "path": "p/stud7.dat",
+            "sha256": "250111864bb2492a8722544d1f09b5e45672ba3f8e93be769b77499e7ea3fb1a"
+      },
+      {
+            "path": "p/stud8.dat",
+            "sha256": "1a3202bf2d8dd8f58f59d09e220cb62f3411db762f88333a82503ab395f9d115"
+      },
+      {
+            "path": "p/box5.dat",
+            "sha256": "ccb7b8a1d36692335b10ea6aa196849afcad4b15331683ed8112a10b50977318"
+      },
+      {
+            "path": "p/box4-1.dat",
+            "sha256": "2ed58df5da841827dfc5f9ac11c0bd7ffd8a455e46f166638e635f61a014b44d"
+      },
+      {
+            "path": "p/48/1-8cylo.dat",
+            "sha256": "bc5df94184d568c4b032959d7ec8fb138adc17acf14d8f9b4d41b69e96bc9f5f"
+      },
+      {
+            "path": "p/48/1-8cyli.dat",
+            "sha256": "494069ca353e41885bf8f5b6b3ddc9b62aabeca3eedfe6aa5597ac8f12ca12b9"
+      },
+      {
+            "path": "p/48/1-8chrd.dat",
+            "sha256": "282b0d7dd4e73d273b9cbcce88e30889cce3b44aa8574a25382fe526248d5426"
+      }
+],
+    evidence:[
+      '98224.dat MOVED: (x,y,z)=(z_b,y_b,-x_b); Viewer Rx(PI)+[0,48,0] gives (z_b,48-y_b,x_b). Body 160x48x80 LDU, curve at both X ends.',
+      '98224s01 stug7-2x2 scaled Y=2.75: four top stud7 at +/-20, y=0 in LDraw; top contact y=48, stud height=11 in assembly.',
+      '98252bs01 stud7a at b x=+/-20,z=-60,y=25, scale Y=9: primitive rim y=-4 maps to y=-11. Mirrored end gives four additional top studs at entry x=+/-60,z=+/-20. Their extended shafts descend inside the body; nominal exposed mating height remains 11 LDU.',
+      'Central inverted box5 at y=48, extent +/-36, depth44; stud8 tube and eight perimeter ribs at +/-34 confirm central four standard bottom mating cells at x/z=+/-20. These are socket engagement cells, not four separate tube primitives.',
+      'Curve enclosure uses maximum solid extent per official facet interval on both ends, rounded outward 0.001 LDU. It excludes the large empty volume below each raised end; no ordinary 2x4 box substitution.',
+    ],
+    unknown:[
+      'Recessed end structures at b z=+/-60 are not certified mating interfaces; no off-plane connections are exposed.',
+      'Conservative facet-step envelopes can reject close curve clearances and recessed-cavity insertions; not exact mesh-solid collision.',
+      'Nominal DUPLO connector contract only; physical stability, clutch force and manufacturing clearance are not certified.',
+    ],
+  },
+}
+if (geometryIssues(curved98224.geometry).length) throw new Error('Invalid 98224 profile')
+
 // Reviewed data profiles, not per-part assembly algorithms. Unknown parts stay excluded.
 export const PARTS: readonly PartDefinition[] = [
-  curved2302,
+  curved2302, curved98224,
   { id: '3437', label: '2 × 2', length: 2, depth: 2, geometry: rectangularGeometry(2, 2, 48,
     ['parts/3437.dat: body +/-40, y=0..48', 'parts/s/3437s01.dat: stug7-2x2, underside tube/ribs; existing standard DUPLO interface contract']) },
   { id: '3011', label: '2 × 4', length: 4, depth: 2, geometry: rectangularGeometry(4, 2, 48,

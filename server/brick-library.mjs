@@ -66,7 +66,7 @@ export async function inspectBrickModel(part, library = brickLibraryRoot(), { ex
       }
       if (extractGeometry) {
         // Primitive names describe geometry, not an inventory Part Number whitelist.
-        if (['stud7.dat', 'stud8.dat', 'stud8a.dat', 'box5.dat'].includes(path.basename(file).toLowerCase()))
+        if (['stud7.dat', 'stud7a.dat', 'stud8.dat', 'stud8a.dat', 'box5.dat'].includes(path.basename(file).toLowerCase()))
           primitives.push({ file: path.relative(root, file).split(path.sep).join('/'),
             origin: new Vector3().applyMatrix4(transform).toArray(), matrix: transform.toArray() })
         for (const line of source.split(/\r?\n/)) if (/^0\s+!LDCAD\s+SNAP_/.test(line))
