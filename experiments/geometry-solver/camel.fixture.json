@@ -1,0 +1,180 @@
+{
+  "inventory": [
+    {
+      "part": "3437",
+      "color": "14",
+      "quantity": 2
+    },
+    {
+      "part": "4066a",
+      "color": "14",
+      "quantity": 3
+    },
+    {
+      "part": "40666",
+      "color": "14",
+      "quantity": 2
+    }
+  ],
+  "observations": [
+    {
+      "id": "head",
+      "part": "3437",
+      "color": "14"
+    },
+    {
+      "id": "neck",
+      "part": "4066a",
+      "color": "14"
+    },
+    {
+      "id": "back",
+      "part": "3437",
+      "color": "14"
+    },
+    {
+      "id": "upper_horizontal",
+      "part": "40666",
+      "color": "14"
+    },
+    {
+      "id": "lower_horizontal",
+      "part": "40666",
+      "color": "14"
+    },
+    {
+      "id": "left_leg",
+      "part": "4066a",
+      "color": "14"
+    },
+    {
+      "id": "right_leg",
+      "part": "4066a",
+      "color": "14"
+    }
+  ],
+  "relations": [
+    {
+      "from": "head",
+      "to": "neck",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.96,
+      "evidence": "The head's underside visibly meets the neck's upper end."
+    },
+    {
+      "from": "neck",
+      "to": "head",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.94,
+      "evidence": "The neck is directly beneath the head at their visible interface; stud engagement is concealed."
+    },
+    {
+      "from": "neck",
+      "to": "lower_horizontal",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.91,
+      "evidence": "The neck's lower edge meets the left top region of the lower horizontal piece."
+    },
+    {
+      "from": "lower_horizontal",
+      "to": "neck",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.9,
+      "evidence": "The neck stands above this layer at a visible boundary."
+    },
+    {
+      "from": "back",
+      "to": "upper_horizontal",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.96,
+      "evidence": "The back block's lower edge meets the upper horizontal piece."
+    },
+    {
+      "from": "upper_horizontal",
+      "to": "back",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.95,
+      "evidence": "The block rests above the horizontal piece; the stud interface is hidden."
+    },
+    {
+      "from": "upper_horizontal",
+      "to": "lower_horizontal",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.89,
+      "evidence": "A shared boundary is visible across the overlapping horizontal layers."
+    },
+    {
+      "from": "lower_horizontal",
+      "to": "upper_horizontal",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.88,
+      "evidence": "The lower layer lies directly beneath the overlapping portion of the upper layer."
+    },
+    {
+      "from": "left_leg",
+      "to": "lower_horizontal",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.93,
+      "evidence": "The left leg terminates against the underside of the lower layer."
+    },
+    {
+      "from": "left_leg",
+      "to": "lower_horizontal",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.92,
+      "evidence": "The upright leg is directly beneath the bridging piece; engagement is concealed."
+    },
+    {
+      "from": "right_leg",
+      "to": "lower_horizontal",
+      "relation": "contact",
+      "status": "observed",
+      "confidence": 0.92,
+      "evidence": "The right leg's upper edge meets the underside of the lower horizontal piece."
+    },
+    {
+      "from": "right_leg",
+      "to": "lower_horizontal",
+      "relation": "supports",
+      "status": "inferred",
+      "confidence": 0.91,
+      "evidence": "The right leg stands beneath the right portion of the bridging piece."
+    },
+    {
+      "from": "left_leg",
+      "to": "right_leg",
+      "relation": "left",
+      "status": "observed",
+      "confidence": 0.99,
+      "evidence": "The two visible legs are separated horizontally by an open gap."
+    }
+  ],
+  "hints": {
+    "leftAxis": "x",
+    "groundIds": [
+      "left_leg",
+      "right_leg"
+    ],
+    "separatedPairs": [
+      [
+        "left_leg",
+        "right_leg"
+      ]
+    ]
+  },
+  "provenance": {
+    "analysisId": "0474c775-ae2f-40d7-87d2-dd0e2b4ee3fa",
+    "mappingTrace": "0faf5079-d553-430f-9f12-fc95d190b769",
+    "note": "Independent test input copied from saved official mapping; no target coordinates, LLM placements or solver answers."
+  }
+}

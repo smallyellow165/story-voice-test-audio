@@ -1,0 +1,14 @@
+{
+  "leftAxis": "x",
+  "groundIds": [
+    "left_leg",
+    "right_leg"
+  ],
+  "provenance": "Explicit experiment hypotheses: legs touch the ground; image-left is represented by world -X. Soft hints only, not calibrated 3D facts or target coordinates.",
+  "separatedPairs": [
+    [
+      "left_leg",
+      "right_leg"
+    ]
+  ]
+}
