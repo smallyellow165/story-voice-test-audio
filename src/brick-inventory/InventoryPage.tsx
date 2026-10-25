@@ -135,8 +135,11 @@ export function InventoryPage() {
   const [resultReviewKey, setResultReviewKey] = useState('')
   const searchRevision = useRef(0)
   const catalogHost = useRef<HTMLElement | null>(null)
+  const catalogScroll = useRef<HTMLDivElement | null>(null)
+  const resultsTop = useRef<HTMLDivElement | null>(null)
+  const scrollAfterPage = useRef(false)
   const [search, setSearch] = useState('')
-  const [submittedQuery, setSubmittedQuery] = useState<Record<string, string>>({})
+  const [submittedQuery, setSubmittedQuery] = useState<Record<string, string> | null>({})
   const [requireLdraw, setRequireLdraw] = useState(false)
   const [partialDimensions, setPartialDimensions] = useState<Record<string, string>>({})
   const [featureSize, setFeatureSize] = useState(''), [featureShape, setFeatureShape] = useState('')
@@ -186,6 +189,7 @@ export function InventoryPage() {
     return () => controller.abort()
   }, [refresh])
   useEffect(() => {
+    if (submittedQuery === null) return
     const controller = new AbortController()
     setResultReviewKey(''); setLoading(true); setCatalogError(''); setImageError(''); setResult(null); setImages({})
     const params: Record<string, string> = { ...submittedQuery, page: String(page), page_size: '24' }
@@ -215,6 +219,35 @@ export function InventoryPage() {
     })()
     return () => controller.abort()
   }, [submittedQuery, page, refresh, catalogRequestKey])
+
+  useEffect(() => {
+    if (!result || !scrollAfterPage.current) return
+    scrollAfterPage.current = false
+    const container = catalogScroll.current, top = resultsTop.current
+    if (container && top) container.scrollTo({ top: container.scrollTop + top.getBoundingClientRect().top - container.getBoundingClientRect().top })
+  }, [result])
+
+  function changeCatalogPage(nextPage: number) {
+    if (!submittedQuery) return
+    scrollAfterPage.current = true
+    startCatalogRequest(submittedQuery, catalogReview, nextPage)
+  }
+  function catalogPagination(position: string) {
+    if (!result) return null
+    return <nav className="inventory-pagination" aria-label={`Catalog 分页（${position}）`}>
+      <span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
+      <button disabled={loading || page <= 1} onClick={() => changeCatalogPage(page - 1)}>上一页</button>
+      <button disabled={loading || page * result.page_size >= result.total} onClick={() => changeCatalogPage(page + 1)}>下一页</button>
+    </nav>
+  }
+  function resetCatalog() {
+    ++searchRevision.current
+    scrollAfterPage.current = false
+    setSearch(''); setCategory(''); setColorFilter(''); setFeatureSize(''); setFeatureShape(''); setFeaturePrint('unknown')
+    setRequireLdraw(false); setPartialDimensions({}); setPage(1)
+    setCatalogReview(null); setCatalogRequestKey(''); setResultReviewKey(''); setSubmittedQuery(null)
+    setResult(null); setImages({}); setCatalogError(''); setImageError(''); setLoading(false)
+  }
 
   function startCatalogRequest(query: Record<string, string>, review: ObservationCatalogSearch | null, nextPage = 1) {
     const revision = String(++searchRevision.current)
@@ -316,7 +349,7 @@ export function InventoryPage() {
             <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>零件目录</button>
             <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块</button>
           </div>
-          <div id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
+          <div ref={catalogScroll} id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
       <section ref={catalogHost} className="inventory-catalog" aria-label="DUPLO Catalog">
         <h2>零件目录</h2>
         {catalogReview && <p role="status">为识别项 {catalogReview.observationId} 选择型号与颜色：确认后填写审核行，不直接加入我的积木。
@@ -353,6 +386,7 @@ export function InventoryPage() {
           <div className="catalog-filter-actions">
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input style={{ width: 'auto' }} type="checkbox" checked={requireLdraw} onChange={e => setRequireLdraw(e.target.checked)} /> Require LDraw</label>
             <button type="submit" form="catalog-search">Search</button>
+            <button type="button" onClick={resetCatalog}>Reset All</button>
           </div>
           </div>
           <p className="inventory-note">Search 同时应用全部已填条件（Strict AND）；未填条件不限制。尺寸单位 Stud × Stud × Brick，来自明确的 Catalog 名称标称尺寸或已审核主体 Profile；未知或冲突不能满足尺寸条件。名称尺寸不是实物几何验证。Require LDraw 默认关闭；开启时要求至少一个官方数据库 Mapping 的本地模型及引用可加载，不要求 Profile，也不代表 Assembly 验证。修改条件后点击 Search；分页沿用上次提交条件。</p>
@@ -361,8 +395,8 @@ export function InventoryPage() {
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
         {imageError && <p role="alert" className="inventory-error">{imageError}</p>}
         {loading && <p role="status">正在读取 Catalog…</p>}
-        {result && <><div className="inventory-pagination"><span>共 {result.total} 个型号 · 第 {page} / {Math.max(1, Math.ceil(result.total / result.page_size))} 页</span>
-          <button disabled={page <= 1} onClick={() => startCatalogRequest(submittedQuery, catalogReview, page - 1)}>上一页</button><button disabled={page * result.page_size >= result.total} onClick={() => startCatalogRequest(submittedQuery, catalogReview, page + 1)}>下一页</button></div>
+        {submittedQuery === null && <p role="status">Catalog 条件已重置 · 第 1 页；点击 Search 或重新选择 Observation 开始搜索。审核内容保持不变。</p>}
+        {result && <><div ref={resultsTop}>{catalogPagination('顶部')}</div>
           {result.geometry_report && <div className="inventory-feature-summary">
             <p>几何条件 Unknown 排除 {result.geometry_report.unknown_total}；尺寸不符排除 {result.geometry_report.mismatched_total}（可能重叠）。Mapping 来自 rb_part_mappings；Unknown 不代表 Catalog 中不存在该规格。</p>
             <details><summary>几何排除原因与示例（最多 12 项）</summary><pre>{JSON.stringify(result.geometry_report, null, 2)}</pre></details>
@@ -370,11 +404,11 @@ export function InventoryPage() {
           {result.criteria && <div className="inventory-feature-summary"><p>SQL 预筛选 {result.prefilter_total}；严格匹配 {result.eligible_total}；解析复核排除（不匹配或未知）{result.excluded_total}。未填写条件不参与筛选；无结果时不自动放宽条件，不自动选择型号。</p>
             <details><summary>查询条件 / 实际 MySQL 字段 / 耗时</summary><pre>{JSON.stringify({ criteria: result.criteria, schema: result.schema, performance: result.performance }, null, 2)}</pre></details>
           </div>}
-          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${submittedQuery.color ?? ''}`} part={part} image={images[part.part_num]} initialColor={submittedQuery.color ?? ''} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
+          {result.items.length === 0 ? <p role="status">没有匹配记录，请调整搜索或筛选条件。</p> : <div className="inventory-grid">{result.items.map(part => <PartRow key={`${catalogReview?.key ?? "manual"}:${part.part_num}:${submittedQuery?.color ?? ''}`} part={part} image={images[part.part_num]} initialColor={submittedQuery?.color ?? ''} initialQuantity={catalogReview?.quantity} reviewing={!!catalogReview}
             onAdd={async item => {
               if (catalogReview) {
                 if (resultReviewKey !== catalogRequestKey || String(searchRevision.current) !== catalogRequestKey || (!catalogReview.method || catalogReview.method === 'features') && part.eligible !== true) throw new Error('候选已过期，请从识别项 重新检索。')
-                if (!part.colors.some(c => c.id === item.color_id) || (submittedQuery.color !== undefined && String(item.color_id) !== submittedQuery.color)) throw new Error('所选颜色不符合本次检索条件；请按本次提交的颜色条件选择或重新搜索。')
+                if (!part.colors.some(c => c.id === item.color_id) || (submittedQuery?.color !== undefined && String(item.color_id) !== submittedQuery?.color)) throw new Error('所选颜色不符合本次检索条件；请按本次提交的颜色条件选择或重新搜索。')
                 addItem([], item)
                 const revision = searchRevision.current
                 await catalogReview.onChoose(item, { part, criteria: result.criteria, query: submittedQuery }, () => searchRevision.current === revision)
@@ -382,6 +416,7 @@ export function InventoryPage() {
                 setCatalogReview(null); visionWorkspaceHost?.scrollIntoView({ block: 'start' }); return
               }
               const next = addItem(items, item); changeItems(next); setNotice(`已加入 ${item.quantity} 块 ${part.part_num}。`) }} />)}</div>}
+          {catalogPagination('底部')}
         </>}
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>
