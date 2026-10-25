@@ -251,6 +251,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
         {workflow==='spatial'&&<div data-testid="spatial-scene-provenance" className={'spatial-state '+(spatialLoadError?'failed':!spatialLoaded?'running':!spatialPreview?'idle':!spatialPreview.geometry.valid?'failed':spatialPreview.review.includes('Requires Review')?'review':'success')}>
           {spatialLoadError?'预览失败：'+spatialLoadError:!spatialLoaded?'正在加载当前只读预览…':spatialPreview?<><strong>{spatialPreview.label} · {spatialPreview.review} · Geometry {spatialPreview.geometry.valid?'Valid':'Invalid'}</strong><p>{spatialPreview.geometry.reason} · 只读；未验证物理稳定性或 Build Order。</p><details><summary>当前积木与连接诊断</summary><pre>{JSON.stringify({bricks:spatialPreview.bricks,geometry:spatialPreview.geometry},null,2)}</pre></details></>:'等待 Geometry Execution 或选择已保存布局；当前无三维结果。'}
         </div>}
+        {workflow==='spatial'&&spatialPreview&&<small className="brick-help">LDraw 几何预览；通过基础几何映射的印花未渲染，具体印花型号以审核快照为准。</small>}
         <div className="brick-stage-toolbar"><span>{workflow==='spatial'?(spatialLoaded?spatialPreview?.bricks.length||0:0):bricks.length} 块{workflow==='spatial'?'只读预览':'已添加'}</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
         {workflow!=='spatial' && generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
           <strong>{generatedReport.valid ? "Valid" : "Invalid · " + generatedReport.issues.length + " 项错误"}</strong>

@@ -2,6 +2,35 @@
 // numbers, names, RGB proximity or an inventory used in a previous experiment.
 import { inspectBrickModel } from './brick-library.mjs'
 
+// Official export selection is shared by live preparation and saved evidence
+// validation. A print relationship is not an LDraw external ID for the child.
+export function officialPartCandidates(partNum, metadata) {
+  const rows = (metadata?.mappings || []).filter(r => r.part_num === partNum && r.ext_system === 'LD')
+  const exports = rows.filter(r => r.is_export_id === true)
+  return [...new Set((exports.length ? exports : rows).map(r => r.ext_id))]
+}
+
+export function verifiedPrintGeometryBinding(partNum, metadata, binding) {
+  if (metadata?.source !== 'rb_part_mappings' || metadata.status !== 'unavailable'
+    || (metadata.mappings || []).some(r => r.ext_system === 'LD')) return false
+  if (binding?.kind !== 'printed_variant_base_geometry' || binding.source !== 'rb_part_relationships'
+    || binding.partNum !== partNum || !binding.basePartNum || binding.basePartNum === partNum
+    || !Array.isArray(binding.relationships) || !binding.relationships.length) return false
+  if (!binding.relationships.every(r => r.rel_type === 'P' && r.child_part_num === partNum
+    && r.parent_part_num === binding.basePartNum)) return false
+  const base = binding.baseMapping
+  return base?.source === 'rb_part_mappings' && base.status === 'available'
+    && officialPartCandidates(binding.basePartNum, base).length === 1
+}
+
+export function savedGeometryMappingMatches(partNum, metadata, targetPart, binding) {
+  if (binding) return verifiedPrintGeometryBinding(partNum, metadata, binding)
+    && officialPartCandidates(binding.basePartNum, binding.baseMapping)[0] === targetPart
+  return metadata?.source === 'rb_part_mappings' && metadata.status === 'available'
+    && officialPartCandidates(partNum, metadata).length === 1
+    && officialPartCandidates(partNum, metadata)[0] === targetPart
+}
+
 export async function resolveInventoryMapping(session, metadata, rules, inspectModel = inspectBrickModel) {
   const merged = new Map()
   const checked = new Map()

@@ -9,6 +9,9 @@ const error=document.querySelector<HTMLDivElement>('#error')!
 const select=document.querySelector<HTMLSelectElement>('#candidate')!
 const report=document.querySelector<HTMLPreElement>('#report')!
 const viewer=new BrickViewer(document.querySelector<HTMLElement>('#scene')!,import.meta.env.BASE_URL+'brick-ldraw/',message=>{error.textContent=message})
+const appearance=document.createElement('p')
+appearance.textContent='LDraw 几何预览：通过基础几何映射的印花未渲染；具体印花身份保留在原计划的确认型号与 Mapping 证据中。'
+status.after(appearance)
 type Entry={id:string;layoutId:string;file:string;bricks:Brick[]}
 type Index={purpose?:'refinement-review';diagnosticAssembly?:{bricks:Brick[];note:string};status:string;completeSearch:boolean;diagnostics:unknown[];groups:unknown[];candidates:Entry[];image:{mimeType:string;imageBase64:string};sourcePlan:unknown}
 let diagnostic=false
