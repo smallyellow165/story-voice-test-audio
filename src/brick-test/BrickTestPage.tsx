@@ -1,3 +1,4 @@
+import {InspectorContext,type InspectorStep} from './SpatialInspector'
 import { assessDesignDisplay } from '../brick-design-display.mjs'
 import { validPosition } from './part-geometry'
 import type { DesignReport } from './design-types'
@@ -21,6 +22,11 @@ const inputError = (reason: string): Validation => ({ valid: false, code: 'INPUT
 
 export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-ldraw/` }: { libraryUrl?: string }) {
   const [workflow, setWorkflow] = useState(() => new URL(location.href).searchParams.get('workflow') === 'spatial' ? 'spatial' : 'generator')
+  const [inspectorHost,setInspectorHost]=useState<HTMLDivElement|null>(null)
+  const [rightTab,setRightTab]=useState(() => {const value=new URL(location.href).searchParams.get('rightTab');return value==='editor'||value==='inspector'?value:workflow==='spatial'?'inspector':'editor'})
+  const [inspectorStep,setInspectorStep]=useState<InspectorStep>(()=>{const p=new URL(location.href).searchParams;const step=p.get('inspectorStep');return step==='planning'||step==='geometry'||step==='refinement'?step:p.get('spatialPreview')==='refinement'||p.has('refinementId')?'refinement':p.has('geometryId')?'geometry':'planning'})
+  function chooseTab(tab:string){setRightTab(tab);const u=new URL(location.href);u.searchParams.set('rightTab',tab);window.history.replaceState(null,'',u)}
+  function inspect(step:InspectorStep,open=false){setInspectorStep(step);const u=new URL(location.href);u.searchParams.set('inspectorStep',step);if(open){setRightTab('inspector');u.searchParams.set('rightTab','inspector')}window.history.replaceState(null,'',u)}
   const [stepsHost, setStepsHost] = useState<HTMLDivElement | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<BrickViewer | null>(null)
@@ -223,7 +229,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
   }, new Map<string, { part: string; color: string; count: number }>()).values()]
   const numberValue = (value: number) => Number.isFinite(value) ? value : ''
 
-  return <main className="brick-page">
+  return <InspectorContext.Provider value={{host:inspectorHost,step:inspectorStep,select:inspect}}><main className="brick-page">
     <ThreeColumnLayout className="brick-workbench" defaultSizes={['25%', '48%', '27%']}
       left={<>
     <header className="brick-header">
@@ -232,7 +238,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>LEGO Part Explorer ↗</a>
     </header>
     <label className="brick-panel">设计工作流<select aria-label="设计工作流" disabled={busy || generating} value={workflow} onChange={e => {
-      setWorkflow(e.target.value)
+      setWorkflow(e.target.value);chooseTab(e.target.value==='spatial'?'inspector':'editor')
       const url = new URL(location.href); url.searchParams.set('workflow', e.target.value); window.history.replaceState(null, '', url)
     }}><option value="generator">Generator V3 · 自由 / 参考图生成</option><option value="spatial">Spatial Assembly · 已审核照片复原</option></select></label>
     {workflow === 'spatial'
@@ -263,6 +269,17 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
         <div className="brick-steps-host" ref={setStepsHost} />
       </>}
       right={<>
+      <div className="brick-right-tabs" role="tablist" aria-label="右栏工具">
+        <button role="tab" id="editor-tab" aria-controls="editor-panel" aria-selected={rightTab==='editor'} onClick={()=>chooseTab('editor')}>Brick Editor</button>
+        <button role="tab" id="inspector-tab" aria-controls="inspector-panel" aria-selected={rightTab==='inspector'} onClick={()=>chooseTab('inspector')}>Inspector</button>
+      </div>
+      <div id="inspector-panel" role="tabpanel" aria-labelledby="inspector-tab" hidden={rightTab!=='inspector'} className="spatial-inspector brick-spatial">
+        <h2>Inspector</h2>
+        <nav aria-label="Inspector 阶段">{(['planning','geometry','refinement'] as const).map((step,i)=><button key={step} aria-pressed={inspectorStep===step} onClick={()=>inspect(step)}>{i+1} · {step==='planning'?'Plan':step==='geometry'?'Geometry':'Refinement'}</button>)}</nav>
+        {workflow!=='spatial'&&<p>切换到 Spatial Assembly 查看计划、几何诊断及审核详情。</p>}
+        <div ref={setInspectorHost}/>
+      </div>
+      <div id="editor-panel" role="tabpanel" aria-labelledby="editor-tab" hidden={rightTab!=='editor'}>
       <aside className="brick-panel">
         <h2>添加积木</h2>
         <form onSubmit={add}>
@@ -301,7 +318,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
         {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={workflow==='spatial' || busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>
     <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。{workflow === 'spatial' ? 'Spatial Plan 与 Geometry Result 按当前链接恢复；手动编辑不自动保存。' : '刷新后重置。'}</footer>
-      </>}
+      </div></>}
     />
-  </main>
+  </main></InspectorContext.Provider>
 }

@@ -114,3 +114,40 @@ body { margin: 0; }
 
 .refinement-diffs { width:100%; font-size:12px; border-collapse:collapse; }
 .refinement-diffs th,.refinement-diffs td { padding:6px; border-bottom:1px solid #cbd5e1; overflow-wrap:anywhere; }
+
+/* Workflow controls and Inspector share state; hidden tabs remain mounted. */
+.brick-page [hidden] { display: none !important; }
+.brick-right-tabs { display:flex; gap:6px; position:sticky; top:-12px; z-index:2; padding:10px 0; background:#f6f7f9; }
+.brick-right-tabs button { flex:1; }
+.brick-right-tabs [aria-selected="true"], .spatial-inspector nav [aria-pressed="true"] { background:#e8efff; border-color:#2b58b7; color:#244d9e; }
+.spatial-inspector { min-width:0; font-size:13px; line-height:1.6; }
+.spatial-inspector nav { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:16px; }
+.spatial-inspector nav button { flex:1; }
+.spatial-inspector h2 { font-size:16px; margin:8px 0; }
+.spatial-inspector details { margin:12px 0; }
+.spatial-inspector summary { cursor:pointer; font-weight:600; }
+.spatial-inspector p, .spatial-inspector a, .spatial-inspector li { overflow-wrap:anywhere; }
+.spatial-inspector table { table-layout:fixed; width:100%; }
+.spatial-inspector pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.brick-page input[type="checkbox"] { width:auto; align-self:flex-start; }
+.workflow-step-title { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:15px; border-top:1px solid #d7dfea; padding-top:14px; }
+.brick-page .inspect-button { color:#2854a6; padding:5px 8px; font-size:12px; }
+.brick-spatial.brick-panel { font-size:13px; line-height:1.5; }
+.brick-spatial.brick-panel label { margin-bottom:8px; }
+.brick-spatial.brick-panel .brick-primary { padding:9px; margin:5px 0; }
+.workflow-options { margin:8px 0; }
+.workflow-options summary { cursor:pointer; margin-bottom:8px; }
+.workflow-status { border-left:3px solid; padding:7px 9px; font-size:13px; }
+.workflow-status.success { color:#166534; }
+.workflow-status.failed { color:#991b1b; }
+.workflow-status.review { color:#92400e; }
+.workflow-status.idle { color:#64748b; }
+.brick-spatial.brick-panel [data-testid="geometry-state"], .brick-spatial.brick-panel [data-testid="planning-state"] { padding:7px 9px; border-width:1px; font-size:13px; }
+@media (max-width:1100px) {
+  .brick-workbench .three-column-layout__content { padding:8px; }
+  .brick-fields { grid-template-columns:1fr; }
+  .brick-right-tabs { top:-8px; }
+  .spatial-inspector .refinement-diffs th, .spatial-inspector .refinement-diffs td { padding:4px 2px; }
+}
+.brick-spatial [data-testid="planning-state"] small { display:block; margin-top:3px; }
+.spatial-inspector nav button { flex:1 1 100px; overflow-wrap:normal; }

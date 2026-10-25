@@ -1,5 +1,6 @@
+import {InspectorContent,InspectButton,InspectorContext} from './SpatialInspector'
 import {GeometryRefinementPanel} from './GeometryRefinementPanel'
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../model-selector'
 import { validateFinalAssembly } from './assembly'
 import { geometrySupport, type Brick } from './catalog'
@@ -15,6 +16,7 @@ const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
 function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
 export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:Props){
+ const inspector=useContext(InspectorContext)
  const [analyses,setAnalyses]=useState<{id:string;appearance:string}[]>([]),[analysisId,setAnalysisId]=useState(new URL(location.href).searchParams.get('analysisId')||'')
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
  const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<{geometry:{valid:boolean;connections:{points:unknown[]}[]};collision:{status:string};[key:string]:unknown}|null>(null)
@@ -30,7 +32,8 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   setPlans(p.items);setOperations(o.items)
  }
  async function loadSource(a:string){setSource(null);if(!a)return;try{setSource(await request('source/'+a))}catch(e){setNotice('当前审核暂不可读取：'+String(e)+'。仍可加载历史计划的已确认快照。')}}
- async function showCandidate(g:Geometry,cid:string){
+ async function showCandidate(g:Geometry,cid:string,focus=true){
+  if(focus)inspector.select('geometry')
   setCandidate('');setDetail(null);onPreview(null)
   const c=await request('geometry/'+g.id+'/candidates/'+cid)
   if(!c.currentGeometry?.valid||!validateFinalAssembly(c.assembly.bricks).valid)throw new Error('候选当前几何校验失败')
@@ -38,6 +41,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   setCandidate(cid);setDetail(c);urlPatch({spatialPlanId:g.planId,geometryId:g.id,candidateId:cid,spatialPreview:'geometry'})
  }
  async function loadGeometry(gid:string,expectedPlan:string,cid?:string,restore=false){
+  if(!restore)inspector.select('geometry')
   const params=new URL(location.href).searchParams
   const previewKind=restore?(params.get('spatialPreview')||(params.has('refinementId')?'refinement':'geometry')):null
   setGeometry(null);setCandidate('');setDetail(null);onPreview(null)
@@ -45,10 +49,11 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   if(g.planId!==expectedPlan)throw new Error('Geometry 与当前 Spatial Plan 不匹配')
   setStageError(v=>({...v,geometry:''}));urlPatch({spatialPlanId:expectedPlan,geometryId:gid,candidateId:'',spatialPreview:previewKind||'geometry'})
   if(g.diagnosticAvailable){const v=await request('geometry/'+gid+'/viewer');if(v.diagnosticAssembly)onPreview({bricks:v.diagnosticAssembly.bricks,label:'Diagnostic / '+gid,review:'原始诊断布局 · 非合法候选',geometry:validateFinalAssembly(v.diagnosticAssembly.bricks)})}
-  if(g.state==='complete'&&g.candidates.length)await showCandidate(g,g.candidates.some(c=>c.id===cid)?cid!:g.candidates[0].id)
+  if(g.state==='complete'&&g.candidates.length)await showCandidate(g,g.candidates.some(c=>c.id===cid)?cid!:g.candidates[0].id,!restore)
   setGeometry(g)
  }
  async function loadPlan(pid:string,gid?:string,cid?:string){
+  if(!gid)inspector.select('planning')
   setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setRuns([])
   const p:Plan=await request('plans/'+pid);setPlan(p);setStageError({planning:'',geometry:''});setAnalysisId(p.analysisId)
   urlPatch({analysisId:p.analysisId,spatialPlanId:pid,geometryId:'',candidateId:''})
@@ -62,12 +67,12 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   setModels(s.models);setProviders(s.providers);setModel(s.models[0]?.id||'');setAnalyses(h.items)
   const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
  })},[disabled])
- async function generate(prepareOnly=false){if(!source?.ready||!model)return;await action(async()=>{
+ async function generate(prepareOnly=false){if(!source?.ready||!model)return;inspector.select('planning');await action(async()=>{
   const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence})
   await refresh();if(op.state!=='complete'||!op.planId)throw new Error(op.error||'请求仍未完成；请刷新历史，勿重复生成')
   await loadPlan(op.planId);setNotice(prepareOnly?'请求已准备并保存，未调用 LLM；缺少几何 Profile 的零件仍保留为未知。':'Spatial Plan 已保存。Geometry Execution 需要另行点击。')
  },'planning')}
- async function execute(){if(!plan?.usable)return;await action(async()=>{
+ async function execute(){if(!plan?.usable)return;inspector.select('geometry');await action(async()=>{
   setCandidate('');setDetail(null);onPreview(null)
   const op=await request('execute',{requestId:crypto.randomUUID(),planId:plan.id,analysisId:plan.analysisId})
   if(op.state!=='complete'||!op.geometryId)throw new Error(op.error||'执行未完成')
@@ -84,40 +89,48 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   <fieldset disabled={disabled||busy}>
    <label>已有 Analysis / Review<select aria-label="Spatial Analysis" value={analysisId} onChange={e=>{const a=e.target.value;setAnalysisId(a);setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setSource(null);setNotice('');urlPatch({analysisId:a,spatialPlanId:'',geometryId:'',candidateId:''});void action(async()=>{await refresh(a);await loadSource(a)})}}><option value="">选择已有分析</option>{analyses.map(a=><option key={a.id} value={a.id}>{a.appearance?.slice(0,45)||a.id} · {a.id}</option>)}</select></label>
    {analysisId&&<a href={import.meta.env.BASE_URL+'brick-inventory.html?analysisId='+encodeURIComponent(analysisId)}>返回 Part Explorer 审核型号与颜色 ↗</a>}
-   {source&&<details><summary>当前已保存审核 · {source.rows.filter(r=>!r.excluded&&r.confirmedPart).length} 个确认项</summary><ul>{source.rows.map(r=><li key={r.id}>{r.id} · {r.excluded?'已排除':r.confirmedPart?r.confirmedPart.part_num+' / RB Color '+r.confirmedPart.color_id+' × '+r.quantity:'未确认'}</li>)}</ul>{source.warnings.map(w=><p key={w}>{w}</p>)}{source.errors.map(e=><p key={e} className="brick-error">{e}</p>)}</details>}
-   <h3>1 · Spatial Planning</h3>
-   <div data-testid="planning-state" className={"spatial-state "+planningStatus.tone} role="status"><strong>{planningStatus.label}</strong><p>{planningStatus.reason}</p></div>
-   <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} onChange={m=>setModel(m.id)}/>
+   <InspectorContent step="planning" disabled={disabled||busy}><p>{planningStatus.reason}</p>   {source&&<details><summary>当前已保存审核 · {source.rows.filter(r=>!r.excluded&&r.confirmedPart).length} 个确认项</summary><ul>{source.rows.map(r=><li key={r.id}>{r.id} · {r.excluded?'已排除':r.confirmedPart?r.confirmedPart.part_num+' / RB Color '+r.confirmedPart.color_id+' × '+r.quantity:'未确认'}</li>)}</ul>{source.warnings.map(w=><p key={w}>{w}</p>)}{source.errors.map(e=><p key={e} className="brick-error">{e}</p>)}</details>}</InspectorContent>
+   <h3 className="workflow-step-title">1 · Spatial Planning <InspectButton step="planning"/></h3>
+   <div data-testid="planning-state" className={"spatial-state "+planningStatus.tone} role="status"><strong>{planningStatus.label}</strong><small>计划状态不代表几何验证通过。</small></div>
+   <details className="workflow-options"><summary>模型与视觉证据设置</summary>   <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} onChange={m=>setModel(m.id)}/>
    <label><input type="checkbox" checked={evidence} onChange={e=>setEvidence(e.target.checked)}/>使用已保存 Analysis / Relations 视觉证据</label>
+</details>
    <button type="button" disabled={!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
    <button type="button" className="brick-primary" disabled={!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
    <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
-   {plan&&<><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>
+   {plan&&<><InspectorContent step="planning" disabled={disabled||busy}><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>
     {plan.image&&<img className="spatial-reference" src={'data:'+plan.image.mimeType+';base64,'+plan.image.imageBase64} alt="Spatial Assembly 原始参考照片"/>}
-    <details open><summary>本计划的确认零件快照 · {(plan.requestInput?.observations||[]).length} 块</summary><ul>{(plan.requestInput?.observations||[]).map(o=><li key={o.id}>{o.id} · {o.part} / {o.color} · LDU {o.geometry?JSON.stringify(o.geometry.bodySizeLdu):'未知：缺少经审核几何 Profile，禁止假定尺寸/接口'}</li>)}</ul><small>历史计划使用生成时的审核快照；重新审核不会覆盖旧计划。</small></details>
+    <details><summary>本计划的确认零件快照 · {(plan.requestInput?.observations||[]).length} 块</summary><ul>{(plan.requestInput?.observations||[]).map(o=><li key={o.id}>{o.id} · {o.part} / {o.color} · LDU {o.geometry?JSON.stringify(o.geometry.bodySizeLdu):'未知：缺少经审核几何 Profile，禁止假定尺寸/接口'}</li>)}</ul><small>历史计划使用生成时的审核快照；重新审核不会覆盖旧计划。</small></details>
     {(plan.requestInput?.observations||[]).some(o=>!geometrySupport(o.part).supported)&&<p className="spatial-state review">当前共享库仍缺少 Geometry Profile：{plan.requestInput.observations.filter(o=>!geometrySupport(o.part).supported).map(o=>o.id).join('、')}。</p>}
     {(plan.requestInput?.observations||[]).some(o=>!o.geometry&&geometrySupport(o.part).supported)&&<p>部分历史快照的几何未知；执行时将单独记录新审核 Profile，不修改原始计划。</p>}
     <details><summary>查看 Spatial Plan 与不确定性（只读）</summary><pre>{JSON.stringify({plan:plan.plan,validation:plan.validation,conversion:plan.conversion,error:plan.error},null,2)}</pre></details>
     <details><summary>LLM 原始回答</summary><pre>{plan.rawOutput||'尚无模型输出'}</pre></details>
     <a href={api+'plans/'+plan.id+'/trace'} download>下载完整 Spatial Trace（含 Raw Request/Response）</a>
-    <h3>2 · Geometry Execution</h3><div data-testid="geometry-state" className={"spatial-state "+geometryStatus.tone} role={geometryStatus.tone==='failed'?'alert':'status'}><strong>{geometryStatus.label}</strong><p>{geometryStatus.reason}</p></div><button className="brick-primary" disabled={!plan.usable} onClick={()=>void execute()}>执行 Geometry（不调用 LLM）</button>
+    </InspectorContent><h3 className="workflow-step-title">2 · Geometry Execution <InspectButton step="geometry"/></h3><div data-testid="geometry-state" className={"spatial-state "+geometryStatus.tone} role={geometryStatus.tone==='failed'?'alert':'status'}><strong>{geometryStatus.label}</strong></div><button className="brick-primary" disabled={!plan.usable} onClick={()=>void execute()}>执行 Geometry（不调用 LLM）</button>
     <label>已保存 Geometry Result<select aria-label="Geometry history" value={geometry?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadGeometry(e.target.value,plan.id))}}><option value="">选择已保存几何结果</option>{runs.map(r=><option key={r.id} value={r.id}>{r.createdAt} · {r.state} / {r.status} · {r.count} 候选</option>)}</select></label>
    </>}
-   {!candidate&&<p>主 Viewer 自动显示当前选择的只读布局；没有布局时等待 Geometry Execution。</p>}
-   {geometry&&<>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
+   {!plan&&<><h3 className="workflow-step-title">2 · Geometry Execution <InspectButton step="geometry"/></h3><p className="workflow-status idle">Not Run · 等待 Spatial Plan</p></>}
+   {!geometry&&<><h3 className="workflow-step-title">3 · Geometry Refinement <InspectButton step="refinement"/></h3><p className="workflow-status idle">Not Run · 等待 Geometry Result</p></>}
+   {!plan&&<p className="brick-help">选择历史计划或生成新计划后，继续 Geometry 与 Refinement。</p>}
+   <InspectorContent step="planning">{!plan&&<p>尚未加载 Spatial Plan；可先查看审核或选择历史记录。</p>}</InspectorContent>
+   <InspectorContent step="geometry">{!geometry&&<><p>{geometryStatus.reason}</p><p>Not Run · 尚未加载 Geometry Result；没有候选或诊断布局。</p></>}</InspectorContent>
+   {!geometry&&<InspectorContent step="refinement"><p>Not Run · 先选择 Geometry Result，再查看 Refinement 历史。</p></InspectorContent>}
+   {geometry&&<><InspectorContent step="geometry" disabled={disabled||busy}><p>{geometryStatus.reason}</p>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
+</InspectorContent>
     {!!geometry.candidates.length&&<label>Geometry Candidate<select aria-label="Spatial candidate" value={candidate} onChange={e=>{if(e.target.value)void action(()=>showCandidate(geometry,e.target.value))}}><option value="">选择候选</option>{geometry.candidates.map(c=><option key={c.id} value={c.id}>{c.id} / {c.layoutId} · {c.unverifiedCount?'有未验证约束':'已验证几何与可执行约束'}</option>)}</select></label>}
-    {detail&&candidate&&<p data-testid="spatial-connection-status">Geometry {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
+    <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">Geometry {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
     <p data-testid="spatial-viewer-status">{candidate?'已在共享 BrickViewer 显示 '+candidate+'；未检查 Build Order。':'诊断与 Refinement 预览身份以中间 Viewer 标注为准。'}</p>
     <p>{candidate&&(differences.length?`相对首个候选，${differences.length} 块的位置或朝向不同；展开查看。`:"与首个候选位置和朝向一致。")}</p>
     <details><summary>连接、碰撞、差异与失败原因</summary><pre>{JSON.stringify({differencesFromFirst: differences,completeSearch:geometry.completeSearch,diagnostics:geometry.diagnostics,rejectionSummary:geometry.rejectionSummary,error:geometry.error,candidate:detail},null,2)}</pre></details>
     {geometry.diagnosticAvailable&&<p><a target="_blank" rel="noreferrer" href={import.meta.env.BASE_URL+'experiments/geometry-execution/viewer.html?result='+encodeURIComponent(api+'geometry/'+geometry.id+'/viewer')}>查看零件原始布局诊断（非合法候选） ↗</a></p>}
     <a href={api+'geometry/'+geometry.id+'/report'} download>下载完整 Geometry Report</a>
+</InspectorContent>
     {plan&&<GeometryRefinementPanel onPreview={onPreview} key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
    </>}
   </fieldset>
   {busy&&<p role="status">处理中，请勿重复提交。不会自动 Repair 或重新调用模型。</p>}
-  {notice&&<p>{notice}</p>}{error&&<p role="alert" className="brick-error">{error}</p>}
-  {!!operations.filter(o=>o.state!=='complete').length&&<details><summary>未完成 / 失败操作</summary><pre>{JSON.stringify(operations.filter(o=>o.state!=='complete'),null,2)}</pre></details>}
+  {(notice||error)&&<><p className="brick-help">{error?'操作失败；完整原因见 Inspector。':'操作信息已保存，详情见 Inspector。'}<InspectButton step="planning"/></p><InspectorContent step="planning">{notice&&<p>{notice}</p>}{error&&<p role="alert" className="brick-error">{error}</p>}</InspectorContent></>}
+  <InspectorContent step="planning">{!!operations.filter(o=>o.state!=='complete').length&&<details><summary>未完成 / 失败操作</summary><pre>{JSON.stringify(operations.filter(o=>o.state!=='complete'),null,2)}</pre></details>}</InspectorContent>
  </section>
 }
