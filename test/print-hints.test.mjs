@@ -19,7 +19,7 @@ test('explicit print motifs generalize; uncertain, negated and ID-only claims st
 test('retrieval snapshot keeps dimensions, color, shape, explicit no-print and does not confirm',()=>{
  const fields=observationCatalogFields({color_id:0,size:null,width_studs:2,depth_studs:2,height_brick_units:1,shape:'brick',print:'unknown'})
  const hinted=applyPrintHint(fields,observationPrintHints({evidence:'An eye graphic is visible.'})[0])
- assert.deepEqual(catalogSearchParams(hinted),{search:'eye',color:'0',size:'2×2×1',shape:'brick',printed:'yes',require_ldraw:'false'})
+ assert.deepEqual(catalogSearchParams(hinted),{search:'eye',color:'0',size:'2×2',shape:'brick',printed:'yes',require_ldraw:'false'})
  assert.equal(fields.search,'');assert.equal(fields.printed,'unknown');assert.equal(hinted.confirmed,undefined)
  assert.equal(applyPrintHint({...fields,printed:'no'},{term:'eye'}).printed,'no')
 })

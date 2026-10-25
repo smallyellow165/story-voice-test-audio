@@ -93,6 +93,9 @@ export function validateCatalogQuery(value) {
 // Build a fresh form snapshot; never inherit fields from a previous search.
 export function observationCatalogFields(features) {
   const params = catalogFeatureParams(features)
+  // Automatic Observation lookup only: standard height is often absent in Catalog.
+  // Keep Review data and the manual query builder unchanged.
+  if (Number(params.height) === 1) delete params.height
   const dimensions = [params.width, params.depth, params.height]
   const size = params.size || (dimensions.every(Boolean) ? dimensions.join('×')
     : params.width && params.depth && !params.height ? params.width + '×' + params.depth : '')

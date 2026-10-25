@@ -18,7 +18,7 @@ test('head replaces neck and every manually edited filter rather than merging', 
   const neck = observationCatalogFields(reviewed('1', '2', '2', { color: '4', shape: 'brick', print: 'yes' }))
   Object.assign(neck, { search: '4066', category: '42', requireLdraw: true })
   const head = observationCatalogFields(reviewed('2', '2', '1'))
-  assert.deepEqual(catalogSearchParams(head), { size: '2×2×1', require_ldraw: 'false' })
+  assert.deepEqual(catalogSearchParams(head), { size: '2×2', require_ldraw: 'false' })
   assert.equal(head.color, '')
   assert.equal(head.shape, '')
   assert.equal(head.printed, 'unknown')
@@ -60,4 +60,21 @@ test('conversion does not mutate the reviewed features or use reference Part Num
   const features = Object.freeze({ ...unknown, width_studs: 1, depth_studs: 2, height_brick_units: 2 })
   observationCatalogFields(features)
   assert.deepEqual(features, { ...unknown, width_studs: 1, depth_studs: 2, height_brick_units: 2 })
+})
+
+
+test('automatic feature search omits exactly standard height, preserves order and special heights', () => {
+  for (const [w,d,h,expected] of [
+    ['4','2','1','4×2'], ['3','2','1.0','3×2'], ['2','2','1','2×2'],
+    ['4','2','0.5','4×2×0.5'], ['2','2','1.5','2×2×1.5'], ['1','2','2','1×2×2'],
+    ['4','2','1.0001','4×2×1.0001'],
+  ]) {
+    const features = Object.freeze(reviewed(w,d,h)), original = JSON.stringify(features)
+    const fields = observationCatalogFields(features)
+    assert.equal(fields.size, expected)
+    assert.equal(catalogSearchParams(fields).size, expected)
+    assert.equal(JSON.stringify(features), original)
+  }
+  assert.deepEqual(observationCatalogFields(reviewed('4','','1')).axes, {width:'4'})
+  assert.equal(catalogSearchParams({size:'4x2x1'}).size, '4x2x1')
 })
