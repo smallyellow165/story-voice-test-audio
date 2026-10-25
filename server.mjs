@@ -1,4 +1,5 @@
 import { listDesignTraces, loadDesignTrace } from './server/brick-design-history.mjs'
+import { createSpatialWorkflow } from './server/brick-spatial-workflow.mjs'
 import { prepareDesignGeneration } from './server/brick-design-input.mjs'
 import { createBrickReverse } from './server/brick-reverse.mjs'
 import { exportTimestampClip } from './server/fish-timestamp-clip.mjs'
@@ -42,6 +43,7 @@ const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'f
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
 const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames })
+const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
@@ -452,6 +454,16 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if (url.pathname.startsWith('/api/brick-spatial/')) {
+    try {
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, { error: '仅接受同源 Spatial 操作。' }); return
+      }
+      const body = request.method === 'POST' ? await readJsonBody(request, 16 * 1024) : {}
+      sendJson(response, 200, await brickSpatial.dispatch(request.method, url.pathname.slice('/api/brick-spatial/'.length), body, url.searchParams))
+    } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, { error: error.statusCode ? error.message : 'Spatial 记录读取或执行失败；未自动重试。' }) }
+    return
+  }
   if (url.pathname.startsWith('/api/brick-reverse/')) {
     try {
       const action = url.pathname.slice('/api/brick-reverse/'.length)

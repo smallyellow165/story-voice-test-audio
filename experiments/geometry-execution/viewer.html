@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spatial Plan → DUPLO Assembly</title>
+<style>body{margin:0;font:15px system-ui;background:#f5f7fa;color:#172331}header{padding:16px 24px;background:white;border-bottom:1px solid #ddd}h1{font-size:23px;margin:0 0 12px}button,select,input{font:inherit;margin:4px;padding:6px}#status{margin-top:10px}main{display:grid;grid-template-columns:minmax(300px,32%) 1fr;min-height:580px;height:70vh}aside{padding:20px}#photo{width:100%;max-width:480px}#scene{min-width:0;min-height:480px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:45vh;overflow:auto}details{margin:16px 24px}#difference{font-size:13px}#error{color:#a00}@media(max-width:800px){main{display:block;height:auto}#scene{height:70vh}}</style>
+<header><h1>Spatial Plan → Geometry Execution V1</h1><label>结果索引 <input id="file" type="file" accept=".json"></label><label>候选 <select id="candidate"></select></label>
+<button id="photo-view">近似照片视角</button><button id="front">正面</button><button id="back">背面</button><button id="fit">默认视角</button><div id="status">通过 URL 加载结果，或选择输出目录的 viewer.json。</div><div id="error"></div></header>
+<main><aside><strong>原始照片</strong><img id="photo" alt="骆驼原始参考照片"><p>右侧为真实 LDraw 零件。拖动旋转，滚轮缩放。相机仅作视觉对照，未做标定拟合。</p><div id="difference"></div></aside><section id="scene"></section></main>
+<details><summary>当前候选：区间、连接与碰撞报告</summary><pre id="report"></pre></details>
+<details><summary>原始 Spatial Plan（只读）</summary><pre id="plan"></pre></details>
+<script type="module" src="./viewer.ts"></script></html>

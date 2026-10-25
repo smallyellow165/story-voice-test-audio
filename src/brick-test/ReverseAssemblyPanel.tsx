@@ -252,6 +252,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         if (onReset(confirmedItems) !== false) setApplied(false)
       })}>重置我的积木</button>}
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id) + (designSessionId ? '&sessionId=' + encodeURIComponent(designSessionId) : '')}>在 Design Lab 加载参考分析 ↗</a>}
+      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
     {record?.analysis && <>
       <ObservationTable stickyAction hostRef={geometryOnly ? undefined : tableHost} columns={[

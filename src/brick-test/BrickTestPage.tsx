@@ -9,6 +9,7 @@ import { connectionCandidates, validateAssembly } from './assembly'
 import type { Candidate, Validation } from './assembly'
 import { BrickViewer } from './viewer'
 import { AIDesignPanel } from './AIDesignPanel'
+import { SpatialAssemblyPanel } from './SpatialAssemblyPanel'
 import { ThreeColumnLayout } from '../three-column-layout'
 import './brick-test.css'
 
@@ -19,6 +20,7 @@ const inWorkspace = (brick: Brick) => Math.abs(brick.x) <= 20 && Math.abs(brick.
 const inputError = (reason: string): Validation => ({ valid: false, code: 'INPUT', reason, brickIds: [], connections: [] })
 
 export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-ldraw/` }: { libraryUrl?: string }) {
+  const [workflow, setWorkflow] = useState(() => new URL(location.href).searchParams.get('workflow') === 'spatial' ? 'spatial' : 'generator')
   const [stepsHost, setStepsHost] = useState<HTMLDivElement | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<BrickViewer | null>(null)
@@ -206,10 +208,21 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
       <span className="brick-badge">LDraw · AI Generator V3</span>
       <a href={`${import.meta.env.BASE_URL}brick-inventory.html`}>LEGO Part Explorer ↗</a>
     </header>
-    <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />
+    <label className="brick-panel">设计工作流<select aria-label="设计工作流" disabled={busy || generating} value={workflow} onChange={e => {
+      setWorkflow(e.target.value)
+      const url = new URL(location.href); url.searchParams.set('workflow', e.target.value); window.history.replaceState(null, '', url)
+    }}><option value="generator">Generator V3 · 自由 / 参考图生成</option><option value="spatial">Spatial Assembly · 已审核照片复原</option></select></label>
+    {workflow === 'spatial'
+      ? <SpatialAssemblyPanel manualRevision={manualRevision} disabled={!ready || busy} onBusy={setGenerating} onApply={async next => {
+        if (!validateAssembly(next).valid) return false
+        const ok = await commit(next, true, null)
+        if (ok) viewer.current?.fit({ x: -0.85, y: 0.8, z: 2.2 })
+        return ok
+      }} />
+      : <AIDesignPanel stepsHost={stepsHost} disabled={!ready || busy} manualRevision={manualRevision} onGeneratingChange={setGenerating} onApply={(next, report) => commit(next, true, report)} />}
       </>}
       center={<>
-    {aiMode && <div className="brick-ai-mode">正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
+    {aiMode && <div className="brick-ai-mode">{workflow === 'spatial' ? '正在查看 Spatial Assembly 最终组合；未检查 Build Order。' : '正在查看 AI 设计 / 搭建步骤，候选预览已隐藏。'}<button disabled={busy || generating} onClick={() => { setAiMode(false); setManualRevision((value) => value + 1) }}>返回手动编辑</button></div>}
       <section className="brick-stage-panel" aria-label="积木场景">
         <div className="brick-stage-toolbar"><span>{bricks.length} 块已添加</span><button disabled={!ready || busy} onClick={() => viewer.current?.fit()}>适合视图</button></div>
         {generatedReport && <div className={"brick-validation " + (generatedReport.valid ? "is-valid" : "is-invalid")} role="status">
@@ -266,7 +279,7 @@ export function BrickTestPage({ libraryUrl = `${import.meta.env.BASE_URL}brick-l
         {inventory.length ? <table><thead><tr><th>型号</th><th>颜色</th><th>数量</th></tr></thead><tbody>{inventory.map((row) => <tr key={`${row.part}:${row.color}`}><td>{row.part}.dat <small>{PARTS.find((item) => item.id === row.part)?.label}</small></td><td>{COLORS.find((item) => item.code === row.color)?.label} <small>#{row.color}</small></td><td>{row.count}</td></tr>)}</tbody></table> : <p className="brick-help">确认添加后，成功加载的积木显示在这里。</p>}
         {!!bricks.length && <details><summary>查看位置 / 删除单块</summary><ul className="brick-instance-list">{bricks.map((brick, index) => <li key={brick.id}><span>{index + 1}. {brick.part} · {COLORS.find((item) => item.code === brick.color)?.label}<small>X {brick.x} / Z {brick.z} / 层 {brick.layer} / {brick.rotation}°</small></span><button disabled={busy || !ready || generating || aiMode} aria-label={`删除第 ${index + 1} 块积木`} onClick={() => void commit(bricks.filter((item) => item.id !== brick.id))}>删除</button></li>)}</ul></details>}
       </section>
-    <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。刷新后重置。</footer>
+    <footer className="brick-footer">几何验证采用限定的 DUPLO 接合模型，未模拟摩擦、重心、承重或装配运动路径。几何数据来自 LDraw.org 官方库；许可见原始 .dat 文件及 CAreadme.txt。{workflow === 'spatial' ? 'Spatial Plan 与 Geometry Result 按当前链接恢复；手动编辑不自动保存。' : '刷新后重置。'}</footer>
       </>}
     />
   </main>

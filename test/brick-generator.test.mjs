@@ -358,7 +358,7 @@ test('profile requests retain schema and full image; analysis-only requests do n
   const image = { mimeType: 'image/png', imageBase64: 'iVBORw0KGgo=' + 'A'.repeat(20000) }
   const reference = { image, context: { observations: { observations: [{ id: 'upper' }, { id: 'lower' }], relations: [
     { from: 'lower', to: 'upper', relation: 'supports', status: 'inferred', confidence: 0.8 },
-  ] }, review: { upper: { confirmedPart: { part_num: '40666', color_id: 14 } } } }
+  ] }, review: { upper: { confirmedPart: { part_num: '40666', color_id: 14 } } } } }
   const requests = ['reference_image_v1', 'reference_analysis_v1', 'reference_relations_v1'].map(id => buildDesignRequest('gemini-3.6-flash', input, rules, reference, undefined, id))
   for (const request of requests) {
     assert.deepEqual(request.config.responseSchema, requests[0].config.responseSchema)

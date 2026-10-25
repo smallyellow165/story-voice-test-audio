@@ -272,7 +272,9 @@ export class BrickViewer {
     this.controls.update()
   }
 
-  fit() {
+  fit(direction = { x: 1, y: 0.85, z: 1.2 }) {
+    const viewDirection = new THREE.Vector3(direction.x, direction.y, direction.z)
+    if (![direction.x, direction.y, direction.z].every(Number.isFinite) || viewDirection.lengthSq() < 1e-12) throw new Error('Invalid view direction')
     if (!this.assembly.children.length && !this.preview.children.length) return this.home()
     const box = new THREE.Box3().setFromObject(this.assembly)
     if (this.preview.children.length) box.union(new THREE.Box3().setFromObject(this.preview))
@@ -281,7 +283,7 @@ export class BrickViewer {
     const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect)
     const distance = Math.max(40, sphere.radius / Math.sin(Math.min(vertical, horizontal)) * 1.2)
     this.controls.target.copy(sphere.center)
-    this.camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(1, 0.85, 1.2).normalize(), distance)
+    this.camera.position.copy(sphere.center).addScaledVector(viewDirection.normalize(), distance)
     this.controls.update()
   }
 

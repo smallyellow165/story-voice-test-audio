@@ -17,8 +17,8 @@ dist-ssr
 # Locally generated Gemini TTS test output and metadata.
 generated/
 
-# Local geometry solver experiment output.
-/output/geometry-solver/
+# Local experiment output, reports, and screenshots.
+/output/
 
 # Local voice-test recordings; do not commit private audio.
 public/audio/**/*.wav
