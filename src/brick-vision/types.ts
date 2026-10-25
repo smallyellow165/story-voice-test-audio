@@ -13,6 +13,7 @@ export type Observation = CatalogFeatures & {
 
 export type ObservationCatalogSearch = {
   method?: 'features' | 'part' | 'manual'; partNumber?: string
+  printHints?: import('./print-hints.mjs').PrintHint[]; analysisId?: string
   key: string; observationId: string; features: CatalogQuery; quantity: string
   onResults?(count: number | null): void
   onChoose(item: InventoryItem, evidence: unknown, isCurrent: () => boolean): void | Promise<void>

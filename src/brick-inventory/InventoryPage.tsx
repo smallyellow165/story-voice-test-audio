@@ -1,3 +1,4 @@
+import {applyPrintHint} from '../brick-vision/print-hints.mjs'
 import { InventoryPartPhoto } from './InventoryPartPhoto'
 import { CatalogGeometryEvidence } from '../brick-vision/CatalogGeometryEvidence'
 import type { CatalogBodyMetadata } from '../brick-vision/CatalogGeometryEvidence'
@@ -226,7 +227,7 @@ export function InventoryPage() {
     startCatalogRequest(catalogSearchParams(fields), review)
   }
   function openObservationCatalog(request: ObservationCatalogSearch) {
-    const fields = observationCatalogFields(request.features)
+    const fields = applyPrintHint(observationCatalogFields(request.features), request.method === 'features' ? request.printHints?.[0] : undefined)
     if (request.method === 'part' || request.method === 'manual') fields.search = request.partNumber || ''
     setSearch(fields.search); setCategory(fields.category); setColorFilter(fields.color)
     setFeatureSize(fields.size); setFeatureShape(fields.shape); setFeaturePrint(fields.printed)
@@ -320,6 +321,18 @@ export function InventoryPage() {
         <h2>零件目录</h2>
         {catalogReview && <p role="status">为识别项 {catalogReview.observationId} 选择型号与颜色：确认后填写审核行，不直接加入我的积木。
           <button type="button" onClick={exitObservationCatalog}>结束当前识别项审核，浏览零件目录</button></p>}
+        {catalogReview && <aside className="inventory-note" aria-label="印花检索依据">
+          {catalogReview.printHints?.length ? <>
+            <small>当前名称检索：{search || '未限制'}；下方保留来源供核对。</small><br/><strong>印花检索提示（未确认）：{catalogReview.printHints.map(h=>h.label).join('、')}</strong>
+            <p>仅从明确的 evidence 文字提取；原文未单独分级，不能视为 observed 或人工确认。Catalog 按官方名称检索，并用名称 / P 变体关系核对印花状态。</p>
+            {catalogReview.printHints.map(h=><div key={h.term}><blockquote>{h.evidence}</blockquote>
+              <small>来源：Analysis {catalogReview.analysisId} / Observation {catalogReview.observationId} / {h.sourcePath}</small>
+              <button type="button" onClick={()=>{const fields=applyPrintHint({search,category,color:colorFilter,size:featureSize,shape:featureShape,printed:featurePrint,requireLdraw,axes:partialDimensions},h);setSearch(fields.search);setFeaturePrint(fields.printed);submitCatalog(fields,catalogReview)}}>按{h.label}检索</button></div>)}
+            {featurePrint==='no'&&<p role="alert">无印花筛选与图案提示可能冲突；保留您的条件，请自行调整。</p>}
+            <p>零结果不会自动放宽尺寸、颜色或印花条件；可修改筛选后点击 Search。</p>
+            <button type="button" onClick={()=>{setSearch('');setFeaturePrint(catalogReview.features.print);submitCatalog({search:'',category,color:colorFilter,size:featureSize,shape:featureShape,printed:catalogReview.features.print,requireLdraw,axes:partialDimensions},{...catalogReview,method:'manual',printHints:[]})}}>移除印花提示并重新搜索（保留审核特征）</button>
+          </> : <p>印花语义 Unknown：没有可安全提取的明确图案证据，不会根据 Observation ID 猜测。可在名称搜索中人工输入。</p>}
+        </aside>}
         <div className="catalog-filter-area">
           <div className="catalog-filter-grid">
         <form id="catalog-search" className="catalog-filter-fields" aria-label="零件目录" onSubmit={e => {
@@ -328,7 +341,7 @@ export function InventoryPage() {
             requireLdraw, size: featureSize, axes: partialDimensions },
             catalogReview ? { ...catalogReview, method: 'manual' } : null)
         }}>
-          <label className="inventory-search">Part Number / Name<input value={search} maxLength={100} placeholder="搜索型号或名称，多个型号用英文逗号分隔" onChange={e => setSearch(e.target.value)} /></label>
+          <label className="inventory-search">Part Number / Name<input value={search} maxLength={100} placeholder="型号 / 名称；外部编号如 BL:3437pe2" onChange={e => setSearch(e.target.value)} /></label>
           <label>Category / 分类<select value={category} onChange={e => setCategory(e.target.value)}><option value="">全部 DUPLO 分类</option>{filters.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <label>Color / 颜色<select value={colorFilter} onChange={e => setColorFilter(e.target.value)}><option value="">全部颜色</option>{filters.colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label>Size / Width × Depth × Height<input value={featureSize} maxLength={24} placeholder="例如 2×4×0.5；也支持 2×4" onChange={e => { setFeatureSize(e.target.value); setPartialDimensions({}) }} />{Object.keys(partialDimensions).length > 0 && <small>审核中的已知维度：{JSON.stringify(partialDimensions)}；输入 Size 可替换</small>}</label>
@@ -344,7 +357,7 @@ export function InventoryPage() {
           </div>
           <p className="inventory-note">Search 同时应用全部已填条件（Strict AND）；未填条件不限制。尺寸单位 Stud × Stud × Brick，来自明确的 Catalog 名称标称尺寸或已审核主体 Profile；未知或冲突不能满足尺寸条件。名称尺寸不是实物几何验证。Require LDraw 默认关闭；开启时要求至少一个官方数据库 Mapping 的本地模型及引用可加载，不要求 Profile，也不代表 Assembly 验证。修改条件后点击 Search；分页沿用上次提交条件。</p>
         </div>
-        <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。</p>
+        <p className="inventory-note">仅显示名称以 DUPLO 开头的零件；分类可能包含其他系列，但此处已排除。颜色来自现有零件关联记录。外部编号须带目录前缀（如 BL:3437pe2），仅查询已导入的官方 Mapping；没有映射时不猜测。</p>
         {(catalogError || filterError) && <div role="alert" className="inventory-error">{catalogError || filterError} <button onClick={() => setRefresh(n => n + 1)}>重新加载</button></div>}
         {imageError && <p role="alert" className="inventory-error">{imageError}</p>}
         {loading && <p role="status">正在读取 Catalog…</p>}

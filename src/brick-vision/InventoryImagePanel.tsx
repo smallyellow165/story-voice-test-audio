@@ -1,3 +1,4 @@
+import {observationPrintHints} from './print-hints.mjs'
 import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from './review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
 import { selectSceneModel } from '../brick-inventory/explorer-scene.mjs'
@@ -112,7 +113,8 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
       }
       const epoch = ++catalogEpoch.current
       setError(''); setAutoNotes(previous => ({ ...previous, [row.id]: '正在检索；结果见右栏' }))
-      onSearchCatalog({ method, partNumber, key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity,
+      onSearchCatalog({ method, partNumber, key: `${result.id}:${row.id}:${epoch}`, observationId: row.id, features, quantity: row.quantity, analysisId: result.id,
+        printHints: method === 'features' ? observationPrintHints(result.matches?.find(m=>m.observation.id===row.id)?.observation) : [],
         onResults(count) {
           if (catalogEpoch.current !== epoch) return
           setAutoNotes(previous => ({ ...previous, [row.id]: count == null ? '检索失败；请查看右栏错误' : count ? '待选择 · 本页 ' + count + ' 个 Catalog 型号' : '没有候选' }))

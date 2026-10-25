@@ -1,3 +1,4 @@
+import {observationPrintHints} from '../brick-vision/print-hints.mjs'
 import { recognitionBlockReason } from './reverse-recognition-state.mjs'
 import { AnchorRevisionForm } from './AnchorRevisionForm'
 import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from '../brick-vision/review-status.mjs'
@@ -115,6 +116,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   }
 
   function selectBox(id: string) {
+    if (record?.status === 'complete' && rows[id]) find(id)
     setActive(id)
     setReviewFilter('all')
     setReviewFocus(value => value + 1)
@@ -210,7 +212,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       setActive(id); setError('')
       setCandidateNotes(old => ({ ...old, [id]: '正在检索；结果见右栏' }))
       onSearchCatalog({ key: record.id + ':' + id + ':' + epoch, observationId: id,
-        method, partNumber, features, quantity: row.quantity,
+        method, partNumber, features, quantity: row.quantity, analysisId: record.id,
+        printHints: method === 'features' ? observationPrintHints(record.analysis?.observations.find(o=>o.id===id)) : [],
         onResults(count) {
           if (catalogEpoch.current !== epoch) return
           setCandidateNotes(old => ({ ...old, [id]: count == null ? '检索失败；查看右栏' : '待选择 · 本页 ' + count + ' 个型号' }))
@@ -307,7 +310,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
           const chosen = row.index === undefined ? undefined : row.search?.rows[row.index]
           return <tr key={o.id} data-observation-id={o.id} className={active === o.id ? 'is-active' : ''} onClick={event => {
             if (event.target instanceof Element && event.target.closest('input, select, button, [popover], a, summary')) return
-            setActive(o.id)
+            selectBox(o.id)
           }}>
             <td><ObservationActions observationId={o.id} actions={[
               { label: '按型号查找', disabled: locked || !row.features.partNumber?.trim(), run: () => find(o.id, 'part') },
@@ -327,7 +330,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             }} /></td>
             <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
             <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
-              onClick={() => { setActive(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button>
+              onClick={() => { selectBox(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button>
               <small>置信度 {o.confidence}</small></td>
             <td><input aria-label={o.id + ' 用户 Part Number'} value={row.features.partNumber ?? ''} placeholder="输入 RB 型号" disabled={locked}
               onChange={e => edit(o.id, { features: { ...row.features, partNumber: e.target.value }, search: undefined, index: undefined })} />
