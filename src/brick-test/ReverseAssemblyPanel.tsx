@@ -1,3 +1,4 @@
+import { recognitionBlockReason } from './reverse-recognition-state.mjs'
 import { AnchorRevisionForm } from './AnchorRevisionForm'
 import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from '../brick-vision/review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
@@ -70,6 +71,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const requestId = useRef(newSessionId())
   const locked = disabled || !!busy
   const geometryOnly = (record ? record.analysis_mode || 'catalog_match' : analysisMode) === 'geometry_only'
+  const recognitionReason = recognitionBlockReason({ busy, disabled, submitted, record, hasImage: !!image,
+    modelAvailable: models.some(m => m.id === model), modelsReady, needsSession: !geometryOnly && source === 'today' && !sessionId })
   const catalogEpoch = useRef(0)
   const [candidateNotes, setCandidateNotes] = useState<Record<string, string>>({})
   useEffect(() => { catalogEpoch.current++ }, [visible])
@@ -369,7 +372,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       <p>当前图片：{imageSelection.name || record?.image_reference?.name || image?.imageReference.name || '未选择'}</p>
       {record?.image_reference?.name && imageSelection.name && record.image_reference.name !== imageSelection.name && <small>历史识别与标注仍使用参考图片：{record.image_reference.name}。</small>}
       <small title={image ? JSON.stringify(image.compression) : '自动按 EXIF 方向处理，最长边 1024px，JPEG 80%；压缩失败不发送原图。'}>ⓘ 图片压缩信息</small>
-      <button type="button" disabled={!image || !model || !geometryOnly && source === 'today' && !sessionId} onClick={() => void action('分析照片', async () => {
+      <button type="button" disabled={!!recognitionReason} aria-describedby="reverse-recognition-status" onClick={() => void action('分析照片', async () => {
         const selected = source === 'today' ? sessions.find(s => s.id === sessionId) : undefined
         if (!geometryOnly && source === 'today' && !selected) throw new Error('请先选择已保存积木清单。')
         setSubmitted(true); setRecordId(requestId.current)
@@ -378,6 +381,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         await refreshHistory()
       })}>识别图片（调用模型）</button>
     </fieldset>
+    <p id="reverse-recognition-status" role="status">{recognitionReason || `可以识别${geometryOnly ? ' · Prompt v' + promptVersion : ''}。仅点击“识别图片（调用模型）”后才会发起请求。`}</p>
     <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button>
     {geometryOnly && record?.status === 'complete' && <fieldset disabled={locked}>
       <legend>Guided Re-analysis · 定向再识别</legend>
