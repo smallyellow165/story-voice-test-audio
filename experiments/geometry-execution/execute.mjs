@@ -5,7 +5,6 @@ import { assessRelations } from '../geometry-solver/solver.mjs'
 const EPS = 1e-7
 const same = (a,b) => Math.abs(a-b) < EPS
 const inside = (v,r) => r && v >= r.min-EPS && v <= r.max+EPS
-const centre = (b,rules) => ({x:b.x*rules.STUD_LDU,y:b.layer*rules.BODY_LDU,z:b.z*rules.STUD_LDU})
 
 // A bounded adapter over the shared geometry engine, not another geometry library.
 export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}) {
@@ -41,7 +40,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     for(const axis of ['x','y','z']) {
       const step=result.policy.gridLdu[axis], r=world[axis]
       const first=Math.ceil((r.min-EPS)/step),last=Math.floor((r.max+EPS)/step)
-      if(last-first+1>maxCombinations)return {...result,status:'budget_exceeded',diagnostics:['Axis domain exceeds budget: '+p.id+'.'+axis]}
+      if(last-first+1>200000)return {...result,status:'budget_exceeded',diagnostics:[{code:'PREPROCESSING_BUDGET',reason:'候选轴超过预处理内存上限；未开始完整搜索',id:p.id,axis,count:last-first+1,limit:200000}]}
       axes[axis]=Array.from({length:Math.max(0,last-first+1)},(_,i)=>(first+i)*step)
     }
     const yaw=p.pose.yawCandidates.filter(y=>rules.geometrySupport(observations.get(p.id).part).geometry.rotations.includes(y))

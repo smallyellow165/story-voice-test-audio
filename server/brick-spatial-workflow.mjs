@@ -7,7 +7,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { modelOptions, modelSettings, providerStatus } from './brick-model-registry.mjs'
 import { loadBrickRules } from './brick-rules.mjs'
 import { prepareInput } from '../experiments/spatial-planning/input.mjs'
-import { runSpatialPlanning } from '../experiments/spatial-planning/runner.mjs'
+import { runSpatialPlanning, promptRuntimeStatus } from '../experiments/spatial-planning/runner.mjs'
 import { validatePlan } from '../experiments/spatial-planning/plan.mjs'
 import { executePlan } from '../experiments/geometry-execution/execute.mjs'
 
@@ -79,7 +79,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    if(route==='refine'&&!planView(await getPlan(body.planId)).usable)fail('Spatial Plan 不可执行',422)
    return operation(body,route,()=>route==='refine'?refinement.run(body):route==='approve-refinement'?refinement.approve(body):refinement.execute(body))
   }
-  if(method==='GET'&&route==='status')return {models:modelOptions('design').map(m=>({...m,reasoningEffort:modelSettings(m.id,'design').reasoning?.effort})),providers:providerStatus()}
+  if(method==='GET'&&route==='status')return {prompt:await promptRuntimeStatus(),models:modelOptions('design').map(m=>({...m,reasoningEffort:modelSettings(m.id,'design').reasoning?.effort})),providers:providerStatus()}
   if(method==='GET'&&route==='requests'){const items=[];for(const f of await records(requests)){try{const r=await read(path.join(requests,f));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')||r.planId===query.get('planId'))items.push(r)}catch{}}return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}}
   if(method==='GET'&&route.startsWith('source/'))return reviewedSource(await reverse.restore(id(route.slice(7))))
   if(method==='GET'&&route==='plans'){
@@ -107,6 +107,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    return geometryView(r)
   }
   if(method==='POST'&&['plan','prepare'].includes(route)){
+   const runtime=await promptRuntimeStatus();if(!runtime.current||(body.promptVersion&&body.promptVersion!==runtime.version))fail('Spatial Prompt 版本不一致，请重启服务并刷新页面；未调用模型',409)
    id(body.analysisId);if(typeof body.model!=='string'||typeof body.includeEvidence!=='boolean'||typeof body.reviewVersion!=='string')fail('规划输入无效')
    return operation(body,route==='prepare'?'prepare':'planning',async()=>{
     const saved=await reverse.restore(body.analysisId),source=reviewedSource(saved)

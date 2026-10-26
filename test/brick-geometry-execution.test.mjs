@@ -28,19 +28,19 @@ test('infeasible subgrid interval is never rounded or repaired',()=>{
 test('collision reports the actual conflicting bricks instead of changing layout',()=>{
  const {plan,input}=get();single(plan);plan.parts.find(p=>p.id==='neck').pose.offsetLdu.x=exact(0)
  const r=executePlan(plan,input,rules)
- assert.equal(r.status,'no_solution');assert.ok(r.attempts.some(a=>a.failure==='COLLISION'&&a.geometry.brickIds.includes('neck')))
+ assert.equal(r.status,'no_solution');assert.equal(r.diagnosticAssembly.geometry.code,'COLLISION');assert.ok(r.diagnosticAssembly.geometry.brickIds.includes('neck'))
 })
 test('explicit hidden connector selection is enforced, not silently reassigned',()=>{
  const {plan,input}=get();single(plan)
  plan.parts.find(p=>p.id==='head').connections[0].ownConnector=0
  const r=executePlan(plan,input,rules)
- assert.equal(r.status,'no_solution');assert.ok(r.attempts.some(a=>a.failure==='CONNECTION_INTENT'))
+ assert.equal(r.status,'no_solution');assert.equal(r.diagnostics[0].kind,'mates');assert.equal(r.attempts.length,0)
 })
 test('hard visual relations override otherwise valid geometry',()=>{
  const {plan,input}=get();single(plan)
  plan.relations.push({from:'right_leg',to:'left_leg',kind:'left',evidence:'deliberately contradictory test constraint'})
  const r=executePlan(plan,input,rules)
- assert.equal(r.status,'no_solution');assert.equal(r.attempts[0].geometry.valid,true);assert.equal(r.attempts[0].failure,'SPATIAL_RELATION')
+ assert.equal(r.status,'no_solution');assert.equal(r.diagnosticAssembly.geometry.valid,true);assert.equal(r.diagnostics[0].kind,'left');assert.equal(r.candidates.length,0)
 })
 test('multiple legal translations are retained rather than selecting a preferred answer',()=>{
  const {plan,input}=get();single(plan);plan.parts.find(p=>p.id==='back').pose.offsetLdu.x={min:-40,max:40}
@@ -53,7 +53,7 @@ test('relative intervals remain hard constraints after cumulative world interval
  plan.parts.find(p=>p.id==='neck').pose.offsetLdu.x={min:-60,max:-40}
  plan.parts.find(p=>p.id==='head').pose.offsetLdu.x=exact(-20)
  const r=executePlan(plan,input,rules)
- assert.ok(r.attempts.some(a=>a.failure==='RELATIVE_INTERVAL'))
+ assert.ok(r.pruning.removals.length>0);assert.ok(r.pruning.constraints.some(c=>c.kind==='relative_interval'&&c.compatiblePairs<c.pairs))
  assert.ok(r.candidates.every(c=>c.ranges.every(x=>x.satisfied)))
 })
 test('unknown depth, geometry drift and search caps do not become false no-solution proofs',()=>{

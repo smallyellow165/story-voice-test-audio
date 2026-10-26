@@ -96,13 +96,15 @@ test('a synthetic half-stud error can yield a strictly valid, still unapproved r
  assert.deepEqual(p.diffs.filter(d=>Object.values(d.deltaLdu).some(Boolean)).map(d=>d.id),['head'])
  assert.equal(executePlan(p.refinedPlan,trace.requestInput,rules).candidates.length,1)
 })
-test('within-evidence solutions are distinguished from out-of-interval suggestions when strict Cartesian search exceeded budget',async()=>{
+test('strict pruning avoids unnecessary refinement when a wide original interval has valid candidates',async()=>{
  const trace=JSON.parse(await readFile(new URL('generated/brick-spatial-traces/f1f84e96-8269-4132-807a-61c41243229f.json',root)))
  const plan=structuredClone(trace.plan);plan.parts.find(p=>p.id==='back').pose.offsetLdu.x={min:-400,max:400}
- const result=refineGeometry(plan,trace.requestInput,rules),p=result.proposals[0]
- assert.equal(result.originalExecution.status,'budget_exceeded');assert.equal(result.status,'proposals_found')
- assert.equal(p.classification,'within_evidence');assert.equal(p.geometry.valid,true);assert.equal(p.approved,false)
- assert.ok(p.diffs.every(d=>!d.outsideOriginalIntervals.length))
+ const before=JSON.stringify(plan),strict=executePlan(plan,trace.requestInput,rules)
+ assert.ok(strict.originalCombinationCount>10000);assert.ok(strict.combinationCount<=10000)
+ assert.ok(strict.candidates.length>0);assert.ok(strict.candidates.every(c=>c.geometry.valid&&c.ranges.every(r=>r.satisfied)))
+ const result=refineGeometry(plan,trace.requestInput,rules)
+ assert.equal(result.originalExecution.status,'candidates_found');assert.equal(result.status,'unchanged_valid')
+ assert.equal(result.proposals.length,0);assert.equal(JSON.stringify(plan),before)
 })
 test('edited saved proposal content cannot retain an old approval hash',async t=>{
  const {dir,s}=await service(t),op=await start(s),r=await s.dispatch('GET','refinements/'+op.refinementId),p=r.proposals[0]

@@ -1,4 +1,4 @@
-import { mkdir, writeFile, rename } from 'node:fs/promises'
+import { mkdir, writeFile, rename, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { callBrickModel } from '../../server/brick-model-call.mjs'
@@ -7,8 +7,15 @@ import { resolveModel, modelSettings, providerConfigured } from '../../server/br
 import { buildSpatialRequest, spatialPromptVersion } from './input.mjs'
 import { validatePlan, assessConversion } from './plan.mjs'
 
+const promptFiles=[new URL('./input.mjs',import.meta.url),new URL('../../src/brick-test/spatial-prompt-version.mjs',import.meta.url)]
+const loadedPromptSources=await Promise.all(promptFiles.map(f=>readFile(f,'utf8')))
+export async function promptRuntimeStatus(){
+ const current=await Promise.all(promptFiles.map(f=>readFile(f,'utf8')))
+ return {version:spatialPromptVersion,current:current.every((s,i)=>s===loadedPromptSources[i])}
+}
 // Exactly one explicit provider call; no recognition, repair, retry, or fallback.
 export async function runSpatialPlanning(prepared, { model, directory, sources = [], execute = false }) {
+  if(!(await promptRuntimeStatus()).current)throw new Error('Spatial Prompt source changed; restart the development server before preparing or generating. No API call made')
   const definition = resolveModel(model,'design')
   if (execute && !providerConfigured(definition.provider)) throw new Error('Missing ' + (definition.provider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY') + '; no API call made')
   const id = randomUUID(), tracePath = path.resolve(directory,id+'.json')

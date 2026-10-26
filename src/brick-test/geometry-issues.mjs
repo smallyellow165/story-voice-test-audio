@@ -8,6 +8,7 @@ export function geometryIssuesForDisplay(report,refinement){
   if(old){old.details.push(raw);return}
   issues.set(key,{key,ids,type,scope,details:[raw]})
  }
+ for(const d of report?.diagnostics||[])if(d?.code==='CONSTRAINT_DOMAIN_EMPTY')add([d.id,d.other],'Constraint Conflict','domain',d)
  const g=report?.diagnosticAssembly?.geometry
  if(g?.code==='COLLISION')add(g.brickIds,'Collision','layout',g)
  // These diagnostics describe the recorded bounded search, not the current pose.

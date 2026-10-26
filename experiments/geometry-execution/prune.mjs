@@ -25,15 +25,15 @@ export function pruneDomains(plan,domains,observations,rules,{maxPairChecks=2000
   const supports=av.map(()=>new Set()),reverse=bv.map(()=>new Set())
   for(let i=0;i<av.length;i++)for(let j=0;j<bv.length;j++)if(test(av[i],bv[j])){supports[i].add(j);reverse[j].add(i)}
   stats.pairEvaluations+=cost
-  const summary={id:constraints.length,a,b,kind,evidence,pairs:cost,compatiblePairs:supports.reduce((n,s)=>n+s.size,0)}
+  const summary={id:constraints.length,a,b,kind,evidence,pairs:cost,compatiblePairs:supports.reduce((n,s)=>n+s.size,0),removedCount:0}
   stats.constraints.push(summary);constraints.push({...summary,supports,reverse})
  }
  function propagate(stage){
   let changed=true
   while(changed){changed=false;for(const c of constraints)for(const [id,other,support]of[[c.a,c.b,c.supports],[c.b,c.a,c.reverse]]){
    const removed=[];for(const i of active.get(id))if(![...support[i]].some(j=>active.get(other).has(j)))removed.push(i)
-   if(removed.length){removed.forEach(i=>active.get(id).delete(i));changed=true;stats.removals.push({stage,constraintId:c.id,id,other,removedIndices:removed,remaining:active.get(id).size})}
-   if(!active.get(id).size){stats.stages.push({stage,combinationCount:0});return {code:'CONSTRAINT_DOMAIN_EMPTY',id,other,kind:c.kind,constraintId:c.id,reason:`${id} ↔ ${other}: ${c.kind} 与已传播的连接/相对区间/硬关系无法同时满足`,evidence:c.evidence}}
+   if(removed.length){removed.forEach(i=>active.get(id).delete(i));changed=true;stats.constraints[c.id].removedCount+=removed.length;stats.removals.push({stage,constraintId:c.id,id,other,removedIndices:removed,remaining:active.get(id).size})}
+   if(!active.get(id).size){stats.stages.push({stage,combinationCount:0});return {code:'CONSTRAINT_DOMAIN_EMPTY',id,other,kind:c.kind,constraintId:c.id,reason:`${id} ↔ ${other}: ${c.kind} 与已传播的连接/相对区间/硬关系无法同时满足`+(c.kind==='front'?`（要求 ${c.a} 原点 Z 严格大于 ${c.b}）`:''),removedPosesLdu:removed.slice(0,32).map(i=>values.get(id)[i]),otherRemainingPosesLdu:[...active.get(other)].slice(0,32).map(i=>values.get(other)[i]),poseDetailsTruncated:removed.length>32||active.get(other).size>32,evidence:c.evidence}}
   }}stats.stages.push({stage,combinationCount:product()});return null
  }
  for(const p of plan.parts){

@@ -1,3 +1,4 @@
+import {spatialPromptVersion} from './spatial-prompt-version.mjs'
 import {GeometryIssues} from './GeometryIssues'
 import {InspectorContent,InspectButton,InspectorContext} from './SpatialInspector'
 import {GeometryRefinementPanel} from './GeometryRefinementPanel'
@@ -23,6 +24,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
  const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<{geometry:{valid:boolean;connections:{points:unknown[]}[]};collision:{status:string};[key:string]:unknown}|null>(null)
  const [models,setModels]=useState<{id:string;label:string;provider:string;reasoningEffort?:string}[]>([]),[providers,setProviders]=useState<Record<string,boolean>>({}),[model,setModel]=useState('')
+ const [promptReady,setPromptReady]=useState(false)
  const [evidence,setEvidence]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[operations,setOperations]=useState<{id:string;state:string;error?:string;planId?:string;geometryId?:string}[]>([])
  const [phase,setPhase]=useState(''),[stageError,setStageError]=useState({planning:'',geometry:''})
  const gate=useRef(false),boot=useRef(false),mounted=useRef(true)
@@ -66,11 +68,11 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  useEffect(()=>{if(disabled||boot.current)return;boot.current=true;void action(async()=>{
   const params=new URL(location.href).searchParams
   const [s,h]=await Promise.all([request('status'),fetch('/api/brick-reverse/history').then(r=>{if(!r.ok)throw new Error('Analysis 历史不可用');return r.json()})])
-  setModels(s.models);setProviders(s.providers);setModel(params.get('spatialModel')||s.models[0]?.id||'');setAnalyses(h.items)
+  setPromptReady(s.prompt?.current===true&&s.prompt.version===spatialPromptVersion);setModels(s.models);setProviders(s.providers);setModel(params.get('spatialModel')||s.models[0]?.id||'');setAnalyses(h.items)
   const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
  })},[disabled])
- async function generate(prepareOnly=false){if(!source?.ready||!model)return;inspector.select('planning');await action(async()=>{
-  const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence})
+ async function generate(prepareOnly=false){if(!source?.ready||!model||!promptReady)return;inspector.select('planning');await action(async()=>{
+  const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence,promptVersion:spatialPromptVersion})
   await refresh();if(op.state!=='complete'||!op.planId)throw new Error(op.error||'请求仍未完成；请刷新历史，勿重复生成')
   await loadPlan(op.planId);setNotice(prepareOnly?'请求已准备并保存，未调用 LLM；缺少几何 Profile 的零件仍保留为未知。':'Spatial Plan 已保存。Geometry Execution 需要另行点击。')
  },'planning')}
@@ -98,10 +100,12 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <details className="workflow-options"><summary>视觉证据设置</summary>
    <label><input type="checkbox" checked={evidence} onChange={e=>setEvidence(e.target.checked)}/>使用已保存 Analysis / Relations 视觉证据</label>
 </details>
-   <button type="button" disabled={!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
+   <button type="button" disabled={!promptReady||!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
+   <p>请求 Prompt：{spatialPromptVersion}</p>
+   {!promptReady&&<p role="alert" className="brick-error">服务端 Prompt 未就绪或与页面版本不一致，请重启开发服务并刷新页面。已禁止准备和模型调用。</p>}
    <p role="status" data-testid="spatial-next-model">即将调用：{selected?`${selected.provider} / ${selected.id}${selected.reasoningEffort?' · reasoning: '+selected.reasoningEffort:''}`:'模型不可用：'+model}。仅点击生成按钮才调用模型。</p>
    {(!selected||!providers[selected.provider])&&<p role="alert" className="brick-error">{!selected?'所选模型未登记或配置尚未加载，请明确选择可用模型。':'该 Provider 未配置 API Key，无法调用。'}不会自动切换模型。</p>}
-   <button type="button" className="brick-primary" disabled={!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
+   <button type="button" className="brick-primary" disabled={!promptReady||!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
    <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
    <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
