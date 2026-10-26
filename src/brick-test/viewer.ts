@@ -1,3 +1,4 @@
+import {ProfileInteraction,type DebugInstance,type DebugPose,type DebugScene} from './profile-interaction'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { LDrawLoader } from 'three/addons/loaders/LDrawLoader.js'
@@ -11,7 +12,9 @@ import type { Candidate } from './assembly'
 export class BrickViewer {
   private profileLayer = new THREE.Group()
   private profileOverlay: HTMLDivElement | null = null
-  private profileLabels: {element:HTMLElement;point:THREE.Vector3}[] = []
+  private profileLabels: {element:HTMLElement;point:THREE.Vector3;owner?:THREE.Object3D}[] = []
+  private profileEditing:ProfileInteraction|null=null
+  private profileBindings:{layer:THREE.Group;owner:THREE.Object3D}[]=[]
   private profileResources: {dispose():void}[] = []
   private scene = new THREE.Scene()
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000)
@@ -176,8 +179,10 @@ export class BrickViewer {
     if (this.disposed) return
     this.frame = requestAnimationFrame(this.animate)
     this.controls.update()
+    this.profileEditing?.update()
+    for(const {layer,owner} of this.profileBindings){layer.position.copy(owner.position);layer.quaternion.copy(owner.quaternion)}
     this.renderer.render(this.scene, this.camera)
-    for(const label of this.profileLabels){const p=label.point.clone().project(this.camera);label.element.style.left=((p.x+1)/2*this.host.clientWidth)+'px';label.element.style.top=((1-p.y)/2*this.host.clientHeight)+'px';label.element.style.display=p.z>1||p.z< -1?'none':''}
+    for(const label of this.profileLabels){const point=label.owner?label.owner.localToWorld(label.point.clone()):label.point.clone();const p=point.project(this.camera);label.element.style.left=((p.x+1)/2*this.host.clientWidth)+'px';label.element.style.top=((1-p.y)/2*this.host.clientHeight)+'px';label.element.style.display=p.z>1||p.z< -1?'none':''}
   }
 
   private track(object: THREE.Object3D) {
@@ -280,35 +285,74 @@ export class BrickViewer {
   }
 
   clearProfileMarkers(){
-    this.profileLayer.clear();this.profileOverlay?.remove();this.profileOverlay=null;this.profileLabels=[]
+    this.profileBindings=[];this.profileLayer.clear();this.profileOverlay?.remove();this.profileOverlay=null;this.profileLabels=[]
     this.profileResources.forEach(r=>r.dispose());this.profileResources=[]
   }
 
   showProfileMarkers(g:PartGeometry|undefined,showTop:boolean,showBottom:boolean,selected:string|null,onPick:(face:'top'|'bottom',index:number,p:Connector)=>void){
+    this.buildProfileMarkers([{id:'',g}],showTop,showBottom,selected,'',(_id,face,index,p)=>onPick(face,index,p))
+  }
+
+  showInstanceConnectors(showTop:boolean,showBottom:boolean,selected:string|null,axisId:string|null,onPick:(id:string,face:'top'|'bottom',index:number,p:Connector)=>void){
+    this.buildProfileMarkers(this.assembly.children.map(owner=>({id:owner.name,owner,g:geometrySupport(owner.userData.part).supported?geometrySupport(owner.userData.part).geometry??undefined:undefined})),showTop,showBottom,selected,axisId??this.assembly.children[0]?.name,onPick)
+  }
+
+  private buildProfileMarkers(entries:{id:string;owner?:THREE.Object3D;g?:PartGeometry}[],showTop:boolean,showBottom:boolean,selected:string|null,axisId:string,onPick:(id:string,face:'top'|'bottom',index:number,p:Connector)=>void){
     this.clearProfileMarkers()
     const overlay=document.createElement('div');overlay.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden';this.host.append(overlay);this.profileOverlay=overlay
+    for(const entry of entries){
+    const {owner,g}=entry,layer=new THREE.Group();this.profileLayer.add(layer)
+    if(owner){layer.position.copy(owner.position);layer.quaternion.copy(owner.quaternion);this.profileBindings.push({layer,owner})}
     const label=(text:string,point:THREE.Vector3,colour:string,click?:()=>void)=>{
       const element=document.createElement(click?'button':'span');element.textContent=text;element.style.cssText=`position:absolute;transform:translate(-50%,-50%);font:12px monospace;color:${colour};background:#fffffff0;border:1px solid ${colour};border-radius:3px;padding:3px;white-space:nowrap;pointer-events:${click?'auto':'none'}`
       if(text.endsWith('Y')&&!click)element.style.marginLeft=text.startsWith('+')?'22px':'-22px'
-      if(click){element.setAttribute('aria-label',text);element.addEventListener('click',click)}overlay.append(element);this.profileLabels.push({element,point})
+      if(click){element.setAttribute('aria-label',entry.id&&entries.length===1?text.split(' · ').at(-1)!:text);if(entry.id)element.textContent=entries.length===1?text.split(' · ').at(-1)!:text.replace(entry.id+' · ','#'+(entries.indexOf(entry)+1)+' ');element.addEventListener('click',click)}overlay.append(element);this.profileLabels.push({element,point,owner})
     }
-    for(const [axis,colour] of [['x',0xd53636],['y',0x16853a],['z',0x305fdb]] as const)for(const sign of [-1,1]){
+    if(entry.id===axisId||!entry.id)for(const [axis,colour] of [['x',0xd53636],['y',0x16853a],['z',0x305fdb]] as const)for(const sign of [-1,1]){
       const extent=g?Math.max(24,g.bodySizeLdu[axis]*.8)*MM_PER_LDU:45
       const dir=new THREE.Vector3();dir[axis]=sign*(!g&&axis!=='x'?-1:1)
-      const arrow=new THREE.ArrowHelper(dir,new THREE.Vector3(),extent,colour,4,2);this.profileLayer.add(arrow)
+      const arrow=new THREE.ArrowHelper(dir,new THREE.Vector3(),extent,colour,4,2);layer.add(arrow)
       // ArrowHelper geometries are shared by Three; only release per-arrow materials.
       for(const object of [arrow.line,arrow.cone]){const mats=Array.isArray(object.material)?object.material:[object.material];this.profileResources.push(...mats)}
       label((sign>0?'+':'−')+axis.toUpperCase(),dir.clone().multiplyScalar(extent),new THREE.Color(colour).getStyle())
     }
-    if(!g)return
+    if(!g)continue
     for(const face of ['top','bottom'] as const){if(face==='top'?!showTop:!showBottom)continue
       g[face].forEach((p,index)=>{
-        const key=`${face}[${index}]`,point=new THREE.Vector3(p.x,p.y,p.z).multiplyScalar(MM_PER_LDU)
-        const material=new THREE.MeshBasicMaterial({color:selected===key?0xffbd00:face==='top'?0x0085bc:0xb52b7c,depthTest:false,depthWrite:false});this.profileResources.push(material)
-        const marker=new THREE.Mesh(this.markerGeometry,material);marker.position.copy(point);marker.scale.setScalar(selected===key?1.1:.65);marker.renderOrder=20;this.profileLayer.add(marker)
-        label(key,point,selected===key?'#955d00':face==='top'?'#00658e':'#9f185f',()=>onPick(face,index,p))
+        const key=`${face}[${index}]`,selectionKey=entry.id?entry.id+':'+key:key,point=new THREE.Vector3(p.x,p.y,p.z).multiplyScalar(MM_PER_LDU)
+        const material=new THREE.MeshBasicMaterial({color:selected===selectionKey?0xffbd00:face==='top'?0x0085bc:0xb52b7c,depthTest:false,depthWrite:false});this.profileResources.push(material)
+        const marker=new THREE.Mesh(this.markerGeometry,material);marker.position.copy(point);marker.scale.setScalar(selected===selectionKey?1.1:.65);marker.renderOrder=20;layer.add(marker)
+        label((entry.id?entry.id+' · ':'')+key,point,selected===selectionKey?'#955d00':face==='top'?'#00658e':'#9f185f',()=>onPick(entry.id,face,index,p))
       })
     }
+    }
+  }
+
+  enableProfileEditing(changed:(state:DebugScene)=>void){
+    this.profileEditing?.dispose();this.profileEditing=new ProfileInteraction(this.renderer.domElement,this.camera,this.controls,this.assembly,this.scene,changed)
+  }
+  selectProfileInstance(id:string|null){this.profileEditing?.select(id)}
+  setProfileMode(mode:DebugScene['mode']){this.profileEditing?.setMode(mode);this.renderer.domElement.focus({preventScroll:true})}
+  setProfilePose(id:string,pose:DebugPose){this.profileEditing?.pose(id,pose)}
+  getProfileWorldPoint(id:string,p:{x:number;y:number;z:number}){
+    const object=this.assembly.children.find(o=>o.name===id);if(!object)return null
+    object.updateMatrixWorld(true);const q=object.localToWorld(new THREE.Vector3(p.x,p.y,p.z).multiplyScalar(MM_PER_LDU)).divideScalar(MM_PER_LDU)
+    return {x:q.x,y:q.y,z:q.z}
+  }
+  async inspectInstances(entries:{id:string;part:string}[]):Promise<DebugInstance[]|null>{
+    if(!entries.length||new Set(entries.map(e=>e.id)).size!==entries.length||entries.some(e=>!/^[a-z0-9_-]+$/i.test(e.part)))throw new Error('Invalid debug instances')
+    const revision=++this.revision
+    const models=await Promise.all(entries.map(e=>this.template(e.part,'14',!geometrySupport(e.part).supported)))
+    if(this.disposed||revision!==this.revision)return null
+    this.profileEditing?.select(null);this.restoreHighlight();this.highlightIds=[];this.clearCandidates();this.clearPreview();this.clearProfileMarkers();this.assembly.clear()
+    let right=0
+    const objects=models.map((model,i)=>{const object=model.clone(true),bounds=new THREE.Box3().setFromObject(object);object.name=entries[i].id;object.userData.part=entries[i].part
+      object.position.x=right-bounds.min.x;right+=bounds.max.x-bounds.min.x+24
+      return object})
+    if(objects.length===1)objects[0].position.x=0
+    else {const center=new THREE.Box3();objects.forEach(o=>center.union(new THREE.Box3().setFromObject(o)));const x=center.getCenter(new THREE.Vector3()).x;objects.forEach(o=>{o.position.x-=x})}
+    this.assembly.add(...objects);this.fit();this.profileEditing?.select(objects[0].name)
+    return objects.map(o=>({id:o.name,part:o.userData.part,x:o.position.x/MM_PER_LDU,y:0,z:0,rotation:0}))
   }
 
   private restoreHighlight() {
@@ -384,6 +428,7 @@ export class BrickViewer {
   }
 
   dispose() {
+    this.profileEditing?.dispose();this.profileEditing=null
     this.restoreHighlight()
     this.clearProfileMarkers()
     this.disposed = true
