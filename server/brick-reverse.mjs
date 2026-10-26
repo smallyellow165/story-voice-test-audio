@@ -148,9 +148,23 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))
       return { items, warnings }
     },
+    async previousReview(analysisId) {
+      const {items}=await this.history(), index=items.findIndex(r=>r.id===analysisId)
+      const previous=index<0?null:items[index+1]
+      if(!previous)return {rows:{},message:'没有上一轮识别记录。'}
+      let review
+      try { review=JSON.parse(await readFile(file(previous.id)+'.review','utf8')) }
+      catch(e){if(e.code==='ENOENT')return {rows:{},message:'直接上一轮没有保存的 Review。'};throw e}
+      const rows={}
+      for(const [id,r] of Object.entries(review.rows)){
+        rows[id]={features:r.features,quantity:r.quantity,excluded:r.excluded,reason:r.reason,index:r.index,copiedFromAnalysisId:previous.id}
+        if(r.searchId)rows[id].search=await read(r.searchId)
+      }
+      return {analysisId:previous.id,rows,message:'复制后尚未保存，请点击保存审核。'}
+    },
     async saveReview(body) {
       const analysis = await analyzed(body.analysisId)
-      const rows = {}
+      const rows = {}, copiedSearches = {}
       for (const o of analysis.analysis.observations) {
         const r = body.rows?.[o.id]
         if (!r || typeof r.quantity !== 'string' || typeof r.excluded !== 'boolean' || typeof r.reason !== 'string'
@@ -159,7 +173,15 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         validateReviewDimensions(r.features)
         const row = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
         if (r.searchId) {
-          const search = await read(r.searchId)
+          let search = await read(r.searchId)
+          if(search.analysisId!==analysis.id&&r.copiedFromAnalysisId){
+            // Explicit form copy only: retain the saved selection; no Catalog lookup or identity inference.
+            const previous=JSON.parse(await readFile(file(r.copiedFromAnalysisId)+'.review','utf8'))
+            const original=previous.rows[o.id]
+            if(original?.searchId!==search.id||original.index!==r.index)fail('复制的确认记录不在来源 Review 中。')
+            search={...search,id:randomUUID(),analysisId:analysis.id,copiedFrom:{analysisId:r.copiedFromAnalysisId,searchId:r.searchId}}
+            copiedSearches[o.id]=search
+          }
           if (search.kind !== 'reverse-search' || search.analysisId !== analysis.id || search.observationId !== o.id
             || (search.partNumber ? search.partNumber !== r.features.partNumber?.trim() : hash(readFeatureEditor(r.features)) !== hash(search.features))) fail('候选与当前审核特征不一致。')
           row.searchId = search.id
@@ -170,11 +192,12 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         } else if (r.index !== undefined) fail('确认项缺少候选记录。')
         rows[o.id] = row
       }
+      for(const search of Object.values(copiedSearches))await save(search)
       const review = { analysisId: analysis.id, updatedAt: new Date().toISOString(), rows }
       const target = file(analysis.id) + '.review', temp = target + '.' + randomUUID() + '.tmp'
       await writeFile(temp, JSON.stringify(review), { flag: 'wx', mode: 0o600 })
       await rename(temp, target)
-      return { updatedAt: review.updatedAt }
+      return { updatedAt: review.updatedAt, copiedSearches }
     },
     async restore(analysisId) {
       const analysis = await read(analysisId)

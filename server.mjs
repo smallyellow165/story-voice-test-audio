@@ -484,6 +484,7 @@ const server = createServer(async (request, response) => {
       }
       if (request.method === 'GET') {
         if (action === 'history') sendJson(response, 200, await brickReverse.history())
+        else if (action.startsWith('previous-review/')) sendJson(response, 200, await brickReverse.previousReview(action.slice(16)))
         else if (action.startsWith('restore/')) sendJson(response, 200, await brickReverse.restore(action.slice(8)))
         else if (action.startsWith('record/')) sendJson(response, 200, await brickReverse.read(action.slice(7)))
         else if (action.startsWith('attempt/')) sendJson(response, 200, await brickReverse.attempt(action.slice(8)))

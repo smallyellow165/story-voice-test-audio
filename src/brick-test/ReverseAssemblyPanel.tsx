@@ -65,6 +65,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const autoRestored = useRef(false)
   const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
   const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
+  const [copyMessage, setCopyMessage] = useState('')
   const [dirty, setDirty] = useState(false), [savedAt, setSavedAt] = useState(''), [restoreWarning, setRestoreWarning] = useState('')
   const reviewHost = useRef<HTMLDivElement>(null)
   const [reviewFocus, setReviewFocus] = useState(0)
@@ -108,12 +109,23 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
   async function saveReview() {
     if (!record) return
-    const value = await post<{ updatedAt: string }>('saveReview', { analysisId: record.id,
+    const value = await post<{ updatedAt: string; copiedSearches: Record<string, Search> }>('saveReview', { analysisId: record.id,
       rows: Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, {
         features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason,
-        searchId: r.search?.id, index: r.index,
+        searchId: r.search?.id, index: r.index, copiedFromAnalysisId: r.copiedFromAnalysisId,
       }])) })
-    setDirty(false); setSavedAt(value.updatedAt)
+    setRows(old => Object.fromEntries(Object.entries(old).map(([id,r]) => [id,value.copiedSearches[id] ? {...r,search:value.copiedSearches[id],copiedFromAnalysisId:undefined} : r])))
+    setDirty(false); setSavedAt(value.updatedAt); setCopyMessage('')
+  }
+
+  async function copyPrevious(observationId?: string) {
+    if (!record?.analysis) return
+    const previous = await requestJson<{rows:Record<string,Draft>;message:string}>('/api/brick-reverse/previous-review/'+record.id, {}, '读取上一轮审核')
+    const ids = record.analysis.observations.map(o=>o.id).filter(id=>(!observationId||id===observationId)&&previous.rows[id])
+    if (!ids.length) { setCopyMessage(Object.keys(previous.rows).length ? '上一轮没有相同 Observation ID，未复制。' : previous.message); return }
+    catalogEpoch.current++; setCandidateNotes({}); setApplied(false); setDirty(true)
+    setRows(old=>({...old,...Object.fromEntries(ids.map(id=>[id,structuredClone(previous.rows[id])]))}))
+    setCopyMessage(`已复制上一轮 ${ids.length} 项审核。尚未保存；原始识别证据不变。`)
   }
 
   function selectBox(id: string) {
@@ -137,6 +149,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       originalImage: record.originalImage, compression: record.compression,
       imageReference: { kind: record.image_reference?.kind === 'server_library' ? 'server_library' : 'upload',
         name: record.image_reference?.name || record.originalImage.name } })
+    setCopyMessage('')
     requestId.current = newSessionId(); setRecordId(''); setSubmitted(false); setRecord(null); setRows({}); setArtifact(null)
     setGenerationSubmitted(false); setApplied(false); setError('')
   }
@@ -169,6 +182,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     })
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
+    setCopyMessage('')
     setHiddenBoxes(new Set())
     setGuidedIds(new Set()); setHint('')
     if (value.status === 'failed' && value.analysis_mode === 'geometry_only' && !value.outputValidation) {
@@ -282,6 +296,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         <p>加入我的积木仅累计到当前清单，不保存审核或清单。未保存审核请点击“保存审核”；未匹配的识别项也可保存。先保存审核，再进入 Design Lab。</p>
       </>}>
       <button disabled={locked || !record?.analysis || record.status !== 'complete'} onClick={() => void action('保存审核', saveReview)}>保存审核</button>
+      <button disabled={locked || record?.status !== 'complete'} onClick={() => void action('复制上一轮审核', () => copyPrevious())}>Copy from Previous Run</button>
       <button disabled={locked || applied || !confirmedItems.length} onClick={() => void action('加入我的积木', async () => {
         if (onApply(confirmedItems) !== false) setApplied(true)
       })}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
@@ -291,6 +306,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id) + (designSessionId ? '&sessionId=' + encodeURIComponent(designSessionId) : '')}>在 Design Lab 加载参考分析 ↗</a>}
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
+    {copyMessage && <p role="status">{copyMessage}</p>}
     {record?.analysis && <>
       <div className="brick-actions" aria-label="照片 BBox 显示控制">
         <button type="button" onClick={() => setHiddenBoxes(new Set())}>全部显示 BBox</button>
@@ -314,6 +330,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             selectBox(o.id)
           }}>
             <td><ObservationActions observationId={o.id} actions={[
+              { label: 'Copy from Previous Run', disabled: locked, run: () => void action('复制上一轮审核', () => copyPrevious(o.id)) },
               { label: '按型号查找', disabled: locked || !row.features.partNumber?.trim(), run: () => find(o.id, 'part') },
               { label: '按特征查找', disabled: locked, run: () => find(o.id, 'features') },
               { label: '在零件目录中查找', disabled: locked, run: () => find(o.id, 'manual') },
