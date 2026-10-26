@@ -6,24 +6,28 @@ import {GeometryRefinementPanel} from './GeometryRefinementPanel'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../model-selector'
 import { validateFinalAssembly } from './assembly'
-import { geometrySupport, type Brick } from './catalog'
+import { geometrySupport, STUD_LDU, BODY_LDU, type Brick } from './catalog'
 import {spatialStatus} from './spatial-status.mjs'
 
-export type SpatialPreview={bricks:Brick[];label:string;review:string;geometry:ReturnType<typeof validateFinalAssembly>}
+export type SpatialPreview={layoutKind?:'valid'|'diagnostic';bricks:Brick[];label:string;review:string;geometry:ReturnType<typeof validateFinalAssembly>}
 type Props={onPreview(value:SpatialPreview|null):void;manualRevision:number;disabled:boolean;onBusy(busy:boolean):void;}
 type History={id:string;analysisId?:string;createdAt:string;status:string;model?:string;usable?:boolean;state?:string;count?:number}
 type Source={ready:boolean;reviewVersion:string;updatedAt:string;errors:string[];warnings:string[];rows:{id:string;excluded:boolean;quantity:number;confirmedPart:{part_num:string;color_id:number}|null}[]}
 type Plan={provider?:string;model?:string;promptVersion?:string;generationSettings?:{reasoning?:{effort:string}};id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null;confirmedPart?:{part_num:string};mapping?:{geometryBinding?:{basePartNum:string}}}[]}}
-type Geometry={revisionId?:string;diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:{id:string;layoutId:string;bricks:Brick[];unverifiedCount:number}[]}
+type Ranking={physicalTier:number;failedIntents:number;failedRanges:number;failedRelations:number;midpointDistanceLdu:number;yawPreference:number;explanation:string}
+type CandidateSummary={id:string;kind?:string;rank?:number;ranking?:Ranking;layoutId?:string;bricks:Brick[];unverifiedCount?:number}
+type LayoutDetail={kind?:string;id:string;rank?:number;assembly:{bricks:Brick[]};geometry:ReturnType<typeof validateFinalAssembly>;collision:{status:string};ranking?:Ranking;ranges:{id:string;satisfied:boolean}[];relations:{from:string;to:string;kind:string;satisfied:boolean|null}[];intents:{id:string;other:string;satisfied:boolean|null}[]}
+type Geometry={search?:{complete:boolean;combinationCount:number;topK:number};validLayoutCount?:number;diagnosticCandidates?:CandidateSummary[];revisionId?:string;diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:CandidateSummary[]}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
 function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
 export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:Props){
+ const [topK,setTopK]=useState(5),[savedSelections,setSavedSelections]=useState<{id:string;candidateId:string}[]>([])
  const [debugRefinement,setDebugRefinement]=useState<any>(null)
  const inspector=useContext(InspectorContext)
  const [analyses,setAnalyses]=useState<{id:string;appearance:string}[]>([]),[analysisId,setAnalysisId]=useState(new URL(location.href).searchParams.get('analysisId')||'')
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
- const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<{geometry:{valid:boolean;connections:{points:unknown[]}[]};collision:{status:string};[key:string]:unknown}|null>(null)
+ const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<LayoutDetail|null>(null)
  const [models,setModels]=useState<{id:string;label:string;provider:string;reasoningEffort?:string}[]>([]),[providers,setProviders]=useState<Record<string,boolean>>({}),[model,setModel]=useState('')
  const [promptReady,setPromptReady]=useState(false)
  const [evidence,setEvidence]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[operations,setOperations]=useState<{id:string;state:string;error?:string;planId?:string;geometryId?:string}[]>([])
@@ -40,9 +44,10 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  async function showCandidate(g:Geometry,cid:string,focus=true){
   if(focus)inspector.select('geometry')
   setCandidate('');setDetail(null);onPreview(null)
-  const c=await request('geometry/'+g.id+'/candidates/'+cid)
-  if(!c.currentGeometry?.valid||!validateFinalAssembly(c.assembly.bricks).valid)throw new Error('候选当前几何校验失败')
-  onPreview({bricks:c.assembly.bricks,label:'Geometry Candidate / '+cid,review:g.revisionId?'Approved · '+g.revisionId:'Geometry Candidate',geometry:validateFinalAssembly(c.assembly.bricks)})
+  const diagnostic=g.diagnosticCandidates?.some(c=>c.id===cid)
+  const c=await request('geometry/'+g.id+(diagnostic?'/diagnostics/':'/candidates/')+cid)
+  if(!diagnostic&&(!c.currentGeometry?.valid||!validateFinalAssembly(c.assembly.bricks).valid))throw new Error('候选当前几何校验失败')
+  onPreview({bricks:c.assembly.bricks,label:(diagnostic?'Diagnostic Layout / ':'Valid Layout / ')+cid,review:diagnostic?'仅诊断 · 原计划约束未通过，不能选择为正式方案':g.revisionId?'Approved · '+g.revisionId:'可人工选择 · 未检查照片相似度',layoutKind:diagnostic?'diagnostic':'valid',geometry:validateFinalAssembly(c.assembly.bricks)})
   setCandidate(cid);setDetail(c);urlPatch({spatialPlanId:g.planId,geometryId:g.id,candidateId:cid,spatialPreview:'geometry'})
  }
  async function loadGeometry(gid:string,expectedPlan:string,cid?:string,restore=false){
@@ -53,8 +58,11 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   const g:Geometry=await request('geometry/'+gid)
   if(g.planId!==expectedPlan)throw new Error('Geometry 与当前 Spatial Plan 不匹配')
   setStageError(v=>({...v,geometry:''}));urlPatch({spatialPlanId:expectedPlan,geometryId:gid,candidateId:'',spatialPreview:previewKind||'geometry'})
-  if(g.diagnosticAvailable){const v=await request('geometry/'+gid+'/viewer');if(v.diagnosticAssembly)onPreview({bricks:v.diagnosticAssembly.bricks,label:'Diagnostic / '+gid,review:'原始诊断布局 · 非合法候选',geometry:validateFinalAssembly(v.diagnosticAssembly.bricks)})}
-  if(g.state==='complete'&&g.candidates.length)await showCandidate(g,g.candidates.some(c=>c.id===cid)?cid!:g.candidates[0].id,!restore)
+  if(g.diagnosticAvailable){const v=await request('geometry/'+gid+'/viewer');if(v.diagnosticAssembly)onPreview({bricks:v.diagnosticAssembly.bricks,label:'Diagnostic / '+gid,review:'诊断布局 · 非合法候选',layoutKind:'diagnostic',geometry:validateFinalAssembly(v.diagnosticAssembly.bricks)})}
+  const selections=(await request('selections?geometryId='+gid)).items;setSavedSelections(selections)
+  const available=[...g.candidates,...(g.diagnosticCandidates||[])]
+  const preferred=cid||selections[0]?.candidateId
+  if(g.state==='complete'&&available.length)await showCandidate(g,available.some(c=>c.id===preferred)?preferred:available[0].id,!restore)
   setGeometry(g)
  }
  async function loadPlan(pid:string,gid?:string,cid?:string){
@@ -79,13 +87,14 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  },'planning')}
  async function execute(){if(!plan?.usable)return;inspector.select('geometry');await action(async()=>{
   setCandidate('');setDetail(null);onPreview(null)
-  const op=await request('execute',{requestId:crypto.randomUUID(),planId:plan.id,analysisId:plan.analysisId})
+  const op=await request('execute',{requestId:crypto.randomUUID(),planId:plan.id,analysisId:plan.analysisId,topK})
   if(op.state!=='complete'||!op.geometryId)throw new Error(op.error||'执行未完成')
   const r=await request('geometry?planId='+plan.id);setRuns(r.items)
   await loadGeometry(op.geometryId,plan.id);await refresh()
  },'geometry')}
- const activeCandidate=geometry?.candidates.find(c=>c.id===candidate)
- const differences=activeCandidate?.bricks.flatMap(b=>{const first=geometry?.candidates[0]?.bricks.find(x=>x.id===b.id);return first&&JSON.stringify(first)!==JSON.stringify(b)?[{id:b.id,baseline:{x:first.x,z:first.z,layer:first.layer,rotation:first.rotation},selected:{x:b.x,z:b.z,layer:b.layer,rotation:b.rotation}}]:[]})||[]
+ const availableCandidates=[...(geometry?.candidates||[]),...(geometry?.diagnosticCandidates||[])]
+ const activeCandidate=availableCandidates.find(c=>c.id===candidate)
+ const differences=activeCandidate?.bricks.flatMap(b=>{const first=availableCandidates[0]?.bricks.find(x=>x.id===b.id);return first&&JSON.stringify(first)!==JSON.stringify(b)?[{id:b.id,baseline:{x:first.x,z:first.z,layer:first.layer,rotation:first.rotation},selected:{x:b.x,z:b.z,layer:b.layer,rotation:b.rotation}}]:[]})||[]
  const planningStatus=spatialStatus('planning',plan,{running:phase==='planning',error:stageError.planning})
  const geometryStatus=spatialStatus('geometry',geometry,{running:phase==='geometry',error:stageError.geometry})
  const selected=models.find(m=>m.id===model)
@@ -120,7 +129,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
     <details><summary>查看 Spatial Plan 与不确定性（只读）</summary><pre>{JSON.stringify({plan:plan.plan,validation:plan.validation,conversion:plan.conversion,error:plan.error},null,2)}</pre></details>
     <details><summary>LLM 原始回答</summary><pre>{plan.rawOutput||'尚无模型输出'}</pre></details>
     <a href={api+'plans/'+plan.id+'/trace'} download>下载完整 Spatial Trace（含 Raw Request/Response）</a>
-    </InspectorContent><h3 className="workflow-step-title">2 · Geometry Execution <InspectButton step="geometry"/></h3><div data-testid="geometry-state" className={"spatial-state "+geometryStatus.tone} role={geometryStatus.tone==='failed'?'alert':'status'}><strong>{geometryStatus.label}</strong></div><button className="brick-primary" disabled={!plan.usable} onClick={()=>void execute()}>执行 Geometry（不调用 LLM）</button>
+    </InspectorContent><h3 className="workflow-step-title">2 · Geometry Execution <InspectButton step="geometry"/></h3><div data-testid="geometry-state" className={"spatial-state "+geometryStatus.tone} role={geometryStatus.tone==='failed'?'alert':'status'}><strong>{geometryStatus.label}</strong></div><label>候选数量<select aria-label="Top K" value={topK} onChange={e=>setTopK(Number(e.target.value))}><option value={5}>Top 5</option><option value={10}>Top 10</option></select></label><button className="brick-primary" disabled={!plan.usable} onClick={()=>void execute()}>执行 Geometry（不调用 LLM）</button>
     <label>已保存 Geometry Result<select aria-label="Geometry history" value={geometry?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadGeometry(e.target.value,plan.id))}}><option value="">选择已保存几何结果</option>{runs.map(r=><option key={r.id} value={r.id}>{r.createdAt} · {r.state} / {r.status} · {r.count} 候选</option>)}</select></label>
    </>}
    {!plan&&<><h3 className="workflow-step-title">2 · Geometry Execution <InspectButton step="geometry"/></h3><p className="workflow-status idle">Not Run · 等待 Spatial Plan</p></>}
@@ -129,21 +138,34 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <InspectorContent step="planning">{!plan&&<p>尚未加载 Spatial Plan；可先查看审核或选择历史记录。</p>}</InspectorContent>
    <InspectorContent step="geometry">{!geometry&&<><p>{geometryStatus.reason}</p><p>Not Run · 尚未加载 Geometry Result；没有候选或诊断布局。</p></>}</InspectorContent>
    {!geometry&&<InspectorContent step="refinement"><p>Not Run · 先选择 Geometry Result，再查看 Refinement 历史。</p></InspectorContent>}
-   {geometry&&<><GeometryIssues geometryId={geometry.id} refinement={debugRefinement} onPreview={onPreview}/><InspectorContent step="geometry" disabled={disabled||busy}><p>{geometryStatus.reason}</p>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
+   {geometry&&<><GeometryIssues selectedLayout={detail} geometryId={geometry.id} refinement={debugRefinement} onPreview={onPreview}/><InspectorContent step="geometry" disabled={disabled||busy}><p>{geometryStatus.reason}</p>{geometry.revisionId&&<p className="spatial-state review">当前为人工修订 {geometry.revisionId} 的执行结果；原始 LLM 计划未被修改。</p>}<p data-testid="spatial-geometry-status">Geometry：{geometry.state} / {geometry.status} · {geometry.candidates.length} 候选 / {geometry.groups.length} 布局</p>
 </InspectorContent>
-    {!!geometry.candidates.length&&<label>Geometry Candidate<select aria-label="Spatial candidate" value={candidate} onChange={e=>{if(e.target.value)void action(()=>showCandidate(geometry,e.target.value))}}><option value="">选择候选</option>{geometry.candidates.map(c=><option key={c.id} value={c.id}>{c.id} / {c.layoutId} · {c.unverifiedCount?'有未验证约束':'已验证几何与可执行约束'}</option>)}</select></label>}
-    <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">Geometry {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
+    {!!availableCandidates.length&&<label>候选布局（预览不会自动批准）<select aria-label="Spatial candidate" value={candidate} onChange={e=>{if(e.target.value)void action(()=>showCandidate(geometry,e.target.value))}}><option value="">选择候选</option>{availableCandidates.map(c=><option key={c.id} value={c.id}>#{c.rank??''} {c.id} · {c.kind==='diagnostic'?'Diagnostic':'Valid'}{c.ranking?` · 物理${c.ranking.physicalTier===0?'通过':'失败'} / 连接冲突 ${c.ranking.failedIntents} / 空间冲突 ${c.ranking.failedRelations}`:''}</option>)}</select></label>}
+    {geometry.search&&<p>已保存 Top {geometry.search.topK} · {geometry.search.complete?'完整过滤域排名':'未完成搜索，不是全局 Top-K'} · {geometry.search.complete?'已验证':'待搜索'} {geometry.search.combinationCount} 组 · 合法 {geometry.validLayoutCount??0} 组。更改 Top-K 后需主动重新执行。</p>}
+    {detail&&<div className={'spatial-state '+(detail.kind==='diagnostic'?'failed':'success')}>
+      <strong>{detail.kind==='diagnostic'?'Diagnostic Layout · 不可作为正式方案':'Valid Layout · 可人工选择'} / {candidate}</strong>
+      <p>物理检查：{detail.geometry.valid?'通过':'未通过'} · 碰撞：{detail.collision.status} · 连接意图：{detail.intents.filter(i=>i.satisfied===true).length} 满足 / {detail.intents.filter(i=>i.satisfied===false).length} 失败 · 硬关系：{detail.relations.filter(r=>r.satisfied===true).length} 满足 / {detail.relations.filter(r=>r.satisfied===false).length} 失败 · 区间：{detail.ranges.filter(r=>r.satisfied).length}/{detail.ranges.length}</p>
+      {detail.ranking&&<><p>相对区间中心偏差总和：{detail.ranking.midpointDistanceLdu} LDU · yaw 顺序偏好：{detail.ranking.yawPreference}</p><details><summary>排序依据与限制</summary>{detail.ranking.explanation}</details></>}
+      <details><summary>逐项检查：满足 / 违反 / 未验证</summary>
+        <ul>{detail.intents.map((c,i)=><li key={'intent'+i}>{c.id} ↔ {c.other} 接合：{c.satisfied===null?'未验证':c.satisfied?'满足':'违反'}</li>)}{detail.relations.map((r,i)=><li key={'relation'+i}>{r.from} {r.kind} {r.to}：{r.satisfied===null?'未验证':r.satisfied?'满足':'违反'}</li>)}{detail.ranges.map(r=><li key={'range'+r.id}>{r.id} 相对位置区间：{r.satisfied?'满足':'违反'}</li>)}</ul>
+      </details>
+      <p>未验证视觉关系：{detail.relations.filter(r=>r.satisfied===null).length} · 不确定接合意图：{detail.intents.filter(i=>i.satisfied===null).length}；物理合法不代表照片相似度已验证。</p>
+      {detail.kind!=='diagnostic'&&<button onClick={()=>void action(async()=>{const op=await request('select-layout',{requestId:crypto.randomUUID(),planId:geometry.planId,geometryId:geometry.id,candidateId:candidate});if(op.state!=='complete')throw Error(op.error||'保存失败');setSavedSelections((await request('selections?geometryId='+geometry.id)).items)})}>Use This Layout · 保存为选定方案</button>}
+      {savedSelections.some(s=>s.candidateId===candidate)&&<p>已独立保存选择：{savedSelections.find(s=>s.candidateId===candidate)?.id}；原始计划与 Geometry Result 未修改。</p>}
+    </div>}
+    <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">{detail.kind==='diagnostic'?'Diagnostic · 非合法完整方案':'Valid Layout'} · 物理 {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
     <p data-testid="spatial-viewer-status">{candidate?'已在共享 BrickViewer 显示 '+candidate+'；未检查 Build Order。':'诊断与 Refinement 预览身份以中间 Viewer 标注为准。'}</p>
     <p>{candidate&&(differences.length?`相对首个候选，${differences.length} 块的位置或朝向不同；展开查看。`:"与首个候选位置和朝向一致。")}</p>
+    {!!differences.length&&<details><summary>相对排名第一的主要变化</summary><ul>{differences.map(d=><li key={d.id}>{d.id}：ΔX {(d.selected.x-d.baseline.x)*STUD_LDU} / ΔY {(d.selected.layer-d.baseline.layer)*BODY_LDU} / ΔZ {(d.selected.z-d.baseline.z)*STUD_LDU} LDU；yaw {d.baseline.rotation}° → {d.selected.rotation}°</li>)}</ul></details>}
     <details><summary>连接、碰撞、差异与失败原因</summary><pre>{JSON.stringify({differencesFromFirst: differences,completeSearch:geometry.completeSearch,diagnostics:geometry.diagnostics,rejectionSummary:geometry.rejectionSummary,error:geometry.error,candidate:detail},null,2)}</pre></details>
     {geometry.diagnosticAvailable&&<p><a target="_blank" rel="noreferrer" href={import.meta.env.BASE_URL+'experiments/geometry-execution/viewer.html?result='+encodeURIComponent(api+'geometry/'+geometry.id+'/viewer')}>查看零件原始布局诊断（非合法候选） ↗</a></p>}
     <a href={api+'geometry/'+geometry.id+'/report'} download>下载完整 Geometry Report</a>
 </InspectorContent>
-    {plan&&<GeometryRefinementPanel onDiagnostics={setDebugRefinement} onPreview={onPreview} key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
+    {plan&&<GeometryRefinementPanel onDiagnostics={setDebugRefinement} onPreview={value=>{setDetail(null);setCandidate('');onPreview(value)}} key={geometry.id} planId={plan.id} geometryId={geometry.id} eligible={plan.usable&&geometry.state==='complete'&&!geometry.candidates.length&&!geometry.revisionId} disabled={disabled||busy} onBusy={onBusy} onExecuted={async gid=>{await loadGeometry(gid,plan.id);setRuns((await request('geometry?planId='+plan.id)).items)}}/>}
    </>}
   </fieldset>
   {busy&&<p role="status">处理中，请勿重复提交。不会自动 Repair 或重新调用模型。</p>}
-  {(notice||error)&&<><p className="brick-help">{error?'操作失败；完整原因见 Inspector。':'操作信息已保存，详情见 Inspector。'}<InspectButton step="planning"/></p><InspectorContent step="planning">{notice&&<p>{notice}</p>}{error&&<p role="alert" className="brick-error">{error}</p>}</InspectorContent></>}
+  {error&&<p role="alert" className="brick-error">{error}</p>}{(notice||error)&&<><p className="brick-help">{error?'操作失败；完整原因见 Inspector。':'操作信息已保存，详情见 Inspector。'}<InspectButton step="planning"/></p><InspectorContent step="planning">{notice&&<p>{notice}</p>}{error&&<p role="alert" className="brick-error">{error}</p>}</InspectorContent></>}
   <InspectorContent step="planning">{!!operations.filter(o=>o.state!=='complete').length&&<details><summary>未完成 / 失败操作</summary><pre>{JSON.stringify(operations.filter(o=>o.state!=='complete'),null,2)}</pre></details>}</InspectorContent>
  </section>
 }

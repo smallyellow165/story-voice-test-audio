@@ -45,7 +45,8 @@ export function pruneDomains(plan,domains,observations,rules,{maxPairChecks=2000
   })
  }
  let conflict=propagate('connections_and_relative_intervals')
+ const diagnosticPoses=conflict?null:new Map([...active].map(([id,s])=>[id,[...s].map(i=>values.get(id)[i])]))
  if(!conflict){for(const r of plan.relations.filter(r=>['above','left','front','separated'].includes(r.kind)))add(r.from,r.to,r.kind,r,(a,b)=>spatialRelation(r,brick(a),brick(b),rules));conflict=propagate('hard_spatial_relations')}
  stats.remainingCombinationCount=conflict?0:product();stats.domains=[...active].map(([id,s])=>({id,originalCount:values.get(id).length,remainingCount:s.size}))
- return {stats,conflict,poses:new Map([...active].map(([id,s])=>[id,[...s].map(i=>values.get(id)[i])]))}
+ return {stats,conflict,diagnosticPoses,poses:new Map([...active].map(([id,s])=>[id,[...s].map(i=>values.get(id)[i])]))}
 }

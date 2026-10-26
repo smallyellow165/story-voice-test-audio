@@ -20,7 +20,7 @@ test('saved camel runs without LLM, survives service restart, protects duplicate
  assert.deepEqual(await service.dispatch('POST','execute',body),op);assert.equal(calls,1)
  await assert.rejects(service.dispatch('POST','execute',{...body,analysisId:randomUUID()}),/不同输入/)
  const restarted=createSpatialWorkflow(dir,dependencies),result=await restarted.dispatch('GET','geometry/'+op.geometryId)
- assert.equal(result.candidates.length,512);assert.equal(result.groups.length,1)
+ assert.equal(result.validLayoutCount,512);assert.equal(result.candidates.length,5);assert.equal(result.groups.length,1)
  const c=await restarted.dispatch('GET','geometry/'+op.geometryId+'/candidates/candidate-1')
  const old=JSON.parse(await readFile(new URL('../output/geometry-execution/a41d93d1-dd36-4741-a374-1cab4505fb00/candidate-1.json',import.meta.url)))
  assert.deepEqual(c.assembly.bricks,old.assembly?.bricks||old.bricks)

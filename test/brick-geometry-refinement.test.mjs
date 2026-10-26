@@ -51,7 +51,7 @@ test('existing camel remains unchanged and valid; refinement neither creates sug
  assert.equal(result.status,'unchanged_valid');assert.equal(result.proposals.length,0)
  assert.equal(JSON.stringify(trace),before)
  const execution=executePlan(trace.plan,trace.requestInput,rules)
- assert.equal(execution.candidates.length,512);assert.equal(execution.candidates[0].geometry.connections.length,6)
+ assert.equal(execution.validLayoutCount,512);assert.equal(execution.candidates.length,5);assert.equal(execution.candidates[0].geometry.connections.length,6)
  assert.equal(execution.candidates[0].geometry.connections.reduce((n,c)=>n+c.points.length,0),18)
 })
 async function service(t,source=original,geometry=old){const dir=await mkdtemp(path.join(tmpdir(),'refinement-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));for(const [folder,id,data] of [['brick-spatial-traces',source.id,source],['brick-spatial-geometry',geometry.id,geometry]]){await mkdir(path.join(dir,folder));await writeFile(path.join(dir,folder,id+'.json'),JSON.stringify(data))}return {dir,s:createSpatialWorkflow(dir,{runPlanning:()=>assert.fail('No LLM')})}}

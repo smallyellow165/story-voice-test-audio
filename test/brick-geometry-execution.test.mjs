@@ -12,7 +12,7 @@ test('fixed real camel: exhaustive 512 yaw variants, one layout, six edges and 1
  const {plan,input}=get(),before=JSON.stringify({plan,input})
  const r=executePlan(plan,input,rules)
  assert.equal(r.status,'candidates_found');assert.equal(r.completeSearch,true)
- assert.equal(r.candidates.length,512);assert.equal(r.groups.length,1)
+ assert.equal(r.validLayoutCount,512);assert.equal(r.attempts.length,512);assert.equal(r.candidates.length,5);assert.equal(r.groups.length,1)
  for(const c of r.candidates){assert.equal(c.geometry.valid,true);assert.equal(c.geometry.connections.length,6);assert.equal(c.geometry.connections.reduce((n,g)=>n+g.points.length,0),18);assert.equal(c.collision.status,'clear');assert.ok(c.intents.every(i=>i.satisfied));assert.ok(c.ranges.every(i=>i.satisfied));assert.ok(c.relations.every(i=>i.satisfied));assert.equal(c.assembly.steps,undefined)}
  const by=Object.fromEntries(r.candidates[0].assembly.bricks.map(b=>[b.id,b]))
  assert.equal(by.upper_horizontal.layer-by.lower_horizontal.layer,.5)
@@ -26,7 +26,7 @@ test('infeasible subgrid interval is never rounded or repaired',()=>{
  const r=executePlan(plan,input,rules);assert.equal(r.status,'no_solution');assert.equal(r.candidates.length,0)
 })
 test('collision reports the actual conflicting bricks instead of changing layout',()=>{
- const {plan,input}=get();single(plan);plan.parts.find(p=>p.id==='neck').pose.offsetLdu.x=exact(0)
+ const {plan,input}=get();single(plan);plan.parts.find(p=>p.id==='neck').pose.offsetLdu.x=exact(0);plan.parts.forEach(p=>p.connections=[]);plan.relations=[]
  const r=executePlan(plan,input,rules)
  assert.equal(r.status,'no_solution');assert.equal(r.diagnosticAssembly.geometry.code,'COLLISION');assert.ok(r.diagnosticAssembly.geometry.brickIds.includes('neck'))
 })
@@ -46,7 +46,7 @@ test('multiple legal translations are retained rather than selecting a preferred
  const {plan,input}=get();single(plan);plan.parts.find(p=>p.id==='back').pose.offsetLdu.x={min:-40,max:40}
  const r=executePlan(plan,input,rules)
  assert.equal(r.groups.length,3);assert.equal(r.candidates.length,3)
- assert.deepEqual(r.candidates.map(c=>c.assembly.bricks.find(b=>b.id==='back').x),[0,1,2])
+ assert.deepEqual(r.candidates.map(c=>c.assembly.bricks.find(b=>b.id==='back').x),[1,0,2])
 })
 test('relative intervals remain hard constraints after cumulative world interval enumeration',()=>{
  const {plan,input}=get();single(plan)

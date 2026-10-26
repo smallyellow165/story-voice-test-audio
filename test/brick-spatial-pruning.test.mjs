@@ -14,7 +14,7 @@ test('saved Sol: 24576 -> 128 -> hard front conflict, unchanged source and full 
  const r=executePlan(saved.sourcePlan,saved.input,rules)
  assert.equal(r.status,'no_solution');assert.equal(r.originalCombinationCount,24576)
  assert.deepEqual(r.pruning.stages.map(s=>s.combinationCount),[128,0])
- assert.equal(r.attempts.length,0);assert.equal(r.candidates.length,0)
+ assert.equal(r.attempts.length,128);assert.equal(r.candidates.length,0);assert.equal(r.diagnosticCandidates.length,5)
  assert.equal(r.diagnostics[0].kind,'front')
  assert.deepEqual(new Set([r.diagnostics[0].id,r.diagnostics[0].other]),new Set(['wing_upper','white_belly']))
  assert.equal(r.diagnosticAssembly.bricks.length,10)

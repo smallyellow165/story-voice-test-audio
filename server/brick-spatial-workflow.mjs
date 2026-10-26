@@ -9,7 +9,7 @@ import { loadBrickRules } from './brick-rules.mjs'
 import { prepareInput } from '../experiments/spatial-planning/input.mjs'
 import { runSpatialPlanning, promptRuntimeStatus } from '../experiments/spatial-planning/runner.mjs'
 import { validatePlan } from '../experiments/spatial-planning/plan.mjs'
-import { executePlan } from '../experiments/geometry-execution/execute.mjs'
+import { executePlan,revalidateChoice } from '../experiments/geometry-execution/execute.mjs'
 
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode})}
@@ -50,10 +50,10 @@ function planView(r){
   plan:r.plan,rawOutput:r.rawOutput,image:r.image,requestInput:r.requestInput,conversion:r.conversion,error:r.error,usage:r.usageMetadata,tracePath:r.tracePath,rawRequestPath:r.rawRequestPath,rawResponsePath:r.rawResponsePath}
 }
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,revisionId:r.revisionId,completeSearch:r.completeSearch,
- diagnosticAvailable:!!r.diagnosticAssembly,diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
- candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
+ diagnosticAvailable:!!r.diagnosticAssembly,search:r.search,validLayoutCount:r.validLayoutCount,diagnosticCandidates:(r.state==='complete'?r.diagnosticCandidates||[]:[]).map(c=>({id:c.id,kind:c.kind,rank:c.rank,ranking:c.ranking,differences:c.differences,bricks:c.assembly.bricks})),diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
+ candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,kind:"valid",rank:c.rank,ranking:c.ranking,differences:c.differences,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
 export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,resolveMapping=spatialMapping}={}){
- const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests')
+ const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests'),selections=path.join(directory,'brick-spatial-selections')
  const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
  const refinement=createRefinementStore(directory,{getPlan,getGeometry,loadRules})
@@ -65,6 +65,23 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   catch(e){const failed={...pending,state:'failed',error:e.statusCode?e.message:'执行失败；记录已保留，未自动重试。'};await write(file,failed);return failed}
  }
  return {async dispatch(method,route,body={},query=new URLSearchParams()){
+  if(method==='GET'&&route==='selections'){
+   const items=[];for(const f of await records(selections)){const r=await read(path.join(selections,f));if(r.geometryId===query.get('geometryId'))items.push(r)}
+   return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
+  }
+  if(method==='POST'&&route==='select-layout'){
+   return operation(body,'select-layout',async()=>{
+    const r=await getGeometry(body.geometryId),p=await getPlan(r.planId)
+    if(r.state!=='complete'||!['candidates_found','candidates_with_unverified_constraints'].includes(r.status))fail('只能选择 Valid Layout；Diagnostic 不可作为正式方案',422)
+    const c=r.candidates.find(c=>c.id===body.candidateId)
+    if(!c||c.kind==='diagnostic'||!c.geometry.valid)fail('只能选择已验证的 Valid Layout',422)
+    if(body.planId!==r.planId||hash(r.sourcePlan)!==r.sourcePlanHash)fail('计划关联或哈希不一致',409)
+    try{revalidateChoice(r.sourcePlan,r.input,c,await loadRules())}catch(e){fail('选择复核失败：'+e.message,422)}
+    const selection={id:randomUUID(),createdAt:new Date().toISOString(),analysisId:p.requestInput.provenance.analysisId,planId:p.id,geometryId:r.id,candidateId:c.id,sourcePlanHash:r.sourcePlanHash,candidateHash:hash(c),assembly:c.assembly,unverifiedConstraints:c.unverifiedConstraints,kind:'selected-valid-layout'}
+    await write(path.join(selections,selection.id+'.json'),selection,true)
+    return {selectionId:selection.id,geometryId:r.id,candidateId:c.id}
+   })
+  }
   if(method==='GET'&&route==='refinements')return refinement.list(query.get('geometryId'))
   if(method==='GET'&&route.startsWith('refinements/')){
    const [,rid,action,pid]=route.split('/')
@@ -97,12 +114,13 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
     return {status:r.status,completeSearch:r.completeSearch,diagnostics:r.diagnostics||[],groups:r.groups||[],image:plan.image,sourcePlan:r.sourcePlan,
      diagnosticAssembly:r.diagnosticAssembly,candidates:geometryView(r).candidates.map(c=>({...c,file:'candidates/'+c.id}))}
    }
+   if(action==='diagnostics'){const c=(r.diagnosticCandidates||[]).find(c=>c.id===candidateId);if(!c||r.state!=='complete')fail('诊断候选不存在',404);return c}
    if(action==='candidates'){
     if(r.state!=='complete'||!['candidates_found','candidates_with_unverified_constraints'].includes(r.status))fail('此结果未完成或没有可用候选',422)
     const c=r.candidates.find(c=>c.id===candidateId);if(!c)fail('候选不存在',404)
     const geometry=(await loadRules()).validateFinalAssembly(c.assembly.bricks)
     if(!geometry.valid||!c.geometry.valid)fail('候选未通过当前几何复核：'+geometry.reason,422)
-    return {...c,currentGeometry:geometry}
+    return {...c,kind:'valid',currentGeometry:geometry}
    }
    return geometryView(r)
   }
@@ -122,12 +140,13 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   }
   if(method==='POST'&&route==='execute'){
    id(body.planId)
+   if(body.topK!==undefined&&![5,10].includes(body.topK))fail('Top-K 仅支持 5 或 10')
    return operation(body,'geometry',async()=>{
     const plan=await getPlan(body.planId);if(!planView(plan).usable)fail('Spatial Plan 未完成或无效，禁止执行',422)
     const geometryId=randomUUID(),file=path.join(geometries,geometryId+'.json'),base={version:'geometry-execution-v1',id:geometryId,planId:plan.id,createdAt:new Date().toISOString(),state:'running',sourcePlanHash:hash(plan.plan)}
     await write(file,base,true)
     try{const rules=await loadRules(),prepared=await prepareGeometryInput(plan.requestInput,rules)
-     const result=prepared.issues.length?{status:'invalid_input',completeSearch:false,diagnostics:prepared.issues,candidates:[],groups:[]}:execute(plan.plan,prepared.input,rules)
+     const result=prepared.issues.length?{status:'invalid_input',completeSearch:false,diagnostics:prepared.issues,candidates:[],groups:[]}:execute(plan.plan,prepared.input,rules,{topK:body.topK??5})
      await write(file,{...base,...result,state:'complete',sourcePlan:plan.plan,sourceInput:plan.requestInput,input:prepared.input,enrichments:prepared.enrichments});return {geometryId,resultStatus:result.status}}
     catch(e){await write(file,{...base,state:'failed',status:'execution_failed',error:String(e.message)});return {geometryId,resultStatus:'execution_failed'}}
    })

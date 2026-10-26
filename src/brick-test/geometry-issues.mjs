@@ -8,8 +8,12 @@ export function geometryIssuesForDisplay(report,refinement){
   if(old){old.details.push(raw);return}
   issues.set(key,{key,ids,type,scope,details:[raw]})
  }
- for(const d of report?.diagnostics||[])if(d?.code==='CONSTRAINT_DOMAIN_EMPTY')add([d.id,d.other],'Constraint Conflict','domain',d)
- const g=report?.diagnosticAssembly?.geometry
+ for(const d of report?.selectedLayout?[]:report?.diagnostics||[])if(d?.code==='CONSTRAINT_DOMAIN_EMPTY')add([d.id,d.other],'Constraint Conflict','domain',d)
+ const c=report?.selectedLayout
+ for(const r of c?.relations||[])if(r.satisfied===false)add([r.from,r.to],'Spatial Relation','layout',{...r,reason:`${r.from} ${r.kind} ${r.to}：当前姿态不满足硬空间关系`})
+ for(const r of c?.intents||[])if(r.satisfied===false)add([r.id,r.other],'Missing Connection','layout',r)
+ for(const r of c?.ranges||[])if(!r.satisfied&&r.relativeTo)add([r.id,r.relativeTo],'Position Mismatch','layout',r)
+ const g=c?.geometry||report?.diagnosticAssembly?.geometry
  if(g?.code==='COLLISION')add(g.brickIds,'Collision','layout',g)
  // These diagnostics describe the recorded bounded search, not the current pose.
  for(const d of refinement?.diagnostics||[]){

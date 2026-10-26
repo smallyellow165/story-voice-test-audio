@@ -1,3 +1,4 @@
+import {rankLayout,compareLayouts,finishRanking} from './ranking.mjs'
 import {pruneDomains,spatialRelation} from './prune.mjs'
 import { validatePlan, assessConversion } from '../spatial-planning/plan.mjs'
 import { assessRelations } from '../geometry-solver/solver.mjs'
@@ -7,13 +8,14 @@ const same = (a,b) => Math.abs(a-b) < EPS
 const inside = (v,r) => r && v >= r.min-EPS && v <= r.max+EPS
 
 // A bounded adapter over the shared geometry engine, not another geometry library.
-export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}) {
+export function executePlan(plan, input, rules, { maxCombinations = 10000, topK = 5 } = {}) {
   if (!Number.isSafeInteger(maxCombinations) || maxCombinations < 1 || maxCombinations > 100000) throw new Error('maxCombinations must be 1..100000')
+  if (![5,10].includes(topK)) throw new Error('topK must be 5 or 10')
   const result = {version:'geometry-execution-v1',status:'invalid_input',completeSearch:false,
-    policy:{validation:'final-assembly-connectivity-v1',gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,
+    policy:{validation:'final-assembly-connectivity-v1',gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,topK,
       constraints:'All numeric intervals, yaw choices, definite mating intents and executable spatial relations are hard constraints. No rounding, repair or build order.',
-      selection:'Keep all accepted candidates in deterministic input/grid/yaw order; first is display default, not a best-photo claim.'},
-    diagnostics:[],domains:[],attempts:[],candidates:[],groups:[]}
+      selection:'Exhaust bounded filtered domain; rank by physical validity, failed intents/ranges/hard relations, relative interval midpoint distance and input yaw order. No image similarity claim.'},
+    diagnostics:[],domains:[],attempts:[],candidates:[],diagnosticCandidates:[],validLayoutCount:0,groups:[]}
   const validation=validatePlan(plan,input)
   if (!validation.valid) return {...result,diagnostics:validation.issues}
   const observations=new Map(input.observations.map(o=>[o.id,o]))
@@ -53,16 +55,22 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
   const pruning=pruneDomains(plan,result.domains,observations,rules)
   result.pruning=pruning.stats
   result.combinationCount=pruning.stats.remainingCombinationCount
+  const diagnosticMode=!!pruning.conflict
+  const searchPoses=diagnosticMode?pruning.diagnosticPoses:pruning.poses
+  const searchCount=searchPoses?[...searchPoses.values()].reduce((n,p)=>n*p.length,1):diagnosticMode?0:result.combinationCount
+  result.search={kind:diagnosticMode?'diagnostic':'strict',combinationCount:searchCount,complete:false,topK,rankingScope:'not searched'}
   if(pruning.conflict){
-    const positions=result.domains.map(d=>({id:d.id,x:d.axes.x[0],y:d.axes.y[0],z:d.axes.z[0],rotation:d.yaw[0]}))
-    const shift=-Math.min(...positions.map(b=>b.y))
-    const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,x:b.x/rules.STUD_LDU,z:b.z/rules.STUD_LDU,layer:(b.y+shift)/rules.BODY_LDU,rotation:b.rotation}))
-    result.diagnosticAssembly={bricks,geometry:rules.validateFinalAssembly(bricks),note:'Original domain first poses only; not a candidate or simultaneous constraint solution'}
-    return {...result,status:'no_solution',completeSearch:true,proof:'Necessary binary constraints have an empty domain; no full assembly can satisfy them',diagnostics:[pruning.conflict]}
+    result.status='no_solution';result.completeSearch=true
+    result.proof='Necessary binary constraints have an empty domain; no full assembly can satisfy them'
+    result.diagnostics.push(pruning.conflict)
   }
-  if(!pruning.poses||result.combinationCount>maxCombinations)return {...result,status:'budget_exceeded',diagnostics:[{code:'SEARCH_BUDGET',reason:'未完成搜索：过滤后的候选组合仍超过预算；未证明无解',originalCombinationCount:originalCount,remainingCombinationCount:result.combinationCount,maxCombinations,skipped:pruning.stats.skipped}]}
+  if(!searchPoses||searchCount>maxCombinations){
+    result.diagnostics.push({code:searchPoses?'SEARCH_BUDGET':diagnosticMode?'NO_DIAGNOSTIC_DOMAIN':'PREPROCESSING_BUDGET',reason:searchPoses?'过滤域超过预算；未枚举完整布局，不能声称全局 Top-K':diagnosticMode?'连接/相对区间过滤已无解；没有满足这些必要条件的诊断候选':'预处理预算不足，未建立完整候选域；未证明无解',remainingCombinationCount:searchCount,maxCombinations,skipped:pruning.stats.skipped})
+    if(!diagnosticMode)result.status='budget_exceeded'
+    return result
+  }
   const pById=new Map(plan.parts.map(p=>[p.id,p]))
-  let firstLayout
+  const rankedDiagnostics=[]
   const evaluate=positions=>{
     const shiftY=-Math.min(...positions.map(b=>b.y))
     const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,
@@ -74,9 +82,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
       return {id:b.id,relativeTo:p.pose.relativeTo,deltaLdu:delta,satisfied:Object.entries(delta).every(([a,v])=>inside(v,p.pose.offsetLdu[a]))}
     })
     const attempt={index:result.attempts.length+1,positions,groundTranslationLdu:shiftY,ranges,accepted:false}
-    if(ranges.some(r=>!r.satisfied)){attempt.failure='RELATIVE_INTERVAL';result.attempts.push(attempt);return}
     const geometry=rules.validateFinalAssembly(bricks)
-    if(!firstLayout)firstLayout={bricks,geometry,note:'原始计划首组允许姿态；仅供失败诊断，不是合法候选，也未修正布局。'}
     attempt.geometry=geometry
     // Shared validator checks all body/stud collision envelopes before support/connectivity.
     attempt.collision={status:geometry.code==='COLLISION'?'collision':geometry.valid||['UNSUPPORTED','DISCONNECTED'].includes(geometry.code)?'clear':'not_established',reason:geometry.reason,brickIds:geometry.brickIds}
@@ -104,23 +110,27 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     }))
     Object.assign(attempt,{relations,intents})
     if(!geometry.valid)attempt.failure=geometry.code
+    else if(ranges.some(r=>!r.satisfied))attempt.failure='RELATIVE_INTERVAL'
     else if(relations.some(r=>r.satisfied===false))attempt.failure='SPATIAL_RELATION'
     else if(intents.some(c=>c.satisfied===false))attempt.failure='CONNECTION_INTENT'
-    else {
-      attempt.accepted=true
-      const candidate={id:'candidate-'+(result.candidates.length+1),assembly:{name:'Spatial Plan reconstruction',bricks},geometry,
-        collision:attempt.collision,ranges,relations,intents,groundTranslationLdu:shiftY,attemptIndex:attempt.index,
-        unverifiedConstraints:[...relations.filter(r=>r.satisfied===null),...intents.filter(c=>c.satisfied===null)]}
-      result.candidates.push(candidate)
-    }
+    else attempt.accepted=true
+    const candidate={kind:attempt.accepted?'valid':'diagnostic',assembly:{name:'Spatial Plan reconstruction',bricks},geometry,
+      collision:attempt.collision,ranges,relations,intents,groundTranslationLdu:shiftY,attemptIndex:attempt.index,
+      unverifiedConstraints:[...relations.filter(r=>r.satisfied===null),...intents.filter(c=>c.satisfied===null)]}
+    candidate.ranking=rankLayout(candidate,plan,positions)
+    if(attempt.accepted){result.validLayoutCount++;result.candidates.push(candidate);result.candidates.sort(compareLayouts);result.candidates.splice(topK)}
+    else {rankedDiagnostics.push(candidate);rankedDiagnostics.sort(compareLayouts);rankedDiagnostics.splice(topK)}
     result.attempts.push(attempt)
   }
   function enumerate(i,positions) {
     if(i===result.domains.length)return evaluate(positions)
     const d=result.domains[i]
-    for(const pose of pruning.poses.get(d.id))enumerate(i+1,[...positions,pose])
+    for(const pose of searchPoses.get(d.id))enumerate(i+1,[...positions,pose])
   }
   enumerate(0,[])
+  result.candidates=finishRanking(result.candidates,'candidate')
+  if(!result.candidates.length)result.diagnosticCandidates=finishRanking(rankedDiagnostics,'diagnostic')
+  result.search.complete=true;result.search.rankingScope='complete filtered domain under saved constraints; no image-similarity score'
   // Group for navigation only. Keep all yaw variants and exact interface indices;
   // equal positions alone do NOT prove mesh/connector symmetry.
   const groups=new Map()
@@ -140,9 +150,26 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
   result.rejectionSummary=[...failures.values()]
   if(!result.candidates.length){
     result.diagnostics.push(...result.rejectionSummary)
-    if(firstLayout)result.diagnosticAssembly=firstLayout
+    const best=result.diagnosticCandidates[0]
+    if(best)result.diagnosticAssembly={bricks:best.assembly.bricks,geometry:best.geometry,note:'Top-ranked diagnostic from connection/relative filtered domain; NOT a valid layout',candidateId:best.id}
   }
   result.completeSearch=true
   result.status=result.candidates.length ? result.candidates.some(c=>c.unverifiedConstraints.length)?'candidates_with_unverified_constraints':'candidates_found' : 'no_solution'
   return result
+}
+
+// Revalidate one saved choice against the original constraints and current shared profiles.
+export function revalidateChoice(plan,input,candidate,rules){
+ const fixed=structuredClone(plan),bs=candidate.assembly.bricks,byId=new Map(bs.map(b=>[b.id,b]))
+ if(bs.length!==input.observations.length||byId.size!==bs.length)throw Error('候选实例身份不完整')
+ for(const o of input.observations){const b=byId.get(o.id);if(!b||b.part!==o.part||b.color!==o.color)throw Error('候选身份与输入不匹配')}
+ for(const p of fixed.parts){const b=byId.get(p.id),parent=p.pose.relativeTo?byId.get(p.pose.relativeTo):null
+  if(!p.pose.yawCandidates.includes(b.rotation))throw Error('候选朝向不在计划中')
+  const delta={x:(b.x-(parent?.x||0))*rules.STUD_LDU,z:(b.z-(parent?.z||0))*rules.STUD_LDU,y:parent?(b.layer-parent.layer)*rules.BODY_LDU:b.layer*rules.BODY_LDU-candidate.groundTranslationLdu}
+  for(const a of ['x','y','z']){if(!Number.isFinite(delta[a])||!inside(delta[a],p.pose.offsetLdu[a]))throw Error('候选超出原始相对区间');p.pose.offsetLdu[a]={min:delta[a],max:delta[a]}}
+  p.pose.yawCandidates=[b.rotation]
+ }
+ const result=executePlan(fixed,input,rules)
+ if(result.candidates.length!==1)throw Error('候选未通过当前完整约束复核')
+ return result.candidates[0]
 }
