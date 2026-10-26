@@ -133,6 +133,23 @@ export function brickLibraryPlugin() {
       res.writeHead(302, { Location: `${base}brick-test.html` }).end()
       return
     }
+    if(pathname===`${base}brick-profile`){
+      const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))}
+      if(req.method!=='GET')return send(405,{error:'Read only'})
+      try{
+        const q=new URL(req.url,'http://localhost').searchParams,id=q.get('part')||'',kind=q.get('kind')||'ldraw'
+        if(!/^[a-z0-9_-]{1,80}$/i.test(id)||!['ldraw','rebrickable'].includes(kind))return send(400,{error:'Invalid ID or namespace'})
+        let part=id,mapping={source:'Explicit LDraw ID; no Rebrickable equivalence asserted'}
+        if(kind==='rebrickable'){
+          const {catalog}=await import('./brick-games.mjs'),{officialPartCandidates}=await import('./brick-mapping.mjs')
+          mapping=await catalog('mapping-part',{part_num:id});const ids=officialPartCandidates(id,mapping)
+          if(mapping.source!=='rb_part_mappings'||mapping.status!=='available'||ids.length!==1)return send(422,{error:'正式直接 Mapping 缺失或不唯一；请明确选择 LDraw ID，不会按编号猜测。',mapping})
+          part=ids[0]
+        }
+        const inspection=await inspectBrickModel(part,library)
+        return send(inspection.available?200:422,{part,inputId:id,kind,mapping,inspection})
+      }catch(e){return send(500,{error:String(e.message)})}
+    }
     const prefix = `${base}brick-ldraw/`
     if (!pathname.startsWith(prefix)) return next()
     const send = (status, text) => {

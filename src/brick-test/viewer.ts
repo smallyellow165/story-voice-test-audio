@@ -4,10 +4,15 @@ import { LDrawLoader } from 'three/addons/loaders/LDrawLoader.js'
 import { LDrawConditionalLineMaterial } from 'three/addons/materials/LDrawConditionalLineMaterial.js'
 import { BODY_LDU, MM_PER_LDU, STUD_LDU, geometrySupport } from './catalog'
 import type { Brick } from './catalog'
+import type { PartGeometry, Connector } from './part-geometry'
 import type { Candidate } from './assembly'
 
 // No React, routing, or app-service dependency: mount in any sized DOM element.
 export class BrickViewer {
+  private profileLayer = new THREE.Group()
+  private profileOverlay: HTMLDivElement | null = null
+  private profileLabels: {element:HTMLElement;point:THREE.Vector3}[] = []
+  private profileResources: {dispose():void}[] = []
   private scene = new THREE.Scene()
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000)
   private renderer: THREE.WebGLRenderer
@@ -53,7 +58,7 @@ export class BrickViewer {
     this.scene.add(key)
     const fill = new THREE.DirectionalLight(0xffffff, 1.5)
     fill.position.set(-160, 80, -100)
-    this.scene.add(fill, this.assembly, this.markers, this.preview)
+    this.scene.add(fill, this.assembly, this.markers, this.preview, this.profileLayer)
     this.renderer.domElement.addEventListener('pointerdown', this.pointerDown)
     this.renderer.domElement.addEventListener('pointermove', this.pointerMove)
     this.renderer.domElement.addEventListener('pointerup', this.pointerUp)
@@ -172,6 +177,7 @@ export class BrickViewer {
     this.frame = requestAnimationFrame(this.animate)
     this.controls.update()
     this.renderer.render(this.scene, this.camera)
+    for(const label of this.profileLabels){const p=label.point.clone().project(this.camera);label.element.style.left=((p.x+1)/2*this.host.clientWidth)+'px';label.element.style.top=((1-p.y)/2*this.host.clientHeight)+'px';label.element.style.display=p.z>1||p.z< -1?'none':''}
   }
 
   private track(object: THREE.Object3D) {
@@ -192,14 +198,14 @@ export class BrickViewer {
     this.materials.clear()
   }
 
-  private template(part: string, color: string): Promise<THREE.Group> {
-    const key = `${part}:${color}`
+  private template(part: string, color: string, raw = false): Promise<THREE.Group> {
+    const key = `${part}:${color}:${raw}`
     const cached = this.templates.get(key)
     if (cached) return cached
     const pending = (async () => {
       const capability = geometrySupport(part)
-      if (!capability.supported || !capability.geometry) throw new Error(capability.reasons.join('; '))
-      const geometry = capability.geometry
+      if (!raw && (!capability.supported || !capability.geometry)) throw new Error(capability.reasons.join('; '))
+      const transform = raw ? {rotationX:Math.PI,offsetLdu:{x:0,y:0,z:0}} : capability.geometry!.ldraw
       const manager = new THREE.LoadingManager()
       const failedUrls = new Set<string>()
       manager.onError = (url) => { failedUrls.add(url) }
@@ -223,9 +229,9 @@ export class BrickViewer {
         // LDraw +Y points down. Rotate (not reflect) to preserve winding.
         // 1 scene unit = 1 mm. Profile aligns the original entry to its body bottom.
         // LDrawLoader retains all alias/subfile transforms; do not strip redirects.
-        model.rotation.x = geometry.ldraw.rotationX
+        model.rotation.x = transform.rotationX
         model.scale.setScalar(MM_PER_LDU)
-        model.position.set(geometry.ldraw.offsetLdu.x * MM_PER_LDU, geometry.ldraw.offsetLdu.y * MM_PER_LDU, geometry.ldraw.offsetLdu.z * MM_PER_LDU)
+        model.position.set(transform.offsetLdu.x * MM_PER_LDU, transform.offsetLdu.y * MM_PER_LDU, transform.offsetLdu.z * MM_PER_LDU)
         const positioned = new THREE.Group()
         positioned.add(model)
         return positioned
@@ -261,6 +267,48 @@ export class BrickViewer {
     this.fit()
     if(this.highlightIds.length)this.highlight(this.highlightIds)
     return true
+  }
+
+  // Explicit read-only DAT inspection. Normal assembly replace() still requires a Profile.
+  async inspectPart(part:string,color='14'){
+    if(!/^[a-z0-9_-]+$/i.test(part))throw new Error('Invalid LDraw Part ID')
+    const revision=++this.revision,capability=geometrySupport(part)
+    const model=await this.template(part,color,!capability.supported)
+    if(this.disposed||revision!==this.revision)return false
+    this.restoreHighlight();this.highlightIds=[];this.clearCandidates();this.clearPreview();this.clearProfileMarkers()
+    this.assembly.clear();const object=model.clone(true);object.name=part;this.assembly.add(object);this.fit();return true
+  }
+
+  clearProfileMarkers(){
+    this.profileLayer.clear();this.profileOverlay?.remove();this.profileOverlay=null;this.profileLabels=[]
+    this.profileResources.forEach(r=>r.dispose());this.profileResources=[]
+  }
+
+  showProfileMarkers(g:PartGeometry|undefined,showTop:boolean,showBottom:boolean,selected:string|null,onPick:(face:'top'|'bottom',index:number,p:Connector)=>void){
+    this.clearProfileMarkers()
+    const overlay=document.createElement('div');overlay.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden';this.host.append(overlay);this.profileOverlay=overlay
+    const label=(text:string,point:THREE.Vector3,colour:string,click?:()=>void)=>{
+      const element=document.createElement(click?'button':'span');element.textContent=text;element.style.cssText=`position:absolute;transform:translate(-50%,-50%);font:12px monospace;color:${colour};background:#fffffff0;border:1px solid ${colour};border-radius:3px;padding:3px;white-space:nowrap;pointer-events:${click?'auto':'none'}`
+      if(text.endsWith('Y')&&!click)element.style.marginLeft=text.startsWith('+')?'22px':'-22px'
+      if(click){element.setAttribute('aria-label',text);element.addEventListener('click',click)}overlay.append(element);this.profileLabels.push({element,point})
+    }
+    for(const [axis,colour] of [['x',0xd53636],['y',0x16853a],['z',0x305fdb]] as const)for(const sign of [-1,1]){
+      const extent=g?Math.max(24,g.bodySizeLdu[axis]*.8)*MM_PER_LDU:45
+      const dir=new THREE.Vector3();dir[axis]=sign*(!g&&axis!=='x'?-1:1)
+      const arrow=new THREE.ArrowHelper(dir,new THREE.Vector3(),extent,colour,4,2);this.profileLayer.add(arrow)
+      // ArrowHelper geometries are shared by Three; only release per-arrow materials.
+      for(const object of [arrow.line,arrow.cone]){const mats=Array.isArray(object.material)?object.material:[object.material];this.profileResources.push(...mats)}
+      label((sign>0?'+':'−')+axis.toUpperCase(),dir.clone().multiplyScalar(extent),new THREE.Color(colour).getStyle())
+    }
+    if(!g)return
+    for(const face of ['top','bottom'] as const){if(face==='top'?!showTop:!showBottom)continue
+      g[face].forEach((p,index)=>{
+        const key=`${face}[${index}]`,point=new THREE.Vector3(p.x,p.y,p.z).multiplyScalar(MM_PER_LDU)
+        const material=new THREE.MeshBasicMaterial({color:selected===key?0xffbd00:face==='top'?0x0085bc:0xb52b7c,depthTest:false,depthWrite:false});this.profileResources.push(material)
+        const marker=new THREE.Mesh(this.markerGeometry,material);marker.position.copy(point);marker.scale.setScalar(selected===key?1.1:.65);marker.renderOrder=20;this.profileLayer.add(marker)
+        label(key,point,selected===key?'#955d00':face==='top'?'#00658e':'#9f185f',()=>onPick(face,index,p))
+      })
+    }
   }
 
   private restoreHighlight() {
@@ -337,6 +385,7 @@ export class BrickViewer {
 
   dispose() {
     this.restoreHighlight()
+    this.clearProfileMarkers()
     this.disposed = true
     ++this.revision
     cancelAnimationFrame(this.frame)
