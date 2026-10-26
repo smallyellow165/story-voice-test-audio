@@ -111,7 +111,7 @@
 .explorer-workspace-handle { height: 9px; display: flex; align-items: center; justify-content: center; background: #e4ece7; cursor: row-resize; touch-action: none; }
 .explorer-workspace-handle span { width: 36px; height: 3px; border-radius: 3px; background: #8da89c; }
 .explorer-workspace-handle:hover, .explorer-workspace-handle:focus-visible, .explorer-workspace-handle[data-separator="active"] { background: #bcd3c7; outline: 2px solid #357261; outline-offset: -2px; }
-.explorer-right-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; }
+.explorer-right-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 10px; }
 .inventory-workbench .explorer-right-tabs > button { width: 100%; border-radius: 0; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #48645a; }
 .inventory-workbench .explorer-right-tabs > button[aria-selected="true"] { background: #e7f2ed; border-bottom-color: #357261; color: #214e3f; }
 .inventory-workbench .explorer-right .inventory-grid { overflow-x: visible; }

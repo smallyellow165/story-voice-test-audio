@@ -128,7 +128,8 @@ function PartRow({ part, image, initialColor, initialQuantity = '1', reviewing =
 export function InventoryPage() {
   const [geometryHost, setGeometryHost] = useState<HTMLDivElement | null>(null)
   const [hasGeometry, setHasGeometry] = useState(false)
-  const [rightTab, setRightTab] = useState<'catalog' | 'confirmed'>('catalog')
+  const [rightTab, setRightTab] = useState<'catalog' | 'relations' | 'confirmed'>('catalog')
+  const [manualRelationsHost, setManualRelationsHost] = useState<HTMLDivElement | null>(null)
   const [visionWorkspaceHost, setVisionWorkspaceHost] = useState<HTMLDivElement | null>(null)
   const [catalogReview, setCatalogReview] = useState<ObservationCatalogSearch | null>(null)
   const [catalogRequestKey, setCatalogRequestKey] = useState('')
@@ -324,7 +325,7 @@ export function InventoryPage() {
           <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
             <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
           <h2 className="inventory-panel-title">图片与识别</h2>
-    <PartExplorerRecognition designSessionId={isSavedList && !dirty ? id : undefined} geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onReset={recognized => {
+    <PartExplorerRecognition manualRelationsHost={manualRelationsHost} designSessionId={isSavedList && !dirty ? id : undefined} geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onReset={recognized => {
       if (!recognized.length) throw new Error('没有有效已确认零件，未重置清单。')
       // Reuse the canonical accumulator, starting from empty instead of current items.
       const next = recognized.reduce((draft, item) => addItem(draft, item), [] as InventoryItem[])
@@ -339,14 +340,16 @@ export function InventoryPage() {
         </>}
         center={<ExplorerWorkspace hasGeometry={hasGeometry} matchingHost={setVisionWorkspaceHost} geometryHost={setGeometryHost} />}
         right={<section className="explorer-right">
-          <div className="explorer-right-tabs" role="tablist" aria-label="零件目录与我的积木" onKeyDown={event => {
+          <div className="explorer-right-tabs" role="tablist" aria-label="零件目录、人工关系与我的积木" onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
-            const next = event.key === 'Home' ? 'catalog' : event.key === 'End' ? 'confirmed' : rightTab === 'catalog' ? 'confirmed' : 'catalog'
+            const tabs = ['catalog', 'relations', 'confirmed'] as const
+            const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[2] : tabs[(tabs.indexOf(rightTab) + (event.key === 'ArrowRight' ? 1 : 2)) % tabs.length]
             setRightTab(next)
             event.currentTarget.querySelector<HTMLButtonElement>('#explorer-tab-' + next)?.focus()
           }}>
-            <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>零件目录</button>
+            <button id="explorer-tab-catalog" type="button" role="tab" aria-controls="explorer-catalog" aria-selected={rightTab === 'catalog'} tabIndex={rightTab === 'catalog' ? 0 : -1} onClick={() => setRightTab('catalog')}>零件目录 / Catalog</button>
+            <button id="explorer-tab-relations" type="button" role="tab" aria-controls="explorer-relations" aria-selected={rightTab === 'relations'} tabIndex={rightTab === 'relations' ? 0 : -1} onClick={() => setRightTab('relations')}>Manual Relations</button>
             <button id="explorer-tab-confirmed" type="button" role="tab" aria-controls="explorer-confirmed" aria-selected={rightTab === 'confirmed'} tabIndex={rightTab === 'confirmed' ? 0 : -1} onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块</button>
           </div>
           <div ref={catalogScroll} id="explorer-catalog" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-catalog" hidden={rightTab !== 'catalog'}>
@@ -420,6 +423,9 @@ export function InventoryPage() {
         </>}
         <footer>零件资料与图片来自 <a href="https://rebrickable.com/" target="_blank" rel="noreferrer">Rebrickable</a>。图片缺失时仍可按型号和颜色选择；示意图不代表所选颜色。</footer>
       </section>
+          </div>
+          <div id="explorer-relations" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-relations" hidden={rightTab !== 'relations'}>
+            <div ref={setManualRelationsHost} />
           </div>
           <div id="explorer-confirmed" className="explorer-right-scroll" role="tabpanel" aria-labelledby="explorer-tab-confirmed" hidden={rightTab !== 'confirmed'}>
       <aside id="session-inventory" className="inventory-session" aria-label="我的积木">

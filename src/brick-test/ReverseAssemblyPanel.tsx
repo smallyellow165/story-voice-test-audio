@@ -34,12 +34,12 @@ import './reverse.css'
 type Props = { designSessionId?: string; initialScene?: ExplorerScene; initialHistory?: History; modelsReady?: boolean; onRestoreModel?(id: string): void; inventory: InventoryRow[]; onQuantity(row: InventoryRow, quantity: number): void; models: Model[]; model: string;
   onModel(model: string): void; disabled: boolean; onBusy(busy: boolean): void;
   analysisMode: AnalysisMode; onAnalysisMode(mode: AnalysisMode): void; onDirty(dirty: boolean): void;
-  active: boolean; geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void; onSearchCatalog(request: ObservationCatalogSearch): void; workspaceHost: HTMLElement | null; onApply(items: InventoryItem[]): boolean | void; onReset?(items: InventoryItem[]): boolean | void }
+  active: boolean; manualRelationsHost?: HTMLElement | null; geometryHost: HTMLElement | null; onGeometryPresence(value: boolean): void; onSearchCatalog(request: ObservationCatalogSearch): void; workspaceHost: HTMLElement | null; onApply(items: InventoryItem[]): boolean | void; onReset?(items: InventoryItem[]): boolean | void }
 const post = <T,>(action: string, body: unknown) => requestJson<T>('/api/brick-reverse/' + action, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000),
 }, 'Reverse ' + action)
 
-export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply, onReset, initialScene, initialHistory, modelsReady = true, onRestoreModel }: Props) {
+export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity, models, model, onModel, disabled, onBusy, analysisMode, onAnalysisMode, onDirty, active: visible, workspaceHost, manualRelationsHost, geometryHost, onGeometryPresence, onSearchCatalog, onApply, onReset, initialScene, initialHistory, modelsReady = true, onRestoreModel }: Props) {
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
@@ -322,6 +322,33 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       </details>
     </>}
   </div>
+  const relationsPanel = <div className="brick-reverse">
+    {visible && record?.analysis ? <>
+      <fieldset disabled={locked}>
+        <legend>Manual Relations · 人工对称线索</legend>
+        <small>模型识别 {record.analysis.observations.length} 项 · 人工隐藏 {hiddenParts.length} 项。关系没有指定对称轴或平面，需 Planning 推断，未经几何验证。与审核一起保存。</small>
+        {manualRelations.map((r,i)=>{
+          const editRelation=(patch:Partial<ManualSymmetry>)=>changeRelations(manualRelations.map((old,n)=>n===i?{...old,...patch}:old))
+          return <div key={i} style={{borderTop:'1px solid #dbe7e3',paddingTop:8,marginTop:8}}>
+            <div className="brick-actions">
+              <label>Source<select value={r.from} onChange={e=>editRelation({from:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
+              <span>symmetric / 对称</span>
+              <label>Target<select value={r.to} onChange={e=>editRelation({to:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
+              <button type="button" onClick={()=>changeRelations(manualRelations.filter((_,n)=>n!==i))}>删除关系</button>
+            </div>
+            <label>说明（可选）<textarea maxLength={2000} value={r.note} onChange={e=>editRelation({note:e.target.value})}/></label>
+            <small>source: manual</small>
+          </div>
+        })}
+        <button type="button" disabled={reviewParts.length<2||manualRelations.length>=100} onClick={()=>{
+          const from=hiddenParts.at(-1)?.id||reviewParts[0].id
+          const to=reviewParts.find(o=>o.id!==from)!.id
+          changeRelations([...manualRelations,{from,to,relation:'symmetric',source:'manual',note:''}])
+        }}>添加 symmetric 关系</button>
+      </fieldset>
+      <p className="brick-help">人工关系是对 LLM Relations 的补充；修改后请点击中栏「保存审核」。</p>
+    </> : <p>请先加载成品识别的 Analysis / Review。</p>}
+  </div>
   const workspace = <div className="brick-reverse vision-review-layout" hidden={!visible}>
     <ReviewToolbar confirmed={confirmedCount} total={reviewParts.length}
       saved={!dirty && !!savedAt} help={<>
@@ -410,28 +437,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
           </tr>
         })}
       </ObservationTable>
-      <fieldset disabled={locked}>
-        <legend>Manual Relations · 人工对称线索</legend>
-        <small>模型识别 {record.analysis.observations.length} 项 · 人工隐藏 {hiddenParts.length} 项。关系没有指定对称轴或平面，需 Planning 推断，未经几何验证。与审核一起保存。</small>
-        {manualRelations.map((r,i)=>{
-          const editRelation=(patch:Partial<ManualSymmetry>)=>changeRelations(manualRelations.map((old,n)=>n===i?{...old,...patch}:old))
-          return <div key={i} style={{borderTop:'1px solid #dbe7e3',paddingTop:8,marginTop:8}}>
-            <div className="brick-actions">
-              <label>Source<select value={r.from} onChange={e=>editRelation({from:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
-              <span>symmetric / 对称</span>
-              <label>Target<select value={r.to} onChange={e=>editRelation({to:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
-              <button type="button" onClick={()=>changeRelations(manualRelations.filter((_,n)=>n!==i))}>删除关系</button>
-            </div>
-            <label>说明（可选）<textarea maxLength={2000} value={r.note} onChange={e=>editRelation({note:e.target.value})}/></label>
-            <small>source: manual</small>
-          </div>
-        })}
-        <button type="button" disabled={reviewParts.length<2||manualRelations.length>=100} onClick={()=>{
-          const from=hiddenParts.at(-1)?.id||reviewParts[0].id
-          const to=reviewParts.find(o=>o.id!==from)!.id
-          changeRelations([...manualRelations,{from,to,relation:'symmetric',source:'manual',note:''}])
-        }}>添加 symmetric 关系</button>
-      </fieldset>
+      {!manualRelationsHost && relationsPanel}
     </>}
     {generationSubmitted && <p className="brick-help">此识别结果已提交生成；可以继续保存审核或读取已有方案。原有防重复生成保护仍生效，不覆盖 Artifact。</p>}
     {artifact && <div role="status"><p>Approximation · {artifact.status} · {artifact.error || artifact.generation?.error?.message || '请在 Viewer 与原图对比；Validator 不验证外观相似度。'}</p>
@@ -562,6 +568,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     {restoreWarning && <p role="status">{restoreWarning}</p>}
     {workspaceHost ? createPortal(workspace, workspaceHost) : workspace}
     {geometryHost && createPortal(geometry, geometryHost)}
+    {manualRelationsHost && createPortal(relationsPanel, manualRelationsHost)}
     {detailId && <ObservationModal title={'识别项 ' + detailId} data={{
       observation: reviewParts.find(o => o.id === detailId),
       review: rows[detailId],
