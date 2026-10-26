@@ -1,3 +1,4 @@
+import {TraceLinks} from '../llm-traces/TraceLinks'
 import {spatialPromptVersion} from './spatial-prompt-version.mjs'
 import {GeometryIssues} from './GeometryIssues'
 import {InspectorContent,InspectButton,InspectorContext} from './SpatialInspector'
@@ -107,6 +108,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    {(!selected||!providers[selected.provider])&&<p role="alert" className="brick-error">{!selected?'所选模型未登记或配置尚未加载，请明确选择可用模型。':'该 Provider 未配置 API Key，无法调用。'}不会自动切换模型。</p>}
    <button type="button" className="brick-primary" disabled={!promptReady||!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
+   <TraceLinks source="spatial" id={plan?.id}/>
    <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
    <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
    {plan&&<><InspectorContent step="planning" disabled={disabled||busy}><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>

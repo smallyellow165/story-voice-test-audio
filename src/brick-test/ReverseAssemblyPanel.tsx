@@ -1,3 +1,4 @@
+import {TraceLinks} from '../llm-traces/TraceLinks'
 import {observationPrintHints} from '../brick-vision/print-hints.mjs'
 import { recognitionBlockReason } from './reverse-recognition-state.mjs'
 import { AnchorRevisionForm } from './AnchorRevisionForm'
@@ -403,6 +404,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
 
 
     <div className="brick-reverse-recovery">
+      <TraceLinks source="reverse" id={record?.id||undefined}/>
       <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
         <option value="">选择历史分析</option>
         {recordId && !history.some(r => r.id === recordId) && <option value={recordId}>{recordId}</option>}

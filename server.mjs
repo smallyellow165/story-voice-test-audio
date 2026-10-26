@@ -1,3 +1,4 @@
+import {createLlmTraceStore} from './server/llm-traces.mjs'
 import { listDesignTraces, loadDesignTrace } from './server/brick-design-history.mjs'
 import { createSpatialWorkflow } from './server/brick-spatial-workflow.mjs'
 import { prepareDesignGeneration } from './server/brick-design-input.mjs'
@@ -43,6 +44,7 @@ const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'f
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
 const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames })
+const llmTraces = createLlmTraceStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
@@ -454,6 +456,16 @@ const sourceSiteFromUrl = (sourceUrl) => {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+  if ((url.pathname === '/api/llm-traces' || url.pathname.startsWith('/api/llm-traces/'))) {
+    try {
+      if(request.method!=='GET'||request.headers['sec-fetch-site']==='cross-site'||(request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)){sendJson(response,403,{error:'仅接受同源只读 Trace 请求'});return}
+      response.setHeader('Cache-Control','no-store')
+      const parts=url.pathname.split('/').filter(Boolean)
+      if(parts.length!==2&&parts.length!==4){sendJson(response,404,{error:'Trace 路径不存在'});return}
+      sendJson(response,200,parts.length===2?await llmTraces.list():await llmTraces.detail(parts[2],parts[3]))
+    }catch(e){sendJson(response,e.code==='ENOENT'?404:e.statusCode||500,{error:e.statusCode?e.message:'Trace 读取失败'})}
+    return
+  }
   if (url.pathname.startsWith('/api/brick-spatial/')) {
     try {
       if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
