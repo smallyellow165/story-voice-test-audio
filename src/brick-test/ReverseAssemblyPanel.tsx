@@ -66,6 +66,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [imageSelection, setImageSelection] = useState<SceneImageSelection>({ source: initialScene?.imageSource || 'server_library', name: '' })
   const [restoredSelection, setRestoredSelection] = useState<SceneImageSelection>()
   const [copyMessage, setCopyMessage] = useState('')
+  const [copyTarget, setCopyTarget] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false), [savedAt, setSavedAt] = useState(''), [restoreWarning, setRestoreWarning] = useState('')
   const reviewHost = useRef<HTMLDivElement>(null)
   const [reviewFocus, setReviewFocus] = useState(0)
@@ -118,14 +119,19 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     setDirty(false); setSavedAt(value.updatedAt); setCopyMessage('')
   }
 
-  async function copyPrevious(observationId?: string) {
+  async function openCopySources(observationId = '') {
+    await refreshHistory()
+    setCopyTarget(observationId)
+  }
+  async function copyPrevious(sourceId: string, observationId?: string) {
     if (!record?.analysis) return
-    const previous = await requestJson<{rows:Record<string,Draft>;message:string}>('/api/brick-reverse/previous-review/'+record.id, {}, '读取上一轮审核')
+    setCopyTarget(null)
+    const previous = await requestJson<{rows:Record<string,Draft>;message:string}>('/api/brick-reverse/previous-review/'+record.id+'?sourceId='+encodeURIComponent(sourceId), {}, '读取所选历史审核')
     const ids = record.analysis.observations.map(o=>o.id).filter(id=>(!observationId||id===observationId)&&previous.rows[id])
-    if (!ids.length) { setCopyMessage(Object.keys(previous.rows).length ? '上一轮没有相同 Observation ID，未复制。' : previous.message); return }
+    if (!ids.length) { setCopyMessage(Object.keys(previous.rows).length ? '所选历史没有相同 Observation ID，未复制。' : previous.message); return }
     catalogEpoch.current++; setCandidateNotes({}); setApplied(false); setDirty(true)
     setRows(old=>({...old,...Object.fromEntries(ids.map(id=>[id,structuredClone(previous.rows[id])]))}))
-    setCopyMessage(`已复制上一轮 ${ids.length} 项审核。尚未保存；原始识别证据不变。`)
+    setCopyMessage(`已从所选历史复制 ${ids.length} 项审核。尚未保存；原始识别证据不变。`)
   }
 
   function selectBox(id: string) {
@@ -183,6 +189,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
     setCopyMessage('')
+    setCopyTarget(null)
     setHiddenBoxes(new Set())
     setGuidedIds(new Set()); setHint('')
     if (value.status === 'failed' && value.analysis_mode === 'geometry_only' && !value.outputValidation) {
@@ -296,7 +303,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         <p>加入我的积木仅累计到当前清单，不保存审核或清单。未保存审核请点击“保存审核”；未匹配的识别项也可保存。先保存审核，再进入 Design Lab。</p>
       </>}>
       <button disabled={locked || !record?.analysis || record.status !== 'complete'} onClick={() => void action('保存审核', saveReview)}>保存审核</button>
-      <button disabled={locked || record?.status !== 'complete'} onClick={() => void action('复制上一轮审核', () => copyPrevious())}>Copy from Previous Run</button>
+      <button disabled={locked || record?.status !== 'complete'} onClick={() => void action('读取历史审核来源', () => openCopySources())}>Copy from ▾</button>
       <button disabled={locked || applied || !confirmedItems.length} onClick={() => void action('加入我的积木', async () => {
         if (onApply(confirmedItems) !== false) setApplied(true)
       })}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
@@ -307,6 +314,13 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
     {copyMessage && <p role="status">{copyMessage}</p>}
+    {copyTarget !== null && <div role="dialog" aria-label="Copy from 历史 Review" style={{position:'fixed',zIndex:1000,top:'20%',left:'50%',transform:'translateX(-50%)',width:'min(560px, 90vw)',maxHeight:'60vh',overflowY:'auto',background:'white',border:'1px solid #b9ceca',borderRadius:6,padding:12,boxShadow:'0 4px 20px #0003'}}>
+      <div className="brick-actions"><strong>{copyTarget ? `复制到 ${copyTarget}` : '批量复制匹配的审核行'}</strong><button type="button" onClick={()=>setCopyTarget(null)}>关闭</button></div>
+      {history.filter(r=>r.id!==record?.id && r.hasSavedReview).slice(0,10).map(r=><button type="button" key={r.id} disabled={locked} style={{display:'block',width:'100%',textAlign:'left',marginTop:6}} onClick={()=>void action('复制历史审核',()=>copyPrevious(r.id,copyTarget||undefined))}>
+        {r.createdAt} · {r.provider} / {r.model}<br/>{(r.appearance || r.image_reference?.name || r.status).slice(0,100)}
+      </button>)}
+      {!history.some(r=>r.id!==record?.id && r.hasSavedReview) && <p role="status">没有可用的历史 Review。</p>}
+    </div>}
     {record?.analysis && <>
       <div className="brick-actions" aria-label="照片 BBox 显示控制">
         <button type="button" onClick={() => setHiddenBoxes(new Set())}>全部显示 BBox</button>
@@ -330,7 +344,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             selectBox(o.id)
           }}>
             <td><ObservationActions observationId={o.id} actions={[
-              { label: 'Copy from Previous Run', disabled: locked, run: () => void action('复制上一轮审核', () => copyPrevious(o.id)) },
+              { label: 'Copy from ▸', disabled: locked, run: () => void action('读取历史审核来源', () => openCopySources(o.id)) },
               { label: '按型号查找', disabled: locked || !row.features.partNumber?.trim(), run: () => find(o.id, 'part') },
               { label: '按特征查找', disabled: locked, run: () => find(o.id, 'features') },
               { label: '在零件目录中查找', disabled: locked, run: () => find(o.id, 'manual') },

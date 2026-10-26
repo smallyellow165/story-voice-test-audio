@@ -15,7 +15,7 @@ export type Search = { id: string; partNumber?: string; features: CatalogQuery; 
 export type Draft = { copiedFromAnalysisId?: string; features: FeatureEditor; quantity: string; excluded: boolean; reason: string; search?: Search; index?: number }
 export type Artifact = { id: string; status: string; generation: GenerationResult | null; error?: string; designHash: string | null }
 
-export type HistoryItem = { isGuided?: boolean; isRevision?: boolean; analysis_mode?: AnalysisMode; prompt_id?: string; prompt_version?: number; image_reference?: { name: string }; id: string; createdAt: string; provider: string; model: string; status: string; appearance: string; count: number }
+export type HistoryItem = { hasSavedReview?: boolean; isGuided?: boolean; isRevision?: boolean; analysis_mode?: AnalysisMode; prompt_id?: string; prompt_version?: number; image_reference?: { name: string }; id: string; createdAt: string; provider: string; model: string; status: string; appearance: string; count: number }
 export type History = { items: HistoryItem[]; warnings: string[] }
 export type Restored = { analysis: Analysis; rows: Record<string, Draft>; artifact: Artifact | null; generationStatus: string; updatedAt: string | null; warnings: string[] }
 

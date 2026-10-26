@@ -140,7 +140,10 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         try {
           const r = JSON.parse(await readFile(path.join(directory, name), 'utf8'))
           if (r.kind !== 'reverse-analysis') continue
-          items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model,
+          let hasSavedReview = false
+          try { await readFile(file(r.id) + '.review', 'utf8'); hasSavedReview = true }
+          catch (e) { if (e.code !== 'ENOENT') throw e }
+          items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model, hasSavedReview,
             analysis_mode: r.analysis_mode || 'catalog_match', prompt_id: r.prompt_id || 'reverse_catalog_v1', prompt_version: r.prompt_version || 1, image_reference: r.image_reference || { kind: 'upload', name: r.originalImage?.name || null, sha256: r.image?.sha256 },
             status: r.status, isRevision: !!r.revision, isGuided: !!r.guidance, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
         } catch { warnings.push(name + ' 无法读取；原文件保留。') }
@@ -148,19 +151,19 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))
       return { items, warnings }
     },
-    async previousReview(analysisId) {
+    async previousReview(analysisId, sourceId) {
       const {items}=await this.history(), index=items.findIndex(r=>r.id===analysisId)
-      const previous=index<0?null:items[index+1]
-      if(!previous)return {rows:{},message:'没有上一轮识别记录。'}
+      const previous=sourceId ? items.find(r=>r.id===sourceId&&r.id!==analysisId) : index<0?null:items[index+1]
+      if(!previous)return {rows:{},message:sourceId?'所选历史不存在，或是当前 Run。':'没有上一轮识别记录。'}
       let review
       try { review=JSON.parse(await readFile(file(previous.id)+'.review','utf8')) }
-      catch(e){if(e.code==='ENOENT')return {rows:{},message:'直接上一轮没有保存的 Review。'};throw e}
+      catch(e){if(e.code==='ENOENT')return {rows:{},message:sourceId?'所选历史没有保存的 Review。':'直接上一轮没有保存的 Review。'};throw e}
       const rows={}
       for(const [id,r] of Object.entries(review.rows)){
         rows[id]={features:r.features,quantity:r.quantity,excluded:r.excluded,reason:r.reason,index:r.index,copiedFromAnalysisId:previous.id}
         if(r.searchId)rows[id].search=await read(r.searchId)
       }
-      return {analysisId:previous.id,rows,message:'复制后尚未保存，请点击保存审核。'}
+      return {analysisId:previous.id,rows,message:'所选历史没有可复制的审核行。'}
     },
     async saveReview(body) {
       const analysis = await analyzed(body.analysisId)
