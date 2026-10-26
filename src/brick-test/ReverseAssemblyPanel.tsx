@@ -1,4 +1,5 @@
 import {TraceLinks} from '../llm-traces/TraceLinks'
+import {reviewObservations,validateReviewParts,type HiddenPart,type ManualSymmetry} from '../brick-vision/review-parts.mjs'
 import {observationPrintHints} from '../brick-vision/print-hints.mjs'
 import { recognitionBlockReason } from './reverse-recognition-state.mjs'
 import { AnchorRevisionForm } from './AnchorRevisionForm'
@@ -42,6 +43,9 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [source, setSource] = useState('full'), [sessions, setSessions] = useState<SessionInventory[]>([]), [sessionId, setSessionId] = useState('')
   const [image, setImage] = useState<PreparedSourceImage | null>(null)
   const [record, setRecord] = useState<Analysis | null>(null), [rows, setRows] = useState<Record<string, Draft>>({})
+  const [hiddenParts,setHiddenParts]=useState<HiddenPart[]>([])
+  const [manualRelations,setManualRelations]=useState<ManualSymmetry[]>([])
+  const reviewParts=reviewObservations(record?.analysis?.observations||[],hiddenParts)
   const [promptVersion, setPromptVersion] = useState(3)
   const [guidedIds, setGuidedIds] = useState<Set<string>>(() => new Set())
   const [hint, setHint] = useState('')
@@ -110,7 +114,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
   async function saveReview() {
     if (!record) return
-    const value = await post<{ updatedAt: string; copiedSearches: Record<string, Search> }>('saveReview', { analysisId: record.id,
+    const value = await post<{ updatedAt: string; copiedSearches: Record<string, Search> }>('saveReview', { analysisId: record.id, hiddenParts, manualRelations,
       rows: Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, {
         features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason,
         searchId: r.search?.id, index: r.index, copiedFromAnalysisId: r.copiedFromAnalysisId,
@@ -134,6 +138,28 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     setCopyMessage(`已从所选历史复制 ${ids.length} 项审核。尚未保存；原始识别证据不变。`)
   }
 
+  function additionsChanged() { catalogEpoch.current++;setApplied(false);setDirty(true) }
+  function addHiddenPart() {
+    const id=window.prompt('Observation ID（例如 wing_opposite；创建后保持不变）')?.trim()
+    if(!id||!record?.analysis)return
+    const part:HiddenPart={id,source:'manual',visibility:'hidden'}
+    try { validateReviewParts(record.analysis.observations,[...hiddenParts,part],manualRelations) }
+    catch(e){setError(e instanceof Error?e.message:String(e));return}
+    setHiddenParts(old=>[...old,part])
+    setRows(old=>({...old,[id]:{features:reverseFeatureEditor({},reviewColors),quantity:'1',excluded:false,reason:''}}))
+    additionsChanged();setActive(id);setReviewFilter('all');setReviewFocus(n=>n+1);setError('')
+  }
+  function removeHiddenPart(id:string) {
+    if(!window.confirm('删除人工零件 '+id+' 及引用它的人工关系？点击保存审核后生效。'))return
+    setHiddenParts(old=>old.filter(p=>p.id!==id))
+    setManualRelations(old=>old.filter(r=>r.from!==id&&r.to!==id))
+    setRows(old=>{const next={...old};delete next[id];return next})
+    if(active===id)setActive('')
+    if(detailId===id)setDetailId('')
+    additionsChanged()
+  }
+  function changeRelations(next:ManualSymmetry[]) { setManualRelations(next);additionsChanged() }
+
   function selectBox(id: string) {
     if (record?.status === 'complete' && rows[id]) find(id)
     setActive(id)
@@ -156,6 +182,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       imageReference: { kind: record.image_reference?.kind === 'server_library' ? 'server_library' : 'upload',
         name: record.image_reference?.name || record.originalImage.name } })
     setCopyMessage('')
+    setHiddenParts([]);setManualRelations([])
     requestId.current = newSessionId(); setRecordId(''); setSubmitted(false); setRecord(null); setRows({}); setArtifact(null)
     setGenerationSubmitted(false); setApplied(false); setError('')
   }
@@ -176,6 +203,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       const mode = value.analysis.analysis_mode || 'catalog_match'
       if (automatic && initialScene?.strategy && initialScene.strategy !== mode) throw new Error('URL 策略与历史类型不兼容；未加载。')
       await acceptAnalysis(value.analysis, value.rows)
+      setHiddenParts(value.hiddenParts);setManualRelations(value.manualRelations)
       if (!automatic || !initialScene?.image) {
         setImage(null)
         setRestoredSelection({ source: (automatic && initialScene?.imageSource) || (value.analysis.image_reference?.kind === 'server_library' ? 'server_library' : 'upload'),
@@ -188,6 +216,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     })
   }
   async function acceptAnalysis(value: Analysis, restoredRows?: Record<string, Draft>) {
+    setHiddenParts([]);setManualRelations([])
     setCopyMessage('')
     setCopyTarget(null)
     setHiddenBoxes(new Set())
@@ -247,7 +276,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
             // Existing persistence requires a server-owned searchId/index. Only
             // after explicit selection, resolve that exact identity for saving.
             // This does not render a second candidate list or assert geometry.
-            const resolved = await post<Search>('search', { analysisId: record.id, observationId: id,
+            const resolved = await post<Search>('search', { analysisId: record.id, observationId: id, hiddenParts,
               features: { color_id: null, size: null, shape: null, print: 'unknown' }, partNumber: item.part_num, page: 1 })
             if (catalogEpoch.current !== epoch || !isCurrent()) throw new Error('搜索目标已改变，本次结果未回填。')
             const index = resolved.rows.findIndex(r => r.source.part_num === item.part_num && r.source.color_id === item.color_id && r.sourceAllowed)
@@ -267,7 +296,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   }
   const isConfirmed = (row: Draft | undefined) => !!row && !row.excluded
     && !!(row.index === undefined ? undefined : row.search?.rows[row.index])?.sourceAllowed
-  const confirmedCount = (record?.analysis?.observations || []).filter(o => isConfirmed(rows[o.id])).length
+  const confirmedCount = reviewParts.filter(o => isConfirmed(rows[o.id])).length
   const confirmedItems = Object.values(rows).flatMap(r => {
     const chosen = r.index === undefined ? undefined : r.search?.rows[r.index]
     const quantity = Number(r.quantity)
@@ -294,7 +323,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     </>}
   </div>
   const workspace = <div className="brick-reverse vision-review-layout" hidden={!visible}>
-    <ReviewToolbar confirmed={confirmedCount} total={record?.analysis?.observations.length || 0}
+    <ReviewToolbar confirmed={confirmedCount} total={reviewParts.length}
       saved={!dirty && !!savedAt} help={<>
         <p>从左栏识别或加载历史，在此审核；零件目录位于右栏。</p>
         <p>宽、深使用 Stud（16 mm），高使用 Brick（19.2 mm）；未知请留空。按特征查找会重置并填写右栏零件目录。确认型号与颜色不代表已通过拼装验证，原始几何证据保持不变。</p>
@@ -304,6 +333,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       </>}>
       <button disabled={locked || !record?.analysis || record.status !== 'complete'} onClick={() => void action('保存审核', saveReview)}>保存审核</button>
       <button disabled={locked || record?.status !== 'complete'} onClick={() => void action('读取历史审核来源', () => openCopySources())}>Copy from ▾</button>
+      <button disabled={locked || record?.status !== 'complete'} onClick={addHiddenPart}>Add Hidden Part</button>
       <button disabled={locked || applied || !confirmedItems.length} onClick={() => void action('加入我的积木', async () => {
         if (onApply(confirmedItems) !== false) setApplied(true)
       })}>{applied ? '已加入我的积木；请保存积木清单' : '加入我的积木'}</button>
@@ -333,7 +363,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         { label: '颜色（Rebrickable）', width: 180 }, { label: '形状', width: 112 }, { label: '印花', width: 76 },
         { label: '数量', width: 60 },
       ]}>
-        {record.analysis.observations.map(o => {
+        {reviewParts.map(o => {
+          const manual=hiddenParts.some(p=>p.id===o.id)
           const row = rows[o.id]
           if (!row) return null
           const status = reviewStatus(row.excluded, isConfirmed(row))
@@ -350,20 +381,21 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
               { label: '在零件目录中查找', disabled: locked, run: () => find(o.id, 'manual') },
               { label: '查看候选 / 人工确认', disabled: locked, run: () => find(o.id, row.search?.partNumber ? 'part' : 'features') },
               { label: '查看详情', run: () => setDetailId(o.id) },
+              ...(manual?[{label:'删除人工零件',disabled:locked,run:()=>removeHiddenPart(o.id)}]:[]),
               { label: row.excluded ? '恢复审核' : '排除', disabled: locked || generationSubmitted, run: () => edit(o.id, { excluded: !row.excluded }) },
             ]} /></td>
-            <td><input type="checkbox" aria-label={o.id + ' 显示 BBox'} checked={!hiddenBoxes.has(o.id)} style={{ width: 'auto' }} onChange={e => {
+            <td><input type="checkbox" aria-label={o.id + ' 显示 BBox'} disabled={manual} checked={!manual&&!hiddenBoxes.has(o.id)} style={{ width: 'auto' }} onChange={e => {
               const visible = e.target.checked
               setHiddenBoxes(previous => { const next = new Set(previous); if (visible) next.delete(o.id); else next.add(o.id); return next })
             }} /></td>
-            <td><input type="checkbox" aria-label={o.id + ' Guided 再识别'} disabled={locked || !geometryOnly} checked={guidedIds.has(o.id)} style={{ width: 'auto' }} onChange={e => {
+            <td><input type="checkbox" aria-label={o.id + ' Guided 再识别'} disabled={locked || !geometryOnly || manual} checked={guidedIds.has(o.id)} style={{ width: 'auto' }} onChange={e => {
               const selected = e.target.checked
               setGuidedIds(previous => { const next = new Set(previous); if (selected) next.add(o.id); else next.delete(o.id); return next })
             }} /></td>
             <td className="vision-match-status"><span className="vision-review-badge">{reviewStatusLabels[status]}</span></td>
             <td><button type="button" className="vision-observation-id" aria-pressed={active === o.id} title={o.id}
               onClick={() => { selectBox(o.id); previewHost.current?.scrollIntoView({ block: 'nearest' }) }}>{o.id}</button>
-              <small>置信度 {o.confidence}</small></td>
+              <small>{manual?'manual / hidden · 无照片标注':`置信度 ${o.confidence}`}</small></td>
             <td><input aria-label={o.id + ' 用户 Part Number'} value={row.features.partNumber ?? ''} placeholder="输入 RB 型号" disabled={locked}
               onChange={e => edit(o.id, { features: { ...row.features, partNumber: e.target.value }, search: undefined, index: undefined })} />
               <small>确认：{chosen?.source.part_num || '—'} / 颜色 ID {chosen?.source.color_id ?? '—'}</small>
@@ -378,6 +410,28 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
           </tr>
         })}
       </ObservationTable>
+      <fieldset disabled={locked}>
+        <legend>Manual Relations · 人工对称线索</legend>
+        <small>模型识别 {record.analysis.observations.length} 项 · 人工隐藏 {hiddenParts.length} 项。关系没有指定对称轴或平面，需 Planning 推断，未经几何验证。与审核一起保存。</small>
+        {manualRelations.map((r,i)=>{
+          const editRelation=(patch:Partial<ManualSymmetry>)=>changeRelations(manualRelations.map((old,n)=>n===i?{...old,...patch}:old))
+          return <div key={i} style={{borderTop:'1px solid #dbe7e3',paddingTop:8,marginTop:8}}>
+            <div className="brick-actions">
+              <label>Source<select value={r.from} onChange={e=>editRelation({from:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
+              <span>symmetric / 对称</span>
+              <label>Target<select value={r.to} onChange={e=>editRelation({to:e.target.value})}>{reviewParts.map(o=><option key={o.id} value={o.id}>{o.id}</option>)}</select></label>
+              <button type="button" onClick={()=>changeRelations(manualRelations.filter((_,n)=>n!==i))}>删除关系</button>
+            </div>
+            <label>说明（可选）<textarea maxLength={2000} value={r.note} onChange={e=>editRelation({note:e.target.value})}/></label>
+            <small>source: manual</small>
+          </div>
+        })}
+        <button type="button" disabled={reviewParts.length<2||manualRelations.length>=100} onClick={()=>{
+          const from=hiddenParts.at(-1)?.id||reviewParts[0].id
+          const to=reviewParts.find(o=>o.id!==from)!.id
+          changeRelations([...manualRelations,{from,to,relation:'symmetric',source:'manual',note:''}])
+        }}>添加 symmetric 关系</button>
+      </fieldset>
     </>}
     {generationSubmitted && <p className="brick-help">此识别结果已提交生成；可以继续保存审核或读取已有方案。原有防重复生成保护仍生效，不覆盖 Artifact。</p>}
     {artifact && <div role="status"><p>Approximation · {artifact.status} · {artifact.error || artifact.generation?.error?.message || '请在 Viewer 与原图对比；Validator 不验证外观相似度。'}</p>
@@ -509,7 +563,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     {workspaceHost ? createPortal(workspace, workspaceHost) : workspace}
     {geometryHost && createPortal(geometry, geometryHost)}
     {detailId && <ObservationModal title={'识别项 ' + detailId} data={{
-      observation: record?.analysis?.observations.find(o => o.id === detailId),
+      observation: reviewParts.find(o => o.id === detailId),
       review: rows[detailId],
       candidateStatus: candidateNotes[detailId],
       dimensionNote: '尺寸验证范围见候选证据',

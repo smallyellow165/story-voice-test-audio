@@ -5,6 +5,7 @@ import { reversePrompts, selectReversePrompt } from './brick-reverse-prompts.mjs
 import { geometrySchema, validateGeometryAnalysis } from './brick-reverse-geometry.mjs'
 // Reverse orchestration only; Catalog, Mapping, geometry and validation stay shared.
 import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
+import {reviewObservations, validateReviewParts} from '../src/brick-vision/review-parts.mjs'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseSession } from '../src/brick-inventory/inventory.ts'
@@ -167,13 +168,17 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     },
     async saveReview(body) {
       const analysis = await analyzed(body.analysisId)
+      const {hiddenParts,manualRelations}=validateReviewParts(analysis.analysis.observations,body.hiddenParts,body.manualRelations)
+      const observations=reviewObservations(analysis.analysis.observations,hiddenParts)
+      if(Object.keys(body.rows||{}).some(id=>!observations.some(o=>o.id===id)))fail('审核包含未声明的 Observation')
       const rows = {}, copiedSearches = {}
-      for (const o of analysis.analysis.observations) {
+      for (const o of observations) {
         const r = body.rows?.[o.id]
         if (!r || typeof r.quantity !== 'string' || typeof r.excluded !== 'boolean' || typeof r.reason !== 'string'
           || !r.features || ['color', 'size', 'shape', 'print'].some(k => typeof r.features[k] !== 'string')
           || JSON.stringify(r).length > 10000) fail('审核草稿字段无效。')
         validateReviewDimensions(r.features)
+        if(o.source==='manual'&&(!Number.isSafeInteger(Number(r.quantity))||Number(r.quantity)<1||Number(r.quantity)>100))fail('人工零件数量须为 1–100')
         const row = { features: r.features, quantity: r.quantity, excluded: r.excluded, reason: r.reason }
         if (r.searchId) {
           let search = await read(r.searchId)
@@ -196,7 +201,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         rows[o.id] = row
       }
       for(const search of Object.values(copiedSearches))await save(search)
-      const review = { analysisId: analysis.id, updatedAt: new Date().toISOString(), rows }
+      const review = { analysisId: analysis.id, updatedAt: new Date().toISOString(), rows, hiddenParts, manualRelations }
       const target = file(analysis.id) + '.review', temp = target + '.' + randomUUID() + '.tmp'
       await writeFile(temp, JSON.stringify(review), { flag: 'wx', mode: 0o600 })
       await rename(temp, target)
@@ -208,6 +213,10 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       if (!analysis.source || !['full', 'today', 'virtual'].includes(analysis.source.kind)) fail('记录缺少有效 Part Source，无法安全恢复。', 422)
       if (analysis.analysis) (analysis.analysis_mode === 'geometry_only' ? validateGeometryAnalysis : validateReverseAnalysis)(analysis.analysis)
       const warnings = [], rows = {}
+      let savedReview=null
+      try { savedReview=JSON.parse(await readFile(file(analysisId)+'.review','utf8')) }
+      catch(e){if(e.code!=='ENOENT')throw e}
+      const {hiddenParts,manualRelations}=validateReviewParts(analysis.analysis?.observations||[],savedReview?.hiddenParts,savedReview?.manualRelations)
       if (!analysis.image?.imageBase64) warnings.push('记录缺少参考图片，无法恢复图片或 BBox。')
       if (!analysis.analysis) warnings.push('记录没有可恢复的完整分析；请查看原始诊断。')
       let reviewColors = []
@@ -215,7 +224,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         try { reviewColors = (await getCatalog('filters', {})).colors || [] }
         catch { warnings.push('Catalog 颜色列表暂不可用；未自动填写原始颜色，已有审核颜色仍会恢复。') }
       }
-      for (const o of analysis.analysis?.observations || []) rows[o.id] = {
+      for (const o of reviewObservations(analysis.analysis?.observations || [],hiddenParts)) rows[o.id] = {
         features: reverseFeatureEditor(o, reviewColors), quantity: String(o.quantity ?? 1), excluded: false, reason: '',
       }
       let artifact = null, generationStatus = 'none'
@@ -245,7 +254,8 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       for (const e of artifact?.excluded || []) if (rows[e.observationId]) Object.assign(rows[e.observationId], { excluded: true, reason: e.reason })
       let updatedAt = null
       try {
-        const review = JSON.parse(await readFile(file(analysisId) + '.review', 'utf8'))
+        if(!savedReview)throw Object.assign(new Error('No saved Review'),{code:'ENOENT'})
+        const review = savedReview
         updatedAt = review.updatedAt
         for (const [id, r] of Object.entries(review.rows)) {
           if (!rows[id]) continue
@@ -262,7 +272,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         if (e.code === 'ENOENT') warnings.push('没有已保存审核草稿；仅恢复原始分析及已有 Artifact 确认，未保存的编辑无法恢复。')
         else throw e
       }
-      return { analysis, rows, artifact, generationStatus, updatedAt, warnings }
+      return { analysis, rows, artifact, generationStatus, updatedAt, warnings, hiddenParts, manualRelations }
     },
     async analyze(body) {
       const analysisMode = body.analysis_mode ?? 'catalog_match' // Legacy API callers keep their existing contract.
@@ -328,7 +338,8 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
     },
     async search(body) {
       const analysis = await analyzed(body.analysisId)
-      if (!analysis.analysis.observations.some(o => o.id === body.observationId)) fail('Observation 不存在。')
+      const {hiddenParts}=validateReviewParts(analysis.analysis.observations,body.hiddenParts)
+      if (!reviewObservations(analysis.analysis.observations,hiddenParts).some(o => o.id === body.observationId)) fail('Observation 不存在。')
       const features = validateCatalogQuery(body.features), params = catalogFeatureParams(features)
       const partNumber = typeof body.partNumber === 'string' ? body.partNumber.trim() : ''
       if (partNumber && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(partNumber)) fail('Part Number 格式无效。')

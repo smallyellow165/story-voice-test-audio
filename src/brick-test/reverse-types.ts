@@ -1,4 +1,5 @@
 import type { CatalogBodyMetadata } from '../brick-vision/CatalogGeometryEvidence'
+import type {HiddenPart,ManualSymmetry} from '../brick-vision/review-parts.mjs'
 import type { PreparedSourceImage } from '../brick-vision/ServerImagePicker'
 import type { GeometryFields } from './GeometryObservationTable'
 import type { CatalogFeatures, CatalogQuery, FeatureEditor } from '../brick-vision/catalog-features.mjs'
@@ -17,6 +18,6 @@ export type Artifact = { id: string; status: string; generation: GenerationResul
 
 export type HistoryItem = { hasSavedReview?: boolean; isGuided?: boolean; isRevision?: boolean; analysis_mode?: AnalysisMode; prompt_id?: string; prompt_version?: number; image_reference?: { name: string }; id: string; createdAt: string; provider: string; model: string; status: string; appearance: string; count: number }
 export type History = { items: HistoryItem[]; warnings: string[] }
-export type Restored = { analysis: Analysis; rows: Record<string, Draft>; artifact: Artifact | null; generationStatus: string; updatedAt: string | null; warnings: string[] }
+export type Restored = { analysis: Analysis; rows: Record<string, Draft>; artifact: Artifact | null; generationStatus: string; updatedAt: string | null; warnings: string[]; hiddenParts:HiddenPart[]; manualRelations:ManualSymmetry[] }
 
 export type Model = { id: string; label: string; provider: 'gemini' | 'openai' }
