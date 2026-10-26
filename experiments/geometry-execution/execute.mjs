@@ -1,3 +1,4 @@
+import {pruneDomains,spatialRelation} from './prune.mjs'
 import { validatePlan, assessConversion } from '../spatial-planning/plan.mjs'
 import { assessRelations } from '../geometry-solver/solver.mjs'
 
@@ -46,37 +47,21 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     const yaw=p.pose.yawCandidates.filter(y=>rules.geometrySupport(observations.get(p.id).part).geometry.rotations.includes(y))
     result.domains.push({id:p.id,worldIntervals:world,axes,yaw,count:axes.x.length*axes.y.length*axes.z.length*yaw.length})
   }
-  const count=result.domains.reduce((n,d)=>n*d.count,1)
-  result.combinationCount=count
-  if (!count)return {...result,status:'no_solution',completeSearch:true,diagnostics:['No legal grid point in one or more original intervals']}
-  if(count>maxCombinations){
-    // A failed necessary mating condition proves unsatisfiability without
-    // materializing every full assembly. A possible pair is NOT a valid assembly.
-    const domainGround=-Math.min(...result.domains.flatMap(d=>d.axes.y))
-    const poses=d=>d.axes.x.flatMap(x=>d.axes.y.flatMap(y=>d.axes.z.flatMap(z=>d.yaw.map(rotation=>({id:d.id,part:observations.get(d.id).part,color:observations.get(d.id).color,x:x/rules.STUD_LDU,layer:(y+domainGround)/rules.BODY_LDU,z:z/rules.STUD_LDU,rotation})))))
-    result.pairChecks=[]
-    for(const p of plan.parts)for(const c of p.connections.filter(c=>c.intent==='mates')){
-      const a=result.domains.find(d=>d.id===p.id),b=result.domains.find(d=>d.id===c.other)
-      if(a.count*b.count>maxCombinations)continue
-      const certificate={id:p.id,...c,pairCount:a.count*b.count,possible:false,ownPoints:[],otherPoints:[]}
-      if(['top','bottom'].includes(c.ownSurface)&&['top','bottom'].includes(c.otherSurface)&&c.ownSurface!==c.otherSurface){
-        const points=(d,s,index)=>poses(d).flatMap(brick=>rules.connectors(brick,s).filter((_,i)=>index===null||i===index))
-        const own=points(a,c.ownSurface,c.ownConnector),other=points(b,c.otherSurface,c.otherConnector)
-        certificate.ownPoints=own;certificate.otherPoints=other
-        certificate.possible=own.some(u=>other.some(v=>same(u.x,v.x)&&same(u.y,v.y)&&same(u.z,v.z)))
-      }
-      result.pairChecks.push(certificate)
-    }
-    const conflicts=result.pairChecks.filter(c=>!c.possible)
-    if(conflicts.length){
-      const positions=result.domains.map(d=>({id:d.id,x:d.axes.x[0],y:d.axes.y[0],z:d.axes.z[0],rotation:d.yaw[0]}))
-      const shift=-Math.min(...positions.map(b=>b.y))
-      const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,x:b.x/rules.STUD_LDU,z:b.z/rules.STUD_LDU,layer:(b.y+shift)/rules.BODY_LDU,rotation:b.rotation}))
-      result.diagnosticAssembly={bricks,geometry:rules.validateFinalAssembly(bricks),note:'First allowed poses for failure inspection only; not a candidate or a repaired assembly'}
-      return {...result,status:'no_solution',completeSearch:true,proof:'Necessary hard mating condition impossible across the full endpoint domains',diagnostics:conflicts.map(c=>({code:'IMPOSSIBLE_MATING',id:c.id,other:c.other,reason:'原始位置区间及朝向内，指定连接器无任何重合点',pairCount:c.pairCount}))}
-    }
-    return {...result,status:'budget_exceeded',diagnostics:['Cartesian domain exceeds budget; no no-solution claim']}
+  const originalCount=result.domains.reduce((n,d)=>n*d.count,1)
+  result.originalCombinationCount=originalCount
+  result.combinationCount=originalCount
+  if(!originalCount)return {...result,status:'no_solution',completeSearch:true,diagnostics:['No legal grid point in one or more original intervals']}
+  const pruning=pruneDomains(plan,result.domains,observations,rules)
+  result.pruning=pruning.stats
+  result.combinationCount=pruning.stats.remainingCombinationCount
+  if(pruning.conflict){
+    const positions=result.domains.map(d=>({id:d.id,x:d.axes.x[0],y:d.axes.y[0],z:d.axes.z[0],rotation:d.yaw[0]}))
+    const shift=-Math.min(...positions.map(b=>b.y))
+    const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,x:b.x/rules.STUD_LDU,z:b.z/rules.STUD_LDU,layer:(b.y+shift)/rules.BODY_LDU,rotation:b.rotation}))
+    result.diagnosticAssembly={bricks,geometry:rules.validateFinalAssembly(bricks),note:'Original domain first poses only; not a candidate or simultaneous constraint solution'}
+    return {...result,status:'no_solution',completeSearch:true,proof:'Necessary binary constraints have an empty domain; no full assembly can satisfy them',diagnostics:[pruning.conflict]}
   }
+  if(!pruning.poses||result.combinationCount>maxCombinations)return {...result,status:'budget_exceeded',diagnostics:[{code:'SEARCH_BUDGET',reason:'未完成搜索：过滤后的候选组合仍超过预算；未证明无解',originalCombinationCount:originalCount,remainingCombinationCount:result.combinationCount,maxCombinations,skipped:pruning.stats.skipped}]}
   const pById=new Map(plan.parts.map(p=>[p.id,p]))
   let firstLayout
   const evaluate=positions=>{
@@ -97,18 +82,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
     // Shared validator checks all body/stud collision envelopes before support/connectivity.
     attempt.collision={status:geometry.code==='COLLISION'?'collision':geometry.valid||['UNSUPPORTED','DISCONNECTED'].includes(geometry.code)?'clear':'not_established',reason:geometry.reason,brickIds:geometry.brickIds}
     const relations=plan.relations.map(r=>{
-      const a=byId.get(r.from),b=byId.get(r.to),pa=centre(a,rules),pb=centre(b,rules)
-      let satisfied=null
-      if(r.kind==='above')satisfied=pa.y>=pb.y+rules.geometrySupport(b.part).geometry.bodySizeLdu.y-EPS
-      if(r.kind==='left')satisfied=pa.x<pb.x-EPS
-      if(r.kind==='front')satisfied=pa.z>pb.z+EPS
-      if(r.kind==='separated') {
-        const da=rules.dimensions(a.part,a.rotation),db=rules.dimensions(b.part,b.rotation)
-        satisfied=Math.abs(pa.x-pb.x)>(da.width+db.width)*rules.STUD_LDU/2+EPS
-          ||Math.abs(pa.z-pb.z)>(da.depth+db.depth)*rules.STUD_LDU/2+EPS
-          ||pa.y>pb.y+rules.geometrySupport(b.part).geometry.bodySizeLdu.y+EPS
-          ||pb.y>pa.y+rules.geometrySupport(a.part).geometry.bodySizeLdu.y+EPS
-      }
+      const satisfied=spatialRelation(r,byId.get(r.from),byId.get(r.to),rules)
       return {...r,satisfied,interpretation:satisfied===null?'Requires camera projection; retained, not certified':'world-axis body relation'}
     })
     const intents=plan.parts.flatMap(p=>p.connections.map(c=>{
@@ -145,7 +119,7 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000 } = {}
   function enumerate(i,positions) {
     if(i===result.domains.length)return evaluate(positions)
     const d=result.domains[i]
-    for(const x of d.axes.x)for(const y of d.axes.y)for(const z of d.axes.z)for(const rotation of d.yaw)enumerate(i+1,[...positions,{id:d.id,x,y,z,rotation}])
+    for(const pose of pruning.poses.get(d.id))enumerate(i+1,[...positions,pose])
   }
   enumerate(0,[])
   // Group for navigation only. Keep all yaw variants and exact interface indices;

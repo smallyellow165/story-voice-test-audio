@@ -4,7 +4,7 @@ import { spatialMapping } from './brick-spatial-mapping.mjs'
 import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
-import { modelOptions, providerStatus } from './brick-model-registry.mjs'
+import { modelOptions, modelSettings, providerStatus } from './brick-model-registry.mjs'
 import { loadBrickRules } from './brick-rules.mjs'
 import { prepareInput } from '../experiments/spatial-planning/input.mjs'
 import { runSpatialPlanning } from '../experiments/spatial-planning/runner.mjs'
@@ -46,6 +46,7 @@ function planView(r){
  try{matchesRaw=hash(JSON.parse(r.rawOutput))===hash(r.plan)}catch{}
  const usable=matchesRaw&&r.status==='plan_ready_for_review'&&r.parseStatus==='parsed'&&r.validation?.valid===true&&validation.valid&&(r.finishReason==='completed'||r.finishReason==='STOP')&&r.wireStatus==='response_saved'
  return {id:r.id,analysisId:r.requestInput?.provenance?.analysisId,createdAt:r.createdAt,model:r.model,status:r.status,usable,validation,
+  provider:r.provider,promptVersion:r.promptVersion,generationSettings:r.generationSettings,
   plan:r.plan,rawOutput:r.rawOutput,image:r.image,requestInput:r.requestInput,conversion:r.conversion,error:r.error,usage:r.usageMetadata,tracePath:r.tracePath,rawRequestPath:r.rawRequestPath,rawResponsePath:r.rawResponsePath}
 }
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,revisionId:r.revisionId,completeSearch:r.completeSearch,
@@ -78,7 +79,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    if(route==='refine'&&!planView(await getPlan(body.planId)).usable)fail('Spatial Plan 不可执行',422)
    return operation(body,route,()=>route==='refine'?refinement.run(body):route==='approve-refinement'?refinement.approve(body):refinement.execute(body))
   }
-  if(method==='GET'&&route==='status')return {models:modelOptions('design'),providers:providerStatus()}
+  if(method==='GET'&&route==='status')return {models:modelOptions('design').map(m=>({...m,reasoningEffort:modelSettings(m.id,'design').reasoning?.effort})),providers:providerStatus()}
   if(method==='GET'&&route==='requests'){const items=[];for(const f of await records(requests)){try{const r=await read(path.join(requests,f));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')||r.planId===query.get('planId'))items.push(r)}catch{}}return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}}
   if(method==='GET'&&route.startsWith('source/'))return reviewedSource(await reverse.restore(id(route.slice(7))))
   if(method==='GET'&&route==='plans'){

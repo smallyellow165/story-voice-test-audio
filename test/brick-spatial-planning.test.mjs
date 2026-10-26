@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptVersion, validatePlan, assessConversion } from '../experiments/spatial-planning/plan.mjs'
-import { buildSpatialRequest, prepareInput, prepareReferenceImage } from '../experiments/spatial-planning/input.mjs'
+import { buildSpatialRequest, prepareInput, prepareReferenceImage, spatialPrompt, spatialPromptVersion } from '../experiments/spatial-planning/input.mjs'
 import { renderReport } from '../experiments/spatial-planning/report.mjs'
 import { runSpatialPlanning } from '../experiments/spatial-planning/runner.mjs'
 import { loadBrickRules } from '../server/brick-rules.mjs'
@@ -142,3 +142,22 @@ test('reference hashes compressed image separately from selected original', asyn
   const wrongOriginalHash=structuredClone(analysis); wrongOriginalHash.originalImage.sha256='wrong'
   assert.throws(()=>prepareReferenceImage(wrongOriginalHash),/hash/)
 })
+
+ test('Sol request preserves model, reasoning, connector contract and independent prompt revision', async () => {
+  const directory=await mkdtemp(path.join(tmpdir(),'spatial-sol-'))
+  try {
+    const prepared={input:fixture().input,image:{mimeType:'image/png',imageBase64:'AAAA'},geometrySnapshot:[]}
+    const r=await runSpatialPlanning(prepared,{model:'gpt-6.1-sol',directory,execute:false})
+    assert.equal(r.provider,'openai')
+    assert.equal(r.model,'gpt-6.1-sol')
+    assert.equal(r.request.model,r.model)
+    assert.deepEqual(r.request.reasoning,{effort:'medium'})
+    assert.equal(r.promptVersion,spatialPromptVersion)
+    assert.notEqual(r.promptVersion,promptVersion) // Prompt revision does not change the plan schema.
+    assert.equal(r.status,'prepared')
+    assert.equal(r.rawOutput,null)
+    for(const rule of ['zero-based','part-local','never renumbers','worldConnector = worldOrigin + R(yaw) * localConnector','NEVER apply them again','opposite compatible','Concrete indices are allowed','Leave indices null']) assert.ok(spatialPrompt.includes(rule),rule)
+    assert.doesNotMatch(spatialPrompt,/3437|40666|penguin|eye_block/)
+    assert.throws(()=>buildSpatialRequest('unregistered-model',prepared),/模型未登记/)
+  } finally { await rm(directory,{recursive:true,force:true}) }
+ })

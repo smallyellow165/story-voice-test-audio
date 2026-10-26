@@ -16,6 +16,7 @@ export function ModelSelector<T extends ModelOption>({ label = 'Provider / 模�
     if (chosen) onChange(chosen)
   }}>
     {!models.length && <option value={key(value)}>正在读取模型配置…</option>}
+    {!!models.length && !models.some(model => key(model) === key(value)) && <option value={key(value)}>模型不可用：{value.id || '请选择'}</option>}
     {models.map(model => <option key={key(model)} value={key(model)}>{model.provider} · {model.label} · {model.id}</option>)}
   </select></label>
 }

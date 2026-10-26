@@ -4,15 +4,15 @@ import { randomUUID } from 'node:crypto'
 import { callBrickModel } from '../../server/brick-model-call.mjs'
 import { captureVisionWire } from '../../server/brick-vision-wire.mjs'
 import { resolveModel, modelSettings, providerConfigured } from '../../server/brick-model-registry.mjs'
-import { buildSpatialRequest } from './input.mjs'
-import { promptVersion, validatePlan, assessConversion } from './plan.mjs'
+import { buildSpatialRequest, spatialPromptVersion } from './input.mjs'
+import { validatePlan, assessConversion } from './plan.mjs'
 
 // Exactly one explicit provider call; no recognition, repair, retry, or fallback.
 export async function runSpatialPlanning(prepared, { model, directory, sources = [], execute = false }) {
   const definition = resolveModel(model,'design')
   if (execute && !providerConfigured(definition.provider)) throw new Error('Missing ' + (definition.provider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY') + '; no API call made')
   const id = randomUUID(), tracePath = path.resolve(directory,id+'.json')
-  const record = {id,generationId:id,task:'spatial-planning',promptVersion,createdAt:new Date().toISOString(),
+  const record = {id,generationId:id,task:'spatial-planning',promptVersion:spatialPromptVersion,createdAt:new Date().toISOString(),
     status:'prepared',provider:definition.provider,model,generationSettings:modelSettings(model,'design'),
     sources,requestInput:prepared.input,image:prepared.image,geometrySnapshot:prepared.geometrySnapshot,
     imagePayloadSha256:prepared.imagePayloadSha256,request:buildSpatialRequest(model,prepared),tracePath,

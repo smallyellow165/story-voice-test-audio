@@ -11,7 +11,7 @@ export type SpatialPreview={bricks:Brick[];label:string;review:string;geometry:R
 type Props={onPreview(value:SpatialPreview|null):void;manualRevision:number;disabled:boolean;onBusy(busy:boolean):void;}
 type History={id:string;analysisId?:string;createdAt:string;status:string;model?:string;usable?:boolean;state?:string;count?:number}
 type Source={ready:boolean;reviewVersion:string;updatedAt:string;errors:string[];warnings:string[];rows:{id:string;excluded:boolean;quantity:number;confirmedPart:{part_num:string;color_id:number}|null}[]}
-type Plan={id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null;confirmedPart?:{part_num:string};mapping?:{geometryBinding?:{basePartNum:string}}}[]}}
+type Plan={provider?:string;model?:string;promptVersion?:string;generationSettings?:{reasoning?:{effort:string}};id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null;confirmedPart?:{part_num:string};mapping?:{geometryBinding?:{basePartNum:string}}}[]}}
 type Geometry={revisionId?:string;diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:{id:string;layoutId:string;bricks:Brick[];unverifiedCount:number}[]}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
@@ -22,7 +22,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  const [analyses,setAnalyses]=useState<{id:string;appearance:string}[]>([]),[analysisId,setAnalysisId]=useState(new URL(location.href).searchParams.get('analysisId')||'')
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
  const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<{geometry:{valid:boolean;connections:{points:unknown[]}[]};collision:{status:string};[key:string]:unknown}|null>(null)
- const [models,setModels]=useState<{id:string;label:string;provider:string}[]>([]),[providers,setProviders]=useState<Record<string,boolean>>({}),[model,setModel]=useState('')
+ const [models,setModels]=useState<{id:string;label:string;provider:string;reasoningEffort?:string}[]>([]),[providers,setProviders]=useState<Record<string,boolean>>({}),[model,setModel]=useState('')
  const [evidence,setEvidence]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[operations,setOperations]=useState<{id:string;state:string;error?:string;planId?:string;geometryId?:string}[]>([])
  const [phase,setPhase]=useState(''),[stageError,setStageError]=useState({planning:'',geometry:''})
  const gate=useRef(false),boot=useRef(false),mounted=useRef(true)
@@ -66,7 +66,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  useEffect(()=>{if(disabled||boot.current)return;boot.current=true;void action(async()=>{
   const params=new URL(location.href).searchParams
   const [s,h]=await Promise.all([request('status'),fetch('/api/brick-reverse/history').then(r=>{if(!r.ok)throw new Error('Analysis 历史不可用');return r.json()})])
-  setModels(s.models);setProviders(s.providers);setModel(s.models[0]?.id||'');setAnalyses(h.items)
+  setModels(s.models);setProviders(s.providers);setModel(params.get('spatialModel')||s.models[0]?.id||'');setAnalyses(h.items)
   const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
  })},[disabled])
  async function generate(prepareOnly=false){if(!source?.ready||!model)return;inspector.select('planning');await action(async()=>{
@@ -94,11 +94,15 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <InspectorContent step="planning" disabled={disabled||busy}><p>{planningStatus.reason}</p>   {source&&<details><summary>当前已保存审核 · {source.rows.filter(r=>!r.excluded&&r.confirmedPart).length} 个确认项</summary><ul>{source.rows.map(r=><li key={r.id}>{r.id} · {r.excluded?'已排除':r.confirmedPart?r.confirmedPart.part_num+' / RB Color '+r.confirmedPart.color_id+' × '+r.quantity:'未确认'}</li>)}</ul>{source.warnings.map(w=><p key={w}>{w}</p>)}{source.errors.map(e=><p key={e} className="brick-error">{e}</p>)}</details>}</InspectorContent>
    <h3 className="workflow-step-title">1 · Spatial Planning <InspectButton step="planning"/></h3>
    <div data-testid="planning-state" className={"spatial-state "+planningStatus.tone} role="status"><strong>{planningStatus.label}</strong><small>计划状态不代表几何验证通过。</small></div>
-   <details className="workflow-options"><summary>模型与视觉证据设置</summary>   <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} onChange={m=>setModel(m.id)}/>
+   <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} label="Spatial Planning Provider / 模型（独立于图片识别）" onChange={m=>{setModel(m.id);urlPatch({spatialModel:m.id})}}/>
+   <details className="workflow-options"><summary>视觉证据设置</summary>
    <label><input type="checkbox" checked={evidence} onChange={e=>setEvidence(e.target.checked)}/>使用已保存 Analysis / Relations 视觉证据</label>
 </details>
    <button type="button" disabled={!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
+   <p role="status" data-testid="spatial-next-model">即将调用：{selected?`${selected.provider} / ${selected.id}${selected.reasoningEffort?' · reasoning: '+selected.reasoningEffort:''}`:'模型不可用：'+model}。仅点击生成按钮才调用模型。</p>
+   {(!selected||!providers[selected.provider])&&<p role="alert" className="brick-error">{!selected?'所选模型未登记或配置尚未加载，请明确选择可用模型。':'该 Provider 未配置 API Key，无法调用。'}不会自动切换模型。</p>}
    <button type="button" className="brick-primary" disabled={!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
+   {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
    <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
    <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
    {plan&&<><InspectorContent step="planning" disabled={disabled||busy}><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>
