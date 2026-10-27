@@ -2,7 +2,7 @@
 .build-order-page .build-workbench {flex:1;min-height:0;}
 .build-order-page h2 {font-size:16px;}
 .build-order-page h3 {font-size:14px;}
-.build-order-page .build-source {display:grid;gap:12px;margin-bottom:16px;}
+.build-order-page .build-source {display:grid;gap:8px;margin-bottom:8px;flex:none;}
 .build-order-page .build-source label {margin:0;}
 .build-warning {background:#fff8df;border:1px solid #e8c56a;border-radius:8px;padding:10px;color:#775314;font-size:12px;line-height:1.6;}
 .build-order-page .build-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
@@ -10,8 +10,8 @@
 .build-order-page textarea {min-height:80px;}
 .build-order-page details {margin:14px 0;overflow-wrap:anywhere;}
 .build-order-page pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:320px;overflow:auto;background:#edf1f5;padding:10px;}
-.build-step-list {list-style:none;padding:0;margin:12px 0;max-height:48vh;overflow-y:auto;overscroll-behavior:contain;}
-.build-step-list li {margin:7px 0;}
+.build-step-list {list-style:none;padding:0;margin:0;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+.build-step-list li {margin:0 0 6px;}
 .build-step-list button {display:flex;flex-direction:column;gap:5px;text-align:left;width:100%;overflow-wrap:anywhere;}
 .build-step-list span,.build-step-list small {font-size:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 .build-order-page .build-step-list .build-current {background:#e8f0ff;border-color:#2b58b7;}
@@ -45,6 +45,35 @@
 .build-add {padding:10px;background:#edf1f5;border-radius:8px;margin-top:12px;}
 .build-add p {font-size:12px;line-height:1.6;}
 .build-mobile-tabs {display:none;}
+
+/* Keep the left column bounded: only the list and expanded tree scroll. */
+.build-order-page .build-workbench>.three-column-layout__panel:first-child {overflow:hidden;}
+.build-order-page .build-workbench>.three-column-layout__panel:first-child>.three-column-layout__content {height:100%;min-height:0;}
+.build-navigator {height:100%;min-height:0;display:flex;flex-direction:column;}
+.build-nav-header {position:relative;display:flex;align-items:center;gap:8px;flex:none;margin-bottom:10px;}
+.build-nav-header h1 {font-size:20px;line-height:1.3;letter-spacing:-.035em;margin:0;}
+.build-order-page .build-info {position:static;margin:0;flex:none;}
+.build-info summary {list-style:none;cursor:pointer;color:#65738a;border:1px solid #d7dfea;border-radius:50%;width:28px;height:28px;display:grid;place-items:center;background:#fff;font-size:17px;}
+.build-info summary::-webkit-details-marker {display:none;}
+.build-info-popover {position:absolute;top:100%;left:0;right:0;z-index:5;background:#fff;border:1px solid #d7dfea;border-radius:8px;padding:12px;box-shadow:0 4px 16px #24324826;max-height:50vh;overflow:auto;}
+.build-info-popover .build-warning {margin:0 0 8px;}
+.build-info-popover small {color:#65738a;}
+.build-layout-row {display:flex;gap:8px;align-items:end;min-width:0;}
+.build-layout-row label {flex:1;min-width:0;}
+.build-layout-row>button {flex:none;}
+.build-order-page .build-source select {padding:6px 8px;}
+.build-order-page .build-nav-plan {flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;}
+.build-plan-status {display:flex;gap:8px;align-items:center;justify-content:space-between;flex:none;font-size:12px;}
+.build-plan-status button {flex:none;}
+.build-order-page .build-list-heading {flex:none;align-items:center;justify-content:space-between;margin:0;}
+.build-list-heading h2 {margin:0;}
+.build-navigator>p {flex:none;max-height:72px;overflow:auto;font-size:12px;margin:4px 0 8px;}
+.build-nav-plan>.build-warning {flex:none;margin:0;max-height:72px;overflow:auto;}
+.build-order-page .build-tree-panel {margin:0;padding-top:8px;border-top:1px solid #d7dfea;flex:none;}
+.build-tree-scroll {max-height:25dvh;overflow:auto;overscroll-behavior:contain;}
+.build-order-page .build-plan-settings {margin-top:0;}
+.build-plan-settings summary {margin-bottom:10px;}
+
 @media(max-width:1000px){
  .build-mobile-tabs {display:flex;gap:6px;padding:8px;border-bottom:1px solid #d7dfea;}
  .build-mobile-tabs button {flex:1;}

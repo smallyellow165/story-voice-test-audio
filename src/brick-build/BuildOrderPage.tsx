@@ -104,30 +104,27 @@ export function BuildOrderPage(){
  return <main className="build-order-page brick-page" data-mobile-panel={mobilePanel}>
   <nav className="build-mobile-tabs" aria-label="工作台面板">{(['left','center','right'] as const).map((p,i)=><button key={p} aria-pressed={mobilePanel===p} onClick={()=>setMobilePanel(p)}>{['Build Plan / Steps','3D Player','Inspector'][i]}</button>)}</nav>
   <ThreeColumnLayout className="brick-workbench build-workbench" defaultSizes={['25%','48%','27%']}
-   left={<>
-  <header className="brick-header"><div><span className="brick-eyebrow">DUPLO AI DESIGN LAB / BUILD ORDER V1</span><h1>Build Order · 3D 分步装配</h1></div><a href={import.meta.env.BASE_URL+'brick-test.html?workflow=spatial'+(source?'&analysisId='+source.analysisId+'&spatialPlanId='+source.planId+'&geometryId='+source.geometryId+'&candidateId='+source.candidateId:'')} target="_blank" rel="noreferrer">打开 Spatial Assembly ↗</a></header>
-  <p className="build-warning">Geometry Valid 仅指已保存的最终布局。Build Steps Draft / Reviewed 不代表安装路径、承重或中间稳定性已验证。Motion Preview 是示意动画；请家长实搭审核。</p>
+   left={<section className="build-navigator">
+  <header className="build-nav-header"><h1>Build Order · 3D 分步装配</h1><details className="build-info"><summary aria-label="Build Order 说明">ⓘ</summary><div className="build-info-popover"><p className="build-warning">Geometry Valid 仅指已保存的最终布局。Build Steps Draft / Reviewed 不代表安装路径、承重或中间稳定性已验证。Motion Preview 是示意动画；请家长实搭审核。</p><small>点击 ⓘ 可收起说明。</small></div></details></header>
   {error&&<p className="brick-error" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   <fieldset disabled={busy} className="build-source">
-   <label>已保存的 Valid Layout<select aria-label="Build source selection" value={source?.id||''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openSource(id))}}><option value="">选择 Use This Layout 保存的记录</option>{selections.map(s=><option key={s.id} value={s.id}>{s.createdAt} · {s.count} 块 · {s.candidateId} · {s.id}</option>)}</select></label>
-   <button disabled={!source} onClick={newPlan}>从此布局新建 Build Plan</button>
-   <label>已保存 Build Plan<select aria-label="Build plan history" value={savedVersion?plan?.build_plan_id||'':''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openPlan(id))}}><option value="">选择已保存步骤</option>{saved.map(p=><option key={p.id} value={p.id}>{p.updatedAt} · {p.title} · {p.complete?p.status:'incomplete'}</option>)}</select></label>
+   <div className="build-layout-row">
+   <label>Valid Layout<select aria-label="Build source selection" value={source?.id||''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openSource(id))}}><option value="">选择 Use This Layout 保存的记录</option>{selections.map(s=><option key={s.id} value={s.id}>{s.createdAt} · {s.count} 块 · {s.candidateId} · {s.id}</option>)}</select></label>
+   <button disabled={!source} onClick={newPlan} title="从此布局新建 Build Plan">New</button></div>
+   <label>Build Plan<select aria-label="Build plan history" value={savedVersion?plan?.build_plan_id||'':''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openPlan(id))}}><option value="">选择已保存步骤</option>{saved.map(p=><option key={p.id} value={p.id}>{p.updatedAt} · {p.title} · {p.complete?p.status:'incomplete'}</option>)}</select></label>
   </fieldset>
-  {source&&<details><summary>来源与全部 {source.assembly.bricks.length} 个实例 · 最终 Geometry Valid</summary><p>Selection {source.id} / Geometry {source.geometryId} / {source.candidateId}；{source.connections.length} 对连接。未认证的视觉关系仍保留在源记录。</p><ul>{source.assembly.bricks.map(b=><li key={b.id}>{b.id} · 型号 {source.identities.find(i=>i.id===b.id)?.partNumber||b.part} · 几何 {b.part} · LDraw 颜色 {b.color} · X/Z {b.x}/{b.z} Stud · Layer {b.layer} · yaw {b.rotation}°</li>)}</ul><small>通过基础几何复用的印花可能未渲染；型号以已审核来源为准。</small></details>}
 
-   {plan&&<fieldset disabled={busy}>
-    <h2>Build Plan</h2><p><strong>{!report.complete?'Incomplete':plan.status==='reviewed'?'Reviewed':'Draft'}</strong> · {dirty?'未保存':'已保存'} · {plan.instanceIds.length} 块 / {plan.steps.length} 步</p>
-    <button className="brick-primary" disabled={!report.valid} onClick={()=>void action(save)}>Save Build Plan</button>
-   <label>标题<input value={plan.title} maxLength={200} onChange={e=>commit({...plan,title:e.target.value,status:'draft'})}/></label>
-   <label><input type="checkbox" checked={plan.status==='reviewed'} disabled={!report.complete} onChange={e=>commit({...plan,status:e.target.checked?'reviewed':'draft'})}/> 我已人工审核步骤顺序（不代表路径或稳定性认证）</label>
+
+   {plan&&<fieldset disabled={busy} className="build-nav-plan">
+    <div className="build-plan-status"><span><strong>{!report.complete?'Incomplete':plan.status==='reviewed'?'Reviewed':'Draft'}</strong> · {dirty?'未保存':'已保存'} · {plan.instanceIds.length} 块 / {plan.steps.length} 步</span><button disabled={!report.valid} onClick={()=>void action(save)}>Save</button></div>
    {!report.complete&&<p className="build-warning">当前有 {report.available.length} 个独立组件；继续合并到一个包含全部实例的 Root 后才可播放。草稿可以保存。</p>}
-   {source?.id===example.source_selection_id&&<button onClick={()=>{if(window.confirm('用测试性示例替换当前步骤？仅修改表单，不自动保存。')){const next=withSteps({...plan,title:example.title},example.steps);if(commit(next)){setSelectedStepId(next.steps[0]?.stepId||null);setAdding(false)}}}}>载入可编辑的企鹅测试步骤（未实搭验证）</button>}
 
-    <div className="brick-actions"><h2>Step List</h2><button onClick={()=>{setAdding(true);setInspector('step');setMobilePanel('right')}}>Add Step</button></div>
+
+    <div className="brick-actions build-list-heading"><h2>Step List</h2><button onClick={()=>{setAdding(true);setInspector('step');setMobilePanel('right')}}>Add Step</button></div>
     <ol className="build-step-list">{plan.steps.map((s,i)=><li key={s.stepId}><button className={i===stepIndex?'build-current':''} aria-current={i===stepIndex?'step':undefined} onClick={()=>setIndex(i)}><strong>Step {i+1}</strong><span>Moving: {labels(s.movingNodeId)}</span><span>Target: {labels(s.targetNodeId)}</span><small>{s.description||'尚未填写步骤说明'}</small></button></li>)}</ol>
-    <details><summary>Assembly Tree · Root / Subassemblies / Parts</summary><ul className="build-tree">{report.valid&&report.available.map(renderTree)}</ul>{treeNode&&report.members[treeNode]&&<p role="status">{treeNode} 包含：{report.members[treeNode].join('、')}</p>}</details>
+    <details className="build-tree-panel"><summary>Assembly Tree</summary><div className="build-tree-scroll"><ul className="build-tree">{report.valid&&report.available.map(renderTree)}</ul>{treeNode&&report.members[treeNode]&&<p role="status">{treeNode} 包含：{report.members[treeNode].join('、')}</p>}</div></details>
    </fieldset>}
-   </>}
+   </section>}
    center={<section className="build-player">
     <header className="build-player-heading"><h2>{scene?'Current Assembly · 本步骤目标组件':source?'Final Layout Preview · 最终布局参考':'3D Assembly Player'}</h2><p>{scene?labels(scene.step.targetNodeId)+' ← '+labels(scene.step.movingNodeId):source?'尚未开始步骤播放。请创建或选择完整 Build Plan。':'请在左栏选择已保存的 Valid Layout 和 Build Plan。'}</p></header>
     <div className="build-stage-area">
@@ -149,9 +146,14 @@ export function BuildOrderPage(){
    right={<section className="build-inspector">
     <h2>Inspector / Step Editor</h2>
     <div className="build-inspector-tabs" role="tablist" aria-label="步骤详情">{(['step','motion','geometry'] as const).map((tab,i)=><button role="tab" id={'build-tab-'+tab} aria-controls={'build-panel-'+tab} aria-selected={inspector===tab} key={tab} onClick={()=>setInspector(tab)}>{['Step','Motion','Geometry'][i]}</button>)}</div>
+    {source&&<details><summary>Source · {source.assembly.bricks.length} parts · Geometry Valid</summary><a href={import.meta.env.BASE_URL+'brick-test.html?workflow=spatial'+(source?'&analysisId='+source.analysisId+'&spatialPlanId='+source.planId+'&geometryId='+source.geometryId+'&candidateId='+source.candidateId:'')} target="_blank" rel="noreferrer">打开 Spatial Assembly ↗</a><p>Selection {source.id} / Geometry {source.geometryId} / {source.candidateId}；{source.connections.length} 对连接。未认证的视觉关系仍保留在源记录。</p><ul>{source.assembly.bricks.map(b=><li key={b.id}>{b.id} · 型号 {source.identities.find(i=>i.id===b.id)?.partNumber||b.part} · 几何 {b.part} · LDraw 颜色 {b.color} · X/Z {b.x}/{b.z} Stud · Layer {b.layer} · yaw {b.rotation}°</li>)}</ul><small>通过基础几何复用的印花可能未渲染；型号以已审核来源为准。</small></details>}
     {error&&<p role="alert" className="brick-error">{error}</p>}
     {!plan?<p>请先选择或新建 Build Plan。</p>:<fieldset disabled={busy}>
      <div role="tabpanel" id="build-panel-step" aria-labelledby="build-tab-step" hidden={inspector!=='step'}>
+      <details className="build-plan-settings"><summary>Plan Settings</summary>   <label>标题<input value={plan.title} maxLength={200} onChange={e=>commit({...plan,title:e.target.value,status:'draft'})}/></label>
+   <label><input type="checkbox" checked={plan.status==='reviewed'} disabled={!report.complete} onChange={e=>commit({...plan,status:e.target.checked?'reviewed':'draft'})}/> 我已人工审核步骤顺序（不代表路径或稳定性认证）</label>
+<small>Plan ID: {plan.build_plan_id}</small></details>
+      <details><summary>Advanced / Test</summary>   {source?.id===example.source_selection_id&&<button onClick={()=>{if(window.confirm('用测试性示例替换当前步骤？仅修改表单，不自动保存。')){const next=withSteps({...plan,title:example.title},example.steps);if(commit(next)){setSelectedStepId(next.steps[0]?.stepId||null);setAdding(false)}}}}>载入可编辑的企鹅测试步骤（未实搭验证）</button>}<p className="brick-help">测试步骤仅按按钮载入当前草稿，不自动保存。</p></details>
       {adding?<><button onClick={()=>setAdding(false)}>返回当前步骤</button>
    <section className="build-add"><h3>Add Step · 合并两个可用组件</h3><div className="build-fields"><label>Moving Component<select value={moving} onChange={e=>setMoving(e.target.value)}><option value="">选择待安装组件</option>{report.available.map(id=><option key={id} value={id} disabled={id===target}>{labels(id)}</option>)}</select></label><label>Target Component<select value={target} onChange={e=>setTarget(e.target.value)}><option value="">选择目标组件</option>{report.available.map(id=><option key={id} value={id} disabled={id===moving}>{labels(id)}</option>)}</select></label></div><label>说明（可选）<textarea value={description} maxLength={2000} onChange={e=>setDescription(e.target.value)}/></label><button disabled={!report.available.includes(moving)||!report.available.includes(target)||moving===target} onClick={addStep}>Add Step</button><p>合并必须有源 Geometry Result 的真实接合证据，但不证明安装路径或稳定性。结果组件会成为下一步可选对象。重排或删除若破坏依赖会被拒绝；需要时先删除依赖它的后续步骤。</p></section>
 
