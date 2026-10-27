@@ -1,0 +1,84 @@
+{
+  "source_selection_id": "77d99b0e-9c62-4ba6-b655-bcf1a8db5828",
+  "title": "企鹅示例 · 待实搭审核",
+  "notice": "人工编排的播放器测试序列；安装路径和中间稳定性均未验证。仅用户点击后载入草稿，不自动保存。",
+  "steps": [
+    {
+      "stepId": "step-1",
+      "movingNodeId": "part:white_lower",
+      "targetNodeId": "part:orange_foot",
+      "resultNodeId": "assembly:base",
+      "description": "将白色下部安装到橙色脚座上。"
+    },
+    {
+      "stepId": "step-2",
+      "movingNodeId": "part:white_belly",
+      "targetNodeId": "assembly:base",
+      "resultNodeId": "assembly:belly-base",
+      "description": "安装白色身体。"
+    },
+    {
+      "stepId": "step-3",
+      "movingNodeId": "part:back_body",
+      "targetNodeId": "assembly:belly-base",
+      "resultNodeId": "assembly:body",
+      "description": "安装黑色背部。"
+    },
+    {
+      "stepId": "step-4",
+      "movingNodeId": "part:wing_upper",
+      "targetNodeId": "part:wing_lower",
+      "resultNodeId": "assembly:near-wing",
+      "description": "在工作区先搭一侧翅膀与横板。"
+    },
+    {
+      "stepId": "step-5",
+      "movingNodeId": "part:wing_opposite",
+      "targetNodeId": "assembly:near-wing",
+      "resultNodeId": "assembly:wings",
+      "description": "安装另一侧翅膀，形成翅膀子组件。"
+    },
+    {
+      "stepId": "step-6",
+      "movingNodeId": "assembly:wings",
+      "targetNodeId": "assembly:body",
+      "resultNodeId": "assembly:wing-body",
+      "description": "把完整翅膀子组件安装到身体底座。"
+    },
+    {
+      "stepId": "step-7",
+      "movingNodeId": "part:white_strip",
+      "targetNodeId": "assembly:wing-body",
+      "resultNodeId": "assembly:torso",
+      "description": "安装白色横板。"
+    },
+    {
+      "stepId": "step-8",
+      "movingNodeId": "part:head_front",
+      "targetNodeId": "part:beak",
+      "resultNodeId": "assembly:front-head",
+      "description": "先把前头部与鸟嘴组成子组件。"
+    },
+    {
+      "stepId": "step-9",
+      "movingNodeId": "assembly:front-head",
+      "targetNodeId": "assembly:torso",
+      "resultNodeId": "assembly:front-torso",
+      "description": "安装鸟嘴与前头部子组件。"
+    },
+    {
+      "stepId": "step-10",
+      "movingNodeId": "part:head_rear",
+      "targetNodeId": "part:eye_block",
+      "resultNodeId": "assembly:rear-head",
+      "description": "将后头部安装到眼睛积木上。"
+    },
+    {
+      "stepId": "step-11",
+      "movingNodeId": "assembly:rear-head",
+      "targetNodeId": "assembly:front-torso",
+      "resultNodeId": "assembly:penguin",
+      "description": "安装最后的头部子组件。最终位置与选定 Layout 一致；请家长实搭审核。"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+.brick-page.build-order-page {overflow:auto;padding:18px;max-width:1800px;margin:auto;height:100%;}
+.build-order-page .brick-header {flex-direction:row;justify-content:space-between;align-items:center;flex-wrap:wrap;}
+.build-warning {background:#fff8df;border:1px solid #e8c56a;border-radius:8px;padding:12px;color:#775314;}
+.build-order-page .build-source {display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:16px;}
+.build-source label {flex:1 1 300px;margin:0;}
+.build-player {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;margin-top:18px;}
+.build-player section {min-width:0;border:1px solid #d7dfea;border-radius:10px;padding:12px;background:#fff;}
+.build-player h2 {font-size:17px;margin:0 0 8px;}
+.build-player p {min-height:2.5em;font-size:12px;overflow-wrap:anywhere;}
+.build-canvas {height:clamp(300px,48vh,620px);position:relative;overflow:hidden;border-radius:8px;}
+.build-canvas canvas {display:block;touch-action:none;}
+.build-controls {margin:14px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.build-order-page .build-editor {border-top:1px solid #d7dfea;padding-top:16px;}
+.build-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;}
+.build-step-list {padding-left:30px;}
+.build-step-list>li {border:1px solid #d7dfea;border-radius:8px;margin:12px 0;padding:12px;overflow-wrap:anywhere;}
+.build-step-list>li.build-current {border-color:#397353;background:#f1f8f3;}
+.build-step-list small {display:block;margin:8px 0;}
+.build-order-page textarea {font:inherit;min-height:64px;width:100%;resize:vertical;border:1px solid #d7dfea;border-radius:6px;padding:8px;}
+.build-order-page input[type=checkbox] {width:auto;align-self:flex-start;}
+.build-add {padding:12px;background:#eef2f7;border-radius:8px;}
+.build-order-page details {margin:12px 0;overflow-wrap:anywhere;}
+.build-order-page summary {cursor:pointer;}
+@media(max-width:800px){.build-player{grid-template-columns:1fr}.brick-page.build-order-page{padding:10px}.build-canvas{height:320px}}

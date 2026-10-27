@@ -16,6 +16,8 @@ export class BrickViewer {
   private profileEditing:ProfileInteraction|null=null
   private profileBindings:{layer:THREE.Group;owner:THREE.Object3D}[]=[]
   private profileResources: {dispose():void}[] = []
+  private buildMotion: {members:{object:THREE.Object3D;position:THREE.Vector3;quaternion:THREE.Quaternion}[];pivot:THREE.Vector3;offset:THREE.Vector3;startRotation:THREE.Quaternion;started:number|null;duration:number;done:()=>void} | null = null
+  private buildArrow: THREE.ArrowHelper | null = null
   private scene = new THREE.Scene()
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000)
   private renderer: THREE.WebGLRenderer
@@ -179,6 +181,7 @@ export class BrickViewer {
     if (this.disposed) return
     this.frame = requestAnimationFrame(this.animate)
     this.controls.update()
+    this.updateBuildMotion()
     this.profileEditing?.update()
     for(const {layer,owner} of this.profileBindings){layer.position.copy(owner.position);layer.quaternion.copy(owner.quaternion)}
     this.renderer.render(this.scene, this.camera)
@@ -256,6 +259,7 @@ export class BrickViewer {
 
   // Transactional update: a failed load leaves the previous complete assembly.
   async replace(bricks: Brick[]): Promise<boolean> {
+    this.clearBuildMotion()
     const revision = ++this.revision
     const models = await Promise.all(bricks.map((brick) => this.template(brick.part, brick.color)))
     if (this.disposed || revision !== this.revision) return false
@@ -362,7 +366,7 @@ export class BrickViewer {
     delete this.host.dataset.highlightIds
   }
 
-  highlight(ids: string[]) {
+  highlight(ids: string[], highlightStyle: 'debug' | 'build' = 'debug') {
     const wasHighlighted=this.highlightIds.length>0
     this.highlightIds=[...ids]
     this.restoreHighlight()
@@ -381,8 +385,8 @@ export class BrickViewer {
           let clone=clones.get(material)
           if(!clone){
             clone=material.clone();clones.set(material,clone);this.debugMaterials.add(clone)
-            if(index>=0){const coloured=clone as THREE.MeshStandardMaterial;if(coloured.color)coloured.color.set(index===0?'#00aaff':'#ff248f')}
-            else {clone.transparent=true;clone.opacity=0.16;clone.depthWrite=false}
+            if(index>=0){const coloured=clone as THREE.MeshStandardMaterial;if(coloured.color)coloured.color.set(highlightStyle==='build'?'#39bd67':index===0?'#00aaff':'#ff248f')}
+            else if(highlightStyle==='debug'){clone.transparent=true;clone.opacity=0.16;clone.depthWrite=false}
           }
           return clone
         }
@@ -393,7 +397,70 @@ export class BrickViewer {
     this.focusBox(box,this.camera.position.clone().sub(this.controls.target))
   }
 
+  // Temporary display transforms only. Final Brick[] remains immutable.
+  clearBuildMotion() {
+    const motion=this.buildMotion
+    if(motion)for(const m of motion.members){m.object.position.copy(m.position);m.object.quaternion.copy(m.quaternion)}
+    this.buildMotion=null
+    if(this.buildArrow){
+      this.scene.remove(this.buildArrow)
+      this.buildArrow.line.geometry.dispose();this.buildArrow.cone.geometry.dispose()
+      for(const object of [this.buildArrow.line,this.buildArrow.cone]){
+        const materials=Array.isArray(object.material)?object.material:[object.material]
+        materials.forEach(m=>m.dispose())
+      }
+      this.buildArrow=null
+    }
+  }
+
+  async prepareBuildStep(target:Brick[],moving:Brick[],motion:{offsetLdu:{x:number;y:number;z:number};startYawDegrees:number},done:()=>void):Promise<boolean>{
+    if(!moving.length||new Set([...target,...moving].map(b=>b.id)).size!==target.length+moving.length)throw Error('步骤组件为空或重复使用实例')
+    if(![motion.offsetLdu.x,motion.offsetLdu.y,motion.offsetLdu.z,motion.startYawDegrees].every(Number.isFinite))throw Error('动画提示无效')
+    this.clearPreview();this.highlightIds=[]
+    if(!await this.replace([...target,...moving]))return false
+    const revision=this.revision
+    await this.showPreview(moving)
+    if(this.disposed||revision!==this.revision)return false
+    const ids=new Set(moving.map(b=>b.id)),objects=this.assembly.children.filter(o=>ids.has(o.name))
+    const box=new THREE.Box3();objects.forEach(o=>box.union(new THREE.Box3().setFromObject(o)))
+    const pivot=box.getCenter(new THREE.Vector3()),offset=new THREE.Vector3(motion.offsetLdu.x,motion.offsetLdu.y,motion.offsetLdu.z).multiplyScalar(MM_PER_LDU)
+    this.buildMotion={members:objects.map(object=>({object,position:object.position.clone(),quaternion:object.quaternion.clone()})),pivot,offset,
+      startRotation:new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),THREE.MathUtils.degToRad(motion.startYawDegrees)),started:null,duration:1200,done}
+    this.applyBuildMotion(0)
+    if(offset.length()>0.001){
+      this.buildArrow=new THREE.ArrowHelper(offset.clone().negate().normalize(),pivot.clone().add(offset),offset.length(),0x208b46,Math.min(8,offset.length()/3),Math.min(4,offset.length()/6))
+      // ArrowHelper shares primitive geometries; own clones for safe disposal.
+      this.buildArrow.line.geometry=this.buildArrow.line.geometry.clone();this.buildArrow.cone.geometry=this.buildArrow.cone.geometry.clone()
+      this.scene.add(this.buildArrow)
+    }
+    this.highlight(moving.map(b=>b.id),'build');this.fit()
+    return true
+  }
+
+  playBuildStep(){
+    if(!this.buildMotion)return
+    this.buildMotion.started=performance.now()
+  }
+
+  private applyBuildMotion(progress:number){
+    const m=this.buildMotion;if(!m)return
+    const q=new THREE.Quaternion().slerpQuaternions(m.startRotation,new THREE.Quaternion(),progress)
+    for(const member of m.members){
+      if(progress===1){member.object.position.copy(member.position);member.object.quaternion.copy(member.quaternion);continue}
+      member.object.position.copy(member.position).sub(m.pivot).applyQuaternion(q).add(m.pivot).addScaledVector(m.offset,1-progress)
+      member.object.quaternion.copy(q).multiply(member.quaternion)
+    }
+  }
+
+  private updateBuildMotion(){
+    const m=this.buildMotion;if(!m||m.started===null)return
+    const t=Math.min(1,(performance.now()-m.started)/m.duration)
+    this.applyBuildMotion(t*t*(3-2*t))
+    if(t===1){m.started=null;this.clearPreview();if(this.buildArrow)this.buildArrow.visible=false;this.restoreHighlight();this.highlightIds=[];m.done()}
+  }
+
   reset() {
+    this.clearBuildMotion()
     ++this.revision
     this.clearCandidates()
     this.clearPreview()
@@ -428,6 +495,7 @@ export class BrickViewer {
   }
 
   dispose() {
+    this.clearBuildMotion()
     this.profileEditing?.dispose();this.profileEditing=null
     this.restoreHighlight()
     this.clearProfileMarkers()

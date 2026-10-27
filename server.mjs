@@ -1,3 +1,4 @@
+import {createBuildOrderStore} from './server/brick-build-order.mjs'
 import {createLlmTraceStore} from './server/llm-traces.mjs'
 import { listDesignTraces, loadDesignTrace } from './server/brick-design-history.mjs'
 import { createSpatialWorkflow } from './server/brick-spatial-workflow.mjs'
@@ -45,6 +46,7 @@ const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-histor
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
 const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames })
 const llmTraces = createLlmTraceStore(generatedDirectory)
+const brickBuildOrder = createBuildOrderStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
@@ -464,6 +466,16 @@ const server = createServer(async (request, response) => {
       if(parts.length!==2&&parts.length!==4){sendJson(response,404,{error:'Trace 路径不存在'});return}
       sendJson(response,200,parts.length===2?await llmTraces.list():await llmTraces.detail(parts[2],parts[3]))
     }catch(e){sendJson(response,e.code==='ENOENT'?404:e.statusCode||500,{error:e.statusCode?e.message:'Trace 读取失败'})}
+    return
+  }
+  if (url.pathname.startsWith('/api/brick-build/')) {
+    try {
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, {error:'仅接受同源 Build Order 操作'}); return
+      }
+      const body = request.method === 'POST' ? await readJsonBody(request, 256 * 1024) : {}
+      sendJson(response, 200, await brickBuildOrder.dispatch(request.method, url.pathname.slice('/api/brick-build/'.length), body, url.searchParams))
+    } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, {error:error.statusCode ? error.message : 'Build Plan 读取或保存失败'}) }
     return
   }
   if (url.pathname.startsWith('/api/brick-spatial/')) {

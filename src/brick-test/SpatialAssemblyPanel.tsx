@@ -151,7 +151,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
       </details>
       <p>未验证视觉关系：{detail.relations.filter(r=>r.satisfied===null).length} · 不确定接合意图：{detail.intents.filter(i=>i.satisfied===null).length}；物理合法不代表照片相似度已验证。</p>
       {detail.kind!=='diagnostic'&&<button onClick={()=>void action(async()=>{const op=await request('select-layout',{requestId:crypto.randomUUID(),planId:geometry.planId,geometryId:geometry.id,candidateId:candidate});if(op.state!=='complete')throw Error(op.error||'保存失败');setSavedSelections((await request('selections?geometryId='+geometry.id)).items)})}>Use This Layout · 保存为选定方案</button>}
-      {savedSelections.some(s=>s.candidateId===candidate)&&<p>已独立保存选择：{savedSelections.find(s=>s.candidateId===candidate)?.id}；原始计划与 Geometry Result 未修改。</p>}
+      {savedSelections.some(s=>s.candidateId===candidate)&&<p>已独立保存选择：{savedSelections.find(s=>s.candidateId===candidate)?.id}；原始计划与 Geometry Result 未修改。 <a href={import.meta.env.BASE_URL+'brick-test.html?workflow=build&selectionId='+savedSelections.find(s=>s.candidateId===candidate)!.id} target="_blank" rel="noreferrer">Build Order · 创建 / 编辑步骤 ↗</a></p>}
     </div>}
     <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">{detail.kind==='diagnostic'?'Diagnostic · 非合法完整方案':'Valid Layout'} · 物理 {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}
     <p data-testid="spatial-viewer-status">{candidate?'已在共享 BrickViewer 显示 '+candidate+'；未检查 Build Order。':'诊断与 Refinement 预览身份以中间 Viewer 标注为准。'}</p>
