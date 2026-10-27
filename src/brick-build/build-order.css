@@ -1,24 +1,58 @@
-.brick-page.build-order-page {overflow:auto;padding:18px;max-width:1800px;margin:auto;height:100%;}
-.build-order-page .brick-header {flex-direction:row;justify-content:space-between;align-items:center;flex-wrap:wrap;}
-.build-warning {background:#fff8df;border:1px solid #e8c56a;border-radius:8px;padding:12px;color:#775314;}
-.build-order-page .build-source {display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:16px;}
-.build-source label {flex:1 1 300px;margin:0;}
-.build-player {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;margin-top:18px;}
-.build-player section {min-width:0;border:1px solid #d7dfea;border-radius:10px;padding:12px;background:#fff;}
-.build-player h2 {font-size:17px;margin:0 0 8px;}
-.build-player p {min-height:2.5em;font-size:12px;overflow-wrap:anywhere;}
-.build-canvas {height:clamp(300px,48vh,620px);position:relative;overflow:hidden;border-radius:8px;}
-.build-canvas canvas {display:block;touch-action:none;}
-.build-controls {margin:14px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-.build-order-page .build-editor {border-top:1px solid #d7dfea;padding-top:16px;}
-.build-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;}
-.build-step-list {padding-left:30px;}
-.build-step-list>li {border:1px solid #d7dfea;border-radius:8px;margin:12px 0;padding:12px;overflow-wrap:anywhere;}
-.build-step-list>li.build-current {border-color:#397353;background:#f1f8f3;}
-.build-step-list small {display:block;margin:8px 0;}
-.build-order-page textarea {font:inherit;min-height:64px;width:100%;resize:vertical;border:1px solid #d7dfea;border-radius:6px;padding:8px;}
+.brick-page.build-order-page {height:100%;max-width:none;margin:0;padding:0;display:flex;flex-direction:column;overflow:hidden;}
+.build-order-page .build-workbench {flex:1;min-height:0;}
+.build-order-page h2 {font-size:16px;}
+.build-order-page h3 {font-size:14px;}
+.build-order-page .build-source {display:grid;gap:12px;margin-bottom:16px;}
+.build-order-page .build-source label {margin:0;}
+.build-warning {background:#fff8df;border:1px solid #e8c56a;border-radius:8px;padding:10px;color:#775314;font-size:12px;line-height:1.6;}
+.build-order-page .build-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
 .build-order-page input[type=checkbox] {width:auto;align-self:flex-start;}
-.build-add {padding:12px;background:#eef2f7;border-radius:8px;}
-.build-order-page details {margin:12px 0;overflow-wrap:anywhere;}
-.build-order-page summary {cursor:pointer;}
-@media(max-width:800px){.build-player{grid-template-columns:1fr}.brick-page.build-order-page{padding:10px}.build-canvas{height:320px}}
+.build-order-page textarea {min-height:80px;}
+.build-order-page details {margin:14px 0;overflow-wrap:anywhere;}
+.build-order-page pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:320px;overflow:auto;background:#edf1f5;padding:10px;}
+.build-step-list {list-style:none;padding:0;margin:12px 0;max-height:48vh;overflow-y:auto;overscroll-behavior:contain;}
+.build-step-list li {margin:7px 0;}
+.build-step-list button {display:flex;flex-direction:column;gap:5px;text-align:left;width:100%;overflow-wrap:anywhere;}
+.build-step-list span,.build-step-list small {font-size:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.build-order-page .build-step-list .build-current {background:#e8f0ff;border-color:#2b58b7;}
+.build-order-page .build-tree {padding-left:14px;}
+.build-tree ul {padding-left:14px;}
+.build-order-page .build-tree-node {text-align:left;font-size:11px;overflow-wrap:anywhere;margin:4px 0;max-width:100%;}
+.build-order-page .build-tree-node[aria-pressed=true] {background:#e8f0ff;}
+.build-order-page .build-player {display:flex;flex-direction:column;min-height:calc(100dvh - 24px);}
+.build-player-heading h2 {margin:4px 0;}
+.build-player-heading p {font-size:12px;margin:6px 0 12px;overflow-wrap:anywhere;}
+.build-stage-area {position:relative;background:#edf1f5;border:1px solid #dfe5ed;border-radius:8px;overflow:hidden;flex:1;min-height:420px;}
+.build-canvas {position:relative;width:100%;overflow:hidden;}
+.build-main-canvas {height:100%;min-height:420px;position:absolute;inset:0;}
+.build-canvas canvas {display:block;touch-action:none;}
+.build-main-fit {position:absolute;top:10px;right:10px;z-index:1;}
+.build-component {position:absolute;left:10px;top:10px;width:clamp(160px,30%,240px);z-index:1;background:#fff;border:1px solid #cbd6e5;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #24324818;}
+.build-order-page .build-component-toggle {width:100%;border:0;border-radius:0;text-align:left;}
+.build-small-canvas {height:170px;}
+.build-component-body p {font-size:11px;margin:6px 8px;max-height:48px;overflow:auto;}
+.build-component-body>button {margin:0 8px 8px;}
+.build-component[data-collapsed=true] .build-component-body {display:none;}
+.build-player-footer {padding-top:8px;}
+.build-player-footer>p {font-size:12px;}
+.build-order-page .build-controls {margin:0;align-items:center;gap:8px;}
+.build-order-page .build-controls button:first-child {flex:0 1 auto;}
+.build-controls span {font-size:12px;}
+.build-inspector-tabs {display:flex;gap:6px;margin-bottom:16px;position:sticky;top:0;background:#f6f7f9;padding:4px 0;z-index:2;}
+.build-inspector-tabs button {flex:1;}
+.build-order-page .build-inspector-tabs button[aria-selected=true] {color:#204794;border-color:#2b58b7;background:#e8f0ff;}
+.build-inspector small {display:block;overflow-wrap:anywhere;margin:10px 0;}
+.build-add {padding:10px;background:#edf1f5;border-radius:8px;margin-top:12px;}
+.build-add p {font-size:12px;line-height:1.6;}
+.build-mobile-tabs {display:none;}
+@media(max-width:1000px){
+ .build-mobile-tabs {display:flex;gap:6px;padding:8px;border-bottom:1px solid #d7dfea;}
+ .build-mobile-tabs button {flex:1;}
+ .build-mobile-tabs button[aria-pressed=true] {background:#e8f0ff;border-color:#2b58b7;}
+ .build-order-page .build-workbench>.three-column-layout__handle {display:none;}
+ .build-order-page .build-workbench>.three-column-layout__panel {display:none;}
+ .build-order-page[data-mobile-panel=left] .build-workbench>.three-column-layout__panel:nth-child(1),
+ .build-order-page[data-mobile-panel=center] .build-workbench>.three-column-layout__panel:nth-child(3),
+ .build-order-page[data-mobile-panel=right] .build-workbench>.three-column-layout__panel:nth-child(5) {display:block;flex:1 1 100%!important;width:100%;}
+ .build-order-page .build-player {min-height:calc(100dvh - 78px);}
+}
