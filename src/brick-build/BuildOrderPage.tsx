@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
 import type {ReactNode} from 'react'
+import {TraceLinks} from '../llm-traces/TraceLinks'
 import {ThreeColumnLayout} from '../three-column-layout'
 import {BrickViewer} from '../brick-test/viewer'
 import {createBuildPlan,inspectBuildPlan,stepScene,withSteps} from './plan.mjs'
@@ -10,6 +11,8 @@ import './build-order.css'
 
 type SelectionItem={id:string;createdAt:string;analysisId:string;candidateId:string;count:number}
 type PlanItem={id:string;title:string;status:string;updatedAt:string;complete:boolean}
+type PlannerConfig={provider:string;model:string;settings:{reasoning?:{effort?:string}};configured:boolean;promptVersion:string}
+type GenerationResult={ok?:boolean;traceId:string;status:string;error?:string|null;provider:string;model:string;settings:PlannerConfig['settings'];plan?:BuildPlan|null;validation?:unknown;usage?:unknown}
 async function request<T>(route:string,body?:unknown):Promise<T>{
  const response=await fetch('/api/brick-build/'+route,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
  const value=await response.json();if(!response.ok)throw Error(value.error||'Build Order 请求失败');return value
@@ -26,6 +29,10 @@ export function BuildOrderPage(){
  const [source,setSource]=useState<BuildSource|null>(null),[plan,setPlan]=useState<BuildPlan|null>(null)
  const [savedVersion,setSavedVersion]=useState<string|null>(null),[dirty,setDirty]=useState(false)
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+ const [planner,setPlanner]=useState<PlannerConfig|null>(null),[plannerError,setPlannerError]=useState('')
+ const [generating,setGenerating]=useState(false),[generation,setGeneration]=useState<GenerationResult|null>(null)
+ const generationLock=useRef(false)
+ useEffect(()=>{let active=true;request<PlannerConfig>('planner-config').then(v=>{if(active)setPlanner(v)}).catch(e=>{if(active)setPlannerError(String(e))});return()=>{active=false}},[])
  const [selectedStepId,setSelectedStepId]=useState<string|null>(null),[replay,setReplay]=useState(0),[phase,setPhase]=useState('idle')
  const [viewError,setViewError]=useState(''),[ready,setReady]=useState(false)
  const [moving,setMoving]=useState(''),[target,setTarget]=useState(''),[description,setDescription]=useState('')
@@ -62,7 +69,7 @@ export function BuildOrderPage(){
   const params=new URL(location.href).searchParams,planId=params.get('buildPlanId'),selectionId=params.get('selectionId')
   if(planId)await action(()=>openPlan(planId));else if(selectionId)await action(()=>openSource(selectionId))
  }).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[])
- useEffect(()=>{if(!dirty)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[dirty])
+ useEffect(()=>{if(!dirty&&!generating)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[dirty,generating])
  useEffect(()=>{
   if(!leftHost.current||!rightHost.current)return
   const fatal=(message:string)=>setViewError(message)
@@ -97,6 +104,29 @@ export function BuildOrderPage(){
  function addStep(){if(!plan)return;const n=crypto.randomUUID();if(changeSteps([...plan.steps,{stepId:'step:'+n,movingNodeId:moving,targetNodeId:target,resultNodeId:'assembly:'+n,description}])){setMoving('');setTarget('');setDescription('');setSelectedStepId('step:'+n);setAdding(false)}}
  function newPlan(){if(!source||!chooseAllowed())return;setPlan(createBuildPlan(source,crypto.randomUUID(),new Date().toISOString()));setSavedVersion(null);setDirty(true);setSelectedStepId(null);setError('');setMoving('');setTarget('');setDescription('');updateUrl(source.id)}
  async function save(){if(!plan)return;const value=await request<{plan:BuildPlan}>('save',{plan,expectedUpdatedAt:savedVersion});setPlan(value.plan);setSavedVersion(value.plan.updated_at);setDirty(false);updateUrl(value.plan.source_selection_id,value.plan.build_plan_id);await refreshPlans(value.plan.source_selection_id);setNotice('Build Plan 已保存；原始布局和几何记录未修改。')}
+
+ async function generateBuildOrder(){
+  if(!source||busy||generationLock.current||!planner?.configured)return
+  if(dirty&&!window.confirm('生成成功后会替换当前未保存草稿；失败会保留。继续调用模型？'))return
+  generationLock.current=true;setBusy(true);setGenerating(true);setError('');setNotice('')
+  const requestId=crypto.randomUUID()
+  setGeneration({traceId:requestId,status:'requesting',provider:planner.provider,model:planner.model,settings:planner.settings})
+  try{
+   const result=await request<GenerationResult>('generate',{selectionId:source.id,candidateHash:source.candidateHash,requestId})
+   setGeneration(result)
+   if(!result.ok||!result.plan)throw Error(result.error||'生成未通过校验；当前草稿保留')
+   const next=result.plan
+   if(next.source_selection_id!==source.id||next.source_geometry_result_id!==source.geometryId||next.source_candidate_id!==source.candidateId||next.source_candidate_hash!==source.candidateHash||next.status!=='draft')throw Error('生成结果来源或状态不一致；当前草稿保留')
+   const validated=inspectBuildPlan(next,source.assembly.bricks.map(b=>b.id),source.connections)
+   if(!validated.valid||!validated.complete)throw Error('生成结果校验失败：'+validated.errors.join('；'))
+   setPlan(next);setSavedVersion(null);setDirty(true);setSelectedStepId(next.steps[0]?.stepId||null)
+   setMoving('');setTarget('');setDescription('');setAdding(false);setInspector('step')
+   updateUrl(source.id)
+   setNotice('LLM 已完成 · 结构与连接证据校验通过 · Draft 未保存、未人工审核。')
+  }catch(e){setError(String(e));setGeneration(previous=>previous?.status==='requesting'?{...previous,status:'request_failed',error:'请求失败或返回丢失；请先查看 Trace，不会自动重试。'}:previous?.status==='draft_ready'?{...previous,status:'client_validation_failed',error:String(e)}:previous)}
+  finally{generationLock.current=false;setBusy(false);setGenerating(false)}
+ }
+
  function renderTree(nodeId:string):ReactNode{
   const node=plan?.assemblyNodes.find(n=>n.id===nodeId);if(!node)return null
   return <li key={nodeId}><button className="build-tree-node" aria-pressed={treeNode===nodeId} onClick={()=>setTreeNode(nodeId)}>{node.kind==='part'?'Part · '+node.instanceId:(nodeId===plan?.rootNodeId?'Root · ':'Subassembly · ')+node.id}</button>{node.kind==='assembly'&&<ul>{node.children.map(renderTree)}</ul>}</li>
@@ -112,8 +142,8 @@ export function BuildOrderPage(){
    <label>Valid Layout<select aria-label="Build source selection" value={source?.id||''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openSource(id))}}><option value="">选择 Use This Layout 保存的记录</option>{selections.map(s=><option key={s.id} value={s.id}>{s.createdAt} · {s.count} 块 · {s.candidateId} · {s.id}</option>)}</select></label>
    <button disabled={!source} onClick={newPlan} title="从此布局新建 Build Plan">New</button></div>
    <label>Build Plan<select aria-label="Build plan history" value={savedVersion?plan?.build_plan_id||'':''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openPlan(id))}}><option value="">选择已保存步骤</option>{saved.map(p=><option key={p.id} value={p.id}>{p.updatedAt} · {p.title} · {p.complete?p.status:'incomplete'}</option>)}</select></label>
+   <div className="build-generate-controls"><button disabled={!source||!planner?.configured||generating} onClick={()=>void generateBuildOrder()}>{generating?'Generating…':'Generate Build Order'}</button><small>{planner?planner.provider+' / '+planner.model+' · reasoning '+(planner.settings.reasoning?.effort||'default'):'正在读取模型配置…'}</small>{plannerError&&<small role="alert">{plannerError}</small>}{planner&&!planner.configured&&<small role="alert">OpenAI 配置不可用，不能生成；不会切换模型。</small>}</div>
   </fieldset>
-
 
    {plan&&<fieldset disabled={busy} className="build-nav-plan">
     <div className="build-plan-status"><span><strong>{!report.complete?'Incomplete':plan.status==='reviewed'?'Reviewed':'Draft'}</strong> · {dirty?'未保存':'已保存'} · {plan.instanceIds.length} 块 / {plan.steps.length} 步</span><button disabled={!report.valid} onClick={()=>void action(save)}>Save</button></div>
@@ -146,6 +176,7 @@ export function BuildOrderPage(){
    right={<section className="build-inspector">
     <h2>Inspector / Step Editor</h2>
     <div className="build-inspector-tabs" role="tablist" aria-label="步骤详情">{(['step','motion','geometry'] as const).map((tab,i)=><button role="tab" id={'build-tab-'+tab} aria-controls={'build-panel-'+tab} aria-selected={inspector===tab} key={tab} onClick={()=>setInspector(tab)}>{['Step','Motion','Geometry'][i]}</button>)}</div>
+    {generation&&<details open><summary>最近 Auto Build Order · {generation.status}</summary><p>{generation.provider} / {generation.model} · reasoning {generation.settings.reasoning?.effort||'default'}</p><p role="status">{generating?'正在生成；本次只调用一次模型。':generation.status==='draft_ready'?'LLM 完成、Validator 通过；生成结果为未审核 Draft，保存仍需手动操作。':generation.error||'请查看调用及校验诊断。'}</p><TraceLinks source="build" id={generation.traceId}/><details><summary>Validator / Token Usage</summary><pre>{JSON.stringify({validation:generation.validation,usage:generation.usage??'尚未返回'},null,2)}</pre></details></details>}
     {source&&<details><summary>Source · {source.assembly.bricks.length} parts · Geometry Valid</summary><a href={import.meta.env.BASE_URL+'brick-test.html?workflow=spatial'+(source?'&analysisId='+source.analysisId+'&spatialPlanId='+source.planId+'&geometryId='+source.geometryId+'&candidateId='+source.candidateId:'')} target="_blank" rel="noreferrer">打开 Spatial Assembly ↗</a><p>Selection {source.id} / Geometry {source.geometryId} / {source.candidateId}；{source.connections.length} 对连接。未认证的视觉关系仍保留在源记录。</p><ul>{source.assembly.bricks.map(b=><li key={b.id}>{b.id} · 型号 {source.identities.find(i=>i.id===b.id)?.partNumber||b.part} · 几何 {b.part} · LDraw 颜色 {b.color} · X/Z {b.x}/{b.z} Stud · Layer {b.layer} · yaw {b.rotation}°</li>)}</ul><small>通过基础几何复用的印花可能未渲染；型号以已审核来源为准。</small></details>}
     {error&&<p role="alert" className="brick-error">{error}</p>}
     {!plan?<p>请先选择或新建 Build Plan。</p>:<fieldset disabled={busy}>

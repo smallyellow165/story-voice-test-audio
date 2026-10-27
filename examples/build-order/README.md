@@ -26,3 +26,17 @@ Motion: {offsetLdu:{x,y,z}, startYawDegrees}; default (0,120,0), 0 degrees. Only
 Completeness is derived, not stored as approval. Reviewed is human step review only; path clearance and intermediate physical stability are unverified.
 
 Implementation-turn verification: source inspection only. Tests in test/brick-build-order.test.mjs were written but not executed; no build, browser verification or server was run, per request.
+
+## Auto Build Order V1
+
+在左栏选择已保存的 Valid Layout 后，点击 Generate Build Order。按钮旁显示服务端 Model Registry 提供的 OpenAI / gpt-6.1-sol / reasoning medium；配置不可用时不调用，也不切换模型。
+
+生成只在点击后执行一次。已有未保存草稿会先提示；失败保留草稿。成功得到通过结构、实例、依赖和跨组件连接检查的 Draft，尚未 Reviewed，也未写入 Build Plan 保存目录。用现有 Save 持久化，再刷新检查。
+
+企鹅首次对照：选择 77d99b0e-9c62-4ba6-b655-bcf1a8db5828，不载入测试模板，点击 Generate。应得到覆盖 12 个实例的 11 次合并；检查子组件、Previous / Next / Replay 和最终姿态，然后人工保存。生成结果不必与人工模板相同。
+
+右栏最近 Auto Build Order 可查看状态、Validator、实际 Token Usage 和统一 Trace 链接。Trace 来源为 build，独立文件位于 generated/brick-build-traces：<id>.json、<id>.request.json、<id>.response.txt。Parsed Result 中区分模型解析输出、转换后的 Plan 和校验结果。网络响应丢失时先查看 Trace，不要直接重复付费生成。
+
+输入无照片或 DAT 网格，仅使用已校验源布局、去重 Profile 摘要及最终连接图。输出不能更改身份、数量或最终坐标。安装路径、中间稳定性、握持空间与儿童独立操作能力仍未验证，Motion 是示意。
+
+本轮仅编写代码和 test/brick-build-planner.test.mjs，未执行测试、构建、服务或付费模型调用。请自行启动/重启开发服务后验收。

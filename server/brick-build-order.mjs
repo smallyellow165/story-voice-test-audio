@@ -1,23 +1,24 @@
 import {mkdir,readFile,readdir,writeFile,rename,unlink} from 'node:fs/promises'
 import path from 'node:path'
 import {randomUUID,createHash} from 'node:crypto'
+import {buildPlannerConfig,runBuildPlanner} from './brick-build-planner.mjs'
 import {inspectBuildPlan} from '../src/brick-build/plan.mjs'
 const fail=(message,statusCode=422)=>{throw Object.assign(new Error(message),{statusCode})}
 const id=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value))fail('无效记录 ID');return value}
 const read=async file=>JSON.parse(await readFile(file,'utf8'))
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
 export function createBuildOrderStore(directory){
- const folder=path.join(directory,'brick-build-plans'),locks=new Map()
+ const folder=path.join(directory,'brick-build-plans'),locks=new Map(),generating=new Set()
  const file=key=>path.join(folder,id(key)+'.json')
  async function files(dir){return (await readdir(dir).catch(e=>{if(e.code==='ENOENT')return [];throw e})).filter(f=>/^[a-f0-9-]{36}\.json$/.test(f))}
- async function source(value){
+ async function source(value,forPlanner=false){
   const selection=await read(path.join(directory,'brick-spatial-selections',id(value)+'.json'))
   if(selection.id!==value||selection.kind!=='selected-valid-layout')fail('必须使用已保存的 Valid Layout Selection')
   const g=await read(path.join(directory,'brick-spatial-geometry',id(selection.geometryId)+'.json'))
   const c=g.candidates?.find(c=>c.id===selection.candidateId)
   if(g.id!==selection.geometryId||g.planId!==selection.planId||g.sourcePlanHash!==selection.sourcePlanHash||g.state!=='complete'||!c||c.kind!=='valid'||c.geometry?.valid!==true||c.collision?.status!=='clear'||!Array.isArray(c.geometry.connections))fail('来源不是已完成验证的 Valid 候选')
   if(hash(c)!==selection.candidateHash||JSON.stringify(c.assembly)!==JSON.stringify(selection.assembly))fail('Selection 与候选快照不一致',409)
-  return {...selection,connections:c.geometry.connections,identities:(g.sourceInput?.observations||[]).map(o=>({id:o.id,partNumber:o.confirmedPart?.part_num||o.part,color:String(o.confirmedPart?.color_id??o.color)}))}
+  return {...selection,...(forPlanner?{geometryObservations:g.sourceInput?.observations||[],geometryUnits:g.sourceInput?.units}:{}),connections:c.geometry.connections,identities:(g.sourceInput?.observations||[]).map(o=>({id:o.id,partNumber:o.confirmedPart?.part_num||o.part,color:String(o.confirmedPart?.color_id??o.color)}))}
  }
  function check(plan,src){
   if(!plan||typeof plan!=='object')fail('Build Plan 缺失')
@@ -48,6 +49,17 @@ export function createBuildOrderStore(directory){
   }finally{locks.delete(key)}
  }
  return {async dispatch(method,route,body={},query=new URLSearchParams()){
+  if(method==='GET'&&route==='planner-config')return buildPlannerConfig()
+  if(method==='POST'&&route==='generate'){
+   const selectionId=id(body.selectionId),requestId=id(body.requestId)
+   if(generating.has(selectionId))fail('此 Layout 正在生成 Build Order，请等待；未重复调用',409)
+   generating.add(selectionId)
+   try{
+    const src=await source(selectionId,true)
+    if(body.candidateHash!==src.candidateHash)fail('来源候选已变化，请重新加载',409)
+    return await runBuildPlanner(src,{directory:path.join(directory,'brick-build-traces'),requestId})
+   }finally{generating.delete(selectionId)}
+  }
   if(method==='GET'&&route==='selections'){
    const items=[],warnings=[]
    for(const f of await files(path.join(directory,'brick-spatial-selections'))){try{const s=await source(f.slice(0,-5));items.push({id:s.id,createdAt:s.createdAt,analysisId:s.analysisId,planId:s.planId,candidateId:s.candidateId,count:s.assembly.bricks.length})}catch{warnings.push('无法使用 Selection '+f)}}

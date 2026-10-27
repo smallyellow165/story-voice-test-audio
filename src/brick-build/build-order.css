@@ -85,3 +85,6 @@
  .build-order-page[data-mobile-panel=right] .build-workbench>.three-column-layout__panel:nth-child(5) {display:block;flex:1 1 100%!important;width:100%;}
  .build-order-page .build-player {min-height:calc(100dvh - 78px);}
 }
+
+.build-generate-controls {display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.build-generate-controls small {font-size:11px;color:#65738a;overflow-wrap:anywhere;}
