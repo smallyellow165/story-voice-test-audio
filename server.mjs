@@ -1,3 +1,4 @@
+import { createWorkflowHistory } from './server/brick-workflow-history.mjs'
 import { createSelectedAnalysisStore } from './server/brick-selected-analysis.mjs'
 import { createSourceImageStore } from './server/brick-source-images.mjs'
 import {createBuildOrderStore} from './server/brick-build-order.mjs'
@@ -53,6 +54,7 @@ const brickBuildOrder = createBuildOrderStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
 const selectedAnalysis = createSelectedAnalysisStore(path.join(generatedDirectory, 'brick-source-images', 'selected-analysis'), { sourceImages, reverse: brickReverse, vision: brickVision })
+const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -499,7 +501,10 @@ const server = createServer(async (request, response) => {
       }
       const parts = url.pathname.slice('/api/brick-source-images/'.length).split('/')
       const imageId = decodeURIComponent(parts[0])
-      if (parts.length === 2 && parts[1] === 'selected-analysis') {
+      if (parts.length === 2 && parts[1] === 'workflow-history') {
+        if (request.method !== 'GET') sendJson(response, 405, { error: 'Workflow History is read-only.' })
+        else sendJson(response, 200, await workflowHistory.read(imageId))
+      } else if (parts.length === 2 && parts[1] === 'selected-analysis') {
         if (request.method === 'GET') sendJson(response, 200, await selectedAnalysis.read(imageId))
         else if (request.method === 'POST') sendJson(response, 200, await selectedAnalysis.select(imageId, await readJsonBody(request, 4096)))
         else sendJson(response, 405, { error: 'Use GET or POST.' })

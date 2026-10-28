@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 const require = createRequire(import.meta.url)
 export async function uiModuleUrl(url) {
   let code = ts.transpileModule(await readFile(url, 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  code = code.replaceAll('import.meta.env.BASE_URL', JSON.stringify('/story-voice-test-audio/'))
   code = code.replace(/import ['"].*\.css['"];?/g, '')
   for (const name of ['react', 'react/jsx-runtime']) {
     code = code.replaceAll(`'${name}'`, JSON.stringify(pathToFileURL(require.resolve(name)).href)).replaceAll(`"${name}"`, JSON.stringify(pathToFileURL(require.resolve(name)).href))

@@ -1,3 +1,4 @@
+import { WorkflowHistory } from '../brick-vision/WorkflowHistory'
 import { InfoHint } from '../brick-vision/InfoHint'
 import type { Choice } from '../brick-vision/SelectedAnalysis'
 import { SelectedAnalysis } from '../brick-vision/SelectedAnalysis'
@@ -515,6 +516,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {dirty && <p role="status">Review 有未保存修改；切换历史前会要求确认。</p>}
       <SelectedAnalysis imageId={historyImageId || record?.sourceImageId || ''} analysisKind="reverse" onChoice={setSelectedChoice}
         loadedId={record?.id} loadedImageId={record?.sourceImageId} complete={record?.status === 'complete'} disabled={locked} />
+      <WorkflowHistory imageId={historyImageId || record?.sourceImageId || ''} choice={selectedChoice} loadedId={record?.id} disabled={locked} onLoad={id => { void loadHistory(id) }} />
       <TraceLinks source="reverse" id={record?.id||undefined}/>
       {!!historyWarning.length && <details className="vision-history-diagnostics"><summary>History：{historyWarning.length} 条记录或读取诊断（未修复）</summary><ul>{historyWarning.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
 

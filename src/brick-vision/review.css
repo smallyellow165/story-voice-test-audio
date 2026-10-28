@@ -86,3 +86,8 @@
 .vision-history-diagnostics summary { cursor: pointer; color: #86521b; }
 .vision-review-help:popover-open { display: block; }
 :is(.brick-reverse, .inventory-workbench) .vision-history-line > label { margin: 0; }
+.workflow-history { margin-block: 10px; font-size: 12px; }
+.workflow-branch { border-left: 1px solid #c6d4ce; padding-left: 8px; margin-block: 6px; }
+.workflow-history summary { cursor: pointer; overflow-wrap: anywhere; }
+.workflow-history pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 11px; }
+:is(.brick-reverse, .inventory-workbench) .workflow-toggle { display: block; width: 100%; text-align: left; background: transparent; color: #235f6c; padding: 6px 0; }
