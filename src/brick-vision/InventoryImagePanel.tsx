@@ -70,6 +70,12 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
   const [autoSummary, setAutoSummary] = useState('')
   const [draftNotice, setDraftNotice] = useState('')
   const [reviewSaved, setReviewSaved] = useState(false)
+  useEffect(() => {
+    if (!result || reviewSaved) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [result, reviewSaved])
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   useEffect(() => () => { catalogEpoch.current++ }, [])
   function restoreResult(next: VisionResult) {
@@ -368,7 +374,16 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
       setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
       setPreview(image ? 'data:' + image.originalImage.mimeType + ';base64,' + image.originalImage.imageBase64 : '')
     }} />
-    <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
+
+    <details className="recognition-settings"><summary>识别设置</summary>
+    <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
+      if (lock.current || (chosen.id === model && chosen.provider === provider)) return
+      catalogEpoch.current++
+      setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
+    }} />
+      <div className="vision-history-line">图片压缩信息<InfoHint label="图片压缩信息">最长边 1024px，JPEG 80%，不放大小图；预览和诊断保留原图。</InfoHint></div>
+      {imageInfo && <details><summary>当前图片压缩详情</summary><pre>{JSON.stringify(imageInfo,null,2)}</pre></details>}
+    </details>
     <div className="inventory-history">
       <SourceImageHistoryFilter records={history} value={historyImageId} disabled={busy} onChange={setHistoryImageId}/>
       <div className="vision-history-line"><label htmlFor="vision-history-select">识别历史</label><InfoHint label="识别历史">选择后自动加载原图、识别结果和此浏览器已保存的 Review；不会改变 Selected。</InfoHint></div>
@@ -384,11 +399,6 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
       {!!historyWarnings.length && <details className="vision-history-diagnostics"><summary>History：{historyWarnings.length} 条记录诊断（未修复）</summary><ul>{historyWarnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
 
     </div>
-    <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
-      if (lock.current || (chosen.id === model && chosen.provider === provider)) return
-      catalogEpoch.current++
-      setModel(chosen.id); setProvider(chosen.provider); requestId.current = newSessionId(); setResult(null); setRows([]); setApplied(false); setValidation(null); setError('')
-    }} />
     <CopySceneLink sync={active && pickerReady && modelsReady && historyReady && sceneRestored} disabled={!historyReady || !sceneRestored || busy || !pickerReady || !modelsReady} dirty={!!result && !reviewSaved} scene={{ strategy: 'loose',
       imageSource: imageSelection.source, image: imageSelection.name, provider, model, analysisId: result?.id }} />
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}

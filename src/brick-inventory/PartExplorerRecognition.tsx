@@ -25,6 +25,7 @@ export function PartExplorerRecognition({ designSessionId, workspaceHost, manual
   const [boot, setBoot] = useState<{ ready: boolean; scene: ExplorerScene; strategy: Strategy; looseHistory?: VisionHistoryItem[]; reverseHistory?: History }>({ ready: !scene.analysisId, scene, strategy: scene.strategy || 'loose' })
   const [strategy, setStrategy] = useState<Strategy>(scene.strategy || 'loose')
   const [startupWarning, setStartupWarning] = useState('')
+  const [historyDiagnostics, setHistoryDiagnostics] = useState<string[]>([])
   const [urlModelWarning, setUrlModelWarning] = useState('')
   const modelBootApplied = useRef(false)
   const [modelsReady, setModelsReady] = useState(false)
@@ -47,7 +48,8 @@ export function PartExplorerRecognition({ designSessionId, workspaceHost, manual
       const resolved = resolveSceneHistory(scene, looseHistory, reverseHistory.items)
       setStrategy(resolved.strategy)
       if (resolved.strategy !== 'loose') { setAssembledMode(resolved.strategy); setAssembledOpened(true) }
-      setStartupWarning(resolved.warning + (loose.status === 'fulfilled' ? loose.value.warnings.join('；') : '') + (loose.status === 'rejected' || reverse.status === 'rejected' ? ' 部分历史列表不可用；可稍后手动刷新。' : ''))
+      setHistoryDiagnostics(loose.status === 'fulfilled' ? loose.value.warnings : [])
+      setStartupWarning(resolved.warning + (loose.status === 'rejected' || reverse.status === 'rejected' ? ' 部分历史列表不可用；可稍后手动刷新。' : ''))
       setBoot({ ready: true, scene: { ...scene, analysisId: resolved.analysisId }, strategy: resolved.strategy, looseHistory, reverseHistory })
     })
     return () => controller.abort()
@@ -71,6 +73,7 @@ export function PartExplorerRecognition({ designSessionId, workspaceHost, manual
   if (!boot.ready) return <p role="status">正在定位 URL 指定的识别历史…</p>
   return <>
     {[...scene.warnings, startupWarning, urlModelWarning].filter(Boolean).map((warning, index) => <p role="status" key={index}>{warning}</p>)}
+    {!!historyDiagnostics.length && <details className="vision-history-diagnostics"><summary>历史诊断 · {historyDiagnostics.length} 条记录需要检查</summary><ul>{historyDiagnostics.map((warning,index)=><li key={index}>{warning}</li>)}</ul></details>}
     <label>识别策略<select value={strategy} disabled={busy || looseBusy || dirty} onChange={event => {
       const next = event.target.value as Strategy
       if (next !== 'loose') { setAssembledOpened(true); setAssembledMode(next) }

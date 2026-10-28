@@ -455,9 +455,6 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   </div>
   return <section className="brick-reverse" aria-label="Assembled Recognition">
     <h2>{geometryOnly ? '成品几何识别' : '成品目录识别'}<InfoHint label="识别模式">{geometryOnly ? '先分析宽、深、高；仅在你手动检索时使用 Catalog。原始几何观察独立保存。' : '分析可见特征，再检索候选、人工确认；组装生成在 Design Lab 中继续。'} 单张照片无法确认的结构保持 Unknown。</InfoHint></h2>
-    {geometryOnly && <div><div className="vision-history-line"><label htmlFor="reverse-prompt-version">Prompt Version</label><InfoHint label="Prompt Version">用于下一次明确发起的识别；切换版本不会重新调用模型或解除重复识别保护。</InfoHint></div><select id="reverse-prompt-version" aria-label="Reverse Geometry Prompt Version" disabled={locked} value={promptVersion} onChange={e => setPromptVersion(Number(e.target.value))}>
-      <option value={3}>reverse_geometry_v1 · v3（当前默认）</option><option value={4}>reverse_geometry_v1 · v4（遮挡与连续结构，待验证）</option>
-    </select></div>}
     <fieldset disabled={locked || submitted}>
       <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onSelectionChange={setImageSelection} onReady={() => setPickerReady(true)} disabled={locked || submitted} onChange={setImage} onBusy={value => { gate.current = value; setBusy(value ? '准备图片' : ''); onBusy(value) }} />
       {!geometryOnly && <>
@@ -471,10 +468,10 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
           {sessions.map(s => <option key={s.id} value={s.id}>{s.name} · {s.updated_at} · {s.id}</option>)}</select></label>
       </>)}
       </>}
-      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
+
       <p>当前图片：{imageSelection.name || record?.image_reference?.name || image?.imageReference.name || '未选择'}</p>
       {record?.image_reference?.name && imageSelection.name && record.image_reference.name !== imageSelection.name && <small>历史识别与标注仍使用参考图片：{record.image_reference.name}。</small>}
-      <small title={image ? JSON.stringify(image.compression) : '自动按 EXIF 方向处理，最长边 1024px，JPEG 80%；压缩失败不发送原图。'}>ⓘ 图片压缩信息</small>
+
       <button type="button" disabled={!!recognitionReason} aria-describedby="reverse-recognition-status" onClick={() => void action('分析照片', async () => {
         const selected = source === 'today' ? sessions.find(s => s.id === sessionId) : undefined
         if (!geometryOnly && source === 'today' && !selected) throw new Error('请先选择已保存积木清单。')
@@ -486,6 +483,16 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     </fieldset>
     <p id="reverse-recognition-status" role="status">{record && submitted ? `已加载 · ${record.status} · ${record.id.slice(0, 8)}` : recognitionReason || '可以识别（调用模型）'}</p>
     <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button><InfoHint label="新建分析">允许对当前图片再次调用模型。切换 Prompt 不会解除重复识别保护。</InfoHint>
+    <details className="recognition-settings">
+      <summary>识别设置</summary>
+    {geometryOnly && <div><div className="vision-history-line"><label htmlFor="reverse-prompt-version">Prompt Version</label><InfoHint label="Prompt Version">用于下一次明确发起的识别；切换版本不会重新调用模型或解除重复识别保护。</InfoHint></div><select id="reverse-prompt-version" aria-label="Reverse Geometry Prompt Version" disabled={locked} value={promptVersion} onChange={e => setPromptVersion(Number(e.target.value))}>
+      <option value={3}>reverse_geometry_v1 · v3（当前默认）</option><option value={4}>reverse_geometry_v1 · v4（遮挡与连续结构，待验证）</option>
+    </select></div>}
+      <fieldset disabled={locked || submitted}>
+      <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
+      </fieldset>
+      <div className="vision-history-line">图片压缩信息<InfoHint label="图片压缩信息">按 EXIF 方向处理，最长边 1024px，JPEG 80%；压缩失败不发送原图。</InfoHint></div>
+      {image?.compression && <details><summary>当前图片压缩详情</summary><pre>{JSON.stringify(image.compression,null,2)}</pre></details>}
     {geometryOnly && record?.status === 'complete' && <fieldset disabled={locked}>
       <legend>Guided Re-analysis · 定向再识别</legend>
       <p>已选 {guidedIds.size} 项：{[...guidedIds].join('、') || '请在审核表的“再识别”列选择'}。<InfoHint label="再识别范围">在审核表勾选再识别项；BBox 只控制显示，不决定再识别范围。</InfoHint></p>
@@ -500,6 +507,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         await refreshHistory()
       })}>根据 Hint 重新分析（调用模型）</button>
     </fieldset>}
+    </details>
 
 
     <div className="brick-reverse-recovery">

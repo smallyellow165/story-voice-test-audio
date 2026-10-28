@@ -1,3 +1,4 @@
+import {PartExplorerHeader} from './PartExplorerHeader'
 import {applyPrintHint} from '../brick-vision/print-hints.mjs'
 import { InventoryPartPhoto } from './InventoryPartPhoto'
 import { CatalogGeometryEvidence } from '../brick-vision/CatalogGeometryEvidence'
@@ -322,8 +323,7 @@ export function InventoryPage() {
   }
   return <ThreeColumnLayout className="brick-inventory-page inventory-workbench" defaultSizes={['25%', '45%', '30%']}
         left={<>
-          <header className="inventory-source-header"><div><p className="inventory-eyebrow">IMAGE → RECOGNITION → MATCH</p><h1>LEGO Part Explorer</h1><p>识别图片中的构件、分析几何、匹配 Catalog 并确认零件。当前 Catalog 范围为 DUPLO。</p></div>
-            <nav className="inventory-navigation"><a href="#session-inventory" onClick={() => setRightTab('confirmed')}>我的积木 · {total} 块 ↓</a><a href={`${import.meta.env.BASE_URL}brick-test.html`}>AI Design Lab ↗</a></nav></header>
+          <PartExplorerHeader />
           <h2 className="inventory-panel-title">图片与识别</h2>
     <PartExplorerRecognition manualRelationsHost={manualRelationsHost} designSessionId={isSavedList && !dirty ? id : undefined} geometryHost={geometryHost} onGeometryPresence={setHasGeometry} onStrategyChange={exitObservationCatalog} workspaceHost={visionWorkspaceHost} onSearchCatalog={openObservationCatalog} onReset={recognized => {
       if (!recognized.length) throw new Error('没有有效已确认零件，未重置清单。')
