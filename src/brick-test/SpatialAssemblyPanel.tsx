@@ -106,7 +106,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  const geometryStatus=spatialStatus('geometry',geometry,{running:phase==='geometry',error:stageError.geometry})
  const selected=models.find(m=>m.id===model)
  return <section className="brick-panel brick-spatial" aria-label="Spatial Assembly">
-  <h2>Spatial Assembly</h2><p className="brick-help">已审核照片 → 空间计划 → 确定性组装。两个阶段独立保存；加载历史和执行几何均不调用模型。</p>
+  <h2>Spatial Assembly <InfoHint label="Spatial Assembly">审核输入 → 空间计划 → 几何结果。各阶段独立保存；加载历史和执行几何不调用模型。</InfoHint></h2>
   <fieldset disabled={disabled||busy}>
    <label>已有 Analysis / Review<select aria-label="Spatial Analysis" value={analysisId} onChange={e=>{const a=e.target.value;setAnalysisId(a);setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setSource(null);setNotice('');urlPatch({analysisId:a,spatialPlanId:'',geometryId:'',candidateId:''});void action(async()=>{await refresh(a);await loadSource(a)})}}><option value="">选择已有分析</option>{analyses.map(a=><option key={a.id} value={a.id}>{a.appearance?.slice(0,45)||a.id} · {a.id}</option>)}</select></label>
    {analysisId&&<a href={import.meta.env.BASE_URL+'brick-inventory.html?analysisId='+encodeURIComponent(analysisId)}>返回 Part Explorer 审核型号与颜色 ↗</a>}

@@ -1,3 +1,4 @@
+import {InfoHint} from '../brick-vision/InfoHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
 import type {ReactNode} from 'react'
 import {TraceLinks} from '../llm-traces/TraceLinks'
@@ -139,10 +140,10 @@ export function BuildOrderPage(){
   {error&&<p className="brick-error" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   <fieldset disabled={busy} className="build-source">
    <div className="build-layout-row">
-   <label>Valid Layout<select aria-label="Build source selection" value={source?.id||''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openSource(id))}}><option value="">选择 Use This Layout 保存的记录</option>{selections.map(s=><option key={s.id} value={s.id}>{s.createdAt} · {s.count} 块 · {s.candidateId} · {s.id}</option>)}</select></label>
+   <label>Saved Layout<select aria-label="Build source selection" value={source?.id||''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openSource(id))}}><option value="">选择 Use This Layout 保存的记录</option>{selections.map(s=><option key={s.id} value={s.id} title={s.id}>{s.createdAt} · {s.count} 块 · {s.candidateId} · {s.id.slice(0,8)}</option>)}</select></label>
    <button disabled={!source} onClick={newPlan} title="从此布局新建 Build Plan">New</button></div>
-   <label>Build Plan<select aria-label="Build plan history" value={savedVersion?plan?.build_plan_id||'':''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openPlan(id))}}><option value="">选择已保存步骤</option>{saved.map(p=><option key={p.id} value={p.id}>{p.updatedAt} · {p.title} · {p.complete?p.status:'incomplete'}</option>)}</select></label>
-   <div className="build-generate-controls"><button disabled={!source||!planner?.configured||generating} onClick={()=>void generateBuildOrder()}>{generating?'Generating…':'Generate Build Order'}</button><small>{planner?planner.provider+' / '+planner.model+' · reasoning '+(planner.settings.reasoning?.effort||'default'):'正在读取模型配置…'}</small>{plannerError&&<small role="alert">{plannerError}</small>}{planner&&!planner.configured&&<small role="alert">OpenAI 配置不可用，不能生成；不会切换模型。</small>}</div>
+   <label>Build Plan<select aria-label="Build plan history" value={savedVersion?plan?.build_plan_id||'':''} onChange={e=>{const id=e.target.value;if(id&&chooseAllowed())void action(()=>openPlan(id))}}><option value="">选择已保存步骤</option>{saved.map(p=><option key={p.id} value={p.id} title={p.id}>{p.updatedAt} · {p.title} · {p.id.slice(0,8)} · {p.complete?p.status:'incomplete'}</option>)}</select></label>
+   <div className="build-generate-controls"><button disabled={!source||!planner?.configured||generating} onClick={()=>void generateBuildOrder()}>{generating?'Generating…':'Generate Build Order（调用模型）'}</button><small>{planner?planner.provider+' / '+planner.model+' · reasoning '+(planner.settings.reasoning?.effort||'default'):'正在读取模型配置…'}</small>{plannerError&&<small role="alert">{plannerError}</small>}{planner&&!planner.configured&&<small role="alert">OpenAI 配置不可用，不能生成；不会切换模型。</small>}</div>
   </fieldset>
 
    {plan&&<fieldset disabled={busy} className="build-nav-plan">
@@ -150,7 +151,7 @@ export function BuildOrderPage(){
    {!report.complete&&<p className="build-warning">当前有 {report.available.length} 个独立组件；继续合并到一个包含全部实例的 Root 后才可播放。草稿可以保存。</p>}
 
 
-    <div className="brick-actions build-list-heading"><h2>Step List</h2><button onClick={()=>{setAdding(true);setInspector('step');setMobilePanel('right')}}>Add Step</button></div>
+    <div className="brick-actions build-list-heading"><h2>Step List <InfoHint label="Step List">编辑只更新当前草稿；重排、删除仍需满足步骤依赖与连接检查，请用 Save 保存。</InfoHint></h2><button onClick={()=>{setAdding(true);setInspector('step');setMobilePanel('right')}}>Add Step</button></div>
     <ol className="build-step-list">{plan.steps.map((s,i)=><li key={s.stepId}><button className={i===stepIndex?'build-current':''} aria-current={i===stepIndex?'step':undefined} onClick={()=>setIndex(i)}><strong>Step {i+1}</strong><span>Moving: {labels(s.movingNodeId)}</span><span>Target: {labels(s.targetNodeId)}</span><small>{s.description||'尚未填写步骤说明'}</small></button></li>)}</ol>
     <details className="build-tree-panel"><summary>Assembly Tree</summary><div className="build-tree-scroll"><ul className="build-tree">{report.valid&&report.available.map(renderTree)}</ul>{treeNode&&report.members[treeNode]&&<p role="status">{treeNode} 包含：{report.members[treeNode].join('、')}</p>}</div></details>
    </fieldset>}
@@ -189,25 +190,25 @@ export function BuildOrderPage(){
    <section className="build-add"><h3>Add Step · 合并两个可用组件</h3><div className="build-fields"><label>Moving Component<select value={moving} onChange={e=>setMoving(e.target.value)}><option value="">选择待安装组件</option>{report.available.map(id=><option key={id} value={id} disabled={id===target}>{labels(id)}</option>)}</select></label><label>Target Component<select value={target} onChange={e=>setTarget(e.target.value)}><option value="">选择目标组件</option>{report.available.map(id=><option key={id} value={id} disabled={id===moving}>{labels(id)}</option>)}</select></label></div><label>说明（可选）<textarea value={description} maxLength={2000} onChange={e=>setDescription(e.target.value)}/></label><button disabled={!report.available.includes(moving)||!report.available.includes(target)||moving===target} onClick={addStep}>Add Step</button><p>合并必须有源 Geometry Result 的真实接合证据，但不证明安装路径或稳定性。结果组件会成为下一步可选对象。重排或删除若破坏依赖会被拒绝；需要时先删除依赖它的后续步骤。</p></section>
 
       </>:selectedStep?(()=>{const s=selectedStep,i=stepIndex;return <>
-       <h3>Step {i+1} / {plan.steps.length}</h3><small>Step ID: {s.stepId}</small>
+       <h3>Step {i+1} / {plan.steps.length}</h3><details><summary>步骤身份</summary><small>Step ID: {s.stepId}</small><br/><small>Result: {s.resultNodeId}</small></details>
     <div className="build-fields"><label>Moving Component<select value={s.movingNodeId} onChange={e=>editStep(i,{movingNodeId:e.target.value})}>{report.availableBefore[i]?.map(id=><option key={id} value={id} disabled={id===s.targetNodeId}>{labels(id)}</option>)}</select></label><label>Target Component<select value={s.targetNodeId} onChange={e=>editStep(i,{targetNodeId:e.target.value})}>{report.availableBefore[i]?.map(id=><option key={id} value={id} disabled={id===s.movingNodeId}>{labels(id)}</option>)}</select></label></div>
-    <small>Result: {s.resultNodeId}</small><label>步骤说明<textarea maxLength={2000} value={s.description} onChange={e=>editStep(i,{description:e.target.value})}/></label>
+    <label>步骤说明<textarea maxLength={2000} value={s.description} onChange={e=>editStep(i,{description:e.target.value})}/></label>
 
        <div className="brick-actions"><button disabled={i===0} onClick={()=>moveStep(i,-1)}>Move Up</button><button disabled={i===plan.steps.length-1} onClick={()=>moveStep(i,1)}>Move Down</button><button onClick={()=>changeSteps(plan.steps.filter((_,j)=>j!==i))}>Delete Step</button><button onClick={()=>setAdding(true)}>Add Step</button></div>
-       <p className="brick-help">重排与删除仍须满足现有步骤依赖及连接证据检查。编辑仅更新草稿，请在左栏保存。</p>
+
       </>})():<><p>暂无步骤。</p><button onClick={()=>setAdding(true)}>Add Step</button></>}
      </div>
      <div role="tabpanel" id="build-panel-motion" aria-labelledby="build-tab-motion" hidden={inspector!=='motion'}>
-      {selectedStep?(()=>{const s=selectedStep,i=stepIndex;return <><h3>Step {i+1} · Motion Hint</h3>
-    <section><p>临时起点偏移与旋转，不改变最终布局。</p><div className="build-fields">{(['x','y','z'] as const).map(axis=><label key={axis}>起点 Δ{axis.toUpperCase()} LDU<input type="number" min={-1000} max={1000} value={(s.motion||defaultMotion).offsetLdu[axis]} onChange={e=>{const m=s.motion||defaultMotion;editStep(i,{motion:{...m,offsetLdu:{...m.offsetLdu,[axis]:Number(e.target.value)}}})}}/></label>)}<label>起点相对 yaw °<input type="number" min={-360} max={360} value={(s.motion||defaultMotion).startYawDegrees} onChange={e=>editStep(i,{motion:{...(s.motion||defaultMotion),startYawDegrees:Number(e.target.value)}})}/></label></div></section>
+      {selectedStep?(()=>{const s=selectedStep,i=stepIndex;return <><h3>Step {i+1} · Motion Hint <InfoHint label="Motion Hint">仅调整动画起点偏移和旋转，不改变最终布局。</InfoHint></h3>
+    <section><div className="build-fields">{(['x','y','z'] as const).map(axis=><label key={axis}>起点 Δ{axis.toUpperCase()} LDU<input type="number" min={-1000} max={1000} value={(s.motion||defaultMotion).offsetLdu[axis]} onChange={e=>{const m=s.motion||defaultMotion;editStep(i,{motion:{...m,offsetLdu:{...m.offsetLdu,[axis]:Number(e.target.value)}}})}}/></label>)}<label>起点相对 yaw °<input type="number" min={-360} max={360} value={(s.motion||defaultMotion).startYawDegrees} onChange={e=>editStep(i,{motion:{...(s.motion||defaultMotion),startYawDegrees:Number(e.target.value)}})}/></label></div></section>
 
        <button disabled={!scene||phase==='loading'||phase==='error'||phase==='playing'} onClick={()=>{autoPlay.current=true;setReplay(n=>n+1)}}>Replay 当前步骤</button><p className="build-warning">仅安装示意，未验证真实插入路径、碰撞扫掠或中间稳定性。</p></>})():<p>请选择步骤。</p>}
      </div>
      <div role="tabpanel" id="build-panel-geometry" aria-labelledby="build-tab-geometry" hidden={inspector!=='geometry'}>
       <p className="brick-validation is-valid">Final Layout: Geometry Valid（保存的源结果）</p>
-      {selectedStep?<><h3>Step {stepIndex+1} · 装配依据</h3><p>Moving：{movingIds.join(' + ')}</p><p>Target：{targetIds.join(' + ')}</p><p>{report.valid&&matingEvidence.length?'已有连接依赖检查通过':'连接依赖检查未通过'} · 跨组件接合 {matingEvidence.length} 对</p>
+      {selectedStep?<><h3>Step {stepIndex+1} · 装配依据 <InfoHint label="装配依据">读取源 Geometry Result 的真实接合记录，不推测缺失的 Connector 索引。</InfoHint></h3><p>Moving：{movingIds.join(' + ')}</p><p>Target：{targetIds.join(' + ')}</p><p>{report.valid&&matingEvidence.length?'已有连接依赖检查通过':'连接依赖检查未通过'} · 跨组件接合 {matingEvidence.length} 对</p>
        {matingEvidence.map((c,i)=><details key={i}><summary>{c.lowerId} → {c.upperId} · {c.points.length} 个接合点</summary><pre>{JSON.stringify(c,null,2)}</pre></details>)}
-       <p className="brick-help">上方是源 Geometry Result 保存的真实接合记录；缺少的 Connector 索引不推测补全。</p></>:<p>请选择步骤查看接合依据。</p>}
+       </>:<p>请选择步骤查看接合依据。</p>}
       <p className="build-warning">安装路径：未验证。中间稳定性与承重：未验证。Reviewed 仅代表人工审核步骤顺序。</p>
       {source&&<details><summary>源布局保留的未认证约束</summary><pre>{JSON.stringify(source.unverifiedConstraints,null,2)}</pre></details>}
      </div>

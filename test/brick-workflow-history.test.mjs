@@ -1,6 +1,7 @@
+import {createPartsInputStore} from '../server/brick-parts-input.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, cp, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -18,7 +19,7 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'workflow-lineage-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   try {
-    for (const folder of ['brick-source-images','brick-reverse','brick-spatial-traces','brick-spatial-geometry','brick-spatial-selections','brick-build-plans','brick-build-traces','brick-spatial-requests','brick-refinements']) {
+    for (const folder of ['brick-parts-inputs','brick-source-images','brick-reverse','brick-spatial-traces','brick-spatial-geometry','brick-spatial-selections','brick-build-plans','brick-build-traces','brick-spatial-requests','brick-refinements']) {
       await cp(new URL('../generated/' + folder, import.meta.url), path.join(root, folder), { recursive: true })
     }
   } catch (e) { if (e.code === 'ENOENT') { t.skip('Local persisted Penguin evidence absent'); return null }; throw e }
@@ -27,7 +28,8 @@ async function fixture(t) {
   // non-network Catalog response. Confirmed search records remain canonical.
   const reverse = createBrickReverse(path.join(root, 'brick-reverse'), { sourceImages, getCatalog: async () => ({ colors: [] }) })
   const buildOrder = createBuildOrderStore(root)
-  const workflow = createWorkflowHistory(root, { sourceImages, reverse, buildOrder })
+  // Validate frozen Snapshot lineage without querying a live Catalog for current-match.
+  const workflow = createWorkflowHistory(root, { sourceImages, reverse, buildOrder, partsInputs:createPartsInputStore(root) })
   const file = (folder, id) => path.join(root, folder, id + '.json')
   const edit = async (folder, id, fn) => { const f = file(folder, id), r = JSON.parse(await readFile(f, 'utf8')); fn(r); await writeFile(f, JSON.stringify(r)) }
   return { root, sourceImages, reverse, workflow, file, edit, read: () => workflow.read(imageId) }
@@ -42,16 +44,24 @@ test('real Penguin branches: exact reverse lineage, independent selections, fail
   assert.deepEqual(stages, ['Build Plan','Layout Selection','Candidate','Geometry','Spatial','Mapping Review','Review input','Analysis'])
   assert.equal(nodes.get('Build Plan:' + buildId).status, 'draft · 11 步')
   assert.deepEqual(nodes.get('Build Plan:' + buildId).evidence.validation, { valid: true, complete: true, errors: [] })
-  assert.equal(r.nodes.filter(n => n.stage === 'Layout Selection').length, 2)
+  const savedSelections=await Promise.all((await readdir(path.join(f.root,'brick-spatial-selections'))).filter(n=>n.endsWith('.json')).map(n=>readFile(path.join(f.root,'brick-spatial-selections',n),'utf8').then(JSON.parse)))
+  assert.deepEqual(r.nodes.filter(n=>n.stage==='Layout Selection').map(n=>n.id).sort(),savedSelections.filter(s=>s.geometryId===geometryId).map(s=>s.id).sort())
+  assert.equal(nodes.get('Build Plan:'+buildId).parent,'Layout Selection:'+selectionId)
+  for(const s of r.nodes.filter(n=>n.stage==='Layout Selection'&&n.id!==selectionId))assert.ok(!r.nodes.some(n=>n.stage==='Build Plan'&&n.parent===s.key))
   assert.ok(r.nodes.filter(n => n.stage === 'Layout Selection').every(n => n.parent === 'Candidate:' + geometryId + '/candidate-1'))
   assert.equal(r.nodes.filter(n => n.stage === 'Analysis').length, 4)
-  assert.equal(r.nodes.filter(n => n.analysisId === analysisId && n.stage === 'Spatial').length, 2)
+  const savedPlans=await Promise.all((await readdir(path.join(f.root,'brick-spatial-traces'))).filter(n=>n.endsWith('.json')).map(n=>readFile(path.join(f.root,'brick-spatial-traces',n),'utf8').then(JSON.parse)))
+  assert.deepEqual(r.nodes.filter(n=>n.analysisId===analysisId&&n.stage==='Spatial').map(n=>n.id).sort(),savedPlans.filter(p=>p.task==='spatial-planning'&&p.requestInput?.provenance?.analysisId===analysisId).map(p=>p.id).sort())
+  assert.equal(nodes.get('Spatial:'+planId).evidence.partsInputMatch.status,'Unknown')
+  await f.sourceImages.verifyAnalysis(await f.reverse.read(analysisId))
   assert.equal(r.nodes.filter(n => n.analysisId === olderId && n.stage === 'Spatial').length, 3)
   assert.equal(r.nodes.filter(n => n.analysisId === olderId && n.stage === 'Build Plan').length, 0)
   assert.ok(r.nodes.some(n => n.stage === 'Geometry' && n.status.includes('no_solution')))
   assert.ok(r.nodes.some(n => n.stage === 'Request' && n.status.includes('failed')))
   const reviewUses = r.nodes.filter(n => n.stage === 'Review input' && n.analysisId === analysisId)
-  assert.equal(reviewUses.filter(n => n.evidence.matchesCurrentReview).length, 1)
+  const currentVersion=nodes.get('Current Review:'+analysisId).evidence.reviewVersion
+  for(const use of reviewUses)assert.equal(use.evidence.matchesCurrentReview,use.evidence.reviewVersion===currentVersion)
+  assert.equal(reviewUses.find(n=>n.evidence.spatialPlanId===planId).evidence.matchesCurrentReview,true)
   assert.ok(reviewUses.every(n => n.evidence.fullHistoricalReviewSnapshot === false))
   assert.equal(r.nodes.find(n => n.stage === 'Build Order Trace').evidence.savedPlanId, null)
   assert.deepEqual(await readFile(f.file('brick-build-plans', buildId)), before)
@@ -87,9 +97,10 @@ test('missing Review evidence and missing Geometry never attach records by times
 
 test('selection candidateHash mismatch quarantines only that selection and its Build Plan', async t => {
   const f = await fixture(t); if (!f) return
+  const originalKeys=(await f.read()).nodes.filter(n=>n.stage==='Layout Selection'&&n.id!==selectionId).map(n=>n.key).sort()
   await f.edit('brick-spatial-selections', selectionId, r => { r.candidateHash = '0'.repeat(64) })
   const r = await f.read()
-  assert.equal(r.nodes.filter(n => n.stage === 'Layout Selection').length, 1)
+  assert.deepEqual(r.nodes.filter(n=>n.stage==='Layout Selection').map(n=>n.key).sort(),originalKeys)
   assert.ok(r.unassociated.some(n => n.id === selectionId))
   assert.ok(!r.nodes.some(n => n.stage === 'Build Plan'))
 })
