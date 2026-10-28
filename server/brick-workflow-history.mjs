@@ -65,7 +65,7 @@ export function createWorkflowHistory(directory, { sourceImages, reverse, buildO
       records('brick-spatial-traces'), records('brick-spatial-geometry'), records('brick-spatial-selections'),
       records('brick-build-plans', 'build_plan_id'), records('brick-build-traces'), records('brick-spatial-requests'), records('brick-refinements'),
     ])
-    const currentInputs=new Map()
+    const currentInputs=new Map(), spatialChoices=new Map()
     const planMap = new Map(), geometryMap = new Map(), selectionMap = new Map()
     for (const p of plans) {
       const provenance = p.requestInput?.provenance, aid = provenance?.analysisId
@@ -102,7 +102,7 @@ export function createWorkflowHistory(directory, { sourceImages, reverse, buildO
           }, link('brick-test.html', { workflow: 'spatial', analysisId: aid, spatialPlanId: p.id }), p.id).key
         } else evidence.reviewEvidenceMissing = '未保存 Parts Explorer Review 版本；仅有明确 Analysis 来源引用'
         if (selectedSpatial) {
-          try { const selection = await selectedSpatial.read(p.id); evidence.spatialChoice = { selectionKey: selection.selectionKey, selectedSpatialPlanId: selection.choice.selectedSpatialPlanId, revision: selection.choice.revision, eligible: selection.eligible } }
+          try { const selection = await selectedSpatial.read(p.id); if(!spatialChoices.has(selection.selectionKey))spatialChoices.set(selection.selectionKey,selection.choice); const choice=spatialChoices.get(selection.selectionKey); evidence.spatialChoice = { selectionKey: selection.selectionKey, selectedSpatialPlanId: choice.selectedSpatialPlanId, revision: choice.revision, eligible: selection.eligible } }
           catch (e) { evidence.spatialChoiceUnavailable = e.message }
         }
         add('Spatial', p.id, parent, aid, p.status, evidence, link('brick-test.html', { workflow: 'spatial', analysisId: aid, spatialPlanId: p.id }))

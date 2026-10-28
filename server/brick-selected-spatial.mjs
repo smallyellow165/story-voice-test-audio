@@ -9,14 +9,14 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const fail = (message, statusCode = 422) => { throw Object.assign(new Error(message), { statusCode }) }
 const check = (ok, message) => { if (!ok) fail(message) }
 export function createSelectedSpatialStore(directory, { reverse, sourceImages, partsInputs=createPartsInputStore(directory) }) {
-  const folder = path.join(directory, 'brick-spatial-plan-choices')
+  const folder = path.join(directory, 'brick-spatial-plan-choices-v2')
   async function inspect(planId) {
     check(uuid.test(planId || ''), 'Spatial Plan ID 无效')
     const r = JSON.parse(await readFile(path.join(directory, 'brick-spatial-traces', planId + '.json'), 'utf8'))
     await partsInputs.verifyTrace(r)
     check(r.id === planId && r.task === 'spatial-planning', 'Spatial 记录身份不一致')
     const p = r.requestInput?.provenance
-    check(p && uuid.test(p.analysisId) && uuid.test(p.reviewId) && /^[a-f0-9]{64}$/.test(p.reviewVersion) && typeof p.savedReviewAt === 'string', '历史输入缺少明确 Analysis / Review / Mapping 身份，不能建立选择范围')
+    check(p && uuid.test(p.analysisId) && uuid.test(p.reviewId) && /^[a-f0-9]{64}$/.test(p.reviewVersion) && typeof p.savedReviewAt === 'string', '历史输入缺少明确 Analysis / Review / Mapping 身份，不能验证历史来源')
     const a = await reverse.read(p.analysisId)
     check(a.id === p.analysisId && a.kind === 'reverse-analysis' && a.status === 'complete', 'Analysis 来源不完整')
     await sourceImages.verifyAnalysis(a)
@@ -37,21 +37,22 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
     check(mappingRows.every(m => counts.get(m) === m.source.quantity), 'Mapping 数量与实际输入实例不一致')
     const image = validateImage(r.image)
     check(image.sha256 === r.imagePayloadSha256 && [validateImage(a.originalImage).sha256, validateImage(a.image).sha256].includes(image.sha256), '规划图片来源 hash 不一致')
-    // Exact immutable input scope; model/prompt/run/output IDs are NOT input identity.
-    // Mapping identity is retained, even when two mappings look similar.
-    const identity = { schemaVersion: 1, sourceImageId: a.sourceImageId, analysisId: a.id,
-      reviewVersion: p.reviewVersion, mappingReviewId: p.reviewId,
-      mappingSnapshotHash: hash(source.mappingReview), inputSnapshotHash: hash(r.requestInput), imagePayloadSha256: image.sha256 }
-    return { planId, selectionKey: 'sha256:' + hash(identity), identity, eligible: planView(r).usable, status: r.status }
+    // Human choice scope is independent of exact historical input identity.
+    // V1 records are audit-only: this store never reads or migrates them.
+    const identity = { schemaVersion: 2, sourceImageId: a.sourceImageId, analysisId: a.id }
+    const provenance = { reviewVersion: p.reviewVersion, mappingReviewId: p.reviewId,
+      mappingSnapshotHash: hash(source.mappingReview), inputSnapshotHash: hash(r.requestInput),
+      imagePayloadSha256: image.sha256, partsSnapshotId: r.partsSnapshotId ?? null }
+    return { planId, selectionKey: 'sha256:' + hash(identity), identity, provenance, eligible: planView(r).usable, status: r.status }
   }
   const file = key => path.join(folder, key.slice(7) + '.json')
   async function relation(scope) {
     let bytes
     try { bytes = await readFile(file(scope.selectionKey), 'utf8') }
-    catch (e) { if (e.code === 'ENOENT') return { schemaVersion: 1, selectionKey: scope.selectionKey, identity: scope.identity, selectedSpatialPlanId: null, revision: 0 }; throw e }
+    catch (e) { if (e.code === 'ENOENT') return { schemaVersion: 2, selectionKey: scope.selectionKey, identity: scope.identity, selectedSpatialPlanId: null, revision: 0 }; throw e }
     let saved
     try { saved = JSON.parse(bytes) } catch { fail('Selected Spatial 记录损坏') }
-    check(saved.schemaVersion === 1 && saved.selectionKey === scope.selectionKey && hash(saved.identity) === hash(scope.identity) && Number.isSafeInteger(saved.revision) && saved.revision > 0, 'Selected Spatial 选择关系无效')
+    check(saved.schemaVersion === 2 && saved.selectionKey === scope.selectionKey && hash(saved.identity) === hash(scope.identity) && Number.isSafeInteger(saved.revision) && saved.revision > 0, 'Selected Spatial 选择关系无效')
     const target = await inspect(saved.selectedSpatialPlanId)
     check(target.selectionKey === scope.selectionKey && target.eligible, '已选 Spatial 的来源或正式校验已失效；需人工检查')
     return saved
@@ -63,7 +64,7 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
   async function select(planId, body) {
     const scope = await inspect(planId)
     check(scope.eligible, '此 Spatial 未满足现有正式 Plan Validator / 输出状态条件')
-    check(body?.selectionKey === scope.selectionKey, '规划输入已变化或选择范围不一致')
+    check(body?.selectionKey === scope.selectionKey, 'Analysis 选择范围不一致')
     check(Number.isSafeInteger(body.expectedRevision) && body.expectedRevision >= 0, '选择版本无效')
     await mkdir(folder, { recursive: true })
     const target = file(scope.selectionKey), lock = target + '.lock', temp = target + '.' + randomUUID() + '.tmp'
@@ -74,7 +75,7 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
       if (current.revision !== body.expectedRevision) fail('选择已被其他页面更新；请重新读取后明确选择', 409)
       const checked = await inspect(planId)
       check(checked.selectionKey === scope.selectionKey && checked.eligible, '写入前来源或校验已变化')
-      const choice = { schemaVersion: 1, selectionKey: scope.selectionKey, identity: scope.identity, selectedSpatialPlanId: planId, revision: current.revision + 1 }
+      const choice = { schemaVersion: 2, selectionKey: scope.selectionKey, identity: scope.identity, selectedSpatialPlanId: planId, revision: current.revision + 1 }
       await writeFile(temp, JSON.stringify(choice), { flag: 'wx', mode: 0o600 }); await rename(temp, target)
       return { ...scope, choice }
     } finally {

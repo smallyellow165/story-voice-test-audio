@@ -27,13 +27,13 @@ test('same exact input runs share one choice; load is read-only; switch and rest
  await f.select(b);assert.equal((await f.make().read(a)).choice.selectedSpatialPlanId,b)
  assert.deepEqual(await readFile(path.join(f.root,'brick-spatial-traces',a+'.json')),before)
 })
-test('Review, Mapping and input snapshot versions remain independent',async t=>{
+test('Review, Mapping and input changes share one Analysis choice',async t=>{
  const f=await fixture(t),a=await f.run()
  const b=await f.run(r=>{r.requestInput.provenance.reviewVersion='a'.repeat(64);r.sources[0].reviewVersion='a'.repeat(64)})
  const c=await f.run(r=>{const id=randomUUID();r.requestInput.provenance.reviewId=id;r.sources[0].mappingReviewId=id;r.sources[0].mappingReview.id=id;for(const o of r.requestInput.observations)o.mapping.reviewId=id})
  const d=await f.run(r=>{r.requestInput.manualReviewGuidance+=' explicit new input'})
- const keys=await Promise.all([a,b,c,d].map(async id=>(await f.select(id)).selectionKey));assert.equal(new Set(keys).size,4)
- for(const id of [a,b,c,d])assert.equal((await f.make().read(id)).choice.selectedSpatialPlanId,id)
+ const keys=[];for(const id of [a,b,c,d])keys.push((await f.select(id)).selectionKey);assert.equal(new Set(keys).size,1)
+ for(const id of [a,b,c,d])assert.equal((await f.make().read(id)).choice.selectedSpatialPlanId,d)
 })
 test('failed, prepared, corrupt and inconsistent upstream runs cannot replace the prior choice',async t=>{
  const f=await fixture(t),good=await f.run();await f.select(good)
@@ -53,17 +53,20 @@ test('missing historical Review evidence is not replaced with current Review',as
  await assert.rejects(f.store.read(id),/缺少/)
 })
 test('corrupt choice remains explicit and is not overwritten',async t=>{
- const f=await fixture(t),id=await f.run(),selected=await f.select(id),file=path.join(f.root,'brick-spatial-plan-choices',selected.selectionKey.slice(7)+'.json')
+ const f=await fixture(t),id=await f.run(),selected=await f.select(id),file=path.join(f.root,'brick-spatial-plan-choices-v2',selected.selectionKey.slice(7)+'.json')
  await writeFile(file,'broken');await assert.rejects(f.store.read(id),/损坏/);await assert.rejects(f.store.select(id,{selectionKey:selected.selectionKey,expectedRevision:1}),/损坏/);assert.equal(await readFile(file,'utf8'),'broken')
 })
-test('real Penguin: five proven input scopes, four selectable plans, prepared run read-only',async t=>{
+test('real Penguin: two Analysis scopes, four selectable plans, prepared run read-only',async t=>{
  const f=await fixture(t),ids=['b02871ca-e1ed-43ef-a416-9ba6dff25b74','966c3208-b20f-4e73-89be-f8c390fefa65','b774d098-b19e-48e7-b827-49ccf204b864',planId,'b052f246-bce4-4a43-93aa-69de7572c0fe']
- const values=await Promise.all(ids.map(id=>f.store.read(id)));assert.equal(new Set(values.map(v=>v.selectionKey)).size,5);assert.equal(values.filter(v=>v.eligible).length,4)
+ const values=await Promise.all(ids.map(id=>f.store.read(id)));assert.equal(new Set(values.map(v=>v.selectionKey)).size,2);assert.equal(values.filter(v=>v.eligible).length,4)
 })
 test('selection annotates Workflow History but never changes any lineage edge or downstream record',async t=>{
  const f=await fixture(t),image=original.imagePayloadSha256
  const workflow=createWorkflowHistory(f.root,{sourceImages:f.sourceImages,reverse:f.reverse,buildOrder:createBuildOrderStore(f.root),selectedSpatial:f.store})
+ const auditFiles=[['brick-spatial-traces',planId],['brick-spatial-geometry','c34c5c9a-b513-4ce5-b87b-47cbd96154f5'],['brick-spatial-selections','77d99b0e-9c62-4ba6-b655-bcf1a8db5828'],['brick-build-plans','426f27c7-a9a9-4ee9-9965-39e1cd9e30f8']].map(([folder,id])=>path.join(f.root,folder,id+'.json'))
+ const originalBytes=await Promise.all(auditFiles.map(file=>readFile(file)))
  const before=await workflow.read('sha256:'+image);await f.select(planId);const after=await workflow.read('sha256:'+image)
+ assert.deepEqual(await Promise.all(auditFiles.map(file=>readFile(file))),originalBytes)
  assert.deepEqual(after.nodes.map(n=>[n.key,n.parent,n.analysisId]),before.nodes.map(n=>[n.key,n.parent,n.analysisId]))
  assert.equal(after.nodes.find(n=>n.stage==='Spatial'&&n.id===planId).evidence.spatialChoice.selectedSpatialPlanId,planId)
  assert.ok(after.nodes.some(n=>n.stage==='Build Plan'&&n.status==='draft · 11 步'))
@@ -88,4 +91,31 @@ test('selected marker appears only on the adopted Spatial node, alongside its re
  const html=renderToStaticMarkup(React.createElement(WorkflowHistoryBranch,{node:history.nodes.find(n=>n.stage==='Spatial'&&n.id===planId),history,disabled:false,onLoad:()=>{}}))
  assert.match(html,/plan_ready_for_review · Unknown · Selected/);assert.match(html,/draft · 11 步/)
  assert.equal((html.match(/ · Selected<\/summary>/g)||[]).length,1)
+})
+
+test('different real Analyses keep independent choices; a foreign Analysis key is rejected',async t=>{
+ const f=await fixture(t),other='966c3208-b20f-4e73-89be-f8c390fefa65'
+ const a=await f.select(planId),b=await f.select(other)
+ assert.notEqual(a.selectionKey,b.selectionKey)
+ await assert.rejects(f.store.select(other,{selectionKey:a.selectionKey,expectedRevision:a.choice.revision}),/Analysis 选择范围/)
+ assert.equal((await f.make().read(planId)).choice.selectedSpatialPlanId,planId)
+ assert.equal((await f.make().read(other)).choice.selectedSpatialPlanId,other)
+})
+test('V1 multiple choices remain audit-only and untouched, never adopted or merged into V2',async t=>{
+ const f=await fixture(t),a=await f.run(),b=await f.run(),folder=path.join(f.root,'brick-spatial-plan-choices')
+ await mkdir(folder,{recursive:true})
+ const bytes=[JSON.stringify({schemaVersion:1,selectedSpatialPlanId:a,revision:3}),JSON.stringify({schemaVersion:1,selectedSpatialPlanId:b,revision:7})]
+ const paths=bytes.map((_,i)=>path.join(folder,String(i).repeat(64)+'.json'))
+ for(let i=0;i<2;i++)await writeFile(paths[i],bytes[i])
+ assert.equal((await f.store.read(a)).choice.selectedSpatialPlanId,null)
+ const selected=await f.select(b);assert.equal(selected.choice.schemaVersion,2)
+ assert.equal((await f.make().read(a)).choice.selectedSpatialPlanId,b)
+ for(let i=0;i<2;i++)assert.equal(await readFile(paths[i],'utf8'),bytes[i])
+})
+test('parallel UI reads spanning a revision update show one adopted run for each Analysis',async()=>{
+ const {uiModuleUrl}=await import('./ui-module.mjs')
+ const {coherentSpatialChoices}=await import(await uiModuleUrl(new URL('../src/brick-test/SpatialPlanningHistory.tsx',import.meta.url)))
+ const base={identity:{},eligible:true},scopes={a:{...base,planId:'a',selectionKey:'same',choice:{selectedSpatialPlanId:'a',revision:1}},b:{...base,planId:'b',selectionKey:'same',choice:{selectedSpatialPlanId:'b',revision:2}},c:{...base,planId:'c',selectionKey:'other',choice:{selectedSpatialPlanId:'c',revision:1}}}
+ const result=coherentSpatialChoices(scopes)
+ assert.equal(result.a.choice.selectedSpatialPlanId,'b');assert.equal(result.b.choice.selectedSpatialPlanId,'b');assert.equal(result.c.choice.selectedSpatialPlanId,'c');assert.equal(scopes.a.choice.selectedSpatialPlanId,'a')
 })

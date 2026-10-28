@@ -99,4 +99,15 @@ test('actual Profile definition update produces a new Snapshot while old Profile
  const second=await changed.prepare(realSaved.analysis.id);assert.notEqual(first.partsSnapshotId,second.partsSnapshotId);assert.equal(await readFile(recordPath(dir,first.partsSnapshotId),'utf8'),before)
  const old=await store.read(first.partsSnapshotId),next=await changed.read(second.partsSnapshotId)
  assert.deepEqual(old.identity.instances.find(o=>o.part==='2302').geometry.top,next.identity.instances.find(o=>o.part==='2302').geometry.top)
+ // V2 compares runs across exact input versions while preserving each lineage.
+ const {createSelectedSpatialStore}=await import('../server/brick-selected-spatial.mjs')
+ const makeRun=async(ref,inputs)=>{const {prepared,sources}=await inputs.forPlanning(ref.partsSnapshotId,ref.preparationContextId,true);const r=await runSpatialPlanning(prepared,{model:'gpt-6.1-sol',directory:path.join(dir,'brick-spatial-traces'),sources,execute:false});Object.assign(r,{plan:structuredClone(trace.plan),rawOutput:JSON.stringify(trace.plan),status:trace.status,parseStatus:trace.parseStatus,validation:trace.validation,finishReason:trace.finishReason,wireStatus:trace.wireStatus});await writeFile(path.join(dir,'brick-spatial-traces',r.id+'.json'),JSON.stringify(r));return r}
+ const a=await makeRun(first,store),b=await makeRun(second,changed)
+ const choices=createSelectedSpatialStore(dir,{reverse:{read:async()=>state.saved.analysis},sourceImages:createSourceImageStore('generated/brick-source-images'),partsInputs:changed})
+ const scopeA=await choices.read(a.id),scopeB=await choices.read(b.id);assert.equal(scopeA.selectionKey,scopeB.selectionKey)
+ await choices.select(a.id,{selectionKey:scopeA.selectionKey,expectedRevision:0})
+ assert.equal((await changed.match(a)).status,'Outdated');assert.equal((await choices.read(a.id)).choice.selectedSpatialPlanId,a.id)
+ assert.equal((await changed.match(b)).status,'Current');await choices.select(b.id,{selectionKey:scopeB.selectionKey,expectedRevision:1});assert.equal((await choices.read(a.id)).choice.selectedSpatialPlanId,b.id)
+ assert.equal(await readFile(recordPath(dir,first.partsSnapshotId),'utf8'),before)
+
 })
