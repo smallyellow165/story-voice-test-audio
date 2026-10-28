@@ -76,7 +76,7 @@ test('UI keeps failed runs viewable, separates history loading from explicit Sel
  const {uiModuleUrl}=await import('./ui-module.mjs'), React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server')
  const {SpatialPlanningHistory}=await import(await uiModuleUrl(new URL('../src/brick-test/SpatialPlanningHistory.tsx',import.meta.url)))
  const html=renderToStaticMarkup(React.createElement(SpatialPlanningHistory,{runs:[{id:planId,createdAt:'2026-01-01',status:'provider_or_trace_failed'}],loadedId:planId,disabled:false,onLoad:()=>assert.fail('render never loads or selects')}))
- assert.match(html,/provider_or_trace_failed/);assert.match(html,/disabled="">Select/);assert.match(html,/popover="auto"/)
+ assert.match(html,/provider_or_trace_failed/);assert.doesNotMatch(html,/>Select<|>Selected<\/button>/);assert.match(html,/popover="auto"/)
  assert.doesNotMatch(html,/>刷新<|>加载识别结果</)
  const control=await readFile(new URL('../src/brick-test/SpatialPlanningHistory.tsx',import.meta.url),'utf8')
  assert.match(control,/onChange=\{e => \{ if \(e.target.value\) onLoad\(e.target.value\) \}\}/)

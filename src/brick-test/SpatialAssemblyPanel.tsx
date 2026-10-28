@@ -29,6 +29,7 @@ const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
 function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value||key==='sourceImageId')url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
 export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:Props){
+ const [layoutChoice,setLayoutChoice]=useState<any>(null),[choiceRevision,setChoiceRevision]=useState(0)
  const [topK,setTopK]=useState(5),[savedSelections,setSavedSelections]=useState<{id:string;candidateId:string}[]>([])
  const [debugRefinement,setDebugRefinement]=useState<any>(null)
  const inspector=useContext(InspectorContext)
@@ -54,6 +55,30 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  }
  useEffect(()=>{const focus=()=>{if(gate.current||disabled)return;void refresh(analysisId||plan?.analysisId||'').catch(e=>setError(String(e)));if(plan)void request('plans/'+plan.id).then(p=>setPlan(current=>current&&current.id===p.id?{...current,partsInputMatch:p.partsInputMatch}:current)).catch(e=>setError(String(e)))};window.addEventListener('focus',focus);return()=>window.removeEventListener('focus',focus)},[analysisId,plan?.id,disabled])
  async function loadSource(a:string){const epoch=contextEpoch.current;setSource(null);if(!a)return;try{const next=await request('source/'+a);if(epoch===contextEpoch.current)setSource(next)}catch(e){if(epoch===contextEpoch.current)setNotice('当前审核暂不可读取：'+String(e)+'。仍可加载历史计划的已确认快照。')}}
+ useEffect(()=>{let active=true;setLayoutChoice(null);if(geometry?.planId)void request('plan-choice/'+geometry.planId).then(value=>{if(active)setLayoutChoice(value)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[geometry?.id,choiceRevision])
+ async function adoptLayout(){
+  if(!geometry||!candidate||!layoutChoice?.eligible)return
+  await action(async()=>{
+   const key='brick-layout-adoption:'+geometry.id+':'+candidate
+   const cached=JSON.parse(sessionStorage.getItem(key)||'null')
+   const {completedRevision,...savedBody}=cached||{}
+   let body=cached&&(!completedRevision||completedRevision===layoutChoice.choice.revision)?savedBody:null
+   if(!body){body={requestId:crypto.randomUUID(),planId:geometry.planId,geometryId:geometry.id,candidateId:candidate,selectionKey:layoutChoice.selectionKey,expectedRevision:layoutChoice.choice.revision};sessionStorage.setItem(key,JSON.stringify(body))}
+   try{
+    const op=await request('select-layout',body)
+    if(op.state!=='complete')throw Error(op.error||'采用未完成')
+    sessionStorage.setItem(key,JSON.stringify({...body,completedRevision:op.choice.revision}));setChoiceRevision(n=>n+1)
+    setSavedSelections((await request('selections?geometryId='+geometry.id)).items)
+    const current=await request('plan-choice/'+op.planId);setLayoutChoice(current)
+    setNotice('Layout '+op.selectionId+' 已保存；'+(current.choice.selectedSpatialPlanId===op.planId?'来源 Spatial '+op.planId+' 已同步采用。':'本次采用曾完成，但当前 Selected 已被其他操作更改；请检查后决定是否再次采用。'))
+   }catch(e){
+    // A stale CAS rejects before any adoption writes. A new click may explicitly retry
+    // against the freshly read revision; all other failures retain the original request.
+    if(String(e).includes('选择已被其他页面更新')){sessionStorage.removeItem(key);setChoiceRevision(n=>n+1)}
+    throw Error(String(e)+'；采用请求 '+body.requestId+'。未确认整体完成；可再次点击 Use This Layout 重试。')
+   }
+  })
+ }
  async function showCandidate(g:Geometry,cid:string,focus=true){
   if(focus)inspector.select('geometry')
   setCandidate('');setDetail(null);onPreview(null)
@@ -160,7 +185,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
    {plan&&<div className="vision-history-line"><span>Parts Input · {plan.partsInputMatch?.status||'Unknown'}</span><InfoHint label="Parts Input 状态">Current：与当前审核及几何定义一致。Outdated：有效输入已变化。Unknown：历史未记录或无法确认。不会改变 Selected。</InfoHint><details><summary>Snapshot 证据</summary><pre>{JSON.stringify({partsSnapshotId:plan.partsSnapshotId,match:plan.partsInputMatch},null,2)}</pre></details></div>}
    <TraceLinks source="spatial" id={plan?.id}/>
-   <SpatialPlanningHistory runs={plans} loadedId={plan?.id} disabled={disabled || busy} onLoad={id => {
+   <SpatialPlanningHistory choiceRevision={choiceRevision} runs={plans} loadedId={plan?.id} disabled={disabled || busy} onLoad={id => {
      if (plan && id !== plan.id && !window.confirm('切换 Spatial 会替换当前预览，并可能丢弃未提交的人工编辑。确认已保存需要保留的修改后继续？')) return
      void action(() => loadPlan(id))
    }} />
@@ -196,7 +221,8 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
         <ul>{detail.intents.map((c,i)=><li key={'intent'+i}>{c.id} ↔ {c.other} 接合：{c.satisfied===null?'未验证':c.satisfied?'满足':'违反'}</li>)}{detail.relations.map((r,i)=><li key={'relation'+i}>{r.from} {r.kind} {r.to}：{r.satisfied===null?'未验证':r.satisfied?'满足':'违反'}</li>)}{detail.ranges.map(r=><li key={'range'+r.id}>{r.id} 相对位置区间：{r.satisfied?'满足':'违反'}</li>)}</ul>
       </details>
       <p>未验证视觉关系：{detail.relations.filter(r=>r.satisfied===null).length} · 不确定接合意图：{detail.intents.filter(i=>i.satisfied===null).length}；物理合法不代表照片相似度已验证。</p>
-      {detail.kind!=='diagnostic'&&<button onClick={()=>void action(async()=>{const op=await request('select-layout',{requestId:crypto.randomUUID(),planId:geometry.planId,geometryId:geometry.id,candidateId:candidate});if(op.state!=='complete')throw Error(op.error||'保存失败');setSavedSelections((await request('selections?geometryId='+geometry.id)).items)})}>Use This Layout · 保存为选定方案</button>}
+      {detail.kind!=='diagnostic'&&<button disabled={!layoutChoice?.eligible} onClick={()=>void adoptLayout()}>Use This Layout</button>}
+
       {savedSelections.some(s=>s.candidateId===candidate)&&<p>已独立保存选择：{savedSelections.find(s=>s.candidateId===candidate)?.id}；原始计划与 Geometry Result 未修改。 <a href={import.meta.env.BASE_URL+'brick-test.html?workflow=build&selectionId='+savedSelections.find(s=>s.candidateId===candidate)!.id} target="_blank" rel="noreferrer">Build Order · 创建 / 编辑步骤 ↗</a></p>}
     </div>}
     <InspectorContent step="geometry" disabled={disabled||busy}>    {detail&&candidate&&<p data-testid="spatial-connection-status">{detail.kind==='diagnostic'?'Diagnostic · 非合法完整方案':'Valid Layout'} · 物理 {detail.geometry.valid?'Valid':'Invalid'} · {detail.geometry.connections.length} 对连接 · {detail.geometry.connections.reduce((n,c)=>n+c.points.length,0)} 个接合点 · 碰撞：{detail.collision.status}</p>}

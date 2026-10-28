@@ -8,7 +8,7 @@ const hash = v => createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const fail = (message, statusCode = 422) => { throw Object.assign(new Error(message), { statusCode }) }
 const check = (ok, message) => { if (!ok) fail(message) }
-export function createSelectedSpatialStore(directory, { reverse, sourceImages, partsInputs=createPartsInputStore(directory) }) {
+export function createSelectedSpatialStore(directory, { reverse, sourceImages, partsInputs=createPartsInputStore(directory), adoptionCheckpoint=async()=>{} }) {
   const folder = path.join(directory, 'brick-spatial-plan-choices-v2')
   async function inspect(planId) {
     check(uuid.test(planId || ''), 'Spatial Plan ID 无效')
@@ -59,7 +59,9 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
   }
   async function read(planId) {
     const scope = await inspect(planId)
-    return { ...scope, choice: await relation(scope) }
+    let pendingAdoption=null
+    try{pendingAdoption=JSON.parse(await readFile(file(scope.selectionKey)+'.adoption.json','utf8'))}catch(e){if(e.code!=='ENOENT')throw e}
+    return { ...scope, choice: await relation(scope), pendingAdoption }
   }
   async function select(planId, body) {
     const scope = await inspect(planId)
@@ -71,6 +73,7 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
     try { await writeFile(lock, '', { flag: 'wx', mode: 0o600 }) }
     catch (e) { if (e.code === 'EEXIST') fail('选择正在更新；请重新读取后明确选择。持续冲突需检查锁文件', 409); throw e }
     try {
+      try { await readFile(target+'.adoption.json'); fail('有未完成 Layout 采用操作；请使用原请求 ID 恢复',409) } catch(e) { if(e.code!=='ENOENT')throw e }
       const current = await relation(scope)
       if (current.revision !== body.expectedRevision) fail('选择已被其他页面更新；请重新读取后明确选择', 409)
       const checked = await inspect(planId)
@@ -82,5 +85,59 @@ export function createSelectedSpatialStore(directory, { reverse, sourceImages, p
       try { await unlink(temp).catch(e => { if (e.code !== 'ENOENT') throw e }) } finally { await unlink(lock) }
     }
   }
-  return { read, select, inspect }
+  // One per-Analysis lock covers the existing CAS choice and Layout publication.
+  // The journal contains identities/hashes only; assembly remains in the canonical Layout.
+  async function adopt(planId, body, layout) {
+    const scope=await inspect(planId)
+    check(scope.eligible, '此 Spatial 未满足现有正式 Plan Validator / 输出状态条件')
+    check(body.selectionKey===scope.selectionKey, 'Analysis 选择范围不一致')
+    check(uuid.test(body.requestId||'') && Number.isSafeInteger(body.expectedRevision) && body.expectedRevision>=0, '采用请求 ID 或版本无效')
+    check(layout.planId===planId && layout.analysisId===scope.identity.analysisId, 'Layout 来源不一致')
+    const journals=path.join(directory,'brick-layout-adoptions'), target=file(scope.selectionKey), lock=target+'.lock', pending=target+'.adoption.json'
+    const journalFile=path.join(journals,body.requestId+'.json'), layoutFile=path.join(directory,'brick-spatial-selections',body.requestId+'.json')
+    const fingerprint=hash({body,layout})
+    await mkdir(folder,{recursive:true});await mkdir(journals,{recursive:true})
+    // Crash recovery is explicit: verify the recorded PID has exited, remove only
+    // its lock files, then resubmit journal.request. Never delete the pending journal.
+    const requestLock=journalFile+'.lock'
+    try{await writeFile(requestLock,JSON.stringify({pid:process.pid,requestId:body.requestId}),{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('同一采用请求正在执行；请重试原请求',409);throw e}
+    try{await writeFile(lock,JSON.stringify({pid:process.pid,requestId:body.requestId}),{flag:'wx',mode:0o600})}catch(e){await unlink(requestLock);if(e.code==='EEXIST')fail('选择正在更新；持续冲突需检查锁文件后以原请求恢复',409);throw e}
+    async function optional(f){try{return JSON.parse(await readFile(f,'utf8'))}catch(e){if(e.code==='ENOENT')return null;throw e}}
+    async function atomic(f,value){const tmp=f+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify(value),{flag:'wx',mode:0o600});await rename(tmp,f)}finally{await unlink(tmp).catch(e=>{if(e.code!=='ENOENT')throw e})}}
+    try{
+      let journal=await optional(journalFile)
+      if(journal&&journal.fingerprint!==fingerprint)fail('请求 ID 已用于不同输入',409)
+      if(journal?.state==='complete'){
+        const saved=await optional(layoutFile)
+        check(saved&&hash(saved)===hash({id:body.requestId,createdAt:journal.createdAt,...layout}),'已完成采用的 Layout 缺失或损坏；需人工检查')
+        const active=await optional(pending);if(active?.requestId===body.requestId)await unlink(pending);return journal.result
+      }
+      const active=await optional(pending)
+      if(active&&active.requestId!==body.requestId)fail('有未完成 Layout 采用操作；请使用原请求 ID 恢复',409)
+      const checked=await inspect(planId)
+      check(checked.eligible&&hash(checked.identity)===hash(scope.identity)&&hash(checked.provenance)===hash(scope.provenance),'写入前来源或校验已变化')
+      const current=await relation(scope)
+      if(!journal){
+        if(current.revision!==body.expectedRevision)fail('选择已被其他页面更新；请重新读取后明确采用',409)
+        journal={schemaVersion:1,requestId:body.requestId,request:body,fingerprint,state:'pending',createdAt:new Date().toISOString(),choice:{schemaVersion:2,selectionKey:scope.selectionKey,identity:scope.identity,selectedSpatialPlanId:planId,revision:current.revision+1}}
+        await atomic(pending,{requestId:body.requestId,request:body})
+        await atomic(journalFile,journal)
+      }
+      if(current.revision!==body.expectedRevision&&hash(current)!==hash(journal.choice))fail('恢复时选择关系已变化；需人工检查',409)
+      await atomic(pending,{requestId:body.requestId,request:body})
+      const selection={id:body.requestId,createdAt:journal.createdAt,...layout}
+      await mkdir(path.dirname(layoutFile),{recursive:true})
+      const existing=await optional(layoutFile)
+      if(existing)check(hash(existing)===hash(selection),'已保存 Layout 与采用请求不一致')
+      else await atomic(layoutFile,selection)
+      await adoptionCheckpoint('layout-saved')
+      await atomic(target,journal.choice)
+      await adoptionCheckpoint('choice-saved')
+      const result={id:body.requestId,state:'complete',selectionId:selection.id,geometryId:layout.geometryId,candidateId:layout.candidateId,planId,choice:journal.choice}
+      await atomic(journalFile,{...journal,state:'complete',result})
+      await unlink(pending)
+      return result
+    } finally {try{await unlink(lock)}finally{await unlink(requestLock)}}
+  }
+  return { read, select, inspect, adopt }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { InfoHint } from '../brick-vision/InfoHint'
 type Run = { partsSnapshotId?:string; partsInputMatch?:{status:string;reason?:string}; id: string; createdAt: string; status: string }
-type Scope = { planId: string; selectionKey: string; identity: Record<string, unknown>; provenance?: Record<string, unknown>; eligible: boolean; choice: { selectedSpatialPlanId: string | null; revision: number } }
+type Scope = { pendingAdoption?: {requestId:string} | null; planId: string; selectionKey: string; identity: Record<string, unknown>; provenance?: Record<string, unknown>; eligible: boolean; choice: { selectedSpatialPlanId: string | null; revision: number } }
 // Concurrent per-run reads can span a choice update. Render one persisted
 // revision per Analysis scope, never multiple Selected markers for that scope.
 export function coherentSpatialChoices(scopes: Record<string, Scope>) {
@@ -12,14 +12,14 @@ export function coherentSpatialChoices(scopes: Record<string, Scope>) {
   }
   return Object.fromEntries(Object.entries(scopes).map(([id, scope]) => [id, {...scope, choice:choices.get(scope.selectionKey)!}]))
 }
-export function SpatialPlanningHistory({ runs, loadedId, disabled, onLoad }: { runs: Run[]; loadedId?: string; disabled: boolean; onLoad(id: string): void }) {
+export function SpatialPlanningHistory({ runs, loadedId, disabled, onLoad, choiceRevision=0 }: { choiceRevision?: number; runs: Run[]; loadedId?: string; disabled: boolean; onLoad(id: string): void }) {
   const [scopes, setScopes] = useState<Record<string, Scope>>({}), [errors, setErrors] = useState<Record<string, string>>({})
-  const [saving, setSaving] = useState(false), [error, setError] = useState(''), [revision, setRevision] = useState(0)
+  const [revision, setRevision] = useState(0)
   const ids = [...new Set([...runs.map(r => r.id), ...(loadedId ? [loadedId] : [])])].sort().join(',')
   useEffect(() => { const refresh = () => setRevision(n => n + 1); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh) }, [])
   useEffect(() => {
     const controller = new AbortController()
-    setScopes({}); setErrors({}); setError('')
+    setScopes({}); setErrors({})
     void Promise.all(ids.split(',').filter(Boolean).map(async id => {
       try {
         const response = await fetch('/api/brick-spatial/plan-choice/' + id, { signal: controller.signal }), data = await response.json()
@@ -33,36 +33,27 @@ export function SpatialPlanningHistory({ runs, loadedId, disabled, onLoad }: { r
       setErrors(Object.fromEntries(results.filter(r => r.error).map(r => [r.id, r.error!])))
     })
     return () => controller.abort()
-  }, [ids, revision])
+  }, [ids, revision, choiceRevision])
   const scope = loadedId ? scopes[loadedId] : undefined
   const selected = scope?.choice.selectedSpatialPlanId
-  async function select() {
-    if (!scope || saving) return
-    setSaving(true); setError('')
-    try {
-      const response = await fetch('/api/brick-spatial/plan-choice/' + scope.planId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selectionKey: scope.selectionKey, expectedRevision: scope.choice.revision }) })
-      const data = await response.json()
-      if (!response.ok) throw Error(data.error)
-      setScopes(current => Object.fromEntries(Object.entries(current).map(([id, old]) => [id, old.selectionKey === data.selectionKey ? { ...old, choice: data.choice } : old])))
-    } catch (e) { setError(String(e)) } finally { setSaving(false) }
-  }
   return <div className="spatial-planning-history">
-    <div className="vision-history-line"><label htmlFor="spatial-run-history">Spatial Planning History</label><InfoHint label="Spatial Planning History">选择后自动加载查看。Select 只采用当前结果；同一 Analysis 最多采用一个 Spatial Plan，可以比较不同 Parts Snapshot 的结果。</InfoHint></div>
-    <select id="spatial-run-history" aria-label="Spatial Plan history" value={loadedId || ''} disabled={disabled || saving} onChange={e => { if (e.target.value) onLoad(e.target.value) }}>
+    <div className="vision-history-line"><label htmlFor="spatial-run-history">Spatial Planning History</label><InfoHint label="Spatial Planning History">选择后自动加载查看。在 Geometry 中查看 Candidate，再点击 Use This Layout 采用；同一 Analysis 最多采用一个 Spatial Plan，可以比较不同 Parts Snapshot 的结果。</InfoHint></div>
+    <select id="spatial-run-history" aria-label="Spatial Plan history" value={loadedId || ''} disabled={disabled} onChange={e => { if (e.target.value) onLoad(e.target.value) }}>
       <option value="">选择历史计划（不调用模型）</option>
       {loadedId && !runs.some(r => r.id === loadedId) && <option value={loadedId}>当前查看 · {loadedId.slice(0, 8)}</option>}
       {runs.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.id.slice(0, 8)} · {r.status} · {r.partsInputMatch?.status||'Unknown'}{scopes[r.id]?.choice.selectedSpatialPlanId === r.id ? ' · Selected' : ''}{errors[r.id] ? ' · 输入身份无法确认' : ''}</option>)}
     </select>
     {loadedId && <>
       <div className="vision-history-line"><span title={loadedId}>当前查看：{loadedId.slice(0, 8)}</span><span title={selected || ''}>此 Analysis 的 Selected：{scope ? selected?.slice(0, 8) || '尚未选择' : '尚未确认'}</span>
-        <button type="button" disabled={disabled || saving || !scope?.eligible || selected === loadedId} onClick={() => void select()}>{selected === loadedId ? 'Selected' : saving ? '保存中…' : 'Select'}</button>
-        <InfoHint label="Selected Spatial">人工采用决定，不代表 Geometry 或 Build Plan 被选中，也不改变历史来源。并发冲突需重新读取后再次明确选择。</InfoHint>
+
+        <InfoHint label="Selected Spatial">Use This Layout 保存布局时同步采用其来源 Spatial。Current / Outdated / Unknown 表示输入状态，与采用决定独立。</InfoHint>
       </div>
+      {scope?.pendingAdoption && <p role="alert">Layout 采用未完成：{scope.pendingAdoption.requestId}。请回到原 Candidate，以原请求重试；不要另行改选。</p>}
       {selected && <p role="status">Selected · {runs.find(r=>r.id===selected)?.partsInputMatch?.status||'Unknown'}</p>}
       {scope && <details><summary>Analysis 选择范围 · {Object.values(scopes).filter(s => s.selectionKey === scope.selectionKey).length} 次运行</summary><pre>{JSON.stringify({ selectionKey: scope.selectionKey, ...scope.identity, loadedPlanProvenance:scope.provenance }, null, 2)}</pre></details>}
       {scope && !scope.eligible && <p role="status">此记录未满足正式 Spatial 校验条件，只能查看。</p>}
       {errors[loadedId] && <p role="alert">{errors[loadedId]}</p>}
     </>}
-    {(error || Object.keys(errors).length > 0) && <div role="alert">{error}<details><summary>选择状态诊断 · {Object.keys(errors).length} 条</summary><pre>{JSON.stringify(errors, null, 2)}</pre></details><button type="button" disabled={saving || disabled} onClick={() => setRevision(n => n + 1)}>重新读取选择状态</button></div>}
+    {(Object.keys(errors).length > 0) && <div role="alert"><details><summary>选择状态诊断 · {Object.keys(errors).length} 条</summary><pre>{JSON.stringify(errors, null, 2)}</pre></details><button type="button" disabled={disabled} onClick={() => setRevision(n => n + 1)}>重新读取选择状态</button></div>}
   </div>
 }

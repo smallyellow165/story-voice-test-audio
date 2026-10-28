@@ -32,7 +32,7 @@ export function planView(r){
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,revisionId:r.revisionId,completeSearch:r.completeSearch,
  diagnosticAvailable:!!r.diagnosticAssembly,search:r.search,validLayoutCount:r.validLayoutCount,diagnosticCandidates:(r.state==='complete'?r.diagnosticCandidates||[]:[]).map(c=>({id:c.id,kind:c.kind,rank:c.rank,ranking:c.ranking,differences:c.differences,bricks:c.assembly.bricks})),diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
  candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,kind:"valid",rank:c.rank,ranking:c.ranking,differences:c.differences,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
-export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,partsInputs=createPartsInputStore(directory,{reverse,loadRules})}={}){
+export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,partsInputs=createPartsInputStore(directory,{reverse,loadRules}),selectedSpatial}={}){
  const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests'),selections=path.join(directory,'brick-spatial-selections')
  const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);await partsInputs.verifyTrace(r);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
@@ -50,17 +50,22 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
    return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
   }
   if(method==='POST'&&route==='select-layout'){
-   return operation(body,'select-layout',async()=>{
+   if(!selectedSpatial)fail('Selected Spatial 服务未配置',503)
+   id(body.requestId)
+   {
     const r=await getGeometry(body.geometryId),p=await getPlan(r.planId)
     if(r.state!=='complete'||!['candidates_found','candidates_with_unverified_constraints'].includes(r.status))fail('只能选择 Valid Layout；Diagnostic 不可作为正式方案',422)
     const c=r.candidates.find(c=>c.id===body.candidateId)
     if(!c||c.kind==='diagnostic'||!c.geometry.valid)fail('只能选择已验证的 Valid Layout',422)
     if(body.planId!==r.planId||hash(r.sourcePlan)!==r.sourcePlanHash)fail('计划关联或哈希不一致',409)
+    if(r.revisionId){
+     const rev=await refinement.revision(r.revisionId),base=await getGeometry(rev.geometryId)
+     if(rev.planId!==p.id||rev.sourcePlanHash!==hash(p.plan)||rev.sourceInputHash!==hash(p.requestInput)||rev.sourceGeometryHash!==hash(base)||hash(rev.refinedPlan)!==r.sourcePlanHash)fail('修订几何的正式来源不一致',409)
+    }else if(hash(p.plan)!==r.sourcePlanHash||!r.sourceInput||hash(r.sourceInput)!==hash(p.requestInput))fail('Geometry 与真实 Spatial 输入快照不一致或证据缺失',409)
     try{revalidateChoice(r.sourcePlan,r.input,c,await loadRules())}catch(e){fail('选择复核失败：'+e.message,422)}
-    const selection={id:randomUUID(),createdAt:new Date().toISOString(),analysisId:p.requestInput.provenance.analysisId,planId:p.id,geometryId:r.id,candidateId:c.id,sourcePlanHash:r.sourcePlanHash,candidateHash:hash(c),assembly:c.assembly,unverifiedConstraints:c.unverifiedConstraints,kind:'selected-valid-layout'}
-    await write(path.join(selections,selection.id+'.json'),selection,true)
-    return {selectionId:selection.id,geometryId:r.id,candidateId:c.id}
-   })
+    const selection={analysisId:p.requestInput.provenance.analysisId,planId:p.id,geometryId:r.id,candidateId:c.id,sourcePlanHash:r.sourcePlanHash,candidateHash:hash(c),assembly:c.assembly,unverifiedConstraints:c.unverifiedConstraints,kind:'selected-valid-layout'}
+    return selectedSpatial.adopt(p.id,body,selection)
+   }
   }
   if(method==='GET'&&route==='refinements')return refinement.list(query.get('geometryId'))
   if(method==='GET'&&route.startsWith('refinements/')){

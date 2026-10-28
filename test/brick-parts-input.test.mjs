@@ -71,20 +71,22 @@ test('missing ordinary Profile stays planning eligible, never geometry ready or 
 test('isolated Penguin replay: new Snapshot → Spatial → Geometry → Layout → 11-step Build Plan; Selected and History stay independent',async t=>{
  const {createBuildOrderStore}=await import('../server/brick-build-order.mjs'),{createSelectedSpatialStore}=await import('../server/brick-selected-spatial.mjs'),{createWorkflowHistory}=await import('../server/brick-workflow-history.mjs'),{mkdir,copyFile}=await import('node:fs/promises')
  const {dir,store,state}=await fixture(t),p=await store.prepare(realSaved.analysis.id)
+ const sourceImages=createSourceImageStore('generated/brick-source-images'),reverse={read:async()=>realSaved.analysis,restore:async()=>state.saved,history:async()=>({items:[{id:realSaved.analysis.id}],warnings:[]})}
+ const choices=createSelectedSpatialStore(dir,{reverse,sourceImages,partsInputs:store})
  // Replay a known saved model result in isolated storage; no model transport.
- const workflow=createSpatialWorkflow(dir,{partsInputs:store,runPlanning:async(prepared,options)=>{
+ const workflow=createSpatialWorkflow(dir,{partsInputs:store,selectedSpatial:choices,runPlanning:async(prepared,options)=>{
   const r=await runSpatialPlanning(prepared,{...options,execute:false});Object.assign(r,{plan:structuredClone(trace.plan),rawOutput:JSON.stringify(trace.plan),status:trace.status,parseStatus:trace.parseStatus,validation:trace.validation,finishReason:trace.finishReason,wireStatus:trace.wireStatus});await writeFile(path.join(dir,'brick-spatial-traces',r.id+'.json'),JSON.stringify(r));return r
  }})
  const op=await workflow.dispatch('POST','plan',{requestId:randomUUID(),analysisId:realSaved.analysis.id,...p,model:'gpt-6.1-sol',includeEvidence:true});assert.equal(op.state,'complete',op.error)
  const execute=await workflow.dispatch('POST','execute',{requestId:randomUUID(),planId:op.planId});assert.equal(execute.state,'complete',execute.error)
  const geometry=await workflow.dispatch('GET','geometry/'+execute.geometryId);assert.ok(geometry.candidates.length>0)
- const selected=await workflow.dispatch('POST','select-layout',{requestId:randomUUID(),planId:op.planId,geometryId:execute.geometryId,candidateId:geometry.candidates[0].id});assert.equal(selected.state,'complete',selected.error)
+ const scope=await choices.read(op.planId)
+ const selected=await workflow.dispatch('POST','select-layout',{selectionKey:scope.selectionKey,expectedRevision:scope.choice.revision,requestId:randomUUID(),planId:op.planId,geometryId:execute.geometryId,candidateId:geometry.candidates[0].id});assert.equal(selected.state,'complete',selected.error)
  const builds=createBuildOrderStore(dir),src=await builds.dispatch('GET','sources/'+selected.selectionId)
  const original=JSON.parse(await readFile(new URL('../generated/brick-build-plans/426f27c7-a9a9-4ee9-9965-39e1cd9e30f8.json',import.meta.url)))
  const plan={...original,build_plan_id:randomUUID(),source_selection_id:src.id,source_geometry_result_id:src.geometryId,source_candidate_id:src.candidateId,source_candidate_hash:src.candidateHash}
  const build=await builds.dispatch('POST','save',{plan,expectedUpdatedAt:null});assert.equal(build.validation.complete,true);assert.equal(build.plan.steps.length,11)
- const sourceImages=createSourceImageStore('generated/brick-source-images'),reverse={read:async()=>realSaved.analysis,restore:async()=>state.saved,history:async()=>({items:[{id:realSaved.analysis.id}],warnings:[]})}
- const choices=createSelectedSpatialStore(dir,{reverse,sourceImages,partsInputs:store}),scope=await choices.read(op.planId);await choices.select(op.planId,{selectionKey:scope.selectionKey,expectedRevision:0});const choiceBefore=await choices.read(op.planId)
+ const choiceBefore=await choices.read(op.planId);assert.equal(choiceBefore.choice.selectedSpatialPlanId,op.planId)
  await mkdir(path.join(dir,'brick-reverse'));await copyFile('generated/brick-reverse/'+realSaved.analysis.id+'.json.review',path.join(dir,'brick-reverse',realSaved.analysis.id+'.json.review'))
  const history=createWorkflowHistory(dir,{reverse,sourceImages,partsInputs:store,selectedSpatial:choices,buildOrder:builds});let h=await history.read(realSaved.analysis.sourceImageId)
  assert.equal(h.nodes.find(n=>n.stage==='Spatial').evidence.partsInputMatch.status,'Current');assert.ok(h.nodes.some(n=>n.stage==='Build Plan'))
