@@ -1,3 +1,4 @@
+import {createPartsInputStore} from './brick-parts-input.mjs'
 import { readFile, mkdir, writeFile, rename, unlink } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -7,11 +8,12 @@ const hash = v => createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const fail = (message, statusCode = 422) => { throw Object.assign(new Error(message), { statusCode }) }
 const check = (ok, message) => { if (!ok) fail(message) }
-export function createSelectedSpatialStore(directory, { reverse, sourceImages }) {
+export function createSelectedSpatialStore(directory, { reverse, sourceImages, partsInputs=createPartsInputStore(directory) }) {
   const folder = path.join(directory, 'brick-spatial-plan-choices')
   async function inspect(planId) {
     check(uuid.test(planId || ''), 'Spatial Plan ID 无效')
     const r = JSON.parse(await readFile(path.join(directory, 'brick-spatial-traces', planId + '.json'), 'utf8'))
+    await partsInputs.verifyTrace(r)
     check(r.id === planId && r.task === 'spatial-planning', 'Spatial 记录身份不一致')
     const p = r.requestInput?.provenance
     check(p && uuid.test(p.analysisId) && uuid.test(p.reviewId) && /^[a-f0-9]{64}$/.test(p.reviewVersion) && typeof p.savedReviewAt === 'string', '历史输入缺少明确 Analysis / Review / Mapping 身份，不能建立选择范围')

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { InfoHint } from '../brick-vision/InfoHint'
-type Run = { id: string; createdAt: string; status: string }
+type Run = { partsSnapshotId?:string; partsInputMatch?:{status:string;reason?:string}; id: string; createdAt: string; status: string }
 type Scope = { planId: string; selectionKey: string; identity: Record<string, unknown>; eligible: boolean; choice: { selectedSpatialPlanId: string | null; revision: number } }
 export function SpatialPlanningHistory({ runs, loadedId, disabled, onLoad }: { runs: Run[]; loadedId?: string; disabled: boolean; onLoad(id: string): void }) {
   const [scopes, setScopes] = useState<Record<string, Scope>>({}), [errors, setErrors] = useState<Record<string, string>>({})
@@ -41,13 +41,14 @@ export function SpatialPlanningHistory({ runs, loadedId, disabled, onLoad }: { r
     <select id="spatial-run-history" aria-label="Spatial Plan history" value={loadedId || ''} disabled={disabled || saving} onChange={e => { if (e.target.value) onLoad(e.target.value) }}>
       <option value="">选择历史计划（不调用模型）</option>
       {loadedId && !runs.some(r => r.id === loadedId) && <option value={loadedId}>当前查看 · {loadedId.slice(0, 8)}</option>}
-      {runs.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.id.slice(0, 8)} · {r.status}{scopes[r.id]?.choice.selectedSpatialPlanId === r.id ? ' · Selected' : ''}{errors[r.id] ? ' · 输入身份无法确认' : ''}</option>)}
+      {runs.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.id.slice(0, 8)} · {r.status} · {r.partsInputMatch?.status||'Unknown'}{scopes[r.id]?.choice.selectedSpatialPlanId === r.id ? ' · Selected' : ''}{errors[r.id] ? ' · 输入身份无法确认' : ''}</option>)}
     </select>
     {loadedId && <>
       <div className="vision-history-line"><span title={loadedId}>当前查看：{loadedId.slice(0, 8)}</span><span title={selected || ''}>此输入的 Selected：{scope ? selected?.slice(0, 8) || '尚未选择' : '尚未确认'}</span>
         <button type="button" disabled={disabled || saving || !scope?.eligible || selected === loadedId} onClick={() => void select()}>{selected === loadedId ? 'Selected' : saving ? '保存中…' : 'Select'}</button>
         <InfoHint label="Selected Spatial">人工采用决定，不代表 Geometry 或 Build Plan 被选中，也不改变历史来源。并发冲突需重新读取后再次明确选择。</InfoHint>
       </div>
+      {selected && <p role="status">Selected 输入：{runs.find(r=>r.id===selected)?.partsInputMatch?.status||'Unknown'}</p>}
       {scope && <details><summary>规划输入范围 · {Object.values(scopes).filter(s => s.selectionKey === scope.selectionKey).length} 次运行</summary><pre>{JSON.stringify({ selectionKey: scope.selectionKey, ...scope.identity }, null, 2)}</pre></details>}
       {scope && !scope.eligible && <p role="status">此记录未满足正式 Spatial 校验条件，只能查看。</p>}
       {errors[loadedId] && <p role="alert">{errors[loadedId]}</p>}

@@ -21,6 +21,7 @@ export async function runSpatialPlanning(prepared, { model, directory, sources =
   const id = randomUUID(), tracePath = path.resolve(directory,id+'.json')
   const record = {id,generationId:id,task:'spatial-planning',promptVersion:spatialPromptVersion,createdAt:new Date().toISOString(),
     status:'prepared',provider:definition.provider,model,generationSettings:modelSettings(model,'design'),
+    ...(prepared.partsSnapshotId?{inputContract:'parts-input-snapshot-v1',partsSnapshotId:prepared.partsSnapshotId,preparationContextId:prepared.preparationContextId}:{}),
     sources,requestInput:prepared.input,image:prepared.image,geometrySnapshot:prepared.geometrySnapshot,
     imagePayloadSha256:prepared.imagePayloadSha256,request:buildSpatialRequest(model,prepared),tracePath,
     rawOutput:null,plan:null,parseStatus:'not_run',validation:null,conversion:null,geometryCorrection:null}

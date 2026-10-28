@@ -1,3 +1,4 @@
+import {createPartsInputStore} from './server/brick-parts-input.mjs'
 import { createPartsGeometryService } from './server/brick-parts-geometry.mjs'
 import { createSelectedSpatialStore } from './server/brick-selected-spatial.mjs'
 import { createWorkflowHistory } from './server/brick-workflow-history.mjs'
@@ -54,11 +55,12 @@ const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games')
 const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames, sourceImages })
 const llmTraces = createLlmTraceStore(generatedDirectory)
 const brickBuildOrder = createBuildOrderStore(generatedDirectory)
-const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
+const partsInputs = createPartsInputStore(generatedDirectory, {reverse:brickReverse})
+const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames, partsInputs })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
 const selectedAnalysis = createSelectedAnalysisStore(path.join(generatedDirectory, 'brick-source-images', 'selected-analysis'), { sourceImages, reverse: brickReverse, vision: brickVision })
-const selectedSpatial = createSelectedSpatialStore(generatedDirectory, { reverse: brickReverse, sourceImages })
-const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder, selectedSpatial })
+const selectedSpatial = createSelectedSpatialStore(generatedDirectory, { reverse: brickReverse, sourceImages, partsInputs })
+const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder, selectedSpatial, partsInputs })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -486,6 +488,22 @@ const server = createServer(async (request, response) => {
       const body = request.method === 'POST' ? await readJsonBody(request, 256 * 1024) : {}
       sendJson(response, 200, await brickBuildOrder.dispatch(request.method, url.pathname.slice('/api/brick-build/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, {error:error.statusCode ? error.message : 'Build Plan 读取或保存失败'}) }
+    return
+  }
+  if (url.pathname === '/api/brick-parts-inputs/prepare') {
+    try {
+      if(request.method!=='POST'){sendJson(response,405,{error:'Use POST.'});return}
+      if(request.headers['sec-fetch-site']==='cross-site'||(request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)){sendJson(response,403,{error:'跨站准备请求被拒绝'});return}
+      const body=await readJsonBody(request,4096)
+      if(typeof body.analysisId!=='string'||typeof body.reviewVersion!=='string'){sendJson(response,422,{error:'需要明确 Analysis 与当前 Review 版本'});return}
+      sendJson(response,200,await partsInputs.prepare(body.analysisId,body.reviewVersion))
+    } catch(error){sendJson(response,error.statusCode||500,{error:error.message})}
+    return
+  }
+  if (url.pathname.startsWith('/api/brick-parts-inputs/')) {
+    if(request.method!=='GET'){sendJson(response,405,{error:'Use GET.'});return}
+    try{sendJson(response,200,await partsInputs.read(decodeURIComponent(url.pathname.slice('/api/brick-parts-inputs/'.length))))}
+    catch(error){sendJson(response,error.statusCode||500,{error:error.message})}
     return
   }
   if (url.pathname === '/api/brick-parts-geometry') {

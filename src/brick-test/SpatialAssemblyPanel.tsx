@@ -1,3 +1,4 @@
+import {InfoHint} from '../brick-vision/InfoHint'
 import { PartsGeometryPanel } from './PartsGeometryPanel'
 import { SpatialPlanningHistory } from './SpatialPlanningHistory'
 import {TraceLinks} from '../llm-traces/TraceLinks'
@@ -15,7 +16,7 @@ export type SpatialPreview={layoutKind?:'valid'|'diagnostic';bricks:Brick[];labe
 type Props={onPreview(value:SpatialPreview|null):void;manualRevision:number;disabled:boolean;onBusy(busy:boolean):void;}
 type History={id:string;analysisId?:string;createdAt:string;status:string;model?:string;usable?:boolean;state?:string;count?:number}
 type Source={ready:boolean;reviewVersion:string;updatedAt:string;errors:string[];warnings:string[];rows:{id:string;excluded:boolean;quantity:number;confirmedPart:{part_num:string;color_id:number}|null}[]}
-type Plan={provider?:string;model?:string;promptVersion?:string;generationSettings?:{reasoning?:{effort:string}};id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null;confirmedPart?:{part_num:string};mapping?:{geometryBinding?:{basePartNum:string}}}[]}}
+type Plan={partsSnapshotId?:string;partsInputMatch?:{status:string;reason?:string};provider?:string;model?:string;promptVersion?:string;generationSettings?:{reasoning?:{effort:string}};id:string;analysisId:string;status:string;usable:boolean;plan:unknown;rawOutput:string;image:{mimeType:string;imageBase64:string};validation:unknown;conversion:unknown;error:unknown;requestInput:{observations:{id:string;part:string;color:string;geometry:{bodySizeLdu:unknown}|null;confirmedPart?:{part_num:string};mapping?:{geometryBinding?:{basePartNum:string}}}[]}}
 type Ranking={physicalTier:number;failedIntents:number;failedRanges:number;failedRelations:number;midpointDistanceLdu:number;yawPreference:number;explanation:string}
 type CandidateSummary={id:string;kind?:string;rank?:number;ranking?:Ranking;layoutId?:string;bricks:Brick[];unverifiedCount?:number}
 type LayoutDetail={kind?:string;id:string;rank?:number;assembly:{bricks:Brick[]};geometry:ReturnType<typeof validateFinalAssembly>;collision:{status:string};ranking?:Ranking;ranges:{id:string;satisfied:boolean}[];relations:{from:string;to:string;kind:string;satisfied:boolean|null}[];intents:{id:string;other:string;satisfied:boolean|null}[]}
@@ -42,6 +43,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   const [p,o]=await Promise.all([request('plans'+(a?'?analysisId='+encodeURIComponent(a):'')),request('requests'+(a?'?analysisId='+encodeURIComponent(a):''))])
   setPlans(p.items);setOperations(o.items)
  }
+ useEffect(()=>{const focus=()=>{if(gate.current||disabled)return;void refresh(analysisId).catch(e=>setError(String(e)));if(plan)void request('plans/'+plan.id).then(p=>setPlan(current=>current&&current.id===p.id?{...current,partsInputMatch:p.partsInputMatch}:current)).catch(e=>setError(String(e)))};window.addEventListener('focus',focus);return()=>window.removeEventListener('focus',focus)},[analysisId,plan?.id,disabled])
  async function loadSource(a:string){setSource(null);if(!a)return;try{setSource(await request('source/'+a))}catch(e){setNotice('当前审核暂不可读取：'+String(e)+'。仍可加载历史计划的已确认快照。')}}
  async function showCandidate(g:Geometry,cid:string,focus=true){
   if(focus)inspector.select('geometry')
@@ -83,7 +85,10 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
  })},[disabled])
  async function generate(prepareOnly=false){if(!source?.ready||!model||!promptReady)return;inspector.select('planning');await action(async()=>{
-  const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,reviewVersion:source.reviewVersion,model,includeEvidence:evidence,promptVersion:spatialPromptVersion})
+  setNotice('Parts Input Preparation：校验并保存零件输入…')
+  const preparedResponse=await fetch('/api/brick-parts-inputs/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({analysisId,reviewVersion:source.reviewVersion})})
+  const prepared=await preparedResponse.json();if(!preparedResponse.ok)throw Error(prepared.error)
+  const op=await request(prepareOnly?'prepare':'plan',{requestId:crypto.randomUUID(),analysisId,partsSnapshotId:prepared.partsSnapshotId,preparationContextId:prepared.preparationContextId,model,includeEvidence:evidence,promptVersion:spatialPromptVersion})
   await refresh();if(op.state!=='complete'||!op.planId)throw new Error(op.error||'请求仍未完成；请刷新历史，勿重复生成')
   await loadPlan(op.planId);setNotice(prepareOnly?'请求已准备并保存，未调用 LLM；缺少几何 Profile 的零件仍保留为未知。':'Spatial Plan 已保存。Geometry Execution 需要另行点击。')
  },'planning')}
@@ -113,13 +118,14 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <details className="workflow-options"><summary>视觉证据设置</summary>
    <label><input type="checkbox" checked={evidence} onChange={e=>setEvidence(e.target.checked)}/>使用已保存 Analysis / Relations 视觉证据</label>
 </details>
-   <button type="button" disabled={!promptReady||!source?.ready||!selected} onClick={()=>void generate(true)}>检查 Mapping 并准备请求（不调用 LLM）</button>
+   <button type="button" disabled={!promptReady||!source?.ready||!selected} onClick={()=>void generate(true)}>准备 Parts Input 与请求（不调用 LLM）</button>
    <p>请求 Prompt：{spatialPromptVersion}</p>
    {!promptReady&&<p role="alert" className="brick-error">服务端 Prompt 未就绪或与页面版本不一致，请重启开发服务并刷新页面。已禁止准备和模型调用。</p>}
    <p role="status" data-testid="spatial-next-model">即将调用：{selected?`${selected.provider} / ${selected.id}${selected.reasoningEffort?' · reasoning: '+selected.reasoningEffort:''}`:'模型不可用：'+model}。仅点击生成按钮才调用模型。</p>
    {(!selected||!providers[selected.provider])&&<p role="alert" className="brick-error">{!selected?'所选模型未登记或配置尚未加载，请明确选择可用模型。':'该 Provider 未配置 API Key，无法调用。'}不会自动切换模型。</p>}
    <button type="button" className="brick-primary" disabled={!promptReady||!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
+   {plan&&<div className="vision-history-line"><span>Parts Input · {plan.partsInputMatch?.status||'Unknown'}</span><InfoHint label="Parts Input 状态">Current：与当前审核及几何定义一致。Outdated：有效输入已变化。Unknown：历史未记录或无法确认。不会改变 Selected。</InfoHint><details><summary>Snapshot 证据</summary><pre>{JSON.stringify({partsSnapshotId:plan.partsSnapshotId,match:plan.partsInputMatch},null,2)}</pre></details></div>}
    <TraceLinks source="spatial" id={plan?.id}/>
    <SpatialPlanningHistory runs={plans} loadedId={plan?.id} disabled={disabled || busy} onLoad={id => {
      if (plan && id !== plan.id && !window.confirm('切换 Spatial 会替换当前预览，并可能丢弃未提交的人工编辑。确认已保存需要保留的修改后继续？')) return

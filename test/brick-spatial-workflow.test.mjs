@@ -73,13 +73,14 @@ test('saved Part Explorer review prepares original photo, official mapping and s
  assert.deepEqual(p.input.observations.map(o=>[o.id,o.part,o.color]),trace.requestInput.observations.map(o=>[o.id,o.part,o.color]))
  assert.equal(JSON.stringify({saved,mapping}),before)
  const dir=await fixture(t);let called=0
- const s=createSpatialWorkflow(dir,{reverse:{restore:async()=>saved},resolveMapping:async()=>mapping,loadRules:async()=>rules,runPlanning:async(input,options)=>{called++;assert.equal(input.input.observations.length,7);assert.equal(options.execute,true);return trace}})
- const body={requestId:randomUUID(),analysisId:analysis.id,reviewVersion:reviewedSource(saved).reviewVersion,model:'gpt-6.1-sol',includeEvidence:true}
+ const partsInputs={forPlanning:async(sid)=>{if(sid!=='snapshot')throw Object.assign(Error('Snapshot 不存在'),{statusCode:422});return {prepared:p,sources:[]}},verifyTrace:async()=>{},match:async()=>({status:'Unknown'})}
+ const s=createSpatialWorkflow(dir,{partsInputs,loadRules:async()=>rules,runPlanning:async(input,options)=>{called++;assert.equal(input.input.observations.length,7);assert.equal(options.execute,true);return trace}})
+ const body={requestId:randomUUID(),analysisId:analysis.id,partsSnapshotId:'snapshot',preparationContextId:'context',model:'gpt-6.1-sol',includeEvidence:true}
  const op=await s.dispatch('POST','plan',body);assert.equal(op.state,'complete');assert.equal(called,1)
  assert.deepEqual(await s.dispatch('POST','plan',body),op);assert.equal(called,1)
- const changed=await s.dispatch('POST','plan',{...body,requestId:randomUUID(),reviewVersion:'stale'})
+ const changed=await s.dispatch('POST','plan',{...body,requestId:randomUUID(),partsSnapshotId:'missing'})
  assert.equal(changed.state,'failed');assert.equal(called,1)
- const prepareService=createSpatialWorkflow(dir,{reverse:{restore:async()=>saved},resolveMapping:async()=>mapping,loadRules:async()=>rules})
+ const prepareService=createSpatialWorkflow(dir,{partsInputs,loadRules:async()=>rules})
  const preparation=await prepareService.dispatch('POST','prepare',{...body,requestId:randomUUID()})
  assert.equal(preparation.state,'complete');assert.equal(preparation.resultStatus,'prepared')
  const preparedTrace=await prepareService.dispatch('GET','plans/'+preparation.planId+'/trace')
@@ -100,8 +101,8 @@ test('trace download includes exact saved HTTP bodies; altered plan cannot be ex
 test('in-flight planning request remains locked across service restart',async t=>{
  const dir=await fixture(t);let release
  const waiting=new Promise(resolve=>{release=resolve})
- const s=createSpatialWorkflow(dir,{reverse:{restore:async()=>{await waiting;throw Object.assign(Error('test stop'),{statusCode:422})}}})
- const body={requestId:randomUUID(),analysisId:randomUUID(),model:'gpt-6.1-sol',reviewVersion:'test',includeEvidence:true}
+ const s=createSpatialWorkflow(dir,{partsInputs:{forPlanning:async()=>{await waiting;throw Object.assign(Error('test stop'),{statusCode:422})}}})
+ const body={requestId:randomUUID(),analysisId:randomUUID(),model:'gpt-6.1-sol',partsSnapshotId:'snapshot',preparationContextId:'context',includeEvidence:true}
  const pending=s.dispatch('POST','plan',body)
  const file=path.join(dir,'brick-spatial-requests',body.requestId+'.json')
  // Wait only for the durable request record, not for any external service.

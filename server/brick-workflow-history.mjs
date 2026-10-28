@@ -1,3 +1,4 @@
+import {createPartsInputStore} from './brick-parts-input.mjs'
 // Read-only projection of canonical records. No index, writes, repair, or model calls.
 import { readFile, readdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -9,7 +10,7 @@ const hash = v => createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const bytesHash = v => createHash('sha256').update(v).digest('hex')
 const requireEvidence = (ok, message) => { if (!ok) throw Error(message) }
 const link = (page, params) => page + '?' + new URLSearchParams(params)
-export function createWorkflowHistory(directory, { sourceImages, reverse, buildOrder, selectedSpatial }) {
+export function createWorkflowHistory(directory, { sourceImages, reverse, buildOrder, selectedSpatial, partsInputs=createPartsInputStore(directory,{reverse}) }) {
   return { async read(imageId) {
     await sourceImages.read(imageId)
     const nodes = [], unassociated = [], index = new Map()
@@ -64,6 +65,7 @@ export function createWorkflowHistory(directory, { sourceImages, reverse, buildO
       records('brick-spatial-traces'), records('brick-spatial-geometry'), records('brick-spatial-selections'),
       records('brick-build-plans', 'build_plan_id'), records('brick-build-traces'), records('brick-spatial-requests'), records('brick-refinements'),
     ])
+    const currentInputs=new Map()
     const planMap = new Map(), geometryMap = new Map(), selectionMap = new Map()
     for (const p of plans) {
       const provenance = p.requestInput?.provenance, aid = provenance?.analysisId
@@ -74,8 +76,15 @@ export function createWorkflowHistory(directory, { sourceImages, reverse, buildO
           const image = validateImage(p.image), a = analyses.get(aid)
           requireEvidence(image.sha256 === p.imagePayloadSha256 && [validateImage(a.originalImage).sha256, validateImage(a.image).sha256].includes(image.sha256), 'Spatial 图片 hash 与 Analysis 来源证据不一致')
         }
+        await partsInputs.verifyTrace(p)
+        let partsInputMatch={status:'Unknown',reason:'历史未记录 Parts Snapshot'}
+        if(p.partsSnapshotId){
+          if(!currentInputs.has(aid))currentInputs.set(aid,partsInputs.current(aid).then(id=>({id})).catch(e=>({error:e.message})))
+          const current=await currentInputs.get(aid)
+          partsInputMatch=current.error?{status:'Unknown',reason:current.error}:await partsInputs.match(p,current.id)
+        }
         let parent = 'Analysis:' + aid
-        const evidence = { ...provenance, planHash: p.plan ? hash(p.plan) : null, inputHash: hash(p.requestInput), imagePayloadSha256: p.imagePayloadSha256 }
+        const evidence = { partsSnapshotId:p.partsSnapshotId, partsInputMatch, ...provenance, planHash: p.plan ? hash(p.plan) : null, inputHash: hash(p.requestInput), imagePayloadSha256: p.imagePayloadSha256 }
         if (provenance.reviewVersion) {
           const sources = p.sources?.filter(s => s.analysisId === aid && s.reviewVersion === provenance.reviewVersion && s.mappingReviewId === provenance.reviewId) || []
           requireEvidence(sources.length === 1, 'Review 版本 / Mapping 引用缺失或冲突')

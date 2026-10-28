@@ -1,13 +1,13 @@
 import {createRefinementStore} from './brick-refinement.mjs'
-import {planningReview} from '../src/brick-vision/review-parts.mjs'
+import {reviewedSource} from './brick-parts-input-source.mjs'
+export {reviewedSource,prepareReviewedSource} from './brick-parts-input-source.mjs'
+import {createPartsInputStore} from './brick-parts-input.mjs'
 import { prepareGeometryInput } from './brick-geometry-input.mjs'
-import { spatialMapping } from './brick-spatial-mapping.mjs'
 import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { modelOptions, modelSettings, providerStatus } from './brick-model-registry.mjs'
 import { loadBrickRules } from './brick-rules.mjs'
-import { prepareInput } from '../experiments/spatial-planning/input.mjs'
 import { runSpatialPlanning, promptRuntimeStatus } from '../experiments/spatial-planning/runner.mjs'
 import { validatePlan } from '../experiments/spatial-planning/plan.mjs'
 import { executePlan,revalidateChoice } from '../experiments/geometry-execution/execute.mjs'
@@ -19,57 +19,22 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex
 const read=async file=>JSON.parse(await readFile(file,'utf8'))
 async function write(file,data,exclusive=false){await mkdir(path.dirname(file),{recursive:true});if(exclusive)return writeFile(file,JSON.stringify(data),{flag:'wx',mode:0o600});const temp=file+'.'+randomUUID()+'.tmp';await writeFile(temp,JSON.stringify(data),{flag:'wx',mode:0o600});await rename(temp,file)}
 async function records(directory){return (await readdir(directory).catch(e=>{if(e.code==='ENOENT')return [];throw e})).filter(f=>uuid.test(f.slice(0,-5))&&f.endsWith('.json'))}
-export function reviewedSource(saved){
- const effective=planningReview(saved),rows=effective.rows
- const errors=[...effective.errors]
- if(saved.analysis.status!=='complete'||!saved.updatedAt)errors.push('需要已完成 Analysis 和已保存人工审核')
- if(!rows.some(r=>!r.excluded))errors.push('没有可用识别项')
- for(const r of rows.filter(r=>!r.excluded))if(!r.confirmedPart||r.quantity!==1)errors.push(r.id+'：需确认型号/颜色，且每个 Observation 恰好一块（V1 不猜测重复实例位置）')
- return {analysisId:saved.analysis.id,updatedAt:saved.updatedAt,rows,errors,ready:!errors.length,reviewVersion:hash({updatedAt:saved.updatedAt,rows,hiddenParts:effective.hiddenParts,manualRelations:effective.manualRelations}),warnings:saved.warnings||[]}
-}
-export function prepareReviewedSource(saved,mapping,rules,includeEvidence=true,allowUnknownGeometry=false){
- const source=reviewedSource(saved);if(!source.ready)fail(source.errors.join('；'),422)
- const effective=planningReview(saved)
- const kept=new Set(source.rows.filter(r=>!r.excluded).map(r=>r.id))
- const analysis={...saved.analysis,analysis:{...saved.analysis.analysis,observations:effective.observations.filter(o=>kept.has(o.id)),relations:(saved.analysis.analysis.relations||[]).filter(r=>kept.has(r.from)&&kept.has(r.to))}}
- const inventory=new Map()
- for(const m of mapping.mapping.rows){if(!m.target||m.errors.length)fail('正式 Mapping 不可用：'+m.source.part_num+' / RB Color '+m.source.color_id+'：'+m.errors.join('；'),422);const key=m.target.part+':'+m.target.color;const row=inventory.get(key)||{part:m.target.part,color:m.target.color,quantity:0};row.quantity+=m.source.quantity;inventory.set(key,row)}
- // Adapt the saved Review + official Mapping snapshot to the existing audited input builder.
- // This is not a legacy schema fallback and does not use any prior LLM placement.
- const snapshot={id:mapping.id,reference:{analysisId:analysis.id,review:Object.fromEntries(source.rows.filter(r=>!r.excluded).map(r=>[r.id,r]))},inventorySource:{reviewId:mapping.id,mapping:mapping.mapping.rows},requestInput:{inventory:[...inventory.values()]}}
- const prepared=prepareInput(analysis,snapshot,rules,{includeEvidence,allowUnknownGeometry})
- const byId=new Map(effective.observations.map(o=>[o.id,o]))
- prepared.input.observations=prepared.input.observations.map(o=>{
-   const provenance=byId.get(o.id).provenance
-   if(provenance.source==='manual'){
-     if(!o.geometry)fail('人工隐藏零件缺少已审核 Geometry Profile：'+o.id,422)
-     const {visionEvidence,...confirmed}=o
-     return {...confirmed,provenance}
-   }
-   return {...o,provenance}
- })
- if(includeEvidence)prepared.input.analysis={...saved.analysis.analysis,observations:saved.analysis.analysis.observations.filter(o=>kept.has(o.id)),relations:analysis.analysis.relations}
- prepared.input.manualRelations=effective.manualRelations
- prepared.input.manualReviewGuidance='Instances with provenance.source=manual are human-confirmed hidden parts, not photo observations. Include every supplied instance exactly once; do not invent a BBox or observed image evidence for hidden parts. manualRelations are human structural hints. symmetric has no specified axis or exact mirror plane: infer poses and interfaces from the photo and reviewed geometry, explain ambiguity/conflicts, and do not treat this hint as a verified connector or automatic hard coordinate constraint. fromInstanceIds/toInstanceIds identify the members of each review row; when quantities exceed one, determine and explain the correspondence rather than assuming all-to-all mating. Geometry Execution remains the authority for physical validation.'
- prepared.input.provenance={analysisId:analysis.id,reviewId:mapping.id,reviewVersion:source.reviewVersion,savedReviewAt:source.updatedAt,excludedIds:source.rows.filter(r=>r.excluded).map(r=>r.id),mappingSource:'saved Part Explorer review + official inventory mapping review'}
- return prepared
-}
 export function planView(r){
  let validation={valid:false,issues:['没有可解析的计划']}
  try{if(r.plan)validation=validatePlan(r.plan,r.requestInput)}catch{validation={valid:false,issues:['记录结构无效']}}
  let matchesRaw=false
  try{matchesRaw=hash(JSON.parse(r.rawOutput))===hash(r.plan)}catch{}
  const usable=matchesRaw&&r.status==='plan_ready_for_review'&&r.parseStatus==='parsed'&&r.validation?.valid===true&&validation.valid&&(r.finishReason==='completed'||r.finishReason==='STOP')&&r.wireStatus==='response_saved'
- return {id:r.id,analysisId:r.requestInput?.provenance?.analysisId,createdAt:r.createdAt,model:r.model,status:r.status,usable,validation,
+ return {id:r.id,partsSnapshotId:r.partsSnapshotId,analysisId:r.requestInput?.provenance?.analysisId,createdAt:r.createdAt,model:r.model,status:r.status,usable,validation,
   provider:r.provider,promptVersion:r.promptVersion,generationSettings:r.generationSettings,
   plan:r.plan,rawOutput:r.rawOutput,image:r.image,requestInput:r.requestInput,conversion:r.conversion,error:r.error,usage:r.usageMetadata,tracePath:r.tracePath,rawRequestPath:r.rawRequestPath,rawResponsePath:r.rawResponsePath}
 }
 export function geometryView(r){return {id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,error:r.error,revisionId:r.revisionId,completeSearch:r.completeSearch,
  diagnosticAvailable:!!r.diagnosticAssembly,search:r.search,validLayoutCount:r.validLayoutCount,diagnosticCandidates:(r.state==='complete'?r.diagnosticCandidates||[]:[]).map(c=>({id:c.id,kind:c.kind,rank:c.rank,ranking:c.ranking,differences:c.differences,bricks:c.assembly.bricks})),diagnostics:r.diagnostics||[],rejectionSummary:r.rejectionSummary||[],groups:r.groups||[],
  candidates:r.state==='complete'&&['candidates_found','candidates_with_unverified_constraints'].includes(r.status)?(r.candidates||[]).filter(c=>c.geometry?.valid).map(c=>({id:c.id,kind:"valid",rank:c.rank,ranking:c.ranking,differences:c.differences,layoutId:c.layoutId,bricks:c.assembly.bricks,unverifiedCount:c.unverifiedConstraints.length})):[]}}
-export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,resolveMapping=spatialMapping}={}){
+export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBrickRules,runPlanning=runSpatialPlanning,execute=executePlan,partsInputs=createPartsInputStore(directory,{reverse,loadRules})}={}){
  const plans=path.join(directory,'brick-spatial-traces'),geometries=path.join(directory,'brick-spatial-geometry'),requests=path.join(directory,'brick-spatial-requests'),selections=path.join(directory,'brick-spatial-selections')
- const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);return r}
+ const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);await partsInputs.verifyTrace(r);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
  const refinement=createRefinementStore(directory,{getPlan,getGeometry,loadRules})
  async function operation(body,kind,work){
@@ -115,9 +80,9 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   if(method==='GET'&&route==='requests'){const items=[];for(const f of await records(requests)){try{const r=await read(path.join(requests,f));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')||r.planId===query.get('planId'))items.push(r)}catch{}}return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}}
   if(method==='GET'&&route.startsWith('source/'))return reviewedSource(await reverse.restore(id(route.slice(7))))
   if(method==='GET'&&route==='plans'){
-   const items=[],warnings=[];for(const f of await records(plans)){try{const r=planView(await getPlan(f.slice(0,-5)));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')){const {id,analysisId,createdAt,model,status,usable}=r;items.push({id,analysisId,createdAt,model,status,usable})}}catch{warnings.push('无法读取 '+f)}}return {items:items.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))),warnings}
+   const items=[],warnings=[],current=new Map();for(const f of await records(plans)){try{const r=planView(await getPlan(f.slice(0,-5)));if(!query.get('analysisId')||r.analysisId===query.get('analysisId')){const {id,analysisId,createdAt,model,status,usable}=r;let partsInputMatch={status:'Unknown',reason:'历史未记录 Parts Snapshot'};if(r.partsSnapshotId){if(!current.has(analysisId))current.set(analysisId,partsInputs.current(analysisId).then(id=>({id})).catch(e=>({error:e.message})));const c=await current.get(analysisId);partsInputMatch=c.error?{status:'Unknown',reason:c.error}:{status:c.id===r.partsSnapshotId?'Current':'Outdated'}}items.push({id,analysisId,createdAt,model,status,usable,partsSnapshotId:r.partsSnapshotId,partsInputMatch})}}catch{warnings.push('无法读取 '+f)}}return {items:items.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))),warnings}
   }
-  if(method==='GET'&&/^plans\//.test(route)){const [,value,raw]=route.split('/');const r=await getPlan(value);if(raw==='trace'){const wire=async suffix=>readFile(path.join(plans,r.id+suffix),'utf8').catch(e=>{if(e.code==='ENOENT')return null;throw e});return {...r,rawRequest:await wire('.request.json'),rawResponse:await wire('.response.txt')}}return planView(r)}
+  if(method==='GET'&&/^plans\//.test(route)){const [,value,raw]=route.split('/');const r=await getPlan(value);if(raw==='trace'){const wire=async suffix=>readFile(path.join(plans,r.id+suffix),'utf8').catch(e=>{if(e.code==='ENOENT')return null;throw e});return {...r,rawRequest:await wire('.request.json'),rawResponse:await wire('.response.txt')}}return {...planView(r),partsSnapshotId:r.partsSnapshotId,partsInputMatch:await partsInputs.match(r)}}
   if(method==='GET'&&route==='geometry'){
    const items=[];for(const f of await records(geometries)){try{const r=await getGeometry(f.slice(0,-5));if(!query.get('planId')||r.planId===query.get('planId'))items.push({id:r.id,planId:r.planId,createdAt:r.createdAt,state:r.state,status:r.status,count:geometryView(r).candidates.length})}catch{}}return {items:items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
   }
@@ -141,15 +106,11 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
   }
   if(method==='POST'&&['plan','prepare'].includes(route)){
    const runtime=await promptRuntimeStatus();if(!runtime.current||(body.promptVersion&&body.promptVersion!==runtime.version))fail('Spatial Prompt 版本不一致，请重启服务并刷新页面；未调用模型',409)
-   id(body.analysisId);if(typeof body.model!=='string'||typeof body.includeEvidence!=='boolean'||typeof body.reviewVersion!=='string')fail('规划输入无效')
+   id(body.analysisId);if(typeof body.model!=='string'||typeof body.includeEvidence!=='boolean'||typeof body.partsSnapshotId!=='string'||typeof body.preparationContextId!=='string')fail('规划输入无效')
    return operation(body,route==='prepare'?'prepare':'planning',async()=>{
-    const saved=await reverse.restore(body.analysisId),source=reviewedSource(saved)
-    if(!source.ready)fail(source.errors.join('；'),422)
-    if(source.reviewVersion!==body.reviewVersion)fail('审核已变化，请重新加载',409)
-    const items=new Map();for(const r of source.rows.filter(r=>!r.excluded)){const p=r.confirmedPart,k=p.part_num+':'+p.color_id;const item=items.get(k)||{part_num:p.part_num,color_id:p.color_id,quantity:0};item.quantity++;items.set(k,item)}
-    const mapping=await resolveMapping({schema_version:1,id:randomUUID(),name:'Spatial Review '+saved.analysis.id,updated_at:new Date().toISOString(),items:[...items.values()]},await loadRules())
-    const prepared=prepareReviewedSource(saved,mapping,await loadRules(),body.includeEvidence,true)
-    const r=await runPlanning(prepared,{model:body.model,directory:plans,execute:route==='plan',sources:[{analysisId:body.analysisId,reviewVersion:source.reviewVersion,mappingReviewId:mapping.id,mappingReview:mapping}]})
+    const {prepared,sources}=await partsInputs.forPlanning(body.partsSnapshotId,body.preparationContextId,body.includeEvidence)
+    if(prepared.input.provenance.analysisId!==body.analysisId)fail('Snapshot Analysis 不一致',422)
+    const r=await runPlanning(prepared,{model:body.model,directory:plans,execute:route==='plan',sources})
     return {planId:r.id,resultStatus:r.status}
    })
   }

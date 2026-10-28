@@ -86,6 +86,6 @@ test('selected marker appears only on the adopted Spatial node, alongside its re
  const {uiModuleUrl}=await import('./ui-module.mjs'), React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server')
  const {WorkflowHistoryBranch}=await import(await uiModuleUrl(new URL('../src/brick-vision/WorkflowHistory.tsx',import.meta.url)))
  const html=renderToStaticMarkup(React.createElement(WorkflowHistoryBranch,{node:history.nodes.find(n=>n.stage==='Spatial'&&n.id===planId),history,disabled:false,onLoad:()=>{}}))
- assert.match(html,/plan_ready_for_review · Selected/);assert.match(html,/draft · 11 步/)
+ assert.match(html,/plan_ready_for_review · Unknown · Selected/);assert.match(html,/draft · 11 步/)
  assert.equal((html.match(/ · Selected<\/summary>/g)||[]).length,1)
 })

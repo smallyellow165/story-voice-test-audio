@@ -60,6 +60,7 @@ function HistoryForImage({ imageId, choice, loadedId, disabled, onLoad }: Props)
 }
 
 export function WorkflowHistoryBranch({ node, history, disabled, onLoad }: { node: Node; history: History; disabled: boolean; onLoad(id: string): void }) {
+    const partsInputMatch=node.evidence.partsInputMatch as {status:string;reason?:string}|undefined
     const spatialChoice = node.evidence.spatialChoice as { selectedSpatialPlanId?: string } | undefined
     const children = history.nodes.filter(n => n.parent === node.key)
     // Initial expansion reveals saved Build Plans without forcing unsuccessful
@@ -67,7 +68,7 @@ export function WorkflowHistoryBranch({ node, history, disabled, onLoad }: { nod
     const hasSavedBuild = (key: string): boolean => history.nodes.some(n => n.parent === key && (n.stage === 'Build Plan' || hasSavedBuild(n.key)))
     const href = node.href?.startsWith('/') ? node.href : node.href ? import.meta.env.BASE_URL + node.href : null
     return <details key={node.key} open={hasSavedBuild(node.key)} className="workflow-branch">
-      <summary>{labels[node.stage] || node.stage} · <span title={node.id}>{short(node.id)}</span> · {node.status}{node.stage === 'Spatial' && spatialChoice?.selectedSpatialPlanId === node.id ? ' · Selected' : ''}</summary>
+      <summary>{labels[node.stage] || node.stage} · <span title={node.id}>{short(node.id)}</span> · {node.status}{partsInputMatch?' · '+partsInputMatch.status:''}{node.stage === 'Spatial' && spatialChoice?.selectedSpatialPlanId === node.id ? ' · Selected' : ''}</summary>
       {node.evidence.spatialChoiceUnavailable != null && <p role="status">Spatial 选择范围无法确认：{String(node.evidence.spatialChoiceUnavailable)}</p>}
       <div className="vision-history-line">
         {href && <a href={href} target="_blank" rel="noreferrer">打开已有记录 ↗</a>}
