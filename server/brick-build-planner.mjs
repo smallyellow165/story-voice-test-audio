@@ -6,8 +6,9 @@ import {resolveModel,modelSettings,providerConfigured} from './brick-model-regis
 import {buildOpenaiRequest} from './openai-responses.mjs'
 import {callBrickModel} from './brick-model-call.mjs'
 import {captureVisionWire} from './brick-vision-wire.mjs'
+import {shareText} from './llm-traces.mjs'
 
-export const buildOrderPromptVersion='auto-build-order-v1'
+export const buildOrderPromptVersion='auto-build-order-v1-json-input-v2'
 const model='gpt-6.1-sol',task='design'
 export function buildPlannerConfig(){
  const definition=resolveModel(model,task)
@@ -55,8 +56,23 @@ export function convertBuildOutput(output,src,planId=randomUUID(),now=new Date()
  if(!validation.valid||!validation.complete)throw Object.assign(Error(validation.errors.join('；')||'装配树未完整覆盖所有实例'),{validation})
  return {plan,validation}
 }
-export async function runBuildPlanner(src,{directory,requestId}){
- const config=buildPlannerConfig()
+
+export function buildFailureDiagnostic(error,record,fallback='provider_request_failed',stage='provider_call'){
+ const providerError=record.response?.error||error?.providerDiagnostic?.errorBody?.error
+ const status=error?.failureCategory||(Number.isFinite(record.httpStatus)?'provider_response_failed':fallback)
+ const diagnostic={
+  traceId:record.id,stage:error?.failureStage||stage,httpStatus:record.httpStatus??null,
+  providerErrorCode:providerError?.code??null,providerErrorType:providerError?.type??null,
+  providerErrorParam:providerError?.param??null,
+  providerErrorMessage:providerError?.message??null,
+  message:error?.message||'未知错误',errorCode:error?.code??null,
+  wireStatus:record.wireStatus??null,providerRequestStarted:record.providerRequestStarted??null
+ }
+ // Reuse the Trace Viewer's redaction policy for all UI-facing error fields.
+ return {status,diagnostic:JSON.parse(shareText(JSON.stringify(diagnostic)).text)}
+}
+export async function runBuildPlanner(src,{directory,requestId},dependencies={}){
+ const config=(dependencies.config||buildPlannerConfig)()
  if(!config.configured)throw Object.assign(Error('OpenAI 配置不可用；未调用模型'),{statusCode:503})
  let input
  try{
@@ -68,25 +84,45 @@ export async function runBuildPlanner(src,{directory,requestId}){
  const request=buildOpenaiRequest({model,task,prompt:buildOrderPrompt,schema:contract,content:[{type:'input_text',text:JSON.stringify(input)}]})
  const record={id,task:'build-order',createdAt:new Date().toISOString(),promptVersion:buildOrderPromptVersion,provider:config.provider,model,generationSettings:config.settings,status:'prepared',
   source:{selectionId:src.id,analysisId:src.analysisId,geometryId:src.geometryId,candidateId:src.candidateId,candidateHash:src.candidateHash},requestInput:input,request,rawOutput:null,parsedOutput:null,plan:null,validation:null,error:null}
- await mkdir(directory,{recursive:true})
- const file=path.join(directory,id+'.json')
- try{await writeFile(file,JSON.stringify(record,null,2),{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')throw Object.assign(Error('该生成请求已处理；请查看已有 Trace，不会重复调用'),{statusCode:409});throw e}
- const persist=async()=>{await writeFile(file+'.tmp',JSON.stringify(record,null,2),{mode:0o600});await rename(file+'.tmp',file)}
- const started=performance.now()
+ const io=dependencies.io||{mkdir,writeFile,rename}
+ const file=path.join(directory,id+'.json'),started=performance.now()
+ const result=()=>({ok:record.status==='draft_ready',traceId:id,status:record.status,error:record.error,diagnostic:record.diagnostic??null,plan:record.status==='draft_ready'?record.plan:null,validation:record.validation,provider:record.provider,model:record.model,settings:record.generationSettings,usage:record.usageMetadata??null})
+ const failAt=(error,category,stage)=>{
+  const failure=buildFailureDiagnostic(Object.assign(error,{failureCategory:category||error.failureCategory,failureStage:stage||error.failureStage}),record)
+  record.status=failure.status;record.diagnostic=failure.diagnostic
+  record.error=record.status+' · '+record.diagnostic.stage+' · HTTP '+(record.diagnostic.httpStatus??'Unknown')+' · '+(record.diagnostic.providerErrorMessage||record.diagnostic.message)+' · Trace '+id+'；未重试。'
+ }
+ const persist=async()=>{await io.writeFile(file+'.tmp',JSON.stringify(record,null,2),{mode:0o600});await io.rename(file+'.tmp',file)}
+ try{
+  await io.mkdir(directory,{recursive:true})
+  await io.writeFile(file,JSON.stringify(record,null,2),{flag:'wx',mode:0o600})
+ }catch(e){
+  if(e.code==='EEXIST')throw Object.assign(Error('该生成请求已处理；请查看已有 Trace，不会重复调用'),{statusCode:409})
+  failAt(e,'trace_persist_failed','initial_trace_write');return result()
+ }
  try{
   record.status='requesting'
-  await captureVisionWire(directory,record,persist,()=>callBrickModel({model,task,request,record}))
- }catch{
-  record.status='provider_or_trace_failed';record.error='模型调用或原始 Trace 捕获失败；请查看 Raw Response。未重试。'
- }
+  await (dependencies.capture||captureVisionWire)(directory,record,persist,()=>(dependencies.callModel||callBrickModel)({model,task,request,record}))
+ }catch(e){failAt(e)}
  if(!record.error){
-  try{record.parsedOutput=JSON.parse(record.rawOutput)}catch{record.status='json_parse_failed';record.error='模型回复不是合法 JSON；当前草稿未改变'}
+  if(typeof record.rawOutput!=='string'||!record.rawOutput.trim()){
+   failAt(new Error('Provider 未返回非空 output_text；不会用空内容生成 Build Plan'),'provider_response_failed','response_content')
+  }else{
+   try{record.parsedOutput=JSON.parse(record.rawOutput)}
+   catch(e){failAt(new Error('模型 output_text 不是合法 JSON：'+e.message),'response_parse_failed','output_json_parse')}
+  }
   if(!record.error){
-   try{const result=convertBuildOutput(record.parsedOutput,src);record.plan=result.plan;record.validation=result.validation;record.status='draft_ready'}
-   catch(e){record.status='validation_failed';record.validation=e.validation||{valid:false,complete:false,errors:[e.message]};record.error='Build Plan 校验失败：'+(record.validation.errors.join('；')||'装配树不完整')}
+   try{const converted=convertBuildOutput(record.parsedOutput,src);record.plan=converted.plan;record.validation=converted.validation;record.status='draft_ready'}
+   catch(e){record.validation=e.validation||{valid:false,complete:false,errors:[e.message]};failAt(e,'build_plan_validation_failed','build_plan_validation')}
   }
  }
  record.elapsedMs=Math.round(performance.now()-started)
- await persist()
- return {ok:record.status==='draft_ready',traceId:id,status:record.status,error:record.error,plan:record.status==='draft_ready'?record.plan:null,validation:record.validation,provider:record.provider,model:record.model,settings:record.generationSettings,usage:record.usageMetadata??null}
+ try{await persist()}
+ catch(e){
+  const prior=record.diagnostic
+  failAt(e,'trace_persist_failed','final_trace_write')
+  if(prior)record.diagnostic.priorFailure=prior
+  // No provider retry. Raw sidecars already saved remain available.
+ }
+ return result()
 }

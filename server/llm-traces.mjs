@@ -45,7 +45,7 @@ export function createLlmTraceStore(root){
    try{return {available:true,origin:path.basename(prefix+suffix),...shareText(await readFile(prefix+suffix,'utf8'))}}
    catch(e){if(e.code==='ENOENT')return {available:false,text:'unavailable · 未保存实际 wire 文件；不会使用准备请求或解析结果补齐。'};throw e}
   }
-  const parsed=source==='reverse'?r.analysis:source==='build'?{parsedOutput:r.parsedOutput,plan:r.plan,validation:r.validation,error:r.error,source:r.source,generationSettings:r.generationSettings,usage:r.usageMetadata??null}:r.plan
+  const parsed=source==='reverse'?r.analysis:source==='build'?{parsedOutput:r.parsedOutput,plan:r.plan,validation:r.validation,error:r.error,diagnostic:r.diagnostic??null,httpStatus:r.httpStatus??null,wireStatus:r.wireStatus??null,source:r.source,generationSettings:r.generationSettings,usage:r.usageMetadata??null}:r.plan
   return {...meta(source,r),request:await raw('.request.json'),response:await raw('.response.txt'),parsed:parsed==null?{available:false,text:'unavailable · 未保存解析结果'}:{available:true,origin:path.basename(file)+(source==='reverse'?' # analysis':' # plan'),...shareText(JSON.stringify(parsed))}}
  }}
 }

@@ -5,7 +5,8 @@ export function buildOpenaiRequest({ model, task, prompt, schema, content }) {
   if (resolveModel(model, task).provider !== 'openai') throw new Error('OpenAI adapter received a different provider')
   return { model, store: false, text: { format: { type: 'json_object' } }, ...modelSettings(model, task),
     instructions: prompt + '\nReturn a JSON object only, no markdown. Follow this business output contract (type names describe fields, not output values):\n' + JSON.stringify(schema),
-    input: [{ role: 'user', content }],
+    // JSON mode requires an explicit JSON instruction in input, not only instructions.
+    input: [{ role: 'user', content: content.some(p=>p.type==='input_text'&&/json/i.test(p.text||'')) ? content : [{type:'input_text',text:'Return a JSON object only, following the output contract in the instructions. No markdown.'},...content] }],
   }
 }
 export async function requestOpenaiResponse(request, record, fetchImpl = fetch) {
