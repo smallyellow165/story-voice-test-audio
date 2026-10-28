@@ -38,7 +38,7 @@ export function PartExplorerRecognition({ designSessionId, workspaceHost, manual
     if (!scene.analysisId) return
     const controller = new AbortController()
     void Promise.allSettled([
-      requestJson<{ records: VisionHistoryItem[] }>('/api/brick-vision/history', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) }, '识别历史'),
+      requestJson<{ records: VisionHistoryItem[]; warnings: string[] }>('/api/brick-vision/history', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) }, '识别历史'),
       requestJson<History>('/api/brick-reverse/history', { signal: controller.signal }, '识别历史'),
     ]).then(([loose, reverse]) => {
       if (controller.signal.aborted) return
@@ -47,7 +47,7 @@ export function PartExplorerRecognition({ designSessionId, workspaceHost, manual
       const resolved = resolveSceneHistory(scene, looseHistory, reverseHistory.items)
       setStrategy(resolved.strategy)
       if (resolved.strategy !== 'loose') { setAssembledMode(resolved.strategy); setAssembledOpened(true) }
-      setStartupWarning(resolved.warning + (loose.status === 'rejected' || reverse.status === 'rejected' ? ' 部分历史列表不可用；可稍后手动刷新。' : ''))
+      setStartupWarning(resolved.warning + (loose.status === 'fulfilled' ? loose.value.warnings.join('；') : '') + (loose.status === 'rejected' || reverse.status === 'rejected' ? ' 部分历史列表不可用；可稍后手动刷新。' : ''))
       setBoot({ ready: true, scene: { ...scene, analysisId: resolved.analysisId }, strategy: resolved.strategy, looseHistory, reverseHistory })
     })
     return () => controller.abort()

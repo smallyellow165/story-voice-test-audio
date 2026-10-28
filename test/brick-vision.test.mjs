@@ -1,3 +1,4 @@
+import { originalFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
@@ -27,7 +28,7 @@ test('Vision uses shared model options and passes selection to SDK and persisted
       calls.push(request.model)
       throw new ApiError({ status: 400, message: '{"error":{"message":"test rejection","status":"INVALID_ARGUMENT"}}' })
     } } }) })
-  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const body = { originalImage: originalFixture, requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const initial = await service.recognize(body)
   assert.equal(initial.model, visionModel())
   const selected = brickModelOptions(visionModel()).find(m => m.id !== visionModel()).id
@@ -87,7 +88,7 @@ test('failed API body is persisted and repeat request does not call Gemini again
       calls++
       throw new ApiError({ status: 400, message: raw })
     } } }) })
-  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const body = { originalImage: originalFixture, requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const result = await service.recognize(body)
   assert.equal(result.status, 'failed')
   assert.equal(result.error.stage, 'Vision API')
@@ -179,7 +180,7 @@ test('one persistent request produces one model call; full actual input/output r
   const response = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ observations: [], evaluation: evaluation() }) }] } }], modelVersion: 'test-only' }
   const service = createBrickVision(directory, { loadRules: async () => ({}), getMetadata: async () => ({ colors: [] }),
     createClient: () => ({ models: { generateContent: async () => { calls++; return response } } }) })
-  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const body = { originalImage: originalFixture, requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const first = await service.recognize(body)
   assert.equal(first.status, 'complete')
   assert.deepEqual(await service.recognize(body), first)
@@ -207,7 +208,7 @@ test('concurrent duplicate upload and changed payload cannot trigger a second ca
       calls++; entered(); await wait
       return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'invalid json' }] } }] }
     } } }) })
-  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const body = { originalImage: originalFixture, requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const first = service.recognize(body)
   await started
   try { await assert.rejects(service.recognize(body), /仍在处理或结果未知/) }
@@ -233,7 +234,7 @@ test('inventory features work without guessed IDs and do not invoke automatic Ma
       calls++; return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: output }] } }] }
     } } }),
   })
-  const body = { requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
+  const body = { originalImage: originalFixture, requestId: randomUUID(), mode: 'inventory', mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const result = await service.recognize(body)
   assert.equal(result.status, 'complete')
   assert.deepEqual(result.matches[0].observation, observed)

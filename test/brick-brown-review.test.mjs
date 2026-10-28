@@ -1,3 +1,4 @@
+import { sourceImageFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises'
@@ -15,7 +16,8 @@ test('Brown and Reddish Brown stay separate; repeated observations aggregate onl
 })
 test('corrected part/color persists in Review and Spatial source, never rewriting original Analysis',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'brown-review-'));t.after(()=>rm(dir,{recursive:true,force:true}))
- const raw=await readFile(file(original+'.json'),'utf8'),review=JSON.parse(await readFile(file(original+'.json.review')))
+ const fixture=JSON.parse(await readFile(file(original+'.json'),'utf8'))
+ const raw=JSON.stringify({...fixture,...await sourceImageFixture(dir,fixture.originalImage)}),review=JSON.parse(await readFile(file(original+'.json.review')))
  await writeFile(path.join(dir,original+'.json'),raw)
  for(const row of Object.values(review.rows))await writeFile(path.join(dir,row.searchId+'.json'),await readFile(file(row.searchId+'.json')))
  // Set an explicit Brown control row in the isolated fixture; the user's live review may evolve.

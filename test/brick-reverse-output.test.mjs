@@ -1,3 +1,4 @@
+import { sourceImageFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -19,7 +20,7 @@ test('invalid states, values, references and containers remain rejected with pat
 })
 test('offline endpoint never writes history or calls model; malformed JSON is distinguished',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'reverse-output-'));const id='12345678-1234-1234-1234-123456789abc'
- const record={id,kind:'reverse-analysis',analysis_mode:'geometry_only',status:'failed',rawOutput:JSON.stringify(fixture())}
+ const record={...await sourceImageFixture(dir),id,kind:'reverse-analysis',analysis_mode:'geometry_only',status:'failed',rawOutput:JSON.stringify(fixture())}
  try {const bytes=JSON.stringify(record);await writeFile(path.join(dir,id+'.json'),bytes)
  const service=createBrickReverse(dir,{callModel:()=>assert.fail('No model call permitted')})
  const report=await service.revalidate({analysisId:id});assert.equal(report.valid,true)

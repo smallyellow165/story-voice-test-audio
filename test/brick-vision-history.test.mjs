@@ -1,3 +1,4 @@
+import { sourceImageFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
@@ -12,7 +13,7 @@ test('history is read-only, excludes failed/step records and never uses provider
   const dir = await mkdtemp(path.join(tmpdir(), 'vision-history-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const id = '11111111-1111-4111-8111-111111111111'
-  const record = { id, status: 'complete', mode: 'inventory', provider: 'openai', model: 'model', createdAt: '2026-10-21T00:00:00Z', image: { sha256: 'image' }, matches: [{ observation: { id: 'original' } }] }
+  const record = { ...await sourceImageFixture(dir), id, status: 'complete', mode: 'inventory', provider: 'openai', model: 'model', createdAt: '2026-10-21T00:00:00Z', image: { sha256: 'image' }, matches: [{ observation: { id: 'original' } }] }
   const original = JSON.stringify(record)
   await writeFile(path.join(dir, `${id}.json`), original)
   for (const [suffix, changes] of [['2', { status: 'failed' }], ['3', { mode: 'step' }]]) {

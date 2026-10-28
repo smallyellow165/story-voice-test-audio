@@ -19,7 +19,7 @@ test('guided request reuses source image, records independent lineage, validates
  const service=createBrickReverse(dir,{getCatalog:async()=>({colors:[]}),callModel:async({record,request})=>{calls++;assert.ok(JSON.stringify(request).includes('JSON'));record.rawOutput=JSON.stringify(output);record.finishReason='completed';record.httpStatus=200}})
  try{
  const image={mimeType:'image/jpeg',imageBase64:Buffer.from([255,216,255]).toString('base64')}
- const body={requestId:randomUUID(),model:'gpt-4.1',analysis_mode:'geometry_only',...image}
+ const body={requestId:randomUUID(),model:'gpt-4.1',analysis_mode:'geometry_only',originalImage:image,...image}
  const old=await service.analyze(body),v4=await service.analyze({...body,requestId:randomUUID(),promptVersion:4});assert.equal(old.prompt_version,3);assert.equal(v4.prompt_version,4);assert.notEqual(old.id,v4.id);assert.equal(old.image.sha256,v4.image.sha256)
  const before=await readFile(path.join(dir,old.id+'.json'));await writeFile(path.join(dir,old.id+'.json.review'),'original review sentinel')
  const guided={requestId:randomUUID(),model:'gpt-4.1',analysis_mode:'geometry_only',promptVersion:4,guidance:{analysisId:old.id,observationIds:['selected'],hint:'Consider a continuous shape, not two pieces.'}}

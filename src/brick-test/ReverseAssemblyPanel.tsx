@@ -495,6 +495,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
 
 
     <div className="brick-reverse-recovery">
+      {record && <p>Analysis ID: {record.id}<br/>Source Image: <a href={'/api/brick-source-images/' + encodeURIComponent(record.sourceImageId)} target="_blank" rel="noreferrer">{record.sourceImageId}</a></p>}
       <TraceLinks source="reverse" id={record?.id||undefined}/>
       <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
         <option value="">选择历史分析</option>

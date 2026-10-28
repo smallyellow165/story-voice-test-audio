@@ -1,3 +1,6 @@
+import { validateImage } from './brick-image-validation.mjs'
+export { validateImage } from './brick-image-validation.mjs'
+import { createSourceImageStore } from './brick-source-images.mjs'
 import { visionPrompt, visionPromptSpec } from './brick-vision-prompts.mjs'
 import { resolveModel, modelOptions, providerStatus } from './brick-model-registry.mjs'
 import { callBrickModel } from './brick-model-call.mjs'
@@ -85,16 +88,6 @@ export function validateRecognition(value) {
   return value
 }
 
-export function validateImage(body) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(body?.mimeType) || typeof body.imageBase64 !== 'string'
-    || body.imageBase64.length > 8 * 1024 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.imageBase64)) fail('请上传不超过 6 MB 的 JPEG、PNG 或 WebP 图片')
-  const bytes = Buffer.from(body.imageBase64, 'base64')
-  const signatures = { 'image/png': bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])),
-    'image/jpeg': bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255,
-    'image/webp': bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' }
-  if (!bytes.length || bytes.length > 6 * 1024 * 1024 || !signatures[body.mimeType]) fail('图片类型与内容不匹配')
-  return { mimeType: body.mimeType, imageBase64: body.imageBase64, sha256: hash(bytes), bytes: bytes.length }
-}
 
 export function stepContext(artifact, reference, rules) {
   if (!reference || !['instanceId', 'runId', 'taskAttemptId'].every(k => typeof reference[k] === 'string' && reference[k].length > 0 && reference[k].length <= 128)
@@ -173,7 +166,7 @@ export async function matchObservations(observations, { getMetadata = catalog, r
   return matches
 }
 
-export function createBrickVision(directory, { artifacts, createClient = createGeminiClient, getMetadata = catalog, loadRules = loadBrickRules, requestOpenai = requestOpenaiVision } = {}) {
+export function createBrickVision(directory, { sourceImages = createSourceImageStore(path.join(directory, 'source-images')), artifacts, createClient = createGeminiClient, getMetadata = catalog, loadRules = loadBrickRules, requestOpenai = requestOpenaiVision } = {}) {
   async function save(id, value) {
     const temp = path.join(directory, `${id}.tmp`)
     await writeFile(temp, JSON.stringify(value), { mode: 0o600 }); await rename(temp, path.join(directory, `${id}.json`))
@@ -181,14 +174,14 @@ export function createBrickVision(directory, { artifacts, createClient = createG
   return {
     async history() {
       const files = await readdir(directory).catch(e => { if (e.code === 'ENOENT') return []; throw e })
-      const results = []
+      const results = [], warnings = []
       for (const file of files.filter(f => /^[a-f0-9-]{36}\.json$/.test(f))) {
         try {
           const r = JSON.parse(await readFile(path.join(directory, file), 'utf8'))
-          if (r.status === 'complete' && r.mode === 'inventory') results.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model, prompt_id: r.prompt_id, prompt_version: r.prompt_version, image: r.image, originalName: r.originalImage?.name })
-        } catch { /* Incomplete/corrupt records are not reusable success. */ }
+          if (r.status === 'complete' && r.mode === 'inventory') { await sourceImages.verifyAnalysis(r); results.push({ sourceImageId: r.sourceImageId, id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model, prompt_id: r.prompt_id, prompt_version: r.prompt_version, image: r.image, originalName: r.originalImage?.name }) }
+        } catch (error) { warnings.push(file + ": " + error.message) }
       }
-      return { records: results.sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
+      return { records: results.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), warnings }
     },
     async historyRecord(id) {
       if (!uuid.test(id)) fail('无效识别 ID')
@@ -196,6 +189,7 @@ export function createBrickVision(directory, { artifacts, createClient = createG
       try { r = JSON.parse(await readFile(path.join(directory, `${id}.json`), 'utf8')) }
       catch { fail('识别记录不存在或不可读', 404) }
       if (r.status !== 'complete' || r.mode !== 'inventory') fail('仅可复用成功的库存识别记录', 422)
+      await sourceImages.verifyAnalysis(r)
       return r
     },
     async validateDraft(body) {
@@ -224,11 +218,13 @@ export function createBrickVision(directory, { artifacts, createClient = createG
         if (body.provider !== undefined && body.provider !== provider) fail('Provider 与模型登记不一致')
       } catch (error) { fail(error.message) }
       const image = validateImage(body), id = body.requestId
-      const original = body.originalImage ? validateImage(body.originalImage) : null
+      const original = body.mode === 'inventory' ? validateImage(body.originalImage) : (body.originalImage ? validateImage(body.originalImage) : null)
+      const sourceImageId = body.mode === 'inventory' ? 'sha256:' + original.sha256 : null
       let saved
       try { saved = JSON.parse(await readFile(path.join(directory, `${id}.json`), 'utf8')) }
       catch (error) { if (error.code !== 'ENOENT') throw error }
-      if (saved && (saved.mode !== body.mode || saved.model !== model || saved.provider !== provider || saved.image.sha256 !== image.sha256
+      if (saved?.mode === 'inventory') await sourceImages.verifyAnalysis(saved)
+      if (saved && (saved.sourceImageId !== sourceImageId && body.mode === 'inventory' || saved.mode !== body.mode || saved.model !== model || saved.provider !== provider || saved.image.sha256 !== image.sha256
         || JSON.stringify(saved.reference) !== JSON.stringify(body.reference ?? null))) fail('同一请求 ID 不能用于另一张图片或步骤，或不同模型', 409)
       if (saved?.status === 'processing') fail('请求仍在处理或结果未知；未重复调用模型', 409)
       const rules = body.mode === 'step' ? await loadRules() : null
@@ -247,7 +243,8 @@ export function createBrickVision(directory, { artifacts, createClient = createG
         if (saved.status === 'processing') fail('请求仍在处理或结果未知；未重复调用模型', 409)
         return saved
       }
-      const record = { id, fingerprint, mode: body.mode, ...(body.mode === 'inventory' ? { prompt_id: visionPromptSpec.id, prompt_version: visionPromptSpec.version } : {}), status: 'processing', createdAt: new Date().toISOString(),
+      if (body.mode === 'inventory') await sourceImages.put(body.originalImage)
+      const record = { id, ...(body.mode === 'inventory' ? { sourceImageId } : {}), fingerprint, mode: body.mode, ...(body.mode === 'inventory' ? { prompt_id: visionPromptSpec.id, prompt_version: visionPromptSpec.version } : {}), status: 'processing', createdAt: new Date().toISOString(),
         originalImage: original ? { ...original, name: String(body.originalImage.name || '').slice(0, 255), width: body.originalImage.width, height: body.originalImage.height } : null,
         compression: body.compression ?? null,
         reference: context?.reference ?? null, provider, model, httpStatus: null, image: { mimeType: image.mimeType, sha256: image.sha256, bytes: image.bytes }, request }

@@ -1,3 +1,4 @@
+import { createSourceImageStore } from './brick-source-images.mjs'
 import { reverseFeatureEditor } from '../src/brick-vision/reverse-review.mjs'
 import { reviseAnchorReference } from './brick-reverse-revision.mjs'
 import { inspectGeometryOutput } from './brick-reverse-output.mjs'
@@ -63,7 +64,7 @@ export function enforceSource(source, items, mapped) {
     if (!allowed || item.quantity > allowed.quantity) fail('官方映射后的型号、颜色或总数量超出虚拟库存。')
   }
 }
-export function createBrickReverse(directory, { games, getCatalog = catalog, loadRules = loadBrickRules, callModel = callBrickModel, generate = generateBrickDesign } = {}) {
+export function createBrickReverse(directory, { sourceImages = createSourceImageStore(path.join(directory, 'source-images')), games, getCatalog = catalog, loadRules = loadBrickRules, callModel = callBrickModel, generate = generateBrickDesign } = {}) {
   const file = id => {
     if (!/^[a-f0-9-]{36}$/.test(id || '')) fail('Reverse ID 无效。')
     return path.join(directory, id + '.json')
@@ -71,6 +72,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
   const read = async id => {
     try {
       const value = JSON.parse(await readFile(file(id), 'utf8'))
+      if (value.kind === 'reverse-analysis') await sourceImages.verifyAnalysis(value)
       if (value.kind === 'reverse-design' && value.status === 'complete') {
         const rules = await loadRules()
         if (!value.generation?.ok || hash(value.generation.design) !== value.designHash
@@ -141,13 +143,14 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         try {
           const r = JSON.parse(await readFile(path.join(directory, name), 'utf8'))
           if (r.kind !== 'reverse-analysis') continue
+          await sourceImages.verifyAnalysis(r)
           let hasSavedReview = false
           try { await readFile(file(r.id) + '.review', 'utf8'); hasSavedReview = true }
           catch (e) { if (e.code !== 'ENOENT') throw e }
-          items.push({ id: r.id, createdAt: r.createdAt, provider: r.provider, model: r.model, hasSavedReview,
+          items.push({ id: r.id, sourceImageId: r.sourceImageId, createdAt: r.createdAt, provider: r.provider, model: r.model, hasSavedReview,
             analysis_mode: r.analysis_mode || 'catalog_match', prompt_id: r.prompt_id || 'reverse_catalog_v1', prompt_version: r.prompt_version || 1, image_reference: r.image_reference || { kind: 'upload', name: r.originalImage?.name || null, sha256: r.image?.sha256 },
             status: r.status, isRevision: !!r.revision, isGuided: !!r.guidance, appearance: r.analysis?.appearance || '', count: r.analysis?.observations?.length || 0 })
-        } catch { warnings.push(name + ' 无法读取；原文件保留。') }
+        } catch (error) { warnings.push(name + '：' + error.message + '；原文件保留。') }
       }
       items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id.localeCompare(a.id))
       return { items, warnings }
@@ -292,6 +295,7 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
         body = { ...body, ...parent.image, originalImage: parent.originalImage, compression: parent.compression, imageReference: parent.image_reference }
       }
       const definition = resolveModel(body.model, 'reverse'), image = validateImage(body)
+      const original = validateImage(body.originalImage), sourceImageId = 'sha256:' + original.sha256
       const rules = analysisMode === 'catalog_match' ? await loadRules() : null
       let source
       if (analysisMode === 'geometry_only') source = { kind: 'full' }
@@ -300,12 +304,13 @@ export function createBrickReverse(directory, { games, getCatalog = catalog, loa
       else if (body.source?.kind === 'virtual') source = { kind: 'virtual', inventory: validateGeneratorInput({ description: 'Reverse source', inventory: body.source.inventory }, rules).inventory }
       else fail('请选择有效的 Part Source。')
       if (source.kind === 'today' && !source.session.items.length) fail('所选真实库存为空，未调用模型。')
-      const fingerprint = hash({ model: body.model, source, image: image.sha256, analysisMode, guidance, prompt: prompt.text, schema, settings: modelSettings(body.model, 'reverse') })
+      const fingerprint = hash({ model: body.model, source, sourceImageId, image: image.sha256, analysisMode, guidance, prompt: prompt.text, schema, settings: modelSettings(body.model, 'reverse') })
       file(body.requestId)
       try { const old = await read(body.requestId); if (old.fingerprint !== fingerprint) fail('请求 ID 对应另一份输入。', 409); return old }
       catch (e) { if (e.statusCode !== 404) throw e }
+      await sourceImages.put(body.originalImage)
       await lock(body.requestId)
-      const record = { id: body.requestId, kind: 'reverse-analysis', createdAt: new Date().toISOString(), status: 'pending',
+      const record = { id: body.requestId, sourceImageId, kind: 'reverse-analysis', createdAt: new Date().toISOString(), status: 'pending',
         analysis_mode: analysisMode, prompt_id: prompt.id, prompt_version: prompt.version,
         image_reference: { kind: body.imageReference?.kind === 'server_library' ? 'server_library' : 'upload',
           name: typeof body.imageReference?.name === 'string' ? body.imageReference.name.slice(0,255) : body.originalImage?.name || null, sha256: image.sha256 },

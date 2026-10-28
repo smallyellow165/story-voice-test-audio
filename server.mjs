@@ -1,3 +1,4 @@
+import { createSourceImageStore } from './server/brick-source-images.mjs'
 import {createBuildOrderStore} from './server/brick-build-order.mjs'
 import {createLlmTraceStore} from './server/llm-traces.mjs'
 import { listDesignTraces, loadDesignTrace } from './server/brick-design-history.mjs'
@@ -43,12 +44,13 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
+const sourceImages = createSourceImageStore(path.join(generatedDirectory, 'brick-source-images'))
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
-const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames })
+const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames, sourceImages })
 const llmTraces = createLlmTraceStore(generatedDirectory)
 const brickBuildOrder = createBuildOrderStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
-const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames })
+const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -486,6 +488,14 @@ const server = createServer(async (request, response) => {
       const body = request.method === 'POST' ? await readJsonBody(request, 16 * 1024) : {}
       sendJson(response, 200, await brickSpatial.dispatch(request.method, url.pathname.slice('/api/brick-spatial/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, { error: error.statusCode ? error.message : 'Spatial 记录读取或执行失败；未自动重试。' }) }
+    return
+  }
+  if (url.pathname.startsWith('/api/brick-source-images/')) {
+    if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET.' }); return }
+    try {
+      const imageId = decodeURIComponent(url.pathname.slice('/api/brick-source-images/'.length))
+      sendJson(response, 200, await sourceImages.read(imageId))
+    } catch (error) { sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Source Image 读取失败' }) }
     return
   }
   if (url.pathname.startsWith('/api/brick-reverse/')) {

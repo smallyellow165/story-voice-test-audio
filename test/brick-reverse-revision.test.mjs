@@ -1,3 +1,4 @@
+import { sourceImageFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile,writeFile,mkdtemp,rm,readdir} from 'node:fs/promises'
@@ -13,6 +14,7 @@ test('isolated saved penguin revision, restart, review drafts and immutable line
  let bytes;try{bytes=await readFile(new URL('../generated/brick-reverse/'+id+'.json',import.meta.url))}catch(e){if(e.code==='ENOENT')return t.skip('Saved local trace absent');throw e}
  const dir=await mkdtemp(path.join(tmpdir(),'anchor-revision-'));const deps={getCatalog:async()=>({colors:[]}),callModel:()=>assert.fail('No LLM')}
  try{
+ const fixture=JSON.parse(bytes);bytes=Buffer.from(JSON.stringify({...fixture,...await sourceImageFixture(dir,fixture.originalImage)}))
  await writeFile(path.join(dir,id+'.json'),bytes);let service=createBrickReverse(dir,deps)
  const initial=await service.restore(id);assert.equal(initial.analysis.outputValidation.issues[0].path,field)
  const names=await readdir(dir);await service.revalidate({analysisId:id});assert.deepEqual(await readdir(dir),names)

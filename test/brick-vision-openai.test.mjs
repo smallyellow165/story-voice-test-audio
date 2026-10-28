@@ -1,3 +1,4 @@
+import { originalFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
@@ -54,7 +55,7 @@ test('new model selection reaches inventory route and failed diagnostics without
     },
   })
   for (const { id } of openaiVisionModelOptions().filter(m => m.id !== 'gpt-4.1')) {
-    const body = { requestId: randomUUID(), provider: 'openai', model: id, mode: 'inventory', mimeType: 'image/png',
+    const body = { originalImage: originalFixture, requestId: randomUUID(), provider: 'openai', model: id, mode: 'inventory', mimeType: 'image/png',
       imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
     const result = await service.recognize(body)
     assert.equal(result.status, 'failed')
@@ -145,7 +146,7 @@ test('OpenAI routes through shared validation, persists provider and never calls
       Object.assign(record, { httpStatus: 200, rawOutput: JSON.stringify(output), finishReason: 'completed', usageMetadata: { input_tokens: 5 }, modelVersion: openaiVisionModel })
     },
   })
-  const body = { requestId: randomUUID(), provider: 'openai', model: openaiVisionModel, mode: 'inventory',
+  const body = { originalImage: originalFixture, requestId: randomUUID(), provider: 'openai', model: openaiVisionModel, mode: 'inventory',
     mimeType: 'image/png', imageBase64: Buffer.from([137,80,78,71,13,10,26,10]).toString('base64') }
   const result = await service.recognize(body)
   assert.equal(result.status, 'complete')

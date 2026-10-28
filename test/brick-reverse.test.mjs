@@ -1,3 +1,4 @@
+import { sourceImageFixture, originalFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
@@ -61,7 +62,7 @@ test('confirmed choices are scoped to analysis, re-mapped, bounded and generated
   try {
     const analysisId = randomUUID(), searchId = randomUUID()
     const source = { kind: 'virtual', inventory: [{ part: '3437', color: '4', quantity: 2 }] }
-    await writeFile(path.join(directory, analysisId + '.json'), JSON.stringify({ id: analysisId, kind: 'reverse-analysis', status: 'complete',
+    await writeFile(path.join(directory, analysisId + '.json'), JSON.stringify({ id: analysisId, kind: 'reverse-analysis', ...await sourceImageFixture(directory), status: 'complete',
       source, image: { mimeType: 'image/jpeg', imageBase64: 'fixture' },
       analysis: { appearance: 'two bricks', unknowns: [], observations: [observation('a')], relations: [] } }))
     await writeFile(path.join(directory, searchId + '.json'), JSON.stringify({ id: searchId, kind: 'reverse-search', analysisId, observationId: 'a',
@@ -112,7 +113,7 @@ test('analysis request IDs prevent duplicate billing; search uses strict feature
         }) })
       },
     })
-    const body = { requestId: randomUUID(), model: 'gpt-4.1', source: { kind: 'full' }, mimeType: 'image/jpeg', imageBase64: Buffer.from([255,216,255]).toString('base64') }
+    const body = { originalImage: originalFixture, requestId: randomUUID(), model: 'gpt-4.1', source: { kind: 'full' }, mimeType: 'image/jpeg', imageBase64: Buffer.from([255,216,255]).toString('base64') }
     const first = await service.analyze(body)
     assert.equal(first.status, 'complete')
     assert.equal((await service.analyze(body)).id, first.id)
@@ -132,7 +133,7 @@ test('history discovers existing analysis files, sorts newest first, and never c
     const older = randomUUID(), newer = randomUUID()
     for (const [id, createdAt] of [[older, '2026-10-20T00:00:00Z'], [newer, '2026-10-22T00:00:00Z']]) {
       await writeFile(path.join(directory, id + '.json'), JSON.stringify({
-        id, kind: 'reverse-analysis', createdAt, status: 'complete', provider: 'openai', model: 'gpt-4.1',
+        id, kind: 'reverse-analysis', ...await sourceImageFixture(directory), createdAt, status: 'complete', provider: 'openai', model: 'gpt-4.1',
         source: { kind: 'full' }, analysis: { appearance: 'yellow animal', observations: [observation('a')], relations: [], unknowns: [] },
       }))
     }
@@ -153,7 +154,7 @@ test('saved review restores edits, exclusions and candidates without rewriting r
   const directory = await mkdtemp(path.join(tmpdir(), 'reverse-review-'))
   try {
     const id = randomUUID(), searchId = randomUUID()
-    const original = JSON.stringify({ id, kind: 'reverse-analysis', status: 'complete', source: { kind: 'full' },
+    const original = JSON.stringify({ id, kind: 'reverse-analysis', ...await sourceImageFixture(directory), status: 'complete', source: { kind: 'full' },
       image: { mimeType: 'image/jpeg', imageBase64: 'fixture' },
       analysis: { appearance: 'animal', observations: [observation('a'), observation('b')], relations: [], unknowns: ['rear'] } })
     await writeFile(path.join(directory, id + '.json'), original)
@@ -186,7 +187,7 @@ test('restore does not apply a corrupt complete artifact or repeat a submitted g
   const directory = await mkdtemp(path.join(tmpdir(), 'reverse-artifact-'))
   try {
     const id = randomUUID(), artifactId = randomUUID()
-    await writeFile(path.join(directory, id + '.json'), JSON.stringify({ id, kind: 'reverse-analysis', status: 'complete',
+    await writeFile(path.join(directory, id + '.json'), JSON.stringify({ id, kind: 'reverse-analysis', ...await sourceImageFixture(directory), status: 'complete',
       source: { kind: 'full' }, analysis: { appearance: '', observations: [observation('a')], relations: [], unknowns: [] } }))
     await writeFile(path.join(directory, id + '.generation.json'), JSON.stringify({ artifactId }))
     await writeFile(path.join(directory, artifactId + '.json'), JSON.stringify({
@@ -204,7 +205,7 @@ test('Reverse forwards reviewed height and restores it without changing original
   const directory = await mkdtemp(path.join(tmpdir(), 'brick-reverse-3d-test-'))
   try {
     const id = randomUUID(), queries = []
-    const original = { id, kind: 'reverse-analysis', status: 'complete', source: { kind: 'full' },
+    const original = { id, kind: 'reverse-analysis', ...await sourceImageFixture(directory), status: 'complete', source: { kind: 'full' },
       analysis: { appearance: 'isolated fixture', unknowns: [], observations: [observation('a')], relations: [] } }
     const originalText = JSON.stringify(original)
     await writeFile(path.join(directory, id + '.json'), originalText)

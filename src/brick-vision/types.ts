@@ -23,6 +23,7 @@ export type VisionMatch = {
   target: MappingRow['target']; candidates: { part_num: string; color_id: number; valid: boolean; mapping: MappingRow }[]
 }
 export type VisionResult = {
+  sourceImageId?: string // Required for inventory analyses; step verification is not a Source Image workflow.
   prompt_id?: string; prompt_version?: number
   id: string; status: 'processing' | 'complete' | 'failed'; mode: 'inventory' | 'step'
   reference: StepReference | null; model: string; modelVersion?: string; elapsedMs?: number
@@ -36,4 +37,4 @@ export type VisionResult = {
   error?: { stage: string; message: string; httpStatus?: number | null }
 }
 
-export type VisionHistoryItem = Pick<VisionResult, 'id' | 'provider' | 'model' | 'image'> & { createdAt: string; originalName?: string }
+export type VisionHistoryItem = Pick<VisionResult, 'id' | 'provider' | 'model' | 'image' | 'sourceImageId'> & { createdAt: string; originalName?: string }

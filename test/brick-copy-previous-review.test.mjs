@@ -1,3 +1,4 @@
+import { sourceImageFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,writeFile,readFile,readdir,rm} from 'node:fs/promises'
@@ -9,7 +10,8 @@ async function setup(t){
  const dir=await mkdtemp(path.join(tmpdir(),'copy-review-'));t.after(()=>rm(dir,{recursive:true,force:true}))
  const previous=randomUUID(),current=randomUUID(),searchId=randomUUID()
  const obs=id=>({id,color_id:null,size:null,shape:null,print:'unknown',quantity:1,bbox:null,confidence:.5,visible_studs:null,evidence:'new evidence',occlusion:'unknown'})
- const record=(id,time)=>({id,createdAt:time,kind:'reverse-analysis',status:'complete',source:{kind:'full'},analysis:{appearance:'test',observations:[obs('same'),obs('new')],relations:[],unknowns:[]}})
+ const imageFields=await sourceImageFixture(dir)
+ const record=(id,time)=>({...imageFields,id,createdAt:time,kind:'reverse-analysis',status:'complete',source:{kind:'full'},analysis:{appearance:'test',observations:[obs('same'),obs('new')],relations:[],unknowns:[]}})
  const put=(name,value)=>writeFile(path.join(dir,name),JSON.stringify(value))
  await put(previous+'.json',record(previous,'2026-01-01'));await put(current+'.json',record(current,'2026-01-02'))
  const features={partNumber:'3437',color:'0',size:'2x2',width_studs:'2',depth_studs:'2',height_brick_units:'1.0',shape:'brick',print:'unknown'}
@@ -37,7 +39,7 @@ test('copy reads exact saved fields and confirmations without writes; save and r
 })
 test('direct predecessor without Review does not skip to an older saved run; oldest has no previous',async t=>{
  const f=await setup(t),middle=randomUUID()
- await f.put(middle+'.json',{id:middle,kind:'reverse-analysis',createdAt:'2026-01-01T12:00:00'})
+ await f.put(middle+'.json',{...await sourceImageFixture(f.dir),id:middle,kind:'reverse-analysis',createdAt:'2026-01-01T12:00:00'})
  assert.match((await f.service.previousReview(f.current)).message,/没有保存/)
  assert.deepEqual((await f.service.previousReview(f.previous)).rows,{})
 })

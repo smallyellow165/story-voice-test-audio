@@ -179,7 +179,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     } finally { lock.current = false; setBusy(false) }
   }
   async function refreshHistory() {
-    try { setHistory((await requestJson<{ records: typeof history }>('/api/brick-vision/history', {}, '识别历史')).records) }
+    try { const value = await requestJson<{ records: typeof history; warnings: string[] }>('/api/brick-vision/history', {}, '识别历史'); setHistory(value.records); if (value.warnings.length) setError(value.warnings.join('；')) }
     catch (e) { setError(String(e)) }
     finally { setHistoryReady(true) }
   }
@@ -287,6 +287,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
       }}>重置我的积木</button>}
     </ReviewToolbar>
     {result && <>
+      <p>Analysis ID: {result.id}<br/>Source Image: <a href={'/api/brick-source-images/' + encodeURIComponent(result.sourceImageId!)} target="_blank" rel="noreferrer">{result.sourceImageId}</a></p>
       {result.error && <p role="alert">{result.error.stage}：{result.error.message}</p>}
       {!!rows.length && <>
         <div className="vision-review-actions">

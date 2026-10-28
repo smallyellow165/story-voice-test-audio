@@ -1,3 +1,4 @@
+import { sourceImageFixture, originalFixture } from './source-image-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
@@ -62,7 +63,7 @@ test('history initializes colors but saved edits, deliberate Unknown and confirm
   const directory = await mkdtemp(path.join(tmpdir(), 'geometry-color-review-'))
   try {
     const id = randomUUID(), searchId = randomUUID()
-    const record = { id, kind: 'reverse-analysis', status: 'complete', analysis_mode: 'geometry_only',
+    const record = { id, kind: 'reverse-analysis', ...await sourceImageFixture(directory), status: 'complete', analysis_mode: 'geometry_only',
       source: { kind: 'full' }, analysis: { appearance: 'fixture', scale_evidence: 'visible', anchors: [],
         unknowns: [], relations: [], observations: Object.entries(evidence).map(([id, color]) => observation(id, color)) } }
     const file = path.join(directory, id + '.json')
