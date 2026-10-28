@@ -1,3 +1,4 @@
+import { SpatialPlanningHistory } from './SpatialPlanningHistory'
 import {TraceLinks} from '../llm-traces/TraceLinks'
 import {spatialPromptVersion} from './spatial-prompt-version.mjs'
 import {GeometryIssues} from './GeometryIssues'
@@ -118,8 +119,12 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <button type="button" className="brick-primary" disabled={!promptReady||!source?.ready||!selected||!providers[selected.provider]} onClick={()=>void generate()}>生成新的 Spatial Plan（调用模型）</button>
    {plan&&<p data-testid="spatial-record-model">当前记录{plan.rawOutput?'实际调用':'准备请求'}：{plan.provider||'未记录 Provider'} / {plan.model||'未记录 Model'} · Prompt：{plan.promptVersion||'未记录'}{plan.generationSettings?.reasoning?.effort?' · reasoning: '+plan.generationSettings.reasoning.effort:''}</p>}
    <TraceLinks source="spatial" id={plan?.id}/>
-   <label>已保存 Spatial Plan<select aria-label="Spatial Plan history" value={plan?.id||''} onChange={e=>{if(e.target.value)void action(()=>loadPlan(e.target.value))}}><option value="">选择历史计划（不调用模型）</option>{plans.map(p=><option key={p.id} value={p.id}>{p.createdAt} · {p.model} · {p.usable?'可执行':p.status} · {p.id}</option>)}</select></label>
-   <button onClick={()=>void action(async()=>{await refresh();await loadSource(analysisId);if(plan)setRuns((await request('geometry?planId='+plan.id)).items)})}>刷新历史与审核（不生成）</button>
+   <SpatialPlanningHistory runs={plans} loadedId={plan?.id} disabled={disabled || busy} onLoad={id => {
+     if (plan && id !== plan.id && !window.confirm('切换 Spatial 会替换当前预览，并可能丢弃未提交的人工编辑。确认已保存需要保留的修改后继续？')) return
+     void action(() => loadPlan(id))
+   }} />
+
+   <details className="workflow-options"><summary>历史读取操作</summary><button type="button" onClick={() => void action(async () => { await refresh(); await loadSource(analysisId); if (plan) setRuns((await request('geometry?planId=' + plan.id)).items) })}>重新读取历史与当前审核</button></details>
    {plan&&<><InspectorContent step="planning" disabled={disabled||busy}><p data-testid="spatial-plan-status">计划：{plan.status} · {plan.id} · {plan.usable?'可执行（非几何成功）':'不可执行'}</p>
     {plan.image&&<img className="spatial-reference" src={'data:'+plan.image.mimeType+';base64,'+plan.image.imageBase64} alt="Spatial Assembly 原始参考照片"/>}
     <details><summary>本计划的确认零件快照 · {(plan.requestInput?.observations||[]).length} 块</summary><ul>{(plan.requestInput?.observations||[]).map(o=><li key={o.id}>{o.id} · {o.part} / {o.color} · LDU {o.geometry?JSON.stringify(o.geometry.bodySizeLdu):'未知：缺少经审核几何 Profile，禁止假定尺寸/接口'}</li>)}</ul><small>历史计划使用生成时的审核快照；重新审核不会覆盖旧计划。</small></details>

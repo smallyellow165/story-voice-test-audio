@@ -9,7 +9,7 @@ const hash = v => createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const bytesHash = v => createHash('sha256').update(v).digest('hex')
 const requireEvidence = (ok, message) => { if (!ok) throw Error(message) }
 const link = (page, params) => page + '?' + new URLSearchParams(params)
-export function createWorkflowHistory(directory, { sourceImages, reverse, buildOrder }) {
+export function createWorkflowHistory(directory, { sourceImages, reverse, buildOrder, selectedSpatial }) {
   return { async read(imageId) {
     await sourceImages.read(imageId)
     const nodes = [], unassociated = [], index = new Map()
@@ -92,6 +92,10 @@ export function createWorkflowHistory(directory, { sourceImages, reverse, buildO
             note: '此 ID 属于库存 Mapping Review，不是 Parts Explorer Review 的 ID。',
           }, link('brick-test.html', { workflow: 'spatial', analysisId: aid, spatialPlanId: p.id }), p.id).key
         } else evidence.reviewEvidenceMissing = '未保存 Parts Explorer Review 版本；仅有明确 Analysis 来源引用'
+        if (selectedSpatial) {
+          try { const selection = await selectedSpatial.read(p.id); evidence.spatialChoice = { selectionKey: selection.selectionKey, selectedSpatialPlanId: selection.choice.selectedSpatialPlanId, revision: selection.choice.revision, eligible: selection.eligible } }
+          catch (e) { evidence.spatialChoiceUnavailable = e.message }
+        }
         add('Spatial', p.id, parent, aid, p.status, evidence, link('brick-test.html', { workflow: 'spatial', analysisId: aid, spatialPlanId: p.id }))
         planMap.set(p.id, p)
       } catch (e) { issue('Spatial', p.id, e.message, { analysisId: aid }) }

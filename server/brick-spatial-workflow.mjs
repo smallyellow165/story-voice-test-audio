@@ -54,7 +54,7 @@ export function prepareReviewedSource(saved,mapping,rules,includeEvidence=true,a
  prepared.input.provenance={analysisId:analysis.id,reviewId:mapping.id,reviewVersion:source.reviewVersion,savedReviewAt:source.updatedAt,excludedIds:source.rows.filter(r=>r.excluded).map(r=>r.id),mappingSource:'saved Part Explorer review + official inventory mapping review'}
  return prepared
 }
-function planView(r){
+export function planView(r){
  let validation={valid:false,issues:['没有可解析的计划']}
  try{if(r.plan)validation=validatePlan(r.plan,r.requestInput)}catch{validation={valid:false,issues:['记录结构无效']}}
  let matchesRaw=false

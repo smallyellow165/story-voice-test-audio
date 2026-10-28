@@ -1,3 +1,4 @@
+import { createSelectedSpatialStore } from './server/brick-selected-spatial.mjs'
 import { createWorkflowHistory } from './server/brick-workflow-history.mjs'
 import { createSelectedAnalysisStore } from './server/brick-selected-analysis.mjs'
 import { createSourceImageStore } from './server/brick-source-images.mjs'
@@ -54,7 +55,8 @@ const brickBuildOrder = createBuildOrderStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
 const selectedAnalysis = createSelectedAnalysisStore(path.join(generatedDirectory, 'brick-source-images', 'selected-analysis'), { sourceImages, reverse: brickReverse, vision: brickVision })
-const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder })
+const selectedSpatial = createSelectedSpatialStore(generatedDirectory, { reverse: brickReverse, sourceImages })
+const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder, selectedSpatial })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -490,6 +492,13 @@ const server = createServer(async (request, response) => {
         sendJson(response, 403, { error: '仅接受同源 Spatial 操作。' }); return
       }
       const body = request.method === 'POST' ? await readJsonBody(request, 16 * 1024) : {}
+      const choiceMatch = url.pathname.match(/^\/api\/brick-spatial\/plan-choice\/([a-f0-9-]+)$/)
+      if (choiceMatch) {
+        if (request.method === 'GET') sendJson(response, 200, await selectedSpatial.read(choiceMatch[1]))
+        else if (request.method === 'POST') sendJson(response, 200, await selectedSpatial.select(choiceMatch[1], body))
+        else sendJson(response, 405, { error: 'Use GET or POST.' })
+        return
+      }
       sendJson(response, 200, await brickSpatial.dispatch(request.method, url.pathname.slice('/api/brick-spatial/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, { error: error.statusCode ? error.message : 'Spatial 记录读取或执行失败；未自动重试。' }) }
     return
