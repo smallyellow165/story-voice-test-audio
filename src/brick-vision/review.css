@@ -79,3 +79,10 @@
 /* Keep long observation IDs within their allocated column, with native title tooltips. */
 :is(.inventory-workbench, .brick-reverse) .vision-matching-table td:nth-child(3) { overflow: hidden; }
 :is(.inventory-workbench, .brick-reverse) .vision-matching-table td:nth-child(3) > .vision-observation-id { display: block; width: 100%; text-align: left; white-space: nowrap; }
+
+.vision-info-hint { display: inline-flex; vertical-align: middle; margin-inline-start: 4px; }
+.vision-history-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-block: 6px; }
+.vision-history-diagnostics { font-size: 12px; overflow-wrap: anywhere; }
+.vision-history-diagnostics summary { cursor: pointer; color: #86521b; }
+.vision-review-help:popover-open { display: block; }
+:is(.brick-reverse, .inventory-workbench) .vision-history-line > label { margin: 0; }

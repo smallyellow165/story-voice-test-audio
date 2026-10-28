@@ -114,17 +114,12 @@ test('inventory and reverse share one per-image relationship, using explicit rec
 })
 
 test('History selection control renders Load/Select distinction and cannot select before loading formal state', async () => {
-  const ts = await import('typescript'), { createRequire } = await import('node:module'), require = createRequire(import.meta.url)
+  const { uiModuleUrl } = await import('./ui-module.mjs')
   const { renderToStaticMarkup } = await import('react-dom/server'), React = await import('react')
-  const { pathToFileURL } = await import('node:url')
-  const code = ts.transpileModule(await readFile(new URL('../src/brick-vision/SelectedAnalysis.tsx', import.meta.url), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText.replaceAll('"react/jsx-runtime"', JSON.stringify(pathToFileURL(require.resolve('react/jsx-runtime')).href))
-    .replaceAll("'react'", JSON.stringify(pathToFileURL(require.resolve('react')).href))
-  const { SelectedAnalysis } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
+  const { SelectedAnalysis } = await import(await uiModuleUrl(new URL('../src/brick-vision/SelectedAnalysis.tsx', import.meta.url)))
   const html = renderToStaticMarkup(React.createElement(SelectedAnalysis, { imageId: 'sha256:' + 'a'.repeat(64), analysisKind: 'reverse', complete: false, disabled: false }))
-  assert.match(html, /先 Load 并检查结果，再 Select/)
+  assert.match(html, /Select 才正式采用当前 Analysis/)
   assert.match(html, /disabled="">Select/)
-  assert.match(html, /刷新选择状态/)
+  assert.doesNotMatch(html, /刷新选择状态/); assert.match(html, /popover="auto"/)
   assert.equal(renderToStaticMarkup(React.createElement(SelectedAnalysis, { imageId: '', analysisKind: 'reverse', complete: false, disabled: false })), '')
 })

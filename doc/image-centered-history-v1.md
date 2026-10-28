@@ -90,3 +90,34 @@ Restart the dev server, open `/story-voice-test-audio/brick-inventory.html`, the
 6. Optionally load the same current selection revision in two tabs. Change it in one; a subsequent stale selection in the other must fail with a refresh message, rather than overwrite it automatically.
 
 Validation for this change: 50 scoped tests passed (7 new selection tests), production build passed, HTTP checks confirmed initial empty choice, invalid revision rejection (422), cross-origin rejection (403), and unchanged original-image GET. Penguin's four real records were selected only inside temporary test copies. All 262 real `generated/brick-*` files retained their SHA-256 hashes; no real selection, migration, deletion, Review edit or paid LLM call was performed. Browser connection was unavailable; actual interactive acceptance remains manual.
+
+## History UI simplification
+
+The current UI supersedes the explicit Load-button instructions above: changing
+“识别历史” immediately invokes the same restore path. The selector is locked during
+restore and the displayed current ID advances only after a successful restore.
+Unsaved Review state requires confirmation before switching; cancellation performs
+no read or state replacement. Filtering images does not discard the loaded run,
+edit Review, or update Selected. An out-of-filter loaded run is explicitly labeled.
+
+Image options use recorded display names and counts, retaining the exact imageId
+as the option value. Names never determine association. History options show time,
+short ID, status and the current image's Selected marker. The Selected button still
+uses the unchanged API/revision contract. Selected status reloads when the loaded
+run/image changes or the window regains focus; errors offer a retry, with no automatic
+retry of a selection write. History refreshes on panel entry and image-filter changes.
+
+InfoHint reuses the existing ReviewToolbar native top-layer popover: hover/focus
+reveals help, click/touch pins it, Escape or outside click dismisses it. Explanations
+for history, image filtering, selection, Prompt, Hint and recognition mode sit beside
+their controls. Errors, unsaved Review and model-call notices remain visible.
+Historical diagnostics retain their full text in expandable details with a count.
+
+Validation: 56 scoped tests passed and production build passed. Handler-level tests
+exercise four Penguin IDs, successful restore, cancellation/confirmation, failed
+reads and the separate Selected contract; these are not browser rendering tests.
+No browser was connected, so verify manually: switch through the four Penguin runs,
+check original image/boxes/Review, cancel a dirty switch and then confirm one, Select
+and reload, and exercise each info icon by hover, Tab/Enter/Escape and touch. Expand
+the diagnostic count to verify unresolved records are still reported. No production
+data, server schema, validator or downstream workflow was changed by this UI work.

@@ -1,3 +1,5 @@
+import { InfoHint } from './InfoHint'
+import type { Choice } from './SelectedAnalysis'
 import { SelectedAnalysis } from './SelectedAnalysis'
 import { SourceImageHistoryFilter } from './SourceImageHistoryFilter'
 import { historyForImage } from './image-history.mjs'
@@ -182,12 +184,14 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
         `总数 ${requested.length} · 成功回填 ${counts.filled} · 多个候选 ${counts.multiple} · 无候选 ${counts.none} · 失败 ${counts.failed} · 跳过 ${counts.skipped}`)
     } finally { lock.current = false; setBusy(false) }
   }
+  const [selectedChoice, setSelectedChoice] = useState<Choice | null>(null)
+  const [historyWarnings, setHistoryWarnings] = useState<string[]>([])
   async function refreshHistory() {
-    try { const value = await requestJson<{ records: typeof history; warnings: string[] }>('/api/brick-vision/history', {}, '识别历史'); setHistory(value.records); if (value.warnings.length) setError(value.warnings.join('；')) }
+    try { const value = await requestJson<{ records: typeof history; warnings: string[] }>('/api/brick-vision/history', {}, '识别历史'); setHistory(value.records); setHistoryWarnings(value.warnings) }
     catch (e) { setError(String(e)) }
     finally { setHistoryReady(true) }
   }
-  useEffect(() => { if (initialHistory === undefined) void refreshHistory() }, [])
+  useEffect(() => { if (active) void refreshHistory() }, [active, historyImageId])
   useEffect(() => {
     if (!active || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
     autoRestored.current = true
@@ -211,7 +215,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     return () => controller.abort()
   }, [configRevision])
   async function loadHistory(id: string, automatic = false) {
-    if (lock.current) return
+    if (!id || lock.current || (!automatic && result && !reviewSaved && !window.confirm('当前 Review 尚未保存。切换历史将丢弃未保存修改，是否继续？'))) return
     lock.current = true; setBusy(true); setError('')
     try {
       const next = await requestJson<VisionResult>('/api/brick-vision/history/' + encodeURIComponent(id), {}, '加载识别历史')
@@ -357,8 +361,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     </>}
   </div>
   return <section className="inventory-catalog inventory-source" id="inventory-image">
-    <h2>散装积木识别</h2>
-    <p>照片只发送给所选 Provider；一次识别只请求一次模型，不自动切换。不确定项需人工核对。诊断含原图，保存在本机 Test Audio generated/brick-vision 中。</p>
+    <h2>散装积木识别<InfoHint label="散装积木识别">照片只发送给所选 Provider。不确定项需人工核对；含原图的诊断保存在本机。</InfoHint></h2><p>识别会调用一次模型，不自动重试或切换 Provider。</p>
     <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onReady={() => setPickerReady(true)} onSelectionChange={setImageSelection} disabled={busy} onBusy={value => { lock.current = value; setBusy(value) }} onChange={image => {
       catalogEpoch.current++
       setPrepared(image); setImageInfo(image?.compression || null); requestId.current = newSessionId()
@@ -367,16 +370,19 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     }} />
     <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
     <div className="inventory-history">
-      <SelectedAnalysis imageId={historyImageId || result?.sourceImageId || ''} analysisKind="inventory"
-        loadedId={result?.id} loadedImageId={result?.sourceImageId} complete={result?.status === 'complete'} disabled={busy} />
-      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={busy} onChange={value => {setHistoryImageId(value);setHistoryId('')}}/>
-      <label htmlFor="vision-history-select">识别历史</label>
-      <select id="vision-history-select" aria-label="已成功识别的图片" value={historyId} disabled={busy} onChange={e => setHistoryId(e.target.value)}>
-        <option value="">选择成功记录</option>{historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.provider || '未记录 Provider'} · {r.model} · {r.originalName || r.image.sha256.slice(0, 12)} · {r.id}</option>)}
+      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={busy} onChange={setHistoryImageId}/>
+      <div className="vision-history-line"><label htmlFor="vision-history-select">识别历史</label><InfoHint label="识别历史">选择后自动加载原图、识别结果和此浏览器已保存的 Review；不会改变 Selected。</InfoHint></div>
+      <select id="vision-history-select" aria-label="已成功识别的图片" value={historyId} disabled={busy} onChange={e => { if (e.target.value) void loadHistory(e.target.value) }}>
+        <option value="">选择成功记录</option>
+        {historyId && !historyForImage(history, historyImageId).some(r => r.id === historyId) && <option value={historyId}>当前加载 · {historyId.slice(0, 8)}（筛选范围外）</option>}
+        {historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id} title={r.id}>{r.createdAt} · {r.id.slice(0, 8)}{selectedChoice?.imageId === r.sourceImageId && selectedChoice.analysisKind === 'inventory' && selectedChoice.selectedAnalysisId === r.id ? ' · Selected' : ''}</option>)}
       </select>
-      <button disabled={busy} onClick={() => void refreshHistory()}>刷新</button>
-      <button disabled={busy || !historyId} onClick={() => void loadHistory(historyId)}>加载识别结果</button>
-      <p>加载原始识别及此浏览器已保存的审核草稿；未保存编辑会被替换。审核草稿不会覆盖服务端原始记录。</p>
+      {result && <div className="vision-history-line">当前加载：<span title={result.id}>{result.id.slice(0, 8)}</span> · {result.status}</div>}
+      {result && !reviewSaved && <p role="status">Review 尚未保存；切换历史前会要求确认。</p>}
+      <SelectedAnalysis imageId={historyImageId || result?.sourceImageId || ''} analysisKind="inventory" onChoice={setSelectedChoice}
+        loadedId={result?.id} loadedImageId={result?.sourceImageId} complete={result?.status === 'complete'} disabled={busy} />
+      {!!historyWarnings.length && <details className="vision-history-diagnostics"><summary>History：{historyWarnings.length} 条记录诊断（未修复）</summary><ul>{historyWarnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
+
     </div>
     <ModelSelector models={models} value={{ provider, id: model }} disabled={busy || !models.length} onChange={chosen => {
       if (lock.current || (chosen.id === model && chosen.provider === provider)) return
@@ -388,7 +394,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     {provider === 'openai' && !openaiConfigured && <p role="alert">Test Audio 服务端尚未配置 OPENAI_API_KEY；请配置后重启服务，不会改用 Gemini。</p>}
     {modelError && <p role="alert">{modelError} <button disabled={busy} onClick={() => setConfigRevision(n => n + 1)}>重新读取模型配置（不调用模型）</button></p>}
     <button disabled={!prepared || busy || !!result || !model} onClick={() => void recognize()}>{busy ? '处理中…' : '识别图片'}</button>
-    <p>切换模型不会立即识别，需再次点击“识别照片”。相同请求不会自动重试模型。如需重新识别，可明确重新选择图片或切换模型。遮挡、相似模具和光照可能造成误识别。</p>
+    <InfoHint label="识别照片">切换模型不会立即识别；需点击识别照片。相同请求不自动重试；遮挡、模具和光照可能造成误识别。</InfoHint>
     {result?.originalImage?.name && imageSelection.name && result.originalImage.name !== imageSelection.name && <small>历史识别与标注仍使用参考图片：{result.originalImage.name}。</small>}
     {preview && <div ref={previewHost}><ObservationPreview src={preview} observations={visibleObservations} activeId={activeId} onSelect={selectBox} /></div>}
     {result && !preview && <p>此记录没有可显示的原图，未绘制 BBox；原始坐标仍可在详情查看。</p>}

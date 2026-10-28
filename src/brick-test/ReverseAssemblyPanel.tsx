@@ -1,3 +1,5 @@
+import { InfoHint } from '../brick-vision/InfoHint'
+import type { Choice } from '../brick-vision/SelectedAnalysis'
 import { SelectedAnalysis } from '../brick-vision/SelectedAnalysis'
 import { SourceImageHistoryFilter } from '../brick-vision/SourceImageHistoryFilter'
 import { historyForImage } from '../brick-vision/image-history.mjs'
@@ -67,7 +69,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [generationSubmitted, setGenerationSubmitted] = useState(false)
   const [detailId, setDetailId] = useState('')
   const [historyImageId, setHistoryImageId] = useState('')
-  const [history, setHistory] = useState<HistoryItem[]>(initialHistory?.items || []), [historyWarning, setHistoryWarning] = useState(initialHistory?.warnings.join('；') || '')
+  const [history, setHistory] = useState<HistoryItem[]>(initialHistory?.items || []), [historyWarning, setHistoryWarning] = useState<string[]>(initialHistory?.warnings || [])
   const [historyReady, setHistoryReady] = useState(initialHistory !== undefined), [pickerReady, setPickerReady] = useState(false)
   const [sceneRestored, setSceneRestored] = useState(!initialScene?.analysisId)
   const autoRestored = useRef(false)
@@ -91,18 +93,19 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   useEffect(() => () => { catalogEpoch.current++ }, [])
   useEffect(() => { onGeometryPresence(visible && geometryOnly && !!record?.analysis) }, [visible, geometryOnly, record?.analysis, onGeometryPresence])
 
+  const [selectedChoice, setSelectedChoice] = useState<Choice | null>(null)
   async function refreshHistory() {
     const value = await requestJson<History>('/api/brick-reverse/history', {}, '识别历史')
-    setHistory(value.items); setHistoryWarning(value.warnings.join('；')); setHistoryReady(true)
+    setHistory(value.items); setHistoryWarning(value.warnings); setHistoryReady(true)
   }
   useEffect(() => {
-    if (initialHistory !== undefined) return
+    if (!visible) return
     let cancelled = false
     void requestJson<History>('/api/brick-reverse/history', {}, '识别历史').then(value => {
-      if (!cancelled) { setHistory(value.items); setHistoryWarning(value.warnings.join('；')) }
-    }).catch(e => { if (!cancelled) setHistoryWarning(String(e)) }).finally(() => { if (!cancelled) setHistoryReady(true) })
+      if (!cancelled) { setHistory(value.items); setHistoryWarning(value.warnings) }
+    }).catch(e => { if (!cancelled) setHistoryWarning([String(e)]) }).finally(() => { if (!cancelled) setHistoryReady(true) })
     return () => { cancelled = true }
-  }, [])
+  }, [visible, historyImageId])
   useEffect(() => {
     if (!visible || !pickerReady || !modelsReady || !historyReady || autoRestored.current || !initialScene?.analysisId) return
     autoRestored.current = true
@@ -201,6 +204,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     finally { gate.current = false; setBusy(''); onBusy(false) }
   }
   async function loadHistory(id: string, automatic = false) {
+    if (!id || gate.current || (!automatic && dirty && !window.confirm('当前 Review 有未保存修改。切换历史将丢弃这些修改，是否继续？'))) return
     await action('加载识别结果', async () => {
       const value = await requestJson<Restored>('/api/brick-reverse/restore/' + encodeURIComponent(id), {}, '恢复识别结果与审核')
       if (value.analysis.kind !== 'reverse-analysis') throw new Error('请选择成品分析历史。')
@@ -449,11 +453,10 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       <details><summary>确认、Geometry Snapshot、Design Hash 与诊断</summary><pre>{JSON.stringify(artifact, null, 2)}</pre></details></div>}
   </div>
   return <section className="brick-reverse" aria-label="Assembled Recognition">
-    <h2>{geometryOnly ? '成品几何识别' : '成品目录识别'}</h2>
-    <p className="brick-help">{geometryOnly ? '先分析宽、深、高；仅在你手动检索时使用 Catalog。原始几何观察独立保存。' : '分析可见特征，再检索候选、人工确认；组装生成在 Design Lab 中继续。'} 单张照片无法确认的结构保持 Unknown。</p>
-    {geometryOnly && <label>Reverse Geometry Prompt Version<select aria-label="Reverse Geometry Prompt Version" disabled={locked} value={promptVersion} onChange={e => setPromptVersion(Number(e.target.value))}>
+    <h2>{geometryOnly ? '成品几何识别' : '成品目录识别'}<InfoHint label="识别模式">{geometryOnly ? '先分析宽、深、高；仅在你手动检索时使用 Catalog。原始几何观察独立保存。' : '分析可见特征，再检索候选、人工确认；组装生成在 Design Lab 中继续。'} 单张照片无法确认的结构保持 Unknown。</InfoHint></h2>
+    {geometryOnly && <div><div className="vision-history-line"><label htmlFor="reverse-prompt-version">Prompt Version</label><InfoHint label="Prompt Version">用于下一次明确发起的识别；切换版本不会重新调用模型或解除重复识别保护。</InfoHint></div><select id="reverse-prompt-version" aria-label="Reverse Geometry Prompt Version" disabled={locked} value={promptVersion} onChange={e => setPromptVersion(Number(e.target.value))}>
       <option value={3}>reverse_geometry_v1 · v3（当前默认）</option><option value={4}>reverse_geometry_v1 · v4（遮挡与连续结构，待验证）</option>
-    </select></label>}
+    </select></div>}
     <fieldset disabled={locked || submitted}>
       <ServerImagePicker initialScene={initialScene} restoredSelection={restoredSelection} onSelectionChange={setImageSelection} onReady={() => setPickerReady(true)} disabled={locked || submitted} onChange={setImage} onBusy={value => { gate.current = value; setBusy(value ? '准备图片' : ''); onBusy(value) }} />
       {!geometryOnly && <>
@@ -480,14 +483,14 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
         await refreshHistory()
       })}>识别图片（调用模型）</button>
     </fieldset>
-    <p id="reverse-recognition-status" role="status">{recognitionReason || `可以识别${geometryOnly ? ' · Prompt v' + promptVersion : ''}。仅点击“识别图片（调用模型）”后才会发起请求。`}</p>
-    <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button>
+    <p id="reverse-recognition-status" role="status">{record && submitted ? `已加载 · ${record.status} · ${record.id.slice(0, 8)}` : recognitionReason || '可以识别（调用模型）'}</p>
+    <button type="button" disabled={locked} onClick={reset}>新建分析 / 允许再次识别</button><InfoHint label="新建分析">允许对当前图片再次调用模型。切换 Prompt 不会解除重复识别保护。</InfoHint>
     {geometryOnly && record?.status === 'complete' && <fieldset disabled={locked}>
       <legend>Guided Re-analysis · 定向再识别</legend>
-      <p>已选 {guidedIds.size} 项：{[...guidedIds].join('、') || '请在审核表的“再识别”列选择'}。BBox 仅控制显示，与此选择无关。</p>
-      <label>用户 Hint<textarea aria-label="Guided Hint" value={hint} maxLength={4000} onChange={e => setHint(e.target.value)} /></label>
+      <p>已选 {guidedIds.size} 项：{[...guidedIds].join('、') || '请在审核表的“再识别”列选择'}。<InfoHint label="再识别范围">在审核表勾选再识别项；BBox 只控制显示，不决定再识别范围。</InfoHint></p>
+      <div><div className="vision-history-line"><label htmlFor="reverse-user-hint">用户 Hint</label><InfoHint label="用户 Hint">待核对的假设；使用所选 Prompt 和来源原图生成独立 Analysis。原审核保留，新结果需重新审核。</InfoHint></div><textarea id="reverse-user-hint" aria-label="Guided Hint" value={hint} maxLength={4000} onChange={e => setHint(e.target.value)} /></div>
       <ModelSelector models={models} value={{ id: model, provider: models.find(m => m.id === model)?.provider || '' }} onChange={m => onModel(m.id)} />
-      <p>使用上方选择的 Prompt v{promptVersion} 与来源原图。Hint 是待核对假设。将调用一次模型并保存独立 Analysis；原审核保留在来源中，新结果全部待审核。</p>
+      <p>将调用一次模型并保存独立 Analysis。</p>
       {dirty && <p>请先保存当前审核草稿。</p>}
       <button type="button" disabled={!guidedIds.size || !hint.trim() || !model || dirty} onClick={() => void action('根据 Hint 重新分析', async () => {
         const result = await post<Analysis>('analyze', { requestId: newSessionId(), model, analysis_mode: 'geometry_only', promptVersion,
@@ -499,23 +502,22 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
 
 
     <div className="brick-reverse-recovery">
-      {record && <p>Analysis ID: {record.id}<br/>Source Image: <a href={'/api/brick-source-images/' + encodeURIComponent(record.sourceImageId)} target="_blank" rel="noreferrer">{record.sourceImageId}</a></p>}
-      <TraceLinks source="reverse" id={record?.id||undefined}/>
-      <SelectedAnalysis imageId={historyImageId || record?.sourceImageId || ''} analysisKind="reverse"
-        loadedId={record?.id} loadedImageId={record?.sourceImageId} complete={record?.status === 'complete'} disabled={locked} />
-      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={locked} onChange={value => { setHistoryImageId(value); setRecordId('') }}/>
-      <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
+      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={locked} onChange={setHistoryImageId}/>
+      <div className="vision-history-line"><label htmlFor="reverse-history">识别历史</label><InfoHint label="识别历史">选择后立即加载原图、识别结果和已保存 Review；不会改变 Selected。</InfoHint></div>
+      <select id="reverse-history" value={recordId} disabled={locked} onChange={e => { if (e.target.value) void loadHistory(e.target.value) }}>
         <option value="">选择历史分析</option>
-        {recordId && !history.some(r => r.id === recordId) && <option value={recordId}>{recordId}</option>}
-        {historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id}>
-          {r.id} · {r.status} · {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.isGuided ? 'Guided · ' : ''}{r.appearance || r.status} · {r.count} 个识别项
+        {recordId && !historyForImage(history, historyImageId).some(r => r.id === recordId) && <option value={recordId}>当前加载 · {recordId.slice(0, 8)}（筛选范围外）</option>}
+        {historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id} title={r.id}>
+          {r.createdAt} · {r.id.slice(0, 8)} · {r.status}{selectedChoice?.imageId === r.sourceImageId && selectedChoice.analysisKind === 'reverse' && selectedChoice.selectedAnalysisId === r.id ? ' · Selected' : ''}
         </option>)}
-      </select></label>
-      <div className="brick-actions">
-        <button type="button" disabled={locked} onClick={() => void action('刷新历史', refreshHistory)}>刷新</button>
-        <button type="button" disabled={locked || !recordId || dirty} onClick={() => void loadHistory(recordId)}>加载识别结果</button>
-      </div>
-      {historyWarning && <p role="status">{historyWarning}</p>}
+      </select>
+      {record && <div className="vision-history-line">当前加载：<span title={record.id}>{record.id.slice(0, 8)}</span> · {record.status}</div>}
+      {dirty && <p role="status">Review 有未保存修改；切换历史前会要求确认。</p>}
+      <SelectedAnalysis imageId={historyImageId || record?.sourceImageId || ''} analysisKind="reverse" onChoice={setSelectedChoice}
+        loadedId={record?.id} loadedImageId={record?.sourceImageId} complete={record?.status === 'complete'} disabled={locked} />
+      <TraceLinks source="reverse" id={record?.id||undefined}/>
+      {!!historyWarning.length && <details className="vision-history-diagnostics"><summary>History：{historyWarning.length} 条记录或读取诊断（未修复）</summary><ul>{historyWarning.map((warning, i) => <li key={i}>{warning}</li>)}</ul></details>}
+
     </div>
     <CopySceneLink sync={visible && pickerReady && modelsReady && historyReady && sceneRestored && (!record || (record.analysis_mode || 'catalog_match') === analysisMode)} disabled={!historyReady || !sceneRestored || locked || !pickerReady || !modelsReady} dirty={dirty} scene={{ strategy: analysisMode,
       imageSource: imageSelection.source, image: imageSelection.name, model, provider: models.find(m => m.id === model)?.provider,
@@ -524,8 +526,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       src={'data:' + preview.mimeType + ';base64,' + preview.imageBase64} alt="原始参考照片及识别项标注"
       observations={record?.analysis?.observations || []} hiddenIds={hiddenBoxes} activeId={active} onSelect={selectBox} />
       {record && <div className="vision-selected-review">
-        <p>点击照片框选积木，再修改审核型号或颜色；照片框是模型标注，可能有偏差。</p>
-        <label>照片中的识别项<select aria-label="照片中的识别项" value={active} onChange={e => selectBox(e.target.value)}>
+
+        <label>照片中的识别项<InfoHint label="照片中的识别项">点击图片框选并审核型号、颜色；模型标注的框可能有偏差。</InfoHint><select aria-label="照片中的识别项" value={active} onChange={e => selectBox(e.target.value)}>
           {record.analysis?.observations.map(o => <option key={o.id} value={o.id}>{o.id}</option>)}
         </select></label>
         <p>当前审核：{selectedPart ? `${selectedPart.part_num} / ${reviewColors.find(c => c.id === selectedPart.color_id)?.name || '颜色'} · RB ${selectedPart.color_id}` : '尚未确认'}。型号或颜色修改后需重新选择候选并保存审核。</p>
