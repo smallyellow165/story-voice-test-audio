@@ -376,8 +376,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
       {onReset && <button disabled={locked || !confirmedItems.length} onClick={() => void action('重置我的积木', async () => {
         if (onReset(confirmedItems) !== false) setApplied(false)
       })}>重置我的积木</button>}
-      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id) + (designSessionId ? '&sessionId=' + encodeURIComponent(designSessionId) : '')}>在 Design Lab 加载参考分析 ↗</a>}
-      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id)}>Spatial Assembly · 复原已审核照片 ↗</a>}
+      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?analysisId=' + encodeURIComponent(record.id) + '&sourceImageId=' + encodeURIComponent(record.sourceImageId) + (designSessionId ? '&sessionId=' + encodeURIComponent(designSessionId) : '')}>在 Design Lab 加载参考分析 ↗</a>}
+      {!dirty && !!savedAt && record?.status === 'complete' && <a className="vision-review-design-link" href={import.meta.env.BASE_URL + 'brick-test.html?workflow=spatial&analysisId=' + encodeURIComponent(record.id) + '&sourceImageId=' + encodeURIComponent(record.sourceImageId)}>Spatial Assembly · 复原已审核照片 ↗</a>}
     </ReviewToolbar>
     {copyMessage && <p role="status">{copyMessage}</p>}
     {copyTarget !== null && <div role="dialog" aria-label="Copy from 历史 Review" style={{position:'fixed',zIndex:1000,top:'20%',left:'50%',transform:'translateX(-50%)',width:'min(560px, 90vw)',maxHeight:'60vh',overflowY:'auto',background:'white',border:'1px solid #b9ceca',borderRadius:6,padding:12,boxShadow:'0 4px 20px #0003'}}>

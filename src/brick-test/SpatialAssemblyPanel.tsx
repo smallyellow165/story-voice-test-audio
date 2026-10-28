@@ -1,3 +1,7 @@
+import {SourceImageHistoryFilter} from '../brick-vision/SourceImageHistoryFilter'
+import {historyForImage} from '../brick-vision/image-history.mjs'
+import {designImageContext,analysisInImage} from './design-image-context'
+import type {HistoryItem} from './reverse-types'
 import {InfoHint} from '../brick-vision/InfoHint'
 import { PartsGeometryPanel } from './PartsGeometryPanel'
 import { SpatialPlanningHistory } from './SpatialPlanningHistory'
@@ -23,28 +27,33 @@ type LayoutDetail={kind?:string;id:string;rank?:number;assembly:{bricks:Brick[]}
 type Geometry={search?:{complete:boolean;combinationCount:number;topK:number};validLayoutCount?:number;diagnosticCandidates?:CandidateSummary[];revisionId?:string;diagnosticAvailable?:boolean;id:string;planId:string;state:string;status:string;completeSearch:boolean;diagnostics:unknown[];rejectionSummary:unknown;error?:unknown;groups:unknown[];candidates:CandidateSummary[]}
 const api='/api/brick-spatial/'
 async function request(route:string,body?:unknown){const response=await fetch(api+route,{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(body?240000:30000)});const value=await response.json();if(!response.ok)throw new Error(value.error||'请求失败');return value}
-function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value)url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
+function urlPatch(values:Record<string,string>){const url=new URL(location.href);url.searchParams.set('workflow','spatial');url.searchParams.delete('generationId');for(const [key,value] of Object.entries(values)){if(value||key==='sourceImageId')url.searchParams.set(key,value);else url.searchParams.delete(key)}window.history.replaceState(null,'',url)}
 export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:Props){
  const [topK,setTopK]=useState(5),[savedSelections,setSavedSelections]=useState<{id:string;candidateId:string}[]>([])
  const [debugRefinement,setDebugRefinement]=useState<any>(null)
  const inspector=useContext(InspectorContext)
- const [analyses,setAnalyses]=useState<{id:string;appearance:string}[]>([]),[analysisId,setAnalysisId]=useState(new URL(location.href).searchParams.get('analysisId')||'')
+ const [analyses,setAnalyses]=useState<HistoryItem[]>([]),[analysisId,setAnalysisId]=useState('')
+ const [sourceImageId,setSourceImageId]=useState(''),[historyWarnings,setHistoryWarnings]=useState<string[]>([])
  const [source,setSource]=useState<Source|null>(null),[plans,setPlans]=useState<History[]>([]),[plan,setPlan]=useState<Plan|null>(null)
  const [runs,setRuns]=useState<History[]>([]),[geometry,setGeometry]=useState<Geometry|null>(null),[candidate,setCandidate]=useState(''),[detail,setDetail]=useState<LayoutDetail|null>(null)
  const [models,setModels]=useState<{id:string;label:string;provider:string;reasoningEffort?:string}[]>([]),[providers,setProviders]=useState<Record<string,boolean>>({}),[model,setModel]=useState('')
  const [promptReady,setPromptReady]=useState(false)
  const [evidence,setEvidence]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[operations,setOperations]=useState<{id:string;state:string;error?:string;planId?:string;geometryId?:string}[]>([])
  const [phase,setPhase]=useState(''),[stageError,setStageError]=useState({planning:'',geometry:''})
+ const contextEpoch=useRef(0)
  const gate=useRef(false),boot=useRef(false),mounted=useRef(true)
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
  useEffect(()=>{setCandidate('');setDetail(null);onPreview(null)},[manualRevision])
  async function action(work:()=>Promise<void>,stage=''){if(gate.current||disabled)return;gate.current=true;setBusy(true);onBusy(true);setError('');setPhase(stage);if(stage)setStageError(v=>({...v,[stage]:''}));try{await work()}catch(e){if(mounted.current){setError(String(e)+'；未自动重试。如等待超时，请刷新历史查看已保存结果。');if(stage)setStageError(v=>({...v,[stage]:String(e)}))}}finally{gate.current=false;if(mounted.current){setBusy(false);setPhase('');onBusy(false)}}}
  async function refresh(a=analysisId){
+  const epoch=contextEpoch.current
+  if(!a){setPlans([]);setOperations([]);return}
   const [p,o]=await Promise.all([request('plans'+(a?'?analysisId='+encodeURIComponent(a):'')),request('requests'+(a?'?analysisId='+encodeURIComponent(a):''))])
+  if(epoch!==contextEpoch.current)return
   setPlans(p.items);setOperations(o.items)
  }
- useEffect(()=>{const focus=()=>{if(gate.current||disabled)return;void refresh(analysisId).catch(e=>setError(String(e)));if(plan)void request('plans/'+plan.id).then(p=>setPlan(current=>current&&current.id===p.id?{...current,partsInputMatch:p.partsInputMatch}:current)).catch(e=>setError(String(e)))};window.addEventListener('focus',focus);return()=>window.removeEventListener('focus',focus)},[analysisId,plan?.id,disabled])
- async function loadSource(a:string){setSource(null);if(!a)return;try{setSource(await request('source/'+a))}catch(e){setNotice('当前审核暂不可读取：'+String(e)+'。仍可加载历史计划的已确认快照。')}}
+ useEffect(()=>{const focus=()=>{if(gate.current||disabled)return;void refresh(analysisId||plan?.analysisId||'').catch(e=>setError(String(e)));if(plan)void request('plans/'+plan.id).then(p=>setPlan(current=>current&&current.id===p.id?{...current,partsInputMatch:p.partsInputMatch}:current)).catch(e=>setError(String(e)))};window.addEventListener('focus',focus);return()=>window.removeEventListener('focus',focus)},[analysisId,plan?.id,disabled])
+ async function loadSource(a:string){const epoch=contextEpoch.current;setSource(null);if(!a)return;try{const next=await request('source/'+a);if(epoch===contextEpoch.current)setSource(next)}catch(e){if(epoch===contextEpoch.current)setNotice('当前审核暂不可读取：'+String(e)+'。仍可加载历史计划的已确认快照。')}}
  async function showCandidate(g:Geometry,cid:string,focus=true){
   if(focus)inspector.select('geometry')
   setCandidate('');setDetail(null);onPreview(null)
@@ -69,11 +78,15 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
   if(g.state==='complete'&&available.length)await showCandidate(g,available.some(c=>c.id===preferred)?preferred:available[0].id,!restore)
   setGeometry(g)
  }
- async function loadPlan(pid:string,gid?:string,cid?:string){
+ async function loadPlan(pid:string,gid?:string,cid?:string,context?:{records:HistoryItem[];imageId:string|null;analysisId:string}){
+  const p:Plan=await request('plans/'+pid)
+  if(context?.analysisId&&context.analysisId!==p.analysisId)throw Error('Spatial 与 URL Analysis 上下文不一致')
+  const scope=designImageContext(context?.records??analyses,p.analysisId,context?context.imageId:sourceImageId)
+  contextEpoch.current++
   if(!gid)inspector.select('planning')
-  setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setRuns([])
-  const p:Plan=await request('plans/'+pid);setPlan(p);setStageError({planning:'',geometry:''});setAnalysisId(p.analysisId)
-  urlPatch({analysisId:p.analysisId,spatialPlanId:pid,geometryId:'',candidateId:''})
+  setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setRuns([]);setSavedSelections([]);setDebugRefinement(null)
+  setPlan(p);setStageError({planning:'',geometry:''});setAnalysisId(scope.analysisId);setSourceImageId(scope.imageId);setNotice(scope.warning)
+  urlPatch({sourceImageId:scope.imageId,analysisId:p.analysisId,spatialPlanId:pid,geometryId:'',candidateId:''})
   const r=await request('geometry?planId='+pid);setRuns(r.items)
   await refresh(p.analysisId);await loadSource(p.analysisId)
   if(gid||r.items[0]?.id)await loadGeometry(gid||r.items[0].id,pid,cid,!!gid)
@@ -81,10 +94,28 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  useEffect(()=>{if(disabled||boot.current)return;boot.current=true;void action(async()=>{
   const params=new URL(location.href).searchParams
   const [s,h]=await Promise.all([request('status'),fetch('/api/brick-reverse/history').then(r=>{if(!r.ok)throw new Error('Analysis 历史不可用');return r.json()})])
-  setPromptReady(s.prompt?.current===true&&s.prompt.version===spatialPromptVersion);setModels(s.models);setProviders(s.providers);setModel(params.get('spatialModel')||s.models[0]?.id||'');setAnalyses(h.items)
-  const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined);else {await refresh();await loadSource(params.get('analysisId')||'')}
+  setPromptReady(s.prompt?.current===true&&s.prompt.version===spatialPromptVersion);setModels(s.models);setProviders(s.providers);setModel(params.get('spatialModel')||s.models[0]?.id||'');setAnalyses(h.items);setHistoryWarnings(h.warnings)
+  const pid=params.get('spatialPlanId');if(pid)await loadPlan(pid,params.get('geometryId')||undefined,params.get('candidateId')||undefined,{records:h.items,imageId:params.get('sourceImageId'),analysisId:params.get('analysisId')||''});else {const scope=designImageContext(h.items,params.get('analysisId')||'',params.get('sourceImageId'));setSourceImageId(scope.imageId);setAnalysisId(scope.analysisId);setNotice(scope.warning);urlPatch({sourceImageId:scope.imageId,analysisId:scope.analysisId});await refresh(scope.analysisId);await loadSource(scope.analysisId)}
  })},[disabled])
- async function generate(prepareOnly=false){if(!source?.ready||!model||!promptReady)return;inspector.select('planning');await action(async()=>{
+ function clearViewedContext(a:string,imageId:string){
+  contextEpoch.current++
+  setAnalysisId(a);setSourceImageId(imageId);setSource(null);setPlan(null);setGeometry(null);setCandidate('');setDetail(null);setRuns([]);setPlans([]);setOperations([]);setSavedSelections([]);setDebugRefinement(null);setStageError({planning:'',geometry:''});setNotice('');onPreview(null)
+  urlPatch({sourceImageId:imageId,analysisId:a,spatialPlanId:'',geometryId:'',candidateId:'',refinementId:'',refinementCandidateId:'',spatialPreview:''})
+ }
+ function allowContextSwitch(){return !(plan||geometry||manualRevision>0)||window.confirm('切换图片或 Analysis 会替换当前预览，并可能丢弃未提交的人工编辑。确认已保存需要保留的修改后继续？')}
+ function filterImage(imageId:string){
+  if(gate.current||disabled||imageId===sourceImageId)return
+  if(analysisInImage(analyses,imageId,analysisId)){setSourceImageId(imageId);urlPatch({sourceImageId:imageId});return}
+  if(!allowContextSwitch())return
+  clearViewedContext('',imageId)
+ }
+ function chooseAnalysis(a:string){
+  if(gate.current||disabled||a===analysisId)return
+  if(a&&!analysisInImage(analyses,sourceImageId,a)){setError('Analysis 不属于当前图片筛选范围');return}
+  if(!allowContextSwitch())return
+  clearViewedContext(a,sourceImageId);void action(async()=>{await refresh(a);await loadSource(a)})
+ }
+ async function generate(prepareOnly=false){if(!source?.ready||!model||!promptReady||!analysisInImage(analyses,sourceImageId,analysisId))return;inspector.select('planning');await action(async()=>{
   setNotice('Parts Input Preparation：校验并保存零件输入…')
   const preparedResponse=await fetch('/api/brick-parts-inputs/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({analysisId,reviewVersion:source.reviewVersion})})
   const prepared=await preparedResponse.json();if(!preparedResponse.ok)throw Error(prepared.error)
@@ -108,8 +139,10 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
  return <section className="brick-panel brick-spatial" aria-label="Spatial Assembly">
   <h2>Spatial Assembly <InfoHint label="Spatial Assembly">审核输入 → 空间计划 → 几何结果。各阶段独立保存；加载历史和执行几何不调用模型。</InfoHint></h2>
   <fieldset disabled={disabled||busy}>
-   <label>已有 Analysis / Review<select aria-label="Spatial Analysis" value={analysisId} onChange={e=>{const a=e.target.value;setAnalysisId(a);setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setSource(null);setNotice('');urlPatch({analysisId:a,spatialPlanId:'',geometryId:'',candidateId:''});void action(async()=>{await refresh(a);await loadSource(a)})}}><option value="">选择已有分析</option>{analyses.map(a=><option key={a.id} value={a.id}>{a.appearance?.slice(0,45)||a.id} · {a.id}</option>)}</select></label>
-   {analysisId&&<a href={import.meta.env.BASE_URL+'brick-inventory.html?analysisId='+encodeURIComponent(analysisId)}>返回 Part Explorer 审核型号与颜色 ↗</a>}
+   <SourceImageHistoryFilter records={analyses} value={sourceImageId} disabled={disabled||busy} onChange={filterImage} hint="仅按正式 Source Image 筛选。切换图片可能清空当前预览，不改变任何 Selected，也不准备或生成规划。"/>
+   <label>已有 Analysis / Review<select aria-label="Spatial Analysis" value={analysisId} onChange={e=>chooseAnalysis(e.target.value)}><option value="">选择已有分析</option>{historyForImage(analyses,sourceImageId).map(a=><option key={a.id} value={a.id} title={a.id}>{a.id.slice(0,8)} · {a.image_reference?.name} · {a.status}</option>)}</select></label>
+   {analysisId&&<a href={import.meta.env.BASE_URL+'brick-inventory.html?analysisId='+encodeURIComponent(analysisId)+'&sourceImageId='+encodeURIComponent(analyses.find(a=>a.id===analysisId)!.sourceImageId)}>返回 Part Explorer 审核型号与颜色 ↗</a>}
+   {!!historyWarnings.length&&<details><summary>History · {historyWarnings.length} 条诊断</summary><ul>{historyWarnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul></details>}
    <InspectorContent step="planning" disabled={disabled||busy}><p>{planningStatus.reason}</p>   {source&&<details><summary>当前已保存审核 · {source.rows.filter(r=>!r.excluded&&r.confirmedPart).length} 个确认项</summary><ul>{source.rows.map(r=><li key={r.id}>{r.id} · {r.excluded?'已排除':r.confirmedPart?r.confirmedPart.part_num+' / RB Color '+r.confirmedPart.color_id+' × '+r.quantity:'未确认'}</li>)}</ul>{source.warnings.map(w=><p key={w}>{w}</p>)}{source.errors.map(e=><p key={e} className="brick-error">{e}</p>)}</details>}</InspectorContent>
    <PartsGeometryPanel />
    <h3 className="workflow-step-title">1 · Spatial Planning <InspectButton step="planning"/></h3>
