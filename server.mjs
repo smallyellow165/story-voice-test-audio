@@ -1,3 +1,4 @@
+import { createPartsGeometryService } from './server/brick-parts-geometry.mjs'
 import { createSelectedSpatialStore } from './server/brick-selected-spatial.mjs'
 import { createWorkflowHistory } from './server/brick-workflow-history.mjs'
 import { createSelectedAnalysisStore } from './server/brick-selected-analysis.mjs'
@@ -48,6 +49,7 @@ const generatedDirectory = path.join(projectRoot, 'generated')
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const sourceImages = createSourceImageStore(path.join(generatedDirectory, 'brick-source-images'))
+const partsGeometry = createPartsGeometryService()
 const brickGames = createBrickGames(path.join(generatedDirectory, 'brick-games'))
 const brickReverse = createBrickReverse(path.join(generatedDirectory, 'brick-reverse'), { games: brickGames, sourceImages })
 const llmTraces = createLlmTraceStore(generatedDirectory)
@@ -484,6 +486,15 @@ const server = createServer(async (request, response) => {
       const body = request.method === 'POST' ? await readJsonBody(request, 256 * 1024) : {}
       sendJson(response, 200, await brickBuildOrder.dispatch(request.method, url.pathname.slice('/api/brick-build/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, {error:error.statusCode ? error.message : 'Build Plan 读取或保存失败'}) }
+    return
+  }
+  if (url.pathname === '/api/brick-parts-geometry') {
+    if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET.' }); return }
+    try {
+      const color = url.searchParams.get('colorId')
+      if (color === null || !/^\d+$/.test(color)) { sendJson(response, 422, { error: '需要明确颜色 ID' }); return }
+      sendJson(response, 200, await partsGeometry.resolve(url.searchParams.get('partNum'), Number(color)))
+    } catch (error) { sendJson(response, error.statusCode || 502, { error: error.message }) }
     return
   }
   if (url.pathname.startsWith('/api/brick-spatial/')) {

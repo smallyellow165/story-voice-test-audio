@@ -1,3 +1,4 @@
+import { PartsGeometryPanel } from './PartsGeometryPanel'
 import { SpatialPlanningHistory } from './SpatialPlanningHistory'
 import {TraceLinks} from '../llm-traces/TraceLinks'
 import {spatialPromptVersion} from './spatial-prompt-version.mjs'
@@ -105,6 +106,7 @@ export function SpatialAssemblyPanel({manualRevision,disabled,onBusy,onPreview}:
    <label>已有 Analysis / Review<select aria-label="Spatial Analysis" value={analysisId} onChange={e=>{const a=e.target.value;setAnalysisId(a);setPlan(null);setGeometry(null);setCandidate('');setDetail(null);onPreview(null);setSource(null);setNotice('');urlPatch({analysisId:a,spatialPlanId:'',geometryId:'',candidateId:''});void action(async()=>{await refresh(a);await loadSource(a)})}}><option value="">选择已有分析</option>{analyses.map(a=><option key={a.id} value={a.id}>{a.appearance?.slice(0,45)||a.id} · {a.id}</option>)}</select></label>
    {analysisId&&<a href={import.meta.env.BASE_URL+'brick-inventory.html?analysisId='+encodeURIComponent(analysisId)}>返回 Part Explorer 审核型号与颜色 ↗</a>}
    <InspectorContent step="planning" disabled={disabled||busy}><p>{planningStatus.reason}</p>   {source&&<details><summary>当前已保存审核 · {source.rows.filter(r=>!r.excluded&&r.confirmedPart).length} 个确认项</summary><ul>{source.rows.map(r=><li key={r.id}>{r.id} · {r.excluded?'已排除':r.confirmedPart?r.confirmedPart.part_num+' / RB Color '+r.confirmedPart.color_id+' × '+r.quantity:'未确认'}</li>)}</ul>{source.warnings.map(w=><p key={w}>{w}</p>)}{source.errors.map(e=><p key={e} className="brick-error">{e}</p>)}</details>}</InspectorContent>
+   <PartsGeometryPanel />
    <h3 className="workflow-step-title">1 · Spatial Planning <InspectButton step="planning"/></h3>
    <div data-testid="planning-state" className={"spatial-state "+planningStatus.tone} role="status"><strong>{planningStatus.label}</strong><small>计划状态不代表几何验证通过。</small></div>
    <ModelSelector models={models} value={{id:model,provider:selected?.provider||''}} label="Spatial Planning Provider / 模型（独立于图片识别）" onChange={m=>{setModel(m.id);urlPatch({spatialModel:m.id})}}/>

@@ -15,7 +15,7 @@ export function inputFromSavedAnalysis(analysis, trace, hints = {}) {
     if (!target || m.errors?.length || !savedGeometryMappingMatches(source.part_num,m.evidence?.part,target.part,m.geometryBinding)
       || !m.partCandidateChecks?.some(c => c.part === target.part && c.eligible && c.local?.available && (!m.geometryBinding || c.supported))) throw new Error('No verified saved official mapping/local part evidence: '+o.id)
     return { id: o.id, part: target.part, color: target.color,
-      evidence: { observation: o, confirmedPart: source, mapping: { source: m.evidence.part.source, records: m.evidence.part.mappings, target, reviewId: trace.inventorySource.reviewId,
+      evidence: { observation: o, confirmedPart: source, mapping: { source: m.evidence.part.source, records: m.evidence.part.mappings, target, reviewId: trace.inventorySource.reviewId, definitionReferences: m.definitionReferences,
         ...(m.geometryBinding?{geometryBinding:m.geometryBinding}:{}) } } }
   })
   return { observations, inventory: trace.requestInput.inventory, relations: analysis.analysis.relations || [], hints,
