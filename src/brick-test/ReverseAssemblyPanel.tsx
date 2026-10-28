@@ -1,3 +1,4 @@
+import { SelectedAnalysis } from '../brick-vision/SelectedAnalysis'
 import { SourceImageHistoryFilter } from '../brick-vision/SourceImageHistoryFilter'
 import { historyForImage } from '../brick-vision/image-history.mjs'
 import {TraceLinks} from '../llm-traces/TraceLinks'
@@ -500,6 +501,8 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     <div className="brick-reverse-recovery">
       {record && <p>Analysis ID: {record.id}<br/>Source Image: <a href={'/api/brick-source-images/' + encodeURIComponent(record.sourceImageId)} target="_blank" rel="noreferrer">{record.sourceImageId}</a></p>}
       <TraceLinks source="reverse" id={record?.id||undefined}/>
+      <SelectedAnalysis imageId={historyImageId || record?.sourceImageId || ''} analysisKind="reverse"
+        loadedId={record?.id} loadedImageId={record?.sourceImageId} complete={record?.status === 'complete'} disabled={locked} />
       <SourceImageHistoryFilter records={history} value={historyImageId} disabled={locked} onChange={value => { setHistoryImageId(value); setRecordId('') }}/>
       <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
         <option value="">选择历史分析</option>

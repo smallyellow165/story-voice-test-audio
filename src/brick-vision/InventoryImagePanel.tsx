@@ -1,3 +1,4 @@
+import { SelectedAnalysis } from './SelectedAnalysis'
 import { SourceImageHistoryFilter } from './SourceImageHistoryFilter'
 import { historyForImage } from './image-history.mjs'
 import {observationPrintHints} from './print-hints.mjs'
@@ -366,6 +367,8 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     }} />
     <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
     <div className="inventory-history">
+      <SelectedAnalysis imageId={historyImageId || result?.sourceImageId || ''} analysisKind="inventory"
+        loadedId={result?.id} loadedImageId={result?.sourceImageId} complete={result?.status === 'complete'} disabled={busy} />
       <SourceImageHistoryFilter records={history} value={historyImageId} disabled={busy} onChange={value => {setHistoryImageId(value);setHistoryId('')}}/>
       <label htmlFor="vision-history-select">识别历史</label>
       <select id="vision-history-select" aria-label="已成功识别的图片" value={historyId} disabled={busy} onChange={e => setHistoryId(e.target.value)}>

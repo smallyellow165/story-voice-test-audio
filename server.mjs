@@ -1,3 +1,4 @@
+import { createSelectedAnalysisStore } from './server/brick-selected-analysis.mjs'
 import { createSourceImageStore } from './server/brick-source-images.mjs'
 import {createBuildOrderStore} from './server/brick-build-order.mjs'
 import {createLlmTraceStore} from './server/llm-traces.mjs'
@@ -51,6 +52,7 @@ const llmTraces = createLlmTraceStore(generatedDirectory)
 const brickBuildOrder = createBuildOrderStore(generatedDirectory)
 const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickReverse, games: brickGames })
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
+const selectedAnalysis = createSelectedAnalysisStore(path.join(generatedDirectory, 'brick-source-images', 'selected-analysis'), { sourceImages, reverse: brickReverse, vision: brickVision })
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -491,11 +493,19 @@ const server = createServer(async (request, response) => {
     return
   }
   if (url.pathname.startsWith('/api/brick-source-images/')) {
-    if (request.method !== 'GET') { sendJson(response, 405, { error: 'Use GET.' }); return }
     try {
-      const imageId = decodeURIComponent(url.pathname.slice('/api/brick-source-images/'.length))
-      sendJson(response, 200, await sourceImages.read(imageId))
-    } catch (error) { sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Source Image 读取失败' }) }
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, { error: '仅接受同源 Source Image 操作' }); return
+      }
+      const parts = url.pathname.slice('/api/brick-source-images/'.length).split('/')
+      const imageId = decodeURIComponent(parts[0])
+      if (parts.length === 2 && parts[1] === 'selected-analysis') {
+        if (request.method === 'GET') sendJson(response, 200, await selectedAnalysis.read(imageId))
+        else if (request.method === 'POST') sendJson(response, 200, await selectedAnalysis.select(imageId, await readJsonBody(request, 4096)))
+        else sendJson(response, 405, { error: 'Use GET or POST.' })
+      } else if (parts.length === 1 && request.method === 'GET') sendJson(response, 200, await sourceImages.read(imageId))
+      else sendJson(response, 405, { error: '不支持的 Source Image 操作' })
+    } catch (error) { sendJson(response, error.statusCode || 500, { error: error.statusCode ? error.message : 'Source Image / Selected Analysis 读取或保存失败' }) }
     return
   }
   if (url.pathname.startsWith('/api/brick-reverse/')) {
