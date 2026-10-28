@@ -30,8 +30,8 @@ export function createRefinementStore(directory,{getPlan,getGeometry,loadRules})
   async run(body){
    const source=await getPlan(validId(body.planId)),geometry=await getGeometry(validId(body.geometryId))
    if(geometry.planId!==source.id||geometry.revisionId||geometry.state!=='complete'||geometry.sourcePlanHash!==hash(source.plan))fail('仅支持与原始计划匹配、已完成的原始 Geometry Result')
-   const {rules,input,enrichments}=await currentInput(source)
-   const result=refineGeometry(source.plan,input,rules,{radiusLdu:body.radiusLdu??20})
+   const {rules,input,enrichments,symmetryProofs}=await currentInput(source)
+   const result=refineGeometry(source.plan,input,rules,{radiusLdu:body.radiusLdu??20,symmetryProofs})
    const r={...result,id:randomUUID(),createdAt:new Date().toISOString(),planId:source.id,geometryId:geometry.id,sourcePlanHash:hash(source.plan),sourceInputHash:hash(source.requestInput),sourceGeometryHash:hash(geometry),input,enrichments,sourcePlan:source.plan}
    for(const p of r.proposals)p.hash=hash(p)
    await save(refinements,r);return {refinementId:r.id,resultStatus:r.status}
@@ -41,11 +41,11 @@ export function createRefinementStore(directory,{getPlan,getGeometry,loadRules})
    if(!p||body.proposalHash!==p.hash)fail('候选或内容哈希不匹配，请重新加载')
    verifyProposal(p)
    if(body.confirmed!==true||typeof body.reviewNote!=='string'||!body.reviewNote.trim()||body.reviewNote.length>2000)fail('需要用户明确确认并填写照片审核说明')
-   const {rules,input}=await currentInput(source)
+   const {rules,input,symmetryProofs}=await currentInput(source)
    if(hash(input)!==hash(r.input))fail('几何输入已变化，请重新 Refinement')
    const refinedPlan=planAtPoses(source.plan,p.poses)
    if(hash(refinedPlan)!==hash(p.refinedPlan))fail('候选修订内容不一致')
-   const strict=executePlan(refinedPlan,input,rules)
+   const strict=executePlan(refinedPlan,input,rules,{symmetryProofs})
    if(!strict.candidates.length&&body.acknowledgeInvalid!==true)fail('候选仍是 Geometry Invalid，需明确确认剩余问题；批准不能代替几何校验')
    if(p.geometry.valid&&!strict.candidates.length)fail('候选不再通过严格校验，不能使用旧的有效标记')
    const record={version:'spatial-revision-v1',id:randomUUID(),createdAt:new Date().toISOString(),refinementId:r.id,proposalId:p.id,proposalHash:p.hash,planId:r.planId,geometryId:r.geometryId,sourcePlanHash:r.sourcePlanHash,sourceInputHash:r.sourceInputHash,sourceGeometryHash:r.sourceGeometryHash,
@@ -56,9 +56,9 @@ export function createRefinementStore(directory,{getPlan,getGeometry,loadRules})
    const rev=await revision(body.revisionId),r=await get(rev.refinementId),source=await checkSource(rev),p=r.proposals.find(p=>p.id===rev.proposalId)
    if(!p||p.hash!==rev.proposalHash||hash(p.refinedPlan)!==hash(rev.refinedPlan))fail('修订记录与已批准候选不一致')
    verifyProposal(p)
-   const {rules,input}=await currentInput(source)
+   const {rules,input,symmetryProofs}=await currentInput(source)
    if(hash(input)!==hash(rev.input))fail('Geometry Profile 已变化，需重新审核')
-   const result=executePlan(rev.refinedPlan,input,rules)
+   const result=executePlan(rev.refinedPlan,input,rules,{symmetryProofs})
    const record={...result,id:randomUUID(),createdAt:new Date().toISOString(),state:'complete',planId:rev.planId,revisionId:rev.id,refinementId:r.id,sourcePlan:rev.refinedPlan,sourcePlanHash:hash(rev.refinedPlan),originalPlanHash:rev.sourcePlanHash,input}
    // Preserve an inspectable failed layout, never expose it as a legal candidate.
    if(!result.candidates.length)record.diagnosticAssembly={...p.assembly,geometry:rules.validateFinalAssembly(p.assembly.bricks),note:'Approved layout revision; strict Geometry remains invalid. Not a successful Assembly.'}

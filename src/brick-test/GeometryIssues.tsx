@@ -33,7 +33,8 @@ export function GeometryIssues({geometryId,refinement,onPreview,selectedLayout}:
  const content=<section className="geometry-issues" aria-label="Geometry Issues">
   {report&&<div role="status" className={'spatial-state '+(report.status==='budget_exceeded'?'review':report.status==='no_solution'?'failed':'')}>
    <strong>{report.status==='budget_exceeded'?'未完成搜索 · 预算不足':report.status==='no_solution'?(report.proof?'必要约束已证明无解':'搜索完成 · 候选未通过完整验证'):report.candidates?.length?'已找到通过验证的候选':'尚无验证通过的候选'}</strong>
-   <p>原始组合：{report.originalCombinationCount??report.combinationCount??'Unknown'} · 过滤后：{report.combinationCount??'Unknown'} · 预算：{report.policy?.maxCombinations??'Unknown'} · 完整布局尝试：{report.attempts?.length??0}</p>
+   <p>原始组合：{report.originalCombinationCount??report.combinationCount??'Unknown'} · 过滤后：{report.combinationCount??'Unknown'} · {report.search?.symmetry?'物理验证预算':'预算'}：{report.policy?.maxCombinations??'Unknown'} · 完整布局尝试：{report.attempts?.length??0}</p>
+   {report.search?.symmetry&&<><p>物理等价类：{report.search.symmetry.physicalClassCount} · 实际物理验证：{report.search.symmetry.physicalValidations} / {report.policy.maxCombinations} · 复用：{report.search.symmetry.cacheHits} · 朝向展开：{report.search.symmetry.orientationExpansions} / {report.policy.maxOrientationExpansions}</p><details><summary>旋转等价证据与预算</summary><pre>{JSON.stringify(report.search.symmetry,null,2)}</pre></details></>}
    {(report.diagnostics||[]).map((d:any,i:number)=><p key={i}>{typeof d==='string'?d:d.reason||d.code}</p>)}
    {report.pruning&&<details><summary>候选过滤、约束传播与预算详情</summary><pre>{JSON.stringify(report.pruning,null,2)}</pre></details>}
   </div>}

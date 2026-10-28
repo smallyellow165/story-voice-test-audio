@@ -35,11 +35,11 @@ export async function inspectBrickModel(part, library = brickLibraryRoot(), { ex
   const connectionMetadataFiles = [], sourceFiles = [], primitives = [], snapping = []
   const sources = new Map(), resolved = new Map(), bounds = new Box3()
   const surfaceFaces = [] // Optional offline Profile audit; not collision/runtime geometry.
-  let instances = 0
+  let instances = 0, uniformInheritedColor = true
   const extraction = () => extractGeometry ? {
     coordinateSystem: 'Original LDraw entry coordinates, LDU, +Y down; all type-1 transforms composed',
     meshBounds: bounds.isEmpty() ? null : { min: bounds.min.toArray(), max: bounds.max.toArray() },
-    primitives, snapping, instances,
+    primitives, snapping, instances, uniformInheritedColor,
     ...(includeFaces ? { surfaceFaces } : {}),
     status: 'needs-review',
     unknown: ['Body envelope is not the full mesh bounds', 'Primitive observations are not approved mating interfaces',
@@ -74,9 +74,12 @@ export async function inspectBrickModel(part, library = brickLibraryRoot(), { ex
         for (const line of source.split(/\r?\n/)) if (/^0\s+!LDCAD\s+SNAP_/.test(line))
           snapping.push({ file: relative, raw: line, matrix: transform.toArray(), interpreted: false })
       }
+      if (/!TEXMAP|!COLOUR/.test(source)) uniformInheritedColor = false
       files.add(file); active.add(file)
       for (const line of source.split(/\r?\n/)) {
         const tokens = line.trim().split(/\s+/)
+        if (['1','3','4'].includes(tokens[0]) && tokens[1] !== '16') uniformInheritedColor = false
+        if (['2','5'].includes(tokens[0]) && tokens[1] !== '24') uniformInheritedColor = false
         if (tokens[0] === '1') {
           if (tokens.length < 15 || !tokens.slice(2, 14).every(v => Number.isFinite(Number(v)))) throw new Error(`无效的模型引用：${relative}`)
           if (isEntry) entryReferences.push({ file: tokens.slice(14).join(' ').replaceAll('\\', '/'), translation: tokens.slice(2, 5).map(Number), matrix: tokens.slice(5, 14).map(Number) })

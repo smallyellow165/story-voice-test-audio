@@ -22,7 +22,7 @@ async function main() {
   const rules=await loadBrickRules()
   const prepared=await prepareGeometryInput(trace.requestInput,rules)
   if(prepared.issues.length)throw new Error(prepared.issues.join('; '))
-  const result=executePlan(plan,prepared.input,rules)
+  const result=executePlan(plan,prepared.input,rules,{symmetryProofs:prepared.symmetryProofs})
   const directory=path.join(args.output,randomUUID());await mkdir(directory,{recursive:true})
   const save=(name,data)=>writeFile(path.join(directory,name),JSON.stringify(data,null,2),{flag:'wx'})
   const report={...result,sources,sourceTraceId:trace.id,sourcePlan:plan,sourceInput:trace.requestInput,input:prepared.input,enrichments:prepared.enrichments,geometrySnapshot:geometrySnapshot(rules,trace.requestInput.inventory),image:trace.image,

@@ -16,7 +16,7 @@ export function planAtPoses(original,poses){
  return result
 }
 
-export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,maxProposals=6}={}){
+export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,maxProposals=6,symmetryProofs=[]}={}){
  if(![20,40].includes(radiusLdu)||!Number.isInteger(maxNodes)||maxNodes<1||maxNodes>50000||!Number.isInteger(maxProposals)||maxProposals<1||maxProposals>8)throw new Error('Invalid bounded refinement policy')
  const result={version:'geometry-refinement-v1',status:'invalid_input',policy:{rangeExpansionLdu:{x:radiusLdu,y:0,z:0},maxNodes,maxProposals,maxPairChecks:100000,
   anchor:'Original anchor stays fixed; upright and original yaw candidates only.',
@@ -28,7 +28,7 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
  if(input.observations.length>16)return {...result,diagnostics:['V1 bounded refinement supports at most 16 observations']}
  const validation=validatePlan(plan,input)
  if(!validation.valid)return {...result,diagnostics:validation.issues}
- const original=executePlan(plan,input,rules)
+ const original=executePlan(plan,input,rules,{symmetryProofs})
  result.originalExecution={status:original.status,completeSearch:original.completeSearch,diagnostics:original.diagnostics,proof:original.proof}
  if(original.candidates.length)return {...result,status:'unchanged_valid',completeSearch:true,diagnostics:['Original plan already has strictly valid candidates; no refinement or revision created.']}
  if(['invalid_input','insufficient_information'].includes(original.status))return {...result,diagnostics:original.diagnostics}
@@ -132,7 +132,7 @@ export function refineGeometry(plan,input,rules,{radiusLdu=20,maxNodes=20000,max
  const compare=(a,b)=>(b.geometry.valid-a.geometry.valid)||a.score.totalTranslationLdu-b.score.totalTranslationLdu||a.score.maxTranslationLdu-b.score.maxTranslationLdu||a.score.rotationDegrees-b.score.rotationDegrees||JSON.stringify(a.poses).localeCompare(JSON.stringify(b.poses))
  function assess(selected){
   result.stats.leaves++
-  const poses=plan.parts.map(p=>selected.get(p.id).pose),refinedPlan=planAtPoses(plan,poses),execution=executePlan(refinedPlan,input,rules)
+  const poses=plan.parts.map(p=>selected.get(p.id).pose),refinedPlan=planAtPoses(plan,poses),execution=executePlan(refinedPlan,input,rules,{symmetryProofs})
   const attempt=execution.attempts[0],geometry=attempt?.geometry
   if(!geometry){failures.set(execution.status,(failures.get(execution.status)||0)+1);return}
   if(attempt.relations?.some(r=>r.satisfied===false)){failures.set('VISUAL_RELATION',(failures.get('VISUAL_RELATION')||0)+1);return}

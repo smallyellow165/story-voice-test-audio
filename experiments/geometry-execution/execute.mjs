@@ -1,3 +1,4 @@
+import {executionSymmetry,remapValidGeometry} from './symmetry.mjs'
 import {rankLayout,compareLayouts,finishRanking} from './ranking.mjs'
 import {pruneDomains,spatialRelation} from './prune.mjs'
 import { validatePlan, assessConversion } from '../spatial-planning/plan.mjs'
@@ -8,11 +9,12 @@ const same = (a,b) => Math.abs(a-b) < EPS
 const inside = (v,r) => r && v >= r.min-EPS && v <= r.max+EPS
 
 // A bounded adapter over the shared geometry engine, not another geometry library.
-export function executePlan(plan, input, rules, { maxCombinations = 10000, topK = 5 } = {}) {
+export function executePlan(plan, input, rules, { maxCombinations = 10000, topK = 5, maxOrientationExpansions = 100000, symmetryProofs = [] } = {}) {
   if (!Number.isSafeInteger(maxCombinations) || maxCombinations < 1 || maxCombinations > 100000) throw new Error('maxCombinations must be 1..100000')
+  if(!Number.isSafeInteger(maxOrientationExpansions)||maxOrientationExpansions<1||maxOrientationExpansions>100000)throw Error('maxOrientationExpansions must be 1..100000')
   if (![5,10].includes(topK)) throw new Error('topK must be 5 or 10')
   const result = {version:'geometry-execution-v1',status:'invalid_input',completeSearch:false,
-    policy:{validation:'final-assembly-connectivity-v1',gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,topK,
+    policy:{validation:'final-assembly-connectivity-v1',gridLdu:{x:rules.STUD_LDU/2,y:1,z:rules.STUD_LDU/2},maxCombinations,topK,maxOrientationExpansions,budgetUnit:'actual full physical validations; separate bounded exact-yaw expansion',
       constraints:'All numeric intervals, yaw choices, definite mating intents and executable spatial relations are hard constraints. No rounding, repair or build order.',
       selection:'Exhaust bounded filtered domain; rank by physical validity, failed intents/ranges/hard relations, relative interval midpoint distance and input yaw order. No image similarity claim.'},
     diagnostics:[],domains:[],attempts:[],candidates:[],diagnosticCandidates:[],validLayoutCount:0,groups:[]}
@@ -64,13 +66,18 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000, topK 
     result.proof='Necessary binary constraints have an empty domain; no full assembly can satisfy them'
     result.diagnostics.push(pruning.conflict)
   }
-  if(!searchPoses||searchCount>maxCombinations){
-    result.diagnostics.push({code:searchPoses?'SEARCH_BUDGET':diagnosticMode?'NO_DIAGNOSTIC_DOMAIN':'PREPROCESSING_BUDGET',reason:searchPoses?'过滤域超过预算；未枚举完整布局，不能声称全局 Top-K':diagnosticMode?'连接/相对区间过滤已无解；没有满足这些必要条件的诊断候选':'预处理预算不足，未建立完整候选域；未证明无解',remainingCombinationCount:searchCount,maxCombinations,skipped:pruning.stats.skipped})
+  const symmetry=executionSymmetry(plan,observations,symmetryProofs)
+  const physicalCount=searchPoses?[...searchPoses.values()].reduce((n,ps)=>n*new Set(ps.map(symmetry.poseKey)).size,1):searchCount
+  result.search.symmetry={version:1,instances:symmetry.records,physicalClassCount:physicalCount,physicalValidations:0,cacheHits:0,pairValidations:0,pairCacheHits:0,orientationExpansions:0}
+  if(!searchPoses||physicalCount>maxCombinations||searchCount>maxOrientationExpansions){
+    result.diagnostics.push({code:searchPoses?(searchCount>maxOrientationExpansions?'ORIENTATION_EXPANSION_BUDGET':'SEARCH_BUDGET'):diagnosticMode?'NO_DIAGNOSTIC_DOMAIN':'PREPROCESSING_BUDGET',reason:searchPoses?'物理验证或朝向展开域超过预算；未枚举完整布局，不能声称全局 Top-K':diagnosticMode?'连接/相对区间过滤已无解；没有满足这些必要条件的诊断候选':'预处理预算不足，未建立完整候选域；未证明无解',remainingCombinationCount:searchCount,physicalClassCount:physicalCount,maxCombinations,maxOrientationExpansions,skipped:pruning.stats.skipped})
     if(!diagnosticMode)result.status='budget_exceeded'
     return result
   }
   const pById=new Map(plan.parts.map(p=>[p.id,p]))
-  const rankedDiagnostics=[]
+  const rankedDiagnostics=[], physicalCache=new Map(), pairCache=new Map()
+  const stats=result.search.symmetry
+  let exhausted=false
   const evaluate=positions=>{
     const shiftY=-Math.min(...positions.map(b=>b.y))
     const bricks=positions.map(b=>({id:b.id,part:observations.get(b.id).part,color:observations.get(b.id).color,
@@ -82,7 +89,15 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000, topK 
       return {id:b.id,relativeTo:p.pose.relativeTo,deltaLdu:delta,satisfied:Object.entries(delta).every(([a,v])=>inside(v,p.pose.offsetLdu[a]))}
     })
     const attempt={index:result.attempts.length+1,positions,groundTranslationLdu:shiftY,ranges,accepted:false}
-    const geometry=rules.validateFinalAssembly(bricks)
+    const physicalKey=JSON.stringify(positions.map(symmetry.poseKey))
+    let geometry
+    if(physicalCache.has(physicalKey)){geometry=remapValidGeometry(physicalCache.get(physicalKey),bricks,rules);stats.cacheHits++}
+    else {
+      if(stats.physicalValidations>=maxCombinations){exhausted=true;return}
+      stats.physicalValidations++;geometry=rules.validateFinalAssembly(bricks)
+      if(geometry.valid)physicalCache.set(physicalKey,geometry)
+    }
+    stats.orientationExpansions++
     attempt.geometry=geometry
     // Shared validator checks all body/stud collision envelopes before support/connectivity.
     attempt.collision={status:geometry.code==='COLLISION'?'collision':geometry.valid||['UNSUPPORTED','DISCONNECTED'].includes(geometry.code)?'clear':'not_established',reason:geometry.reason,brickIds:geometry.brickIds}
@@ -95,7 +110,10 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000, topK 
       if(!['top','bottom'].includes(c.ownSurface)||!['top','bottom'].includes(c.otherSurface)||c.ownSurface===c.otherSurface)return {id:p.id,...c,satisfied:false,reason:'Mating intent requires opposite top/bottom surfaces'}
       const a=byId.get(p.id),b=byId.get(c.other)
       const lower=c.ownSurface==='top'?a:b,upper=c.ownSurface==='bottom'?a:b
-      const shared=assessRelations(bricks,[{from:lower.id,to:upper.id,relation:'supports',confidence:1,status:'inferred'}],rules)[0]
+      const pairKey=JSON.stringify([symmetry.poseKey(raw.get(lower.id)),symmetry.poseKey(raw.get(upper.id))])
+      let shared=pairCache.get(pairKey)
+      if(shared)stats.pairCacheHits++
+      else {shared=assessRelations(bricks,[{from:lower.id,to:upper.id,relation:'supports',confidence:1,status:'inferred'}],rules)[0];pairCache.set(pairKey,shared);stats.pairValidations++}
       // Compatibility is already decided by the shared engine; map its matched
       // world points back to exact indices in the original connector arrays.
       const own=rules.connectors(a,c.ownSurface),other=rules.connectors(b,c.otherSurface)
@@ -125,9 +143,10 @@ export function executePlan(plan, input, rules, { maxCombinations = 10000, topK 
   function enumerate(i,positions) {
     if(i===result.domains.length)return evaluate(positions)
     const d=result.domains[i]
-    for(const pose of searchPoses.get(d.id))enumerate(i+1,[...positions,pose])
+    for(const pose of searchPoses.get(d.id)){if(exhausted)return;enumerate(i+1,[...positions,pose])}
   }
   enumerate(0,[])
+  if(exhausted)return {...result,status:'budget_exceeded',completeSearch:false,candidates:[],diagnosticCandidates:[],diagnostics:[...result.diagnostics,{code:'SEARCH_BUDGET',reason:'实际物理验证预算耗尽；未完成搜索，不提供部分 Top-K',maxCombinations}]}
   result.candidates=finishRanking(result.candidates,'candidate')
   if(!result.candidates.length)result.diagnosticCandidates=finishRanking(rankedDiagnostics,'diagnostic')
   result.search.complete=true;result.search.rankingScope='complete filtered domain under saved constraints; no image-similarity score'

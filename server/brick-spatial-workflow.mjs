@@ -127,7 +127,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
     const geometryId=randomUUID(),file=path.join(geometries,geometryId+'.json'),base={version:'geometry-execution-v1',id:geometryId,planId:plan.id,createdAt:new Date().toISOString(),state:'running',sourcePlanHash:hash(plan.plan)}
     await write(file,base,true)
     try{const rules=await loadRules(),prepared=await prepareGeometryInput(plan.requestInput,rules)
-     const result=prepared.issues.length?{status:'invalid_input',completeSearch:false,diagnostics:prepared.issues,candidates:[],groups:[]}:execute(plan.plan,prepared.input,rules,{topK:body.topK??5})
+     const result=prepared.issues.length?{status:'invalid_input',completeSearch:false,diagnostics:prepared.issues,candidates:[],groups:[]}:execute(plan.plan,prepared.input,rules,{topK:body.topK??5,symmetryProofs:prepared.symmetryProofs})
      await write(file,{...base,...result,state:'complete',sourcePlan:plan.plan,sourceInput:plan.requestInput,input:prepared.input,enrichments:prepared.enrichments});return {geometryId,resultStatus:result.status}}
     catch(e){await write(file,{...base,state:'failed',status:'execution_failed',error:String(e.message)});return {geometryId,resultStatus:'execution_failed'}}
    })
