@@ -37,4 +37,4 @@ export type VisionResult = {
   error?: { stage: string; message: string; httpStatus?: number | null }
 }
 
-export type VisionHistoryItem = Pick<VisionResult, 'id' | 'provider' | 'model' | 'image' | 'sourceImageId'> & { createdAt: string; originalName?: string }
+export type VisionHistoryItem = Pick<VisionResult, 'id' | 'provider' | 'model' | 'image' | 'sourceImageId'> & { sourceImageId: string; createdAt: string; originalName?: string }

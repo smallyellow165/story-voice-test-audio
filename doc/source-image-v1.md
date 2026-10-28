@@ -53,3 +53,7 @@ npm run build
 UI: open Parts Explorer, select the Penguin original, run analysis, record both IDs. Explicitly start a new analysis with the same original (new request, not retry); Analysis IDs must differ and Source Image IDs must match. Follow the link to canonical JSON. Upload a byte-identical renamed copy and a different original to verify identity semantics. These UI analysis actions invoke the configured model normally; they were not run automatically during implementation.
 
 Next: a read-only imageId-based History query/grouping, explicit selected relationships, immutable Review and Build Plan revisions. None requires changing this asset identity or creating a second history store.
+
+## Follow-up
+
+Image-centered History and the separately audited four-run Penguin repair are documented in [image-centered-history-v1.md](image-centered-history-v1.md). The Source Image identity/schema above is unchanged.

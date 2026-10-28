@@ -1,3 +1,5 @@
+import { SourceImageHistoryFilter } from '../brick-vision/SourceImageHistoryFilter'
+import { historyForImage } from '../brick-vision/image-history.mjs'
 import {TraceLinks} from '../llm-traces/TraceLinks'
 import {reviewObservations,validateReviewParts,type HiddenPart,type ManualSymmetry} from '../brick-vision/review-parts.mjs'
 import {observationPrintHints} from '../brick-vision/print-hints.mjs'
@@ -63,6 +65,7 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
   const [artifact, setArtifact] = useState<Artifact | null>(null)
   const [generationSubmitted, setGenerationSubmitted] = useState(false)
   const [detailId, setDetailId] = useState('')
+  const [historyImageId, setHistoryImageId] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>(initialHistory?.items || []), [historyWarning, setHistoryWarning] = useState(initialHistory?.warnings.join('；') || '')
   const [historyReady, setHistoryReady] = useState(initialHistory !== undefined), [pickerReady, setPickerReady] = useState(false)
   const [sceneRestored, setSceneRestored] = useState(!initialScene?.analysisId)
@@ -497,11 +500,12 @@ export function ReverseRecognitionPanel({ designSessionId, inventory, onQuantity
     <div className="brick-reverse-recovery">
       {record && <p>Analysis ID: {record.id}<br/>Source Image: <a href={'/api/brick-source-images/' + encodeURIComponent(record.sourceImageId)} target="_blank" rel="noreferrer">{record.sourceImageId}</a></p>}
       <TraceLinks source="reverse" id={record?.id||undefined}/>
+      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={locked} onChange={value => { setHistoryImageId(value); setRecordId('') }}/>
       <label>识别历史<select value={recordId} disabled={locked} onChange={e => setRecordId(e.target.value)}>
         <option value="">选择历史分析</option>
         {recordId && !history.some(r => r.id === recordId) && <option value={recordId}>{recordId}</option>}
-        {history.map(r => <option key={r.id} value={r.id}>
-          {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.isGuided ? 'Guided · ' : ''}{r.appearance || r.status} · {r.count} 个识别项
+        {historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id}>
+          {r.id} · {r.status} · {r.createdAt} · {r.analysis_mode || 'catalog_match'} · {r.prompt_id || 'reverse_catalog_v1'} v{r.prompt_version || 1} · {r.provider} / {r.model} · {r.image_reference?.name || ''} · {r.isRevision ? (r.status === 'complete' ? 'Recovered / Ready for Review · ' : 'Revision Validation Failed · ') : ''}{r.isGuided ? 'Guided · ' : ''}{r.appearance || r.status} · {r.count} 个识别项
         </option>)}
       </select></label>
       <div className="brick-actions">

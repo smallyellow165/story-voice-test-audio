@@ -1,3 +1,5 @@
+import { SourceImageHistoryFilter } from './SourceImageHistoryFilter'
+import { historyForImage } from './image-history.mjs'
 import {observationPrintHints} from './print-hints.mjs'
 import { reviewStatus, reviewStatusLabels, matchesReviewFilter } from './review-status.mjs'
 import { CopySceneLink } from '../brick-inventory/CopySceneLink'
@@ -37,6 +39,7 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
   const [preview, setPreview] = useState('')
   const [prepared, setPrepared] = useState<PreparedSourceImage | null>(null)
   const [imageInfo, setImageInfo] = useState<VisionResult['compression']>(null)
+  const [historyImageId, setHistoryImageId] = useState('')
   const [history, setHistory] = useState<VisionHistoryItem[]>(initialHistory || [])
   const [historyReady, setHistoryReady] = useState(initialHistory !== undefined)
   const [modelsReady, setModelsReady] = useState(false), [pickerReady, setPickerReady] = useState(false)
@@ -363,9 +366,10 @@ export function InventoryImagePanel({ onApply, onReset, workspaceHost, onSearchC
     }} />
     <span tabIndex={0} aria-label="图片压缩信息" style={{ cursor: 'help', marginLeft: 6 }} title={`自动压缩：最长边 1024 px，JPEG Quality 80%，不放大小图，按图片方向保持宽高比；预览和诊断保留原图。${imageInfo ? `\n原图 ${imageInfo.original.width}×${imageInfo.original.height}，${imageInfo.original.bytes} bytes\n发送 ${imageInfo.sent.width}×${imageInfo.sent.height}，${imageInfo.sent.bytes} bytes` : ''}`}>ⓘ</span>
     <div className="inventory-history">
+      <SourceImageHistoryFilter records={history} value={historyImageId} disabled={busy} onChange={value => {setHistoryImageId(value);setHistoryId('')}}/>
       <label htmlFor="vision-history-select">识别历史</label>
       <select id="vision-history-select" aria-label="已成功识别的图片" value={historyId} disabled={busy} onChange={e => setHistoryId(e.target.value)}>
-        <option value="">选择成功记录</option>{history.map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.provider || '未记录 Provider'} · {r.model} · {r.originalName || r.image.sha256.slice(0, 12)} · {r.id}</option>)}
+        <option value="">选择成功记录</option>{historyForImage(history, historyImageId).map(r => <option key={r.id} value={r.id}>{r.createdAt} · {r.provider || '未记录 Provider'} · {r.model} · {r.originalName || r.image.sha256.slice(0, 12)} · {r.id}</option>)}
       </select>
       <button disabled={busy} onClick={() => void refreshHistory()}>刷新</button>
       <button disabled={busy || !historyId} onClick={() => void loadHistory(historyId)}>加载识别结果</button>
