@@ -11,14 +11,14 @@ export function createBuildOrderStore(directory){
  const folder=path.join(directory,'brick-build-plans'),locks=new Map(),generating=new Set()
  const file=key=>path.join(folder,id(key)+'.json')
  async function files(dir){return (await readdir(dir).catch(e=>{if(e.code==='ENOENT')return [];throw e})).filter(f=>/^[a-f0-9-]{36}\.json$/.test(f))}
- async function source(value,forPlanner=false){
+ async function source(value,forPlanner=false,withEvidence=false){
   const selection=await read(path.join(directory,'brick-spatial-selections',id(value)+'.json'))
   if(selection.id!==value||selection.kind!=='selected-valid-layout')fail('必须使用已保存的 Valid Layout Selection')
   const g=await read(path.join(directory,'brick-spatial-geometry',id(selection.geometryId)+'.json'))
   const c=g.candidates?.find(c=>c.id===selection.candidateId)
   if(g.id!==selection.geometryId||g.planId!==selection.planId||g.sourcePlanHash!==selection.sourcePlanHash||g.state!=='complete'||!c||c.kind!=='valid'||c.geometry?.valid!==true||c.collision?.status!=='clear'||!Array.isArray(c.geometry.connections))fail('来源不是已完成验证的 Valid 候选')
   if(hash(c)!==selection.candidateHash||JSON.stringify(c.assembly)!==JSON.stringify(selection.assembly))fail('Selection 与候选快照不一致',409)
-  return {...selection,...(forPlanner?{geometryObservations:g.sourceInput?.observations||[],geometryUnits:g.sourceInput?.units}:{}),connections:c.geometry.connections,identities:(g.sourceInput?.observations||[]).map(o=>({id:o.id,partNumber:o.confirmedPart?.part_num||o.part,color:String(o.confirmedPart?.color_id??o.color)}))}
+  return {...selection,...(withEvidence?{geometryEvidence:{version:g.version,revisionId:g.revisionId??null,sourcePlan:g.sourcePlan,sourceInput:g.sourceInput,candidateIds:g.candidates.map(c=>c.id)}}:{}),...(forPlanner?{geometryObservations:g.sourceInput?.observations||[],geometryUnits:g.sourceInput?.units}:{}),connections:c.geometry.connections,identities:(g.sourceInput?.observations||[]).map(o=>({id:o.id,partNumber:o.confirmedPart?.part_num||o.part,color:String(o.confirmedPart?.color_id??o.color)}))}
  }
  function check(plan,src){
   if(!plan||typeof plan!=='object')fail('Build Plan 缺失')
@@ -30,7 +30,7 @@ export function createBuildOrderStore(directory){
   if(!report.valid)fail(report.errors.join('；'))
   return report
  }
- async function load(value){const plan=await read(file(value));if(plan.build_plan_id!==value)fail('Build Plan ID 不一致');const src=await source(plan.source_selection_id);return {plan,source:src,validation:check(plan,src)}}
+ async function load(value,withEvidence=false){const plan=await read(file(value));if(plan.build_plan_id!==value)fail('Build Plan ID 不一致');const src=await source(plan.source_selection_id,false,withEvidence);return {plan,source:src,validation:check(plan,src)}}
  async function save(body){
   const key=id(body.plan?.build_plan_id)
   if(locks.has(key))fail('此 Build Plan 正在保存，请稍后重新保存',409)
@@ -48,7 +48,7 @@ export function createBuildOrderStore(directory){
    return {plan,validation:report}
   }finally{locks.delete(key)}
  }
- return {async dispatch(method,route,body={},query=new URLSearchParams()){
+ return {async readForGallery(selectionId,planId){return planId?load(planId,true):{source:await source(selectionId,false,true),plan:null,validation:null}},async dispatch(method,route,body={},query=new URLSearchParams()){
   if(method==='GET'&&route==='planner-config')return buildPlannerConfig()
   if(method==='POST'&&route==='generate'){
    const selectionId=id(body.selectionId),requestId=id(body.requestId)

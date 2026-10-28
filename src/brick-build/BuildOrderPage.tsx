@@ -136,6 +136,7 @@ export function BuildOrderPage(){
   <nav className="build-mobile-tabs" aria-label="工作台面板">{(['left','center','right'] as const).map((p,i)=><button key={p} aria-pressed={mobilePanel===p} onClick={()=>setMobilePanel(p)}>{['Build Plan / Steps','3D Player','Inspector'][i]}</button>)}</nav>
   <ThreeColumnLayout className="brick-workbench build-workbench" defaultSizes={['25%','48%','27%']}
    left={<section className="build-navigator">
+  <a href={import.meta.env.BASE_URL+'brick-gallery.html'}>积木作品库 ↗</a>
   <header className="build-nav-header"><h1>Build Order · 3D 分步装配</h1><details className="build-info"><summary aria-label="Build Order 说明">ⓘ</summary><div className="build-info-popover"><p className="build-warning">Geometry Valid 仅指已保存的最终布局。Build Steps Draft / Reviewed 不代表安装路径、承重或中间稳定性已验证。Motion Preview 是示意动画；请家长实搭审核。</p><small>点击 ⓘ 可收起说明。</small></div></details></header>
   {error&&<p className="brick-error" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   <fieldset disabled={busy} className="build-source">
@@ -148,6 +149,7 @@ export function BuildOrderPage(){
 
    {plan&&<fieldset disabled={busy} className="build-nav-plan">
     <div className="build-plan-status"><span><strong>{!report.complete?'Incomplete':plan.status==='reviewed'?'Reviewed':'Draft'}</strong> · {dirty?'未保存':'已保存'} · {plan.instanceIds.length} 块 / {plan.steps.length} 步</span><button disabled={!report.valid} onClick={()=>void action(save)}>Save</button></div>
+   <div className="brick-actions">{savedVersion&&!dirty&&report.valid&&report.complete&&source?<a href={import.meta.env.BASE_URL+'brick-gallery.html?mode=add&'+new URLSearchParams({selectionId:source.id,buildPlanId:plan.build_plan_id})}>Add to Gallery · 加入作品库 ↗</a>:<span>加入作品库前，请先保存完整的 Build Plan。</span>}</div>
    {!report.complete&&<p className="build-warning">当前有 {report.available.length} 个独立组件；继续合并到一个包含全部实例的 Root 后才可播放。草稿可以保存。</p>}
 
 

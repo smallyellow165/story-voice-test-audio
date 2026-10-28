@@ -1,3 +1,4 @@
+import {createGalleryStore} from './server/brick-gallery.mjs'
 import {createPartsInputStore} from './server/brick-parts-input.mjs'
 import { createPartsGeometryService } from './server/brick-parts-geometry.mjs'
 import { createSelectedSpatialStore } from './server/brick-selected-spatial.mjs'
@@ -61,6 +62,7 @@ const brickSpatial = createSpatialWorkflow(generatedDirectory, { reverse: brickR
 const brickVision = createBrickVision(path.join(generatedDirectory, 'brick-vision'), { artifacts: brickGames, sourceImages })
 const selectedAnalysis = createSelectedAnalysisStore(path.join(generatedDirectory, 'brick-source-images', 'selected-analysis'), { sourceImages, reverse: brickReverse, vision: brickVision })
 const workflowHistory = createWorkflowHistory(generatedDirectory, { sourceImages, reverse: brickReverse, buildOrder: brickBuildOrder, selectedSpatial, partsInputs })
+const brickGallery = createGalleryStore(generatedDirectory, {buildOrder:brickBuildOrder,reverse:brickReverse,sourceImages,selectedSpatial})
 const generatedAudioDirectory = path.join(projectRoot, 'generated', 'test-audio')
 const storyAudioDirectory = path.join(generatedDirectory, 'story-audio')
 const metadataFile = path.join(generatedDirectory, 'metadata.json')
@@ -513,6 +515,22 @@ const server = createServer(async (request, response) => {
       if (color === null || !/^\d+$/.test(color)) { sendJson(response, 422, { error: '需要明确颜色 ID' }); return }
       sendJson(response, 200, await partsGeometry.resolve(url.searchParams.get('partNum'), Number(color)))
     } catch (error) { sendJson(response, error.statusCode || 502, { error: error.message }) }
+    return
+  }
+  if (url.pathname.startsWith('/api/brick-gallery/')) {
+    try {
+      if (request.headers['sec-fetch-site']==='cross-site'||(request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)) {sendJson(response,403,{error:'仅接受同源 Gallery 操作'});return}
+      const route=url.pathname.slice('/api/brick-gallery/'.length)
+      if(request.method==='GET'&&route==='items')sendJson(response,200,await brickGallery.list())
+      else if(request.method==='GET'&&route==='context')sendJson(response,200,await brickGallery.resolve(url.searchParams.get('selectionId'),url.searchParams.get('buildPlanId')||null))
+      else if(request.method==='POST'&&route==='save')sendJson(response,200,await brickGallery.save(await readJsonBody(request,8192)))
+      else if(request.method==='GET'&&route.startsWith('items/')){
+        const [,id,kind]=route.split('/')
+        if(kind==='cover'){const cover=await brickGallery.cover(id);response.writeHead(200,{'Content-Type':cover.mimeType,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});response.end(Buffer.from(cover.imageBase64,'base64'))}
+        else if(!kind)sendJson(response,200,await brickGallery.detail(id))
+        else sendJson(response,404,{error:'Gallery 路径不存在'})
+      }else sendJson(response,405,{error:'不支持的 Gallery 操作'})
+    }catch(error){sendJson(response,error.code==='ENOENT'?404:error.statusCode||500,{error:error.message})}
     return
   }
   if (url.pathname.startsWith('/api/brick-spatial/')) {
