@@ -1,3 +1,4 @@
+import { StudioLayout, StudioSlot } from './StudioLayout.tsx'
 import { checkArtwork, workMode } from './artwork.ts'
 import { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -143,10 +144,9 @@ function Playground() {
     setMessage('图片候选已载入；来源已保存，可撤销或继续编辑。')
   }
   const height = view.width * .7
-  return <main className="tiles-app">
-    <header className="tiles-header"><div><p className="eyebrow">MAGNETIC TILES · 2D LAB</p><h1>一片一片，拼出想象</h1><p>自由拼搭 · 等长边磁吸 · 不模拟三维磁力</p></div><span className="version">Geometry Playground V1</span></header>
+  return <StudioLayout dragging={!!drag}>
     <ImageIntake assembly={current} onApply={applyImage}/>
-    <div className="tiles-layout">
+    <StudioSlot column="inspector" stages={['assembly']}>
       <aside className="tiles-panel"><h2>拿一块磁力片</h2><div className="tiles-palette">{profiles.map(p => <button key={p.id} onClick={() => add(p.id)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
         <svg viewBox="-.15 -.15 1.3 1.3" aria-hidden="true"><g transform="translate(0 1) scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{p.id === 'right-triangle' ? '直角边 1 · 斜边 √2' : '边长 1'}</small></button>)}</div>
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
@@ -155,6 +155,7 @@ function Playground() {
         <p className="hint">直接拖动已连接的单片即可拿起。靠近等长边时，绿色虚线显示吸附预览；松手确认。可自动对齐约 45° 内的边，更大角度请先旋转。重叠会被拒绝。</p>
         <details><summary>键盘操作</summary><p>在画布中选中零件：方向键移动 0.1 单位，R 旋转 15°，Delete 删除，Esc 取消拖动。Tab 可选择零件，Enter 确认选择。</p></details>
       </aside>
+    </StudioSlot><StudioSlot column="workspace" stages={['assembly']}>
       <section className="tiles-workspace" aria-label="搭建工作区">
         <div className="board-toolbar"><div className="button-row"><button onClick={undo} disabled={!history.length || !!drag}>撤销</button><button disabled={!!drag} onClick={() => { commit(emptyAssembly(), '新画布已准备；可撤销返回。'); setSelected(null); fit(emptyAssembly()) }}>新建</button></div><div className="button-row"><button aria-label="放大视图" onClick={() => setView(v => ({ ...v, width: Math.max(4, v.width / 1.25) }))} disabled={!!drag}>＋</button><button aria-label="缩小视图" onClick={() => setView(v => ({ ...v, width: Math.min(3000, v.width * 1.25) }))} disabled={!!drag}>−</button><button onClick={() => fit()} disabled={!!drag}>适合画布</button></div></div>
         <svg ref={svg} className="tiles-board" viewBox={`${view.x - view.width / 2} ${-view.y - height / 2} ${view.width} ${height}`} tabIndex={0} aria-label="磁力片二维画布"
@@ -181,6 +182,7 @@ function Playground() {
         <p className={`board-message ${drag && !preview.draftValid ? 'warning' : ''}`} role="status">{drag?.moved ? drag.snap ? '可吸附 · 松手完成整边对齐' : preview.draftValid ? '自由移动 · 松手放下，Esc 取消' : '当前位置不合法 · 松手将恢复原位' : message}</p>
         <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid || (workMode(current)==='flat-mosaic'&&preview.draftValid&&display.length) ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : workMode(current)==='flat-mosaic' && display.length ? '正式有效 · 平面拼图' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
       </section>
+    </StudioSlot><StudioSlot column="inspector" stages={['assembly']}>
       <aside className="tiles-panel storage-panel"><h2>我的作品</h2><label>作品模式<select aria-label="作品模式" disabled={!!drag} value={workMode(current)} onChange={e=>commit({...current,schemaVersion:2,mode:e.target.value as 'connected-construction'|'flat-mosaic'},'作品模式已更新；可撤销。')}><option value="connected-construction">Connected Construction · 连通搭建</option><option value="flat-mosaic">Flat Mosaic · 平面拼图</option></select></label><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
         <button className="primary" onClick={save} disabled={!!drag || storageBlocked || !current.instances.length}>保存作品快照</button>
         <label>已保存作品<select value={savedId} onChange={e => setSavedId(e.target.value)}><option value="">选择一个作品</option>{workspace.saved.map(a => <option key={a.id} value={a.id}>{a.name} · {a.instances.length} 块</option>)}</select></label>
@@ -192,7 +194,7 @@ function Playground() {
         <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
         <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
       </aside>
-    </div><BuildPanel assembly={current} profiles={profiles} dragging={!!drag}/><footer>相对尺寸 · 单片零厚度二维几何 · 不代表实物三维磁吸或稳定性</footer>
-  </main>
+    </StudioSlot><BuildPanel assembly={current} profiles={profiles} dragging={!!drag}/>
+  </StudioLayout>
 }
 createRoot(document.getElementById('root')!).render(<Playground/>)

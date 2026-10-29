@@ -1,3 +1,4 @@
+import {stage,studioButton} from './magnetic-studio-browser.mjs'
 // Real production UI, isolated browser storage; no app globals or runtime mocks.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {readFile,mkdir} from 'node:fs/promises'
@@ -6,7 +7,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/u
 const output=process.env.MAGNETIC_SCREENSHOTS||'/tmp/magnetic-build-screenshots';await mkdir(output,{recursive:true})
 const page=await browser.newPage({viewport:{width:1500,height:1050},acceptDownloads:true}),errors=[]
 page.on('pageerror',e=>errors.push(e.message))
-const button=name=>page.getByRole('button',{name,exact:true})
+const button=name=>studioButton(page,name)
 const player=page.getByRole('region',{name:'搭建教程播放器'})
 const count=()=>player.locator('[data-build-tile]').count()
 async function dragLast(x,y){
@@ -52,7 +53,7 @@ try{
  await page.getByTestId('build-import').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bad))});await waitReady()
  assert.match(await page.getByRole('alert').innerText(),/Hash/);assert.deepEqual(await exportBuild(),bundle)
  await button('重新开始').click();await waitReady();await button('下一步').click();await waitReady()
- await page.setViewportSize({width:390,height:844});await player.scrollIntoViewIfNeeded();await player.screenshot({path:output+'/build-narrow.png',animations:'disabled'})
+ await page.setViewportSize({width:390,height:844});await stage(page,'build','workspace');await player.scrollIntoViewIfNeeded();await player.screenshot({path:output+'/build-narrow.png',animations:'disabled'})
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
  assert.equal(await player.locator('.build-board').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(243, 247, 239)')
  assert.deepEqual(errors,[])

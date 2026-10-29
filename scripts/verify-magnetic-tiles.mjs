@@ -1,3 +1,4 @@
+import {stage} from './magnetic-studio-browser.mjs'
 // Browser-only acceptance through production UI. No mock runtime or application globals.
 // Reuses Playwright already installed in the adjacent V4 development workspace.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -37,7 +38,8 @@ async function drag(locator,x,y,{snap=false,cancel=false}={}){
  }
 }
 async function add(name){await page.getByRole('button',{name:'添加'+name,exact:true}).click();return polygons().last()}
-async function exported(){const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'导出 JSON',exact:true}).click();return JSON.parse(await readFile(await (await downloaded).path(),'utf8'))}
+async function exported(){
+ await stage(page,'assembly','inspector');const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'导出 JSON',exact:true}).click();return JSON.parse(await readFile(await (await downloaded).path(),'utf8'))}
 try{
  await page.goto(process.env.MAGNETIC_URL||'http://127.0.0.1:5173/story-voice-test-audio/magnetic-tiles.html')
  for(const name of ['正方形','等腰直角三角形','等边三角形'])await add(name)

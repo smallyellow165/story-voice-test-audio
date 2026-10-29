@@ -1,3 +1,4 @@
+import { StudioSlot } from './StudioLayout.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { BuildPlayer } from './BuildPlayer.tsx'
 import { contentHash, generateBuild } from './build-plan.ts'
@@ -36,7 +37,7 @@ export function BuildPanel({ assembly, profiles, dragging }: { assembly: Assembl
     return l
   }
   const disabled = busy || blocked
-  return <section className="tiles-panel build-panel" aria-label="Build Steps">
+  return <><StudioSlot column="inspector" stages={['build']}><section className="tiles-panel build-panel" aria-label="Build Steps">
     <h2>一片一片搭 · Build Steps</h2>
     <p>把当前作品变成教程。先预览，满意后保存；原画布仍可继续编辑。</p>
     <div className="button-row"><button className="primary" disabled={disabled || dragging || !checkArtwork(assembly, profiles).ready} onClick={() => void run(async () => {
@@ -58,6 +59,6 @@ export function BuildPanel({ assembly, profiles, dragging }: { assembly: Assembl
       if (!confirm('只重置 Build 教程存档？已保存教程及其进度将被清除；原 Assembly 工作区不受影响。')) return
       try { await saveLibrary(localStorage, emptyLibrary(), profiles); setLibrary(emptyLibrary()); setBlocked(false); setError(''); setNotice('教程存档已重置。') } catch (e) { setError(String(e)) }
     }}>重置教程存档</button></div>}
-    {bundle && progress && <><p className="hint">{library.preview?.plan.id === bundle.plan.id ? '未保存预览' : '已保存教程'} · 方案版本 {bundle.plan.revision} · 来源 {bundle.snapshot.assembly.name} / revision {bundle.snapshot.assembly.revision} · Hash {bundle.snapshot.hash.slice(0, 12)}</p><BuildPlayer key={bundle.plan.id} bundle={bundle} progress={progress} profiles={profiles} disabled={disabled} onProgress={(p: BuildProgress) => void run(async () => ({ ...library, progress: { ...library.progress, [bundle.plan.id]: p } }), p.completed ? '已记录完成；这不会自动判断实物搭建。' : '播放进度已保存。')}/></>}
-  </section>
+    {bundle && progress && <><p className="hint">{library.preview?.plan.id === bundle.plan.id ? '未保存预览' : '已保存教程'} · 方案版本 {bundle.plan.revision} · 来源 {bundle.snapshot.assembly.name} / revision {bundle.snapshot.assembly.revision} · Hash {bundle.snapshot.hash.slice(0, 12)}</p></>}
+  </section></StudioSlot><StudioSlot column="workspace" stages={['build']}>{bundle && progress ? <BuildPlayer key={bundle.plan.id} bundle={bundle} progress={progress} profiles={profiles} disabled={disabled} onProgress={(p: BuildProgress) => void run(async () => ({ ...library, progress: { ...library.progress, [bundle.plan.id]: p } }), p.completed ? '已记录完成；这不会自动判断实物搭建。' : '播放进度已保存。')}/> : <p className="studio-empty">从右侧生成当前作品的教程，或打开已保存教程。</p>}</StudioSlot></>
 }
