@@ -194,7 +194,7 @@ function Playground() {
         <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
         <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
       </aside>
-    </StudioSlot><BuildPanel assembly={current} profiles={profiles} dragging={!!drag}/>
+    </StudioSlot><BuildPanel assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
   </StudioLayout>
 }
 createRoot(document.getElementById('root')!).render(<Playground/>)

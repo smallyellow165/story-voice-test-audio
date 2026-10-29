@@ -45,7 +45,7 @@ try{
  assert.match(await page.getByRole('region',{name:'重建结果',exact:true}).innerText(),/成功：生成/)
  await page.locator('.studio').screenshot({path:out+'/source-candidate.png'})
  const layout=await page.evaluate(()=>{
-  const main=document.querySelector('main'),cols=[...main.children],rects=cols.map(c=>c.getBoundingClientRect())
+  const main=document.querySelector('main'),cols=[...main.querySelectorAll('.studio-column')],rects=cols.map(c=>c.getBoundingClientRect())
   return {children:cols.length,rootChildren:document.querySelector('#root').children.length,pageHeight:document.documentElement.scrollHeight,height:innerHeight,pageWidth:document.documentElement.scrollWidth,width:innerWidth,overflow:cols.map(c=>getComputedStyle(c).overflowY),ordered:rects[0].right<=rects[1].left&&rects[1].right<=rects[2].left,largest:rects[1].width>rects[0].width&&rects[1].width>rects[2].width}
  })
  assert.equal(layout.children,3);assert.equal(layout.rootChildren,1);assert.ok(layout.pageHeight<=layout.height);assert.ok(layout.pageWidth<=layout.width);assert.ok(layout.ordered&&layout.largest);assert.deepEqual(layout.overflow,['auto','auto','auto'])
@@ -67,10 +67,15 @@ try{
  assert.equal(await page.getByLabel('重建候选',{exact:true}).inputValue(),c.id)
  await writeFile(out+'/result.json' ,JSON.stringify(result,null,2))
  if(process.env.MAGNETIC_VISUAL_ACCEPTED==='1'){
-  await page.getByLabel('已对照原图',{exact:true}).check();await button('打开到 Playground').click();await ready()
+  await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await ready()
   assert.equal(await page.locator('polygon[data-tile-id]').count(),17)
   assert.equal(await page.getByLabel('作品模式',{exact:true}).inputValue(),'flat-mosaic')
   await button('保存作品快照').click();await page.screenshot({path:out+'/studio-assembly.png'})
+  await stage(page,'build')
+  assert.match(await page.getByTestId('build-source-status').innerText(),/快照一致/)
+  assert.match(await page.getByRole('region',{name:'生成教程的作品来源'}).innerText(),/17 块.*Flat Mosaic/)
+  const savedSource=page.getByLabel('教程来源作品',{exact:true}).locator('optgroup option').first()
+  await page.getByLabel('教程来源作品',{exact:true}).selectOption(await savedSource.getAttribute('value'))
   await button('生成搭建步骤').click()
   const player=page.getByRole('region',{name:'搭建教程播放器'})
   await player.waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='保存教程'&&!b.disabled))

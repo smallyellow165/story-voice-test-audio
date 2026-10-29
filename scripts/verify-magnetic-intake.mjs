@@ -57,7 +57,7 @@ try{
     assert.ok(partial.candidates.length,'real photo head subset should reconstruct after explicit review')
     assert.equal(partial.candidates[0].assembly.instances.length,7)
     assert.equal(partial.candidates[0].connections,7)
-    if(partial.candidates.length){await page.getByLabel('已对照原图',{exact:true}).check();await button('打开到 Playground').click();await idle();await button('生成搭建步骤').click();await button('保存教程').click();summary.manualSubset.buildPlanId=(await exportBuild()).plan.id}
+    if(partial.candidates.length){await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await idle();await button('生成搭建步骤').click();await button('保存教程').click();summary.manualSubset.buildPlanId=(await exportBuild()).plan.id}
     await page.locator('.studio').screenshot({path:output+'/duck-head-subset.png',animations:'disabled'})
    }
   }
@@ -67,7 +67,7 @@ try{
    assert.ok(result.candidates.length,'real observation must reconstruct')
    assert.equal(result.candidates[0].connections,1)
    assert.ok(result.candidates[0].imageError<.12)
-   await page.getByLabel('已对照原图',{exact:true}).check();await button('打开到 Playground').click();await idle()
+   await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await idle()
    assert.equal(await page.locator('polygon[data-tile-id]').count(),2)
    await button('生成搭建步骤').click();await button('保存教程').click();await button('下一步').click()
    const bundle=await exportBuild();assert.equal(bundle.plan.steps.length,2);summary.buildPlanId=bundle.plan.id
