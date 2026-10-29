@@ -104,7 +104,7 @@ try{
  await page.screenshot({path:output+'/rotated-snap-close-zoom.png',fullPage:true})
  await page.getByRole('button',{name:'加载所选作品',exact:true}).click()
  // Import goes through production parser, preserving current data on rejection.
- await page.locator('input[type=file]').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...saved,instances:[{...saved.instances[0],profileVersion:99}]}))})
+ await page.locator('.storage-panel input[type=file]').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...saved,instances:[{...saved.instances[0],profileVersion:99}]}))})
  await page.getByRole('status').filter({hasText:'导入失败'}).waitFor()
  assert.match(await page.getByRole('status').innerText(),/导入失败/)
  assert.deepEqual((await exported()).instances,saved.instances)

@@ -7,6 +7,7 @@ import type { Assembly, Pose, Snap, Tile, Vec } from './geometry.ts'
 import { emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace } from './storage.ts'
 import type { Workspace } from './storage.ts'
 import './style.css'
+import { BuildPanel } from './BuildPanel.tsx'
 
 const palette = ['#f5b942', '#ef795d', '#55b8ac', '#7e9bda', '#b895cf']
 type Drag = { pointerId: number; id: string; start: Vec; original: Pose; moved: boolean; raw: Tile; snap: Snap | null }
@@ -170,7 +171,7 @@ function Playground() {
         <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.map((i, index) => <li key={index}>{i.message}</li>)}</ul>{report.valid && !drag && <p className="success">所有检查通过。</p>}
         <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
       </aside>
-    </div><footer>相对尺寸 · 单片零厚度二维几何 · 不代表实物三维磁吸或稳定性</footer>
+    </div><BuildPanel assembly={current} profiles={profiles} dragging={!!drag}/><footer>相对尺寸 · 单片零厚度二维几何 · 不代表实物三维磁吸或稳定性</footer>
   </main>
 }
 createRoot(document.getElementById('root')!).render(<Playground/>)
