@@ -1,8 +1,10 @@
+import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
+import { canonical } from './build-plan.ts'
 import { SupportedTiles } from './SupportedTiles.tsx'
 import { profileSizeLabel, profileViewBox } from './profiles.ts'
 import { StudioLayout, StudioSlot } from './StudioLayout.tsx'
 import { checkArtwork, workMode } from './artwork.ts'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { profiles } from './profiles.ts'
@@ -22,6 +24,8 @@ function initial(): { workspace: Workspace; error: string } {
   catch (e) { return { workspace: { schemaVersion: 1, current: emptyAssembly(), saved: [] }, error: `无法恢复存档，原数据未覆盖。${String(e)}` } }
 }
 function Playground() {
+  const urlRequest=useUrlRequest()
+  const [draftBackup,setDraftBackup]=useState(()=>!!localStorage.getItem('magnetic-assembly-url-backup'))
   const [boot] = useState(initial)
   const [workspace, setWorkspace] = useState(boot.workspace)
   const workspaceRef = useRef(workspace)
@@ -41,6 +45,20 @@ function Playground() {
   const chosen = current.instances.find(t => t.id === selected)
   const display = drag ? current.instances.map(t => t.id === drag.id ? drag.snap?.tile ?? drag.raw : t) : current.instances
   const preview = validate(display, profiles)
+  useEffect(()=>{
+    const {values:v,errors}=readStudioUrl(urlRequest.href)
+    if(errors.length||!v.assemblyId)return
+    const w=workspaceRef.current,a=w.saved.find(a=>a.id===v.assemblyId)
+    if(!a){setStorageError('URL 作品不存在于当前浏览器存档：'+v.assemblyId);return}
+    try{
+      if(canonical(w.current)!==canonical(a)&&!w.saved.some(s=>canonical(s)===canonical(w.current))){
+        // One backup is retained until explicitly restored, never overwritten by navigation.
+        if(localStorage.getItem('magnetic-assembly-url-backup')){setStorageError('已有保留草稿，当前作品也有修改；请先保存或恢复草稿，再打开 URL 作品。');return}
+        localStorage.setItem('magnetic-assembly-url-backup',JSON.stringify(w.current));setDraftBackup(true)
+      }
+      persist({...w,current:structuredClone(a)});setSavedId(a.id);setSelected(null);fit(a);setMessage('已按 URL 打开保存作品；本地草稿若有修改已单独保留。')
+    }catch(e){setStorageError('URL 作品恢复失败：'+String(e))}
+  },[urlRequest])
   function persist(next: Workspace) {
     workspaceRef.current = next
     setWorkspace(next)
@@ -51,6 +69,7 @@ function Playground() {
   function commit(next: Assembly, notice: string) {
     const result = validate(next.instances, profiles)
     if (!result.draftValid) { setMessage(`未提交：${result.issues.map(i => i.message).join('；')}`); return false }
+    writeStudioUrl({assemblyId:undefined})
     setHistory(h => [...h.slice(-49), structuredClone(current)])
     persist({ ...workspace, current: { ...next, revision: Math.max(next.revision, current.revision) + 1 } })
     setMessage(notice); return true
@@ -104,7 +123,7 @@ function Playground() {
   function undo() {
     const previous = history.at(-1)
     if (!previous) return
-    setHistory(h => h.slice(0, -1)); persist({ ...workspace, current: previous }); setSelected(null); setMessage('已撤销上一次编辑。')
+    writeStudioUrl({assemblyId:undefined});setHistory(h => h.slice(0, -1)); persist({ ...workspace, current: previous }); setSelected(null); setMessage('已撤销上一次编辑。')
   }
   function fit(assembly = current) {
     const points = assembly.instances.flatMap(t => vertices(t, profiles))
@@ -117,7 +136,7 @@ function Playground() {
     if (storageBlocked) { setMessage('原存档读取失败，请先导出当前 JSON，或明确重置本模块存档。'); return }
     const next = { ...workspace, saved: [structuredClone(current), ...workspace.saved.filter(a => a.id !== current.id)] }
     if (next.saved.length > 50) { setMessage('已达到 50 个保存作品上限。'); return }
-    const stored = persist(next); setSavedId(current.id); setMessage(stored ? checkArtwork(current, profiles).ready ? '已保存作品快照。' : '已保存草稿快照；组件尚未全部连接。' : '未写入浏览器存档；请导出 JSON 备份。')
+    const stored = persist(next); if(stored)writeStudioUrl({assemblyId:current.id}); setSavedId(current.id); setMessage(stored ? checkArtwork(current, profiles).ready ? '已保存作品快照。' : '已保存草稿快照；组件尚未全部连接。' : '未写入浏览器存档；请导出 JSON 备份。')
   }
   function exportJson() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(current, null, 2)], { type: 'application/json' }))
@@ -139,7 +158,7 @@ function Playground() {
     const actual = { ...parsed, revision: Math.max(parsed.revision, before.current.revision) + 1 }
     await bind(actual)
     if (workspaceRef.current !== before || dragRef.current) throw Error('来源已保存，但期间画布发生变化；未覆盖当前编辑，请重新打开候选')
-    const next = { ...before, current: actual }
+    writeStudioUrl({assemblyId:undefined});const next = { ...before, current: actual }
     saveWorkspace(localStorage, next, profiles)
     setHistory(h => [...h.slice(-49), structuredClone(before.current)])
     workspaceRef.current = next; setWorkspace(next); setSelected(null); fit(actual)
@@ -186,10 +205,10 @@ function Playground() {
         <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid || (workMode(current)==='flat-mosaic'&&preview.draftValid&&display.length) ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : workMode(current)==='flat-mosaic' && display.length ? '正式有效 · 平面拼图' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
       </section>
     </StudioSlot><StudioSlot column="inspector" stages={['assembly']}>
-      <aside className="tiles-panel storage-panel"><h2>我的作品</h2><label>作品模式<select aria-label="作品模式" disabled={!!drag} value={workMode(current)} onChange={e=>commit({...current,schemaVersion:2,mode:e.target.value as 'connected-construction'|'flat-mosaic'},'作品模式已更新；可撤销。')}><option value="connected-construction">Connected Construction · 连通搭建</option><option value="flat-mosaic">Flat Mosaic · 平面拼图</option></select></label><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
+      <aside className="tiles-panel storage-panel"><h2>我的作品</h2>{draftBackup&&<p>URL 打开前的未保存草稿已保留。<button onClick={()=>{try{const a=parseAssembly(JSON.parse(localStorage.getItem('magnetic-assembly-url-backup')!),profiles);if(commit(a,'已恢复保留草稿；可撤销。')){localStorage.removeItem('magnetic-assembly-url-backup');setDraftBackup(false);fit(a)}}catch(e){setStorageError(String(e))}}}>恢复 URL 打开前的作品草稿</button></p>}<label>作品模式<select aria-label="作品模式" disabled={!!drag} value={workMode(current)} onChange={e=>commit({...current,schemaVersion:2,mode:e.target.value as 'connected-construction'|'flat-mosaic'},'作品模式已更新；可撤销。')}><option value="connected-construction">Connected Construction · 连通搭建</option><option value="flat-mosaic">Flat Mosaic · 平面拼图</option></select></label><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
         <button className="primary" onClick={save} disabled={!!drag || storageBlocked || !current.instances.length}>保存作品快照</button>
         <label>已保存作品<select value={savedId} onChange={e => setSavedId(e.target.value)}><option value="">选择一个作品</option>{workspace.saved.map(a => <option key={a.id} value={a.id}>{a.name} · {a.instances.length} 块</option>)}</select></label>
-        <button disabled={!savedId || !!drag} onClick={() => { const a = workspace.saved.find(s => s.id === savedId); if (a) { commit(structuredClone(a), '已加载保存快照，可以继续编辑。'); setSelected(null); fit(a) } }}>加载所选作品</button>
+        <button disabled={!savedId || !!drag} onClick={() => { const a = workspace.saved.find(s => s.id === savedId); if (a) { commit(structuredClone(a), '已加载保存快照，可以继续编辑。'); writeStudioUrl({assemblyId:a.id}); setSelected(null); fit(a) } }}>加载所选作品</button>
         <div className="button-row"><button onClick={exportJson}>导出 JSON</button><button onClick={() => file.current?.click()} disabled={!!drag}>导入 JSON</button><input ref={file} type="file" accept=".json,application/json" hidden onChange={e => { void importJson(e.target.files?.[0]); e.target.value = '' }}/></div>
         <p className="hint">每次有效编辑自动保存在当前浏览器，刷新可恢复。保存快照后，可随时加载重新编辑。JSON 可用于备份或换设备。</p>
         {storageError && <p role="alert" className="storage-error">{storageError}</p>}

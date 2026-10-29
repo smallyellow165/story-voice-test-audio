@@ -1,3 +1,4 @@
+import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
 import { AssemblyPreview } from './AssemblyPreview.tsx'
 import { assemblySaveStatus, sameAssemblyContents } from './assembly-source.ts'
 import { StudioSlot, useStudio } from './StudioLayout.tsx'
@@ -15,15 +16,17 @@ function download(value: string, name: string) {
 }
 export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles, dragging }: { assembly: Assembly; savedAssemblies: readonly Assembly[]; workspaceError: string; profiles: readonly Profile[]; dragging: boolean }) {
   const {stage,navigate}=useStudio()
+  const urlRequest=useUrlRequest()
+  const [loaded,setLoaded]=useState(false)
   const previousStage=useRef(stage), initialAssembly=useRef(assembly), firstEntry=useRef(true)
   const [viewer,setViewer]=useState<'source'|'tutorial'>('tutorial')
   const [sourceId,setSourceId]=useState('current')
   useLayoutEffect(()=>{
-    if(stage==='build'&&previousStage.current==='assembly'){
+    if(stage==='build'&&previousStage.current==='assembly'&&!readStudioUrl(location.href).values.buildId){
       setSourceId('current')
       // Initial entry can restore the persisted active tutorial. Subsequent
       // returns from the editor explicitly preview the current work.
-      if(!firstEntry.current||assembly!==initialAssembly.current)setViewer('source')
+      if(!firstEntry.current||assembly!==initialAssembly.current){setViewer('source');writeStudioUrl({buildId:undefined})}
       firstEntry.current=false
     }
     previousStage.current=stage
@@ -37,13 +40,27 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
   const lock = useRef(true), file = useRef<HTMLInputElement>(null)
   useEffect(() => {
     let alive = true
-    loadLibrary(localStorage, profiles).then(l => { if (alive) { setLibrary(l); setSelectedId(l.plans[0]?.id ?? ''); setNotice('预览与已保存教程分别管理；修改画布不会改变教程。') } }).catch(e => { if (alive) { setBlocked(true); setError(`无法恢复教程，原存档未覆盖：${String(e)}`) } }).finally(() => { if (alive) { lock.current = false; setBusy(false) } })
+    loadLibrary(localStorage, profiles).then(l => { if (alive) { setLibrary(l); setSelectedId(l.plans[0]?.id ?? ''); setNotice('预览与已保存教程分别管理；修改画布不会改变教程。') } }).catch(e => { if (alive) { setBlocked(true); setError(`无法恢复教程，原存档未覆盖：${String(e)}`) } }).finally(() => { if (alive) { lock.current = false; setBusy(false);setLoaded(true) } })
     return () => { alive = false }
   }, [profiles])
+  useEffect(()=>{
+    if(!loaded)return
+    const {values:v,errors}=readStudioUrl(urlRequest.href)
+    if(errors.length)return
+    if(!v.buildId){setBusy(false);if(urlRequest.sequence>0)setViewer('source');return}
+    if(!library.plans.some(p=>p.id===v.buildId)){setViewer('source');setError('URL 教程不存在于当前浏览器已保存教程中：'+v.buildId);return}
+    let alive=true
+    setBusy(true);lock.current=true
+    // Restore from existing snapshots/progress without writing a different active
+    // plan into storage while a newer Back/Forward request may be in flight.
+    void activate(structuredClone(library),v.buildId).then(next=>{if(alive){setLibrary(next);setSelectedId(v.buildId);setViewer('tutorial');setError('');setNotice('已按 URL 恢复保存教程及其播放进度。')}}).catch(e=>{if(alive)setError('URL 教程恢复失败：'+String(e))}).finally(()=>{if(alive){setBusy(false);lock.current=false}})
+    return()=>{alive=false;lock.current=false}
+
+  },[loaded,urlRequest])
   async function run(action: () => Promise<BuildLibrary>, message: string, showTutorial = false) {
     if (lock.current || blocked) return
     lock.current = true; setBusy(true); setError('')
-    try { const next = await saveLibrary(localStorage, await action(), profiles); setLibrary(next); setSelectedId(next.plans.some(p => p.id === next.activeId) ? next.activeId! : next.plans[0]?.id ?? ''); setNotice(message); if(showTutorial)setViewer('tutorial') }
+    try { const next = await saveLibrary(localStorage, await action(), profiles); setLibrary(next); setSelectedId(next.plans.some(p => p.id === next.activeId) ? next.activeId! : next.plans[0]?.id ?? ''); setNotice(message); if(showTutorial)setViewer('tutorial'); if(showTutorial||viewer==='tutorial')writeStudioUrl({buildId:next.plans.some(p=>p.id===next.activeId)?next.activeId??undefined:undefined}) }
     catch (e) { setError(`操作未保存，原教程保留：${String(e)}`) }
     finally { lock.current = false; setBusy(false) }
   }
@@ -60,7 +77,7 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
   return <><StudioSlot column="workflow" stages={['build']}>
     <section className="build-source" aria-label="生成教程的作品来源">
       <h3>待生成教程来源 · 作品</h3>
-      <label>教程来源作品<select aria-label="教程来源作品" value={sourceId} disabled={disabled || dragging} onChange={e=>{setSourceId(e.target.value);setViewer('source')}}>
+      <label>教程来源作品<select aria-label="教程来源作品" value={sourceId} disabled={disabled || dragging} onChange={e=>{setSourceId(e.target.value);setViewer('source');writeStudioUrl({buildId:undefined})}}>
         <option value="current">使用当前作品 · {assembly.name}</option>
         <optgroup label="已保存作品">{savedAssemblies.map(a=><option key={a.id} value={`saved:${a.id}`}>{a.name} · {a.instances.length} 块 · revision {a.revision}</option>)}</optgroup>
       </select></label>
@@ -76,7 +93,7 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
     <StudioSlot column="inspector" stages={['build']}><section className="tiles-panel build-panel" aria-label="搭建教程（Build）">
     <h2>搭建教程（Build）</h2>
     {!playing&&<p>作品预览 · 尚未生成教程。点击生成后开始分步骤搭建。</p>}
-    {!playing&&bundle&&<button disabled={disabled} onClick={()=>setViewer('tutorial')}>继续上次教程</button>}
+    {!playing&&bundle&&<button disabled={disabled} onClick={()=>{setViewer('tutorial');writeStudioUrl({buildId:library.plans.some(p=>p.id===library.activeId)?library.activeId??undefined:undefined})}}>继续上次教程</button>}
     <div className="button-row"><button className="primary" disabled={disabled || dragging || !source || !checkArtwork(source, profiles).ready} onClick={() => void run(async () => {
       const b = await generateBuild(source!, profiles), l = structuredClone(library)
       if (l.preview) delete l.progress[l.preview.plan.id]

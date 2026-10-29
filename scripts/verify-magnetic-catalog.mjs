@@ -11,7 +11,7 @@ try{
  await page.goto((process.env.MAGNETIC_ORIGIN||'http://127.0.0.1:5173')+'/story-voice-test-audio/magnetic-tiles.html')
  await studioButton(page,'添加正方形').click()
  await stage(page,'catalog')
- assert.equal(await page.locator('nav[aria-label="工作阶段"] button').count(),5)
+ assert.equal(await page.locator('nav[aria-label="工作阶段"] [data-stage]').count(),5)
  assert.equal(await page.locator('.supported-tile').count(),profiles.length)
  for(const p of profiles){
   await page.getByLabel('支持的磁力片',{exact:true}).selectOption(`${p.id}@${p.version}`)

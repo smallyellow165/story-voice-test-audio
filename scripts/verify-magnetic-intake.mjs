@@ -47,7 +47,7 @@ try{
    if(headIds.length===7){
     await stage(page,'review')
     for(const o of analysis.evidence.observations.filter(o=>!headIds.includes(o.id))){
-     await page.locator('.intake-observations button').filter({hasText:o.id+' ·'}).click()
+     await page.locator('[data-review-id]').filter({has:page.locator('td:first-child',{hasText:new RegExp('^'+o.id+'$')})}).click()
      await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check()
     }
     await page.getByLabel('输入说明 / 修正理由',{exact:true}).fill('人工局部验收：仅重建六块鸭头三角形和嘴部；身体与脚并非误检，本次有意排除，不代表完整小鸭子成功。')

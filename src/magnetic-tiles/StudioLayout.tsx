@@ -1,3 +1,5 @@
+import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
+import { InfoHint } from '../brick-vision/InfoHint.tsx'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -23,21 +25,23 @@ export function StudioSlot({column,stages:visible,children}:{column:Column;stage
 }
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
-  const [stage,setStage]=useState<Stage>('assembly')
+  const request=useUrlRequest(), parsed=readStudioUrl(request.href)
+  const [stage,setStage]=useState<Stage>(()=>parsed.values.stage as Stage||'assembly')
+  useEffect(()=>{setStage(readStudioUrl(request.href).values.stage as Stage||'assembly')},[request])
   const [workflow,setWorkflow]=useState<HTMLDivElement|null>(null),[workspace,setWorkspace]=useState<HTMLDivElement|null>(null),[inspector,setInspector]=useState<HTMLDivElement|null>(null)
   useEffect(()=>{if(workspace)workspace.scrollTop=0;if(inspector)inspector.scrollTop=0},[stage,workspace,inspector])
   const [mobileColumn,setMobileColumn]=useState<Column>('workspace')
-  const navigate=(s:Stage)=>{if(!dragging){setStage(s);setMobileColumn('workspace')}}
+  const navigate=(s:Stage)=>{if(!dragging){writeStudioUrl({stage:s,...(stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
   return <Context.Provider value={{stage,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
-    <main className="tiles-app studio" data-mobile-column={mobileColumn}>
+    <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
-        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio</h1><p className="hint">图片到作品，一片一片搭。</p></header>
-        <nav aria-label="工作阶段">{stages.map((s,i)=><button key={s.id} data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span>{i+1} · {s.label}</span><small>{s.detail}</small></button>)}</nav>
+        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1></header>
+        <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
         <button data-stage="catalog" aria-current={stage==='catalog'?'page':undefined} disabled={dragging} onClick={()=>navigate('catalog')}>Supported Tiles / 磁力片目录</button>
         <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workspace')}>查看工作区</button><button onClick={()=>setMobileColumn('inspector')}>查看检查器</button></div>
-        <div ref={setWorkflow}/>
+        <div ref={setWorkflow}/>{parsed.errors.map(e=><p key={e} role="alert">{e}；未按无效参数恢复。</p>)}
         <p className="hint">相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。</p>
       </aside></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整左栏与中栏宽度" title="拖动或使用方向键调整左栏与中栏宽度"/>
