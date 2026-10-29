@@ -19,9 +19,22 @@ async function destination(x,y){return page.locator('.tiles-board').evaluate((el
 async function drag(locator,x,y,{snap=false,cancel=false}={}){
  await locator.scrollIntoViewIfNeeded();const a=await center(locator),b=await destination(x,y)
  await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:12})
- if(snap)assert.equal(await page.locator('.snap-preview').count(),1,'actual snap ghost must be visible before release')
+ let previewPoints,previewConnections
+ if(snap){
+  assert.equal(await page.locator('.snap-preview').count(),1,'actual snap ghost must be visible before release')
+  previewPoints=await locator.getAttribute('points')
+  previewConnections=await page.locator('.connections li').allTextContents()
+  for(const offset of [.2,-.2,0]){
+   await page.mouse.move(b.x+offset,b.y)
+   assert.equal(await locator.getAttribute('points'),previewPoints,'subpixel pointer noise must not flip preview')
+  }
+ }
  if(cancel)await page.keyboard.press('Escape')
  await page.mouse.up()
+ if(snap && !cancel){
+  assert.equal(await locator.getAttribute('points'),previewPoints,'committed polygon must equal preview')
+  assert.deepEqual(await page.locator('.connections li').allTextContents(),previewConnections,'connection UI must agree before and after release')
+ }
 }
 async function add(name){await page.getByRole('button',{name:'添加'+name,exact:true}).click();return polygons().last()}
 async function exported(){const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'导出 JSON',exact:true}).click();return JSON.parse(await readFile(await (await downloaded).path(),'utf8'))}
@@ -75,6 +88,21 @@ try{
  assert.equal(await page.locator('.connections li').count(),1)
  await page.getByRole('button',{name:'加载所选作品',exact:true}).click()
  assert.deepEqual((await exported()).instances,saved.instances)
+ // Close zoom previously made a 15-degree edge impossible to capture. Exercise
+ // the real rotate buttons and drag around the target edge centre, then 45 degrees.
+ await page.getByRole('button',{name:'新建',exact:true}).click()
+ await drag(await add('正方形'),-.5,0)
+ await drag(await add('正方形'),1,0)
+ await page.getByRole('button',{name:'↷ 15°',exact:true}).click()
+ for(let i=0;i<5;i++)await page.getByRole('button',{name:'放大视图',exact:true}).click()
+ await drag(polygons().last(),.5*Math.cos(Math.PI/12),.5*Math.sin(Math.PI/12),{snap:true})
+ assert.match(await valid().innerText(),/正式有效/)
+ await drag(polygons().last(),1,0)
+ for(let i=0;i<3;i++)await page.getByRole('button',{name:'↷ 15°',exact:true}).click()
+ await drag(polygons().last(),Math.SQRT1_2/2,Math.SQRT1_2/2,{snap:true})
+ assert.match(await valid().innerText(),/正式有效/)
+ await page.screenshot({path:output+'/rotated-snap-close-zoom.png',fullPage:true})
+ await page.getByRole('button',{name:'加载所选作品',exact:true}).click()
  // Import goes through production parser, preserving current data on rejection.
  await page.locator('input[type=file]').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...saved,instances:[{...saved.instances[0],profileVersion:99}]}))})
  await page.getByRole('status').filter({hasText:'导入失败'}).waitFor()
@@ -88,14 +116,21 @@ try{
  await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true})
  await polygons().last().scrollIntoViewIfNeeded()
  const touchStart=await center(polygons().last()),touchEnd=await destination(2.8,2.4)
- await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[touchStart]})
- for(let i=1;i<=8;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:touchStart.x+(touchEnd.x-touchStart.x)*i/8,y:touchStart.y+(touchEnd.y-touchStart.y)*i/8}]})
+ const firstFinger={...touchStart,id:1},beforeTouch=await polygons().last().getAttribute('points')
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[firstFinger]})
+ const otherFinger={...await destination(-.5,.5),id:2}
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[firstFinger,otherFinger]})
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[firstFinger,{...otherFinger,x:otherFinger.x+15}]})
+ assert.equal(await polygons().last().getAttribute('points'),beforeTouch,'second finger must not move the captured piece')
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[firstFinger]})
+ assert.equal(await polygons().last().getAttribute('points'),beforeTouch,'second release must not commit or cancel the first drag')
+ for(let i=1;i<=8;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{id:1,x:touchStart.x+(touchEnd.x-touchStart.x)*i/8,y:touchStart.y+(touchEnd.y-touchStart.y)*i/8}]})
  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
  assert.match(await valid().innerText(),/草稿/)
  await page.getByRole('button',{name:'撤销',exact:true}).click()
  assert.deepEqual((await exported()).instances,saved.instances)
  await cdp.detach()
  assert.deepEqual(errors,[])
- console.log('PASS: three profiles; 6-piece house via UI; snap ghosts; 7 connections; overlap rejection; detach/cancel/rotate/delete/undo; save/reload/load exact poses; triangle-square snap; invalid import; narrow layout.')
+ console.log('PASS: three profiles; 6-piece house via UI; snap ghosts; 7 connections; overlap rejection; detach/cancel/rotate/delete/undo; save/reload/load exact poses; triangle-square snap; 15/45-degree close-zoom capture; stable preview/commit equality; invalid import; narrow layout and two-finger isolation.')
  console.log('Screenshots: '+output)
 }finally{await browser.close()}

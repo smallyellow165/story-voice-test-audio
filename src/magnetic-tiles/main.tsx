@@ -9,7 +9,7 @@ import type { Workspace } from './storage.ts'
 import './style.css'
 
 const palette = ['#f5b942', '#ef795d', '#55b8ac', '#7e9bda', '#b895cf']
-type Drag = { id: string; start: Vec; original: Pose; moved: boolean; raw: Tile; snap: Snap | null }
+type Drag = { pointerId: number; id: string; start: Vec; original: Pose; moved: boolean; raw: Tile; snap: Snap | null }
 function initial(): { workspace: Workspace; error: string } {
   try { return { workspace: loadWorkspace(localStorage, profiles) ?? { schemaVersion: 1, current: emptyAssembly(), saved: [] }, error: '' } }
   catch (e) { return { workspace: { schemaVersion: 1, current: emptyAssembly(), saved: [] }, error: `无法恢复存档，原数据未覆盖。${String(e)}` } }
@@ -68,12 +68,12 @@ function Playground() {
     if (event.button !== 0 || dragRef.current) return
     event.preventDefault(); event.stopPropagation(); setSelected(tile.id)
     svg.current!.focus({ preventScroll: true }); svg.current!.setPointerCapture(event.pointerId)
-    const d = { id: tile.id, start: world(event), original: { ...tile.pose }, moved: false, raw: tile, snap: null }
+    const d = { pointerId: event.pointerId, id: tile.id, start: world(event), original: { ...tile.pose }, moved: false, raw: tile, snap: null }
     dragRef.current = d; setDrag(d)
   }
   function move(event: ReactPointerEvent<SVGSVGElement>) {
     const d = dragRef.current
-    if (!d) return
+    if (!d || event.pointerId !== d.pointerId) return
     const [x, y] = world(event), dx = x - d.start[0], dy = y - d.start[1]
     const pixelsPerUnit = Math.abs(svg.current!.getScreenCTM()!.a)
     if (!d.moved && Math.hypot(dx, dy) * pixelsPerUnit < 3) return
@@ -83,7 +83,7 @@ function Playground() {
   }
   function end(event: ReactPointerEvent<SVGSVGElement>) {
     const d = dragRef.current
-    if (!d) return
+    if (!d || event.pointerId !== d.pointerId) return
     dragRef.current = null; setDrag(null)
     if (svg.current!.hasPointerCapture(event.pointerId)) svg.current!.releasePointerCapture(event.pointerId)
     if (d.moved) replace(d.snap?.tile ?? d.raw, d.snap ? '已吸附：等长整边准确对齐。' : '已移动；连接关系已重新计算。')
@@ -130,13 +130,13 @@ function Playground() {
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
         <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°` : '点击画布上的一块磁力片'}</p>
         <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
-        <p className="hint">直接拖动已连接的单片即可拿起。靠近等长边时，绿色虚线显示吸附预览；松手确认。旋转后重叠会被拒绝。</p>
+        <p className="hint">直接拖动已连接的单片即可拿起。靠近等长边时，绿色虚线显示吸附预览；松手确认。可自动对齐约 45° 内的边，更大角度请先旋转。重叠会被拒绝。</p>
         <details><summary>键盘操作</summary><p>在画布中选中零件：方向键移动 0.1 单位，R 旋转 15°，Delete 删除，Esc 取消拖动。Tab 可选择零件，Enter 确认选择。</p></details>
       </aside>
       <section className="tiles-workspace" aria-label="搭建工作区">
         <div className="board-toolbar"><div className="button-row"><button onClick={undo} disabled={!history.length || !!drag}>撤销</button><button disabled={!!drag} onClick={() => { commit(emptyAssembly(), '新画布已准备；可撤销返回。'); setSelected(null); fit(emptyAssembly()) }}>新建</button></div><div className="button-row"><button aria-label="放大视图" onClick={() => setView(v => ({ ...v, width: Math.max(4, v.width / 1.25) }))} disabled={!!drag}>＋</button><button aria-label="缩小视图" onClick={() => setView(v => ({ ...v, width: Math.min(3000, v.width * 1.25) }))} disabled={!!drag}>−</button><button onClick={() => fit()} disabled={!!drag}>适合画布</button></div></div>
         <svg ref={svg} className="tiles-board" viewBox={`${view.x - view.width / 2} ${-view.y - height / 2} ${view.width} ${height}`} tabIndex={0} aria-label="磁力片二维画布"
-          onPointerDown={e => { if (e.target === e.currentTarget) setSelected(null) }} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={() => { if (dragRef.current) cancel() }}
+          onPointerDown={e => { if (e.target === e.currentTarget) setSelected(null) }} onPointerMove={move} onPointerUp={end} onPointerCancel={e => { if (e.pointerId === dragRef.current?.pointerId) cancel() }} onLostPointerCapture={e => { if (e.pointerId === dragRef.current?.pointerId) cancel() }}
           onKeyDown={e => {
             if (e.key === 'Escape' && dragRef.current) { cancel(); return }
             if (dragRef.current || !chosen) return
@@ -157,7 +157,7 @@ function Playground() {
           </g>
         </svg>
         <p className={`board-message ${drag && !preview.draftValid ? 'warning' : ''}`} role="status">{drag?.moved ? drag.snap ? '可吸附 · 松手完成整边对齐' : preview.draftValid ? '自由移动 · 松手放下，Esc 取消' : '当前位置不合法 · 松手将恢复原位' : message}</p>
-        <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{report.connections.length}</b> 条连接</span><span><b>{report.components.length}</b> 个组件</span><strong data-testid="validation" className={report.valid ? 'valid-badge' : 'draft-badge'}>{report.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
+        <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
       </section>
       <aside className="tiles-panel storage-panel"><h2>我的作品</h2><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
         <button className="primary" onClick={save} disabled={!!drag || storageBlocked || !current.instances.length}>保存作品快照</button>
@@ -168,7 +168,7 @@ function Playground() {
         {storageError && <p role="alert" className="storage-error">{storageError}</p>}
         {storageBlocked && <button onClick={() => { if (!confirm('确认用当前工作区替换无法读取的磁力片存档？其他模块数据不会改变。')) return; try { saveWorkspace(localStorage, workspace, profiles); setStorageBlocked(false); setStorageError('') } catch (e) { setStorageError(String(e)) } }}>重置本模块存档</button>}
         <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.map((i, index) => <li key={index}>{i.message}</li>)}</ul>{report.valid && !drag && <p className="success">所有检查通过。</p>}
-        <details open><summary>连接关系（自动推导）</summary>{report.connections.length ? <ul className="connections">{report.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
+        <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
       </aside>
     </div><footer>相对尺寸 · 单片零厚度二维几何 · 不代表实物三维磁吸或稳定性</footer>
   </main>

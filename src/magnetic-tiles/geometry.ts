@@ -122,23 +122,44 @@ export function alignEdge(tile: Tile, own: Edge, target: Edge, profiles: readonl
   const rotated = transform(a, { x: 0, y: 0, angleRad })
   return { ...tile, pose: { x: target.b[0] - rotated[0], y: target.b[1] - rotated[1], angleRad } }
 }
-export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number }
+export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number; contactCount: number }
+const midpoint = (edge: Edge): Vec => [(edge.a[0] + edge.b[0]) / 2, (edge.a[1] + edge.b[1]) / 2]
+const SNAP_ANGLE = Math.PI / 4
 export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly Profile[], captureDistance: number, previousKey?: string): Snap | null {
-  // Screen-derived captureDistance is deliberately not part of validate().
+  // UX capture thresholds never participate in validate(). Rotation is measured
+  // separately: endpoint displacement otherwise silently reduces the angle limit
+  // as the canvas is zoomed in (even when the two edge centres coincide).
+  if (!Number.isFinite(captureDistance) || captureDistance <= 0) return null
   const candidates: Snap[] = []
-  for (const own of edges(tile, profiles).filter(e => e.enabled)) for (const other of others) for (const target of edges(other, profiles).filter(e => e.enabled)) {
+  const targets = others.flatMap(other => edges(other, profiles).filter(e => e.enabled))
+  for (const own of edges(tile, profiles).filter(e => e.enabled)) for (const target of targets) {
     if (Math.abs(own.length - target.length) > EPS) continue
     const key = JSON.stringify([own.id, target.tileId, target.id]), retained = key === previousKey
     const delta = Math.abs(wrapAngle(Math.atan2(target.a[1] - target.b[1], target.a[0] - target.b[0]) - Math.atan2(own.b[1] - own.a[1], own.b[0] - own.a[0])))
-    if (delta > Math.PI / 6 * (retained ? 1.3 : 1)) continue
-    const score = Math.max(distance(own.a, target.b), distance(own.b, target.a))
-    if (score > captureDistance * (retained ? 1.4 : 1)) continue
+    if (delta > SNAP_ANGLE * (retained ? 1.2 : 1) + EPS) continue
+    const separation = distance(midpoint(own), midpoint(target))
+    // Cap the screen radius relative to edge length at extreme zoom-out, so a
+    // whole neighbouring tile cannot become a magnetic capture zone.
+    const radius = Math.min(captureDistance, own.length * .3)
+    if (separation > radius * (retained ? 1.4 : 1)) continue
     const aligned = alignEdge(tile, own, target, profiles)
-    if (!validate([...others, aligned], profiles).draftValid) continue
-    candidates.push({ tile: aligned, target, own, key, score })
+    const report = validate([...others, aligned], profiles)
+    if (!report.draftValid) continue
+    const contactCount = report.connections.filter(c => c.a.tileId === tile.id || c.b.tileId === tile.id).length
+    candidates.push({ tile: aligned, target, own, key, contactCount,
+      score: separation / radius + .35 * delta / SNAP_ANGLE })
   }
-  candidates.sort((a, b) => Number(b.key === previousKey) - Number(a.key === previousKey) || a.score - b.score || a.key.localeCompare(b.key))
-  return candidates[0] ?? null
+  if (!candidates.length) return null
+  const bestScore = Math.min(...candidates.map(c => c.score))
+  // Prefer a genuinely closing placement only among similarly close candidates.
+  // Use a fixed shortlist rather than a non-transitive approximate comparator.
+  const close = candidates.filter(c => c.score <= bestScore + .1)
+  close.sort((a, b) => b.contactCount - a.contactCount || a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  const best = close[0], previous = candidates.find(c => c.key === previousKey)
+  // Keep small pointer noise from toggling previews, but allow a materially
+  // closer candidate (or a similarly close multi-edge closure) to take over.
+  if (previous && previous.score <= bestScore + .2 && previous.contactCount >= best.contactCount) return previous
+  return best
 }
 export function rotateTile(tile: Tile, delta: number, profiles: readonly Profile[]): Tile {
   const v = profileFor(tile, profiles)!.vertices, center: Vec = [v.reduce((s, p) => s + p[0], 0) / v.length, v.reduce((s, p) => s + p[1], 0) / v.length]
