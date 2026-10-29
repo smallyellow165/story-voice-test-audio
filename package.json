@@ -28,7 +28,9 @@
     "test:magnetic-tiles": "node --experimental-strip-types --test test/magnetic-tiles.test.mjs",
     "test:magnetic-tiles:browser": "node scripts/verify-magnetic-tiles.mjs",
     "test:magnetic-build": "node --experimental-strip-types --test test/magnetic-build.test.mjs",
-    "test:magnetic-build:browser": "node scripts/verify-magnetic-build.mjs"
+    "test:magnetic-build:browser": "node scripts/verify-magnetic-build.mjs",
+    "test:magnetic-intake": "node --experimental-strip-types --test test/magnetic-intake.test.mjs",
+    "test:magnetic-intake:browser": "node scripts/verify-magnetic-intake.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

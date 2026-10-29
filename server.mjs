@@ -1,3 +1,4 @@
+import {createMagneticIntake} from './server/magnetic-intake.mjs'
 import {createGalleryStore} from './server/brick-gallery.mjs'
 import {createPartsInputStore} from './server/brick-parts-input.mjs'
 import { createPartsGeometryService } from './server/brick-parts-geometry.mjs'
@@ -48,6 +49,7 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
+const magneticIntake = createMagneticIntake(path.join(generatedDirectory, 'magnetic-intake'))
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const sourceImages = createSourceImageStore(path.join(generatedDirectory, 'brick-source-images'))
@@ -548,6 +550,16 @@ const server = createServer(async (request, response) => {
       }
       sendJson(response, 200, await brickSpatial.dispatch(request.method, url.pathname.slice('/api/brick-spatial/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, { error: error.statusCode ? error.message : 'Spatial 记录读取或执行失败；未自动重试。' }) }
+    return
+  }
+  if (url.pathname.startsWith('/api/magnetic-intake/')) {
+    try {
+      if (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host)) {
+        sendJson(response, 403, {error:'仅接受同源 Magnetic Intake 操作'}); return
+      }
+      const body = request.method === 'POST' ? await readJsonBody(request, 18 * 1024 * 1024) : {}
+      sendJson(response, 200, await magneticIntake.dispatch(request.method, url.pathname.slice('/api/magnetic-intake/'.length), body))
+    } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 422, {error:error.message || 'Magnetic Intake 操作失败，未自动重试'}) }
     return
   }
   if (url.pathname.startsWith('/api/brick-source-images/')) {

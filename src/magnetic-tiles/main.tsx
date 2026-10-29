@@ -7,6 +7,8 @@ import type { Assembly, Pose, Snap, Tile, Vec } from './geometry.ts'
 import { emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace } from './storage.ts'
 import type { Workspace } from './storage.ts'
 import './style.css'
+import { ImageIntake } from './intake/ImageIntake.tsx'
+import type { Origin } from './intake/contracts.ts'
 import { BuildPanel } from './BuildPanel.tsx'
 
 const palette = ['#f5b942', '#ef795d', '#55b8ac', '#7e9bda', '#b895cf']
@@ -18,6 +20,8 @@ function initial(): { workspace: Workspace; error: string } {
 function Playground() {
   const [boot] = useState(initial)
   const [workspace, setWorkspace] = useState(boot.workspace)
+  const workspaceRef = useRef(workspace)
+  workspaceRef.current = workspace
   const [history, setHistory] = useState<Assembly[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -34,6 +38,7 @@ function Playground() {
   const display = drag ? current.instances.map(t => t.id === drag.id ? drag.snap?.tile ?? drag.raw : t) : current.instances
   const preview = validate(display, profiles)
   function persist(next: Workspace) {
+    workspaceRef.current = next
     setWorkspace(next)
     if (storageBlocked) return false
     try { saveWorkspace(localStorage, next, profiles); setStorageError(''); return true }
@@ -122,9 +127,24 @@ function Playground() {
       commit(a, '已导入并重新验证 Assembly。'); fit(a); setSelected(null)
     } catch (e) { setMessage(`导入失败，当前作品未改变：${String(e)}`) }
   }
+  async function applyImage(candidate: Assembly, bind: (actual: Assembly) => Promise<Origin>) {
+    if (storageBlocked || dragRef.current) throw Error('请先完成拖动或处理工作区存档错误')
+    const before = workspaceRef.current
+    const parsed = parseAssembly(candidate, profiles)
+    if (!validate(parsed.instances, profiles).valid) throw Error('重建候选未通过几何验证')
+    const actual = { ...parsed, revision: Math.max(parsed.revision, before.current.revision) + 1 }
+    await bind(actual)
+    if (workspaceRef.current !== before || dragRef.current) throw Error('来源已保存，但期间画布发生变化；未覆盖当前编辑，请重新打开候选')
+    const next = { ...before, current: actual }
+    saveWorkspace(localStorage, next, profiles)
+    setHistory(h => [...h.slice(-49), structuredClone(before.current)])
+    workspaceRef.current = next; setWorkspace(next); setSelected(null); fit(actual)
+    setMessage('图片候选已载入；来源已保存，可撤销或继续编辑。')
+  }
   const height = view.width * .7
   return <main className="tiles-app">
     <header className="tiles-header"><div><p className="eyebrow">MAGNETIC TILES · 2D LAB</p><h1>一片一片，拼出想象</h1><p>自由拼搭 · 等长边磁吸 · 不模拟三维磁力</p></div><span className="version">Geometry Playground V1</span></header>
+    <ImageIntake assembly={current} onApply={applyImage}/>
     <div className="tiles-layout">
       <aside className="tiles-panel"><h2>拿一块磁力片</h2><div className="tiles-palette">{profiles.map(p => <button key={p.id} onClick={() => add(p.id)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
         <svg viewBox="-.15 -.15 1.3 1.3" aria-hidden="true"><g transform="translate(0 1) scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{p.id === 'right-triangle' ? '直角边 1 · 斜边 √2' : '边长 1'}</small></button>)}</div>

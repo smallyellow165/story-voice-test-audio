@@ -1,0 +1,30 @@
+import {buildOpenaiRequest} from './openai-responses.mjs'
+import {callBrickModel} from './brick-model-call.mjs'
+import {modelSettings,resolveModel} from './brick-model-registry.mjs'
+export const promptVersion='magnetic-planar-observation-v3'
+export const prompt=`Analyze the provided image for a planar magnetic tile reconstruction. Output JSON only. This is perception, NOT template design. Accept clean overhead flat photos or clean diagrams with distinct piece boundaries. Transparent plastic, inner magnetic bars, ribs, rims, shine and decoration are NOT extra pieces. Identify each complete OUTER tile perimeter once, never subdivide a tile to fit the supported set. Profiles are unit square; isosceles right triangle with legs 1 and hypotenuse sqrt(2); equilateral triangle sides 1. All tiles share this single scale. Do not replace unsupported shapes or sizes with supported ones. If 3D, stacked, major occlusion, strong perspective, non-tile imagery or unresolvable shape/scale is evident use sourceKind unsupported and explain. Ordinary animal photos are not tile designs. At most 12 pieces intended; report extra pieces/unknowns honestly rather than delete them.
+Each observation is one tile with a stable short ID, profileId (square/right-triangle/equilateral-triangle/unknown), profileVersion 1, hex color, outer outline in cyclic order: [x/IMAGE_WIDTH,y/IMAGE_HEIGHT] with origin TOP LEFT. Square has exactly 4 corners; triangle exactly 3. EVERY coordinate MUST be a decimal between 0.0 and 1.0 inclusive, NEVER pixel coordinates or a 0–1000 scale. For example a point halfway across and a quarter down is [0.5,0.25]. Use the actual supplied image width and height, not an internally resized view. Outline must track physical outer perimeter including transparent margins; ignore INTERNAL magnetic bars and highlight lines. Orientation comes from outline, not invented world coordinates. origin is observed, excluded false. Include confidence 0..1, evidence and uncertainty strings. Color is approximate body hue, not reflection. Unknown shape still has an approximate outer outline. Relations express connect (likely full shared boundary), separate (explicit noncontact), uncertain (unclear). Emit only one relation per unordered pair. Describe unsupported specifications in reason/uncertainty. Do not claim geometric validity or exact reconstruction. No world poses, no build steps.`
+const str={type:'STRING'},num={type:'NUMBER'},arr=items=>({type:'ARRAY',items}),obj=properties=>({type:'OBJECT',properties,required:Object.keys(properties)})
+export const recognitionSchema=obj({sourceKind:{type:'STRING',enum:['flat_photo','diagram','unsupported']},reason:str,observations:arr(obj({id:str,profileId:{type:'STRING',enum:['square','right-triangle','equilateral-triangle','unknown']},profileVersion:{type:'INTEGER',minimum:1,maximum:1},color:{type:'STRING',pattern:'^#[0-9a-fA-F]{6}$'},outline:arr({type:'ARRAY',items:{type:'NUMBER',minimum:0,maximum:1},minItems:2,maxItems:2}),confidence:num,evidence:str,uncertainty:str,origin:{type:'STRING',enum:['observed']},excluded:{type:'BOOLEAN'}})),relations:arr(obj({from:str,to:str,intent:{type:'STRING',enum:['connect','separate','uncertain']},evidence:str}))})
+export function recognitionRequest(model,view){
+ const definition=resolveModel(model,'reverse')
+ if(definition.provider==='openai'){const request=buildOpenaiRequest({model,task:'reverse',prompt,schema:recognitionSchema,content:[{type:'input_text',text:`Image dimensions ${view.width} x ${view.height}. Return the observation JSON.`},{type:'input_image',image_url:`data:${view.mimeType};base64,${view.imageBase64}`,detail:'high'}]})
+  // Magnetic-specific strict output contract; shared DUPLO transport is unchanged.
+  const lower = node => {
+    const result={...node,type:node.type.toLowerCase()}
+    if(node.properties){result.properties=Object.fromEntries(Object.entries(node.properties).map(([k,v])=>[k,lower(v)]));result.additionalProperties=false}
+    if(node.items)result.items=lower(node.items)
+    return result
+  }
+  request.text={format:{type:'json_schema',name:'magnetic_planar_observation',strict:true,schema:lower(recognitionSchema)}}
+  return request
+ }
+ return {model,contents:[{role:'user',parts:[{text:prompt+`\nImage dimensions ${view.width} x ${view.height}.`},{inlineData:{mimeType:view.mimeType,data:view.imageBase64}}]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:recognitionSchema}}
+}
+export async function recognize(model,view,record){
+ const request=recognitionRequest(model,view)
+ record.promptVersion=promptVersion;record.request=request
+ await callBrickModel({model,task:'reverse',request,record})
+ if(record.provider==='gemini'&&record.finishReason!=='STOP')throw Error('模型输出未完整结束：'+record.finishReason)
+ return JSON.parse(record.rawOutput)
+}
