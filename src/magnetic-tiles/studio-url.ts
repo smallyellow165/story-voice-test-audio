@@ -21,3 +21,19 @@ export function useUrlRequest(){
  useEffect(()=>{const pop=()=>setRequest(r=>({href:location.href,sequence:r.sequence+1}));window.addEventListener('popstate',pop);return()=>window.removeEventListener('popstate',pop)},[])
  return request
 }
+
+export const PREFERENCES_KEY='magnetic-studio.intake-preferences.v1'
+type ModelConfig={models:{id:string;provider:string}[];providers:Record<string,boolean>}
+// Preference errors do not invalidate independent saved-work identities.
+export function resolveIntakePreferences(href:string, saved:unknown, config:ModelConfig){
+ const params=new URL(href).searchParams
+ const previous=(saved&&typeof saved==='object'?saved:{}) as Record<string,unknown>
+ const source=params.has('sourceType')?params.get('sourceType'):previous.sourceType??'uploaded'
+ const wanted=params.has('model')?params.get('model'):previous.model??config.models.find(m=>m.id==='gpt-4.1'&&config.providers[m.provider])?.id??config.models.find(m=>config.providers[m.provider])?.id??''
+ const sourceValid=source==='server'||source==='uploaded'
+ const modelValid=typeof wanted==='string'&&config.models.some(m=>m.id===wanted&&config.providers[m.provider])
+ return {sourceType:sourceValid?source as 'server'|'uploaded':'' as const,model:modelValid?wanted as string:'',warnings:{
+  sourceType:sourceValid?'':`${params.has('sourceType')?'URL':'本地偏好'} sourceType 无效，请选择图片来源。`,
+  model:modelValid?'':`${params.has('model')?'URL':'本地偏好 / 默认'} model 不可用或未配置，请明确选择下次识别模型。`
+ }}
+}

@@ -10,3 +10,18 @@ test('Studio deep links retain stable IDs and reject path-like/invalid parameter
  }
  assert.equal(readStudioUrl('http://localhost/?stage=other').errors.length,1)
 })
+
+import {resolveIntakePreferences} from '../src/magnetic-tiles/studio-url.ts'
+test('Intake preferences: explicit URL > recent preference > available registered default',()=>{
+ const config={models:[{id:'gpt-4.1',provider:'openai'},{id:'future.registered-model',provider:'openai'},{id:'disabled',provider:'offline'}],providers:{openai:true,offline:false}}
+ const saved={sourceType:'uploaded',model:'gpt-4.1'}
+ const explicit=resolveIntakePreferences('http://localhost/?sourceType=server&model=future.registered-model',saved,config)
+ assert.equal(explicit.sourceType,'server');assert.equal(explicit.model,'future.registered-model')
+ assert.equal(resolveIntakePreferences('http://localhost/',{sourceType:'server',model:'future.registered-model'},config).model,'future.registered-model')
+ assert.equal(resolveIntakePreferences('http://localhost/',null,config).model,'gpt-4.1')
+ for(const model of ['unknown','disabled','']){
+  const r=resolveIntakePreferences('http://localhost/?model='+model,saved,config);assert.equal(r.model,'');assert.match(r.warnings.model,/URL/)
+ }
+ assert.equal(resolveIntakePreferences('http://localhost/?sourceType=invalid',saved,config).sourceType,'')
+ assert.equal(resolveIntakePreferences('http://localhost/',{model:'removed'},config).model,'')
+})

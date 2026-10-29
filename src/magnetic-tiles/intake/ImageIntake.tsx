@@ -1,4 +1,4 @@
-import { readStudioUrl, useUrlRequest, writeStudioUrl } from '../studio-url.ts'
+import { PREFERENCES_KEY, resolveIntakePreferences, readStudioUrl, useUrlRequest, writeStudioUrl } from '../studio-url.ts'
 import { outlineEvidenceKey } from './profile-match.ts'
 import { ProfileMatcher } from './ProfileMatcher.tsx'
 import { ReviewWorkspace } from './ReviewWorkspace.tsx'
@@ -25,12 +25,39 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const [selected,setSelected]=useState(''),[model,setModel]=useState(''),[candidateId,setCandidateId]=useState(''),[checked,setChecked]=useState(false)
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('上传图片后点击识别；模型只在明确点击时调用。'),[error,setError]=useState(''),[currentHash,setCurrentHash]=useState('')
  const [target,setTarget]=useState(''),[intent,setIntent]=useState<'connect'|'separate'|'uncertain'>('connect')
- const [imageSource,setImageSource]=useState<'upload'|'server'>('upload'),[library,setLibrary]=useState<{name:string;mimeType:string}[]>([]),[libraryName,setLibraryName]=useState('')
+ const [imageSource,setImageSource]=useState<''|'upload'|'server'>('upload'),[library,setLibrary]=useState<{name:string;mimeType:string}[]>([]),[libraryName,setLibraryName]=useState('')
+ const [preferencesRestored,setPreferencesRestored]=useState<typeof urlRequest|null>(null)
+ const [preferencesReady,setPreferencesReady]=useState(false),[preferenceWarnings,setPreferenceWarnings]=useState({sourceType:'',model:''})
+ const [preferenceStorageError,setPreferenceStorageError]=useState('')
  const [mode,setMode]=useState<WorkMode>('connected-construction')
 
  const lock=useRef(false),file=useRef<HTMLInputElement>(null),svg=useRef<SVGSVGElement>(null),drag=useRef<{id:string;index:number;pointerId:number}|null>(null)
- useEffect(()=>{let live=true;Promise.all([intakeApi<Config>('status'),intakeApi<IntakeHistory>('history')]).then(([c,h])=>{if(live){setConfig(c);setHistory(h);setModel(c.models.find(m=>m.id==='gpt-4.1'&&c.providers[m.provider])?.id??c.models.find(m=>c.providers[m.provider])?.id??'')}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
+ useEffect(()=>{let live=true;Promise.all([intakeApi<Config>('status'),intakeApi<IntakeHistory>('history')]).then(([c,h])=>{if(live){setConfig(c);setHistory(h)}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{let live=true;void contentHash(assembly).then(h=>{if(live)setCurrentHash(h)});return()=>{live=false}},[assembly])
+ useEffect(()=>{
+  if(!config)return
+  let saved:unknown={}
+  try{saved=JSON.parse(localStorage.getItem(PREFERENCES_KEY)||'{}')}catch{setPreferenceStorageError('本地图片来源 / 模型偏好无法读取；使用 URL 或默认值。')}
+  const resolved=resolveIntakePreferences(urlRequest.href,saved,config)
+  setImageSource(resolved.sourceType==='uploaded'?'upload':resolved.sourceType);setModel(resolved.model);setPreferenceWarnings(resolved.warnings)
+  setPreferencesRestored(urlRequest);setPreferencesReady(true)
+ },[config,urlRequest])
+ useEffect(()=>{
+  if(!preferencesReady||preferencesRestored!==urlRequest)return
+  const values:Record<string,string|undefined>={}
+  if(imageSource&&!preferenceWarnings.sourceType)values.sourceType=imageSource==='upload'?'uploaded':'server'
+  if(!preferenceWarnings.model)values.model=model||undefined
+  writeStudioUrl(values)
+  try{const raw=JSON.parse(localStorage.getItem(PREFERENCES_KEY)||'{}');localStorage.setItem(PREFERENCES_KEY,JSON.stringify({...raw,...values}))}catch{setPreferenceStorageError('图片来源 / 模型偏好无法写入本地；URL 仍可用于恢复。')}
+ },[imageSource,model,preferencesReady,preferencesRestored,urlRequest,preferenceWarnings])
+ useEffect(()=>{
+  if(imageSource!=='server')return
+  let alive=true
+  void intakeApi<{images:{name:string;mimeType:string}[]}>('library').then(list=>{if(alive)setLibrary(list.images)}).catch(e=>{if(alive)setError('Server Library 加载失败：'+String(e))})
+  return()=>{alive=false}
+ },[imageSource])
+ function chooseSource(value:'upload'|'server'){setImageSource(value);setPreferenceWarnings(w=>({...w,sourceType:''}))}
+ function chooseModel(value:string){setModel(value);setPreferenceWarnings(w=>({...w,model:''}))}
  async function refresh(){setHistory(await intakeApi<IntakeHistory>('history'))}
  async function refreshLibrary(){const list=await intakeApi<{images:{name:string;mimeType:string}[]}>('library');setLibrary(list.images);setLibraryName('')}
  async function run(action:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await action()}catch(e){setError(String(e))}finally{lock.current=false;setBusy(false)}}
@@ -85,15 +112,16 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const origins=history.origins.filter(o=>o.assembly.id===assembly.id),origin=origins.find(o=>o.assemblyHash===currentHash)??origins[0]
  const shown=draft??analysis?.evidence
  const resultEvidence=result?history.reviews.find(r=>r.id===result.reviewId)?.evidence:undefined
- const disabled=busy||!config||!urlReady
+ const disabled=busy||!config||!urlReady||!preferencesReady
  function addPiece(){if(!draft)return;const p=profiles[0],xs=p.vertices.map(v=>v[0]),ys=p.vertices.map(v=>v[1]),scale=.2/Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));const id='manual-'+crypto.randomUUID().slice(0,8);edit({...draft,observations:[...draft.observations,{id,profileId:profiles[0].id,profileVersion:profiles[0].version,color:'#f5b942',outline:p.vertices.map(([x,y])=>[.4+(x-Math.min(...xs))*scale,.4+(Math.max(...ys)-y)*scale]),confidence:0,evidence:'人工补片',uncertainty:'请将轮廓角点拖到图片中真实边界',origin:'manual',excluded:false}]});setSelected(id)}
  return <>
   <StudioSlot column="workflow" stages={imageStages}><section className="intake-controls" aria-label="图片与分析">
-   <label>图片来源<select aria-label="图片来源" disabled={disabled} value={imageSource} onChange={e=>{const value=e.target.value as 'upload'|'server';setImageSource(value);if(value==='server')void run(refreshLibrary)}}><option value="upload">Uploaded Images / 上传图片与历史</option><option value="server">Server Library / 服务器图片</option></select></label>
+   <label>图片来源<select aria-label="图片来源" disabled={disabled} value={imageSource} onChange={e=>{const value=e.target.value as 'upload'|'server';chooseSource(value)}}><option value="" disabled>选择图片来源</option><option value="upload">Uploaded Images / 上传图片与历史</option><option value="server">Server Library / 服务器图片</option></select></label>
    {imageSource==='server'&&<><label>服务器图片<select aria-label="服务器图片" disabled={disabled} value={libraryName} onChange={e=>{const name=e.target.value;if(name)void run(async()=>{const s=await intakeApi<Source>('sources',await prepareLibraryImage(name));await openSource(s);setLibraryName(name);await refresh()})}}><option value="">选择服务器图片</option>{library.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</select></label><button disabled={busy} onClick={()=>void run(refreshLibrary)}>刷新 Server Library</button><p className="hint">public/test-images/maganetic/ · 选择后保存独立图片快照，不调用模型。{!library.length?'目录中暂无支持的图片。':''}</p></>}
-   <div className="button-row"><button disabled={disabled} onClick={()=>file.current?.click()}>上传磁力片图片</button><input data-testid="intake-upload" hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void run(async()=>{const s=await intakeApi<Source>('sources',await prepareImage(f));await openSource(s);setImageSource('upload');await refresh()})}}/><button disabled={busy} onClick={()=>void run(refresh)}>刷新图片历史</button></div>
-   <label>已保存图片（上传与服务器快照）<select aria-label="已保存图片" disabled={disabled} value={source?.id??''} onChange={e=>{const s=history.sources.find(s=>s.id===e.target.value);if(s)void run(async()=>{await openSource(s);setImageSource('upload')})}}><option value="">选择图片</option>{history.sources.map(s=><option key={s.id} value={s.id}>{s.name} · {s.id.slice(0,8)}</option>)}</select></label>
-   <label>下次识别模型<select aria-label="识别模型" disabled={disabled} value={model} onChange={e=>setModel(e.target.value)}><option value="">选择模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
+   <div className="button-row"><button disabled={disabled} onClick={()=>file.current?.click()}>上传磁力片图片</button><input data-testid="intake-upload" hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void run(async()=>{const s=await intakeApi<Source>('sources',await prepareImage(f));await openSource(s);chooseSource('upload');await refresh()})}}/><button disabled={busy} onClick={()=>void run(refresh)}>刷新图片历史</button></div>
+   <label>已保存图片（上传与服务器快照）<select aria-label="已保存图片" disabled={disabled} value={source?.id??''} onChange={e=>{const s=history.sources.find(s=>s.id===e.target.value);if(s)void run(async()=>{await openSource(s);chooseSource('upload')})}}><option value="">选择图片</option>{history.sources.map(s=><option key={s.id} value={s.id}>{s.name} · {s.id.slice(0,8)}</option>)}</select></label>
+   {preferenceWarnings.sourceType&&<p role="alert">{preferenceWarnings.sourceType}</p>}{preferenceWarnings.model&&<p role="alert">{preferenceWarnings.model}</p>}{preferenceStorageError&&<p role="alert">{preferenceStorageError}</p>}
+   <label>下次识别模型<select aria-label="识别模型" disabled={disabled} value={model} onChange={e=>chooseModel(e.target.value)}><option value="">选择模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
    <button className="primary" disabled={disabled||!source||!model} onClick={()=>void run(async()=>{await preserveEdits();setMessage('正在真实识别，可能需要数分钟；不会自动重试。');const a=await intakeApi<Analysis>('recognize',{sourceId:source!.id,model,requestId:crypto.randomUUID()});await refresh();await openAnalysis(a,false)})}>识别图片（调用模型）</button>
    <label>历史 Analysis<select aria-label="历史 Analysis" disabled={disabled} value={analysis?.id??''} onChange={e=>{const a=history.analyses.find(a=>a.id===e.target.value);if(a)void run(()=>openAnalysis(a))}}><option value="">选择分析</option>{history.analyses.filter(a=>a.sourceId===source?.id).map(a=><option key={a.id} value={a.id}>{a.createdAt.slice(0,19)} · {a.model} · {a.status}</option>)}</select></label>
    <label>历史 Review<select aria-label="历史 Review" disabled={disabled} value={review?.id??''} onChange={e=>{const r=history.reviews.find(r=>r.id===e.target.value);if(r)void run(()=>openReview(r))}}><option value="">当前编辑 / 未保存</option>{history.reviews.filter(r=>r.analysisId===analysis?.id).map(r=><option key={r.id} value={r.id}>{r.createdAt.slice(0,19)} · {r.id.slice(0,8)}</option>)}</select></label>
