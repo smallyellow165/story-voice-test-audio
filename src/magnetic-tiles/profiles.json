@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {"id":"square","version":1,"name":"正方形","vertices":[[0,0],[1,0],[1,1],[0,1]],"connectableEdges":["e0","e1","e2","e3"]},
+    {"id":"right-triangle","version":1,"name":"等腰直角三角形","vertices":[[0,0],[1,0],[0,1]],"connectableEdges":["e0","e1","e2"]},
+    {"id":"equilateral-triangle","version":1,"name":"等边三角形","vertices":[[0,0],[1,0],[0.5,0.8660254037844386]],"connectableEdges":["e0","e1","e2"]}
+  ]
+}
