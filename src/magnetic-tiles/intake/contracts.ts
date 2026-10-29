@@ -1,6 +1,7 @@
+import { profiles } from '../profiles.ts'
 import type { Assembly, Vec, WorkMode } from '../geometry.ts'
 export type Observation = {
-  id: string; profileId: 'square' | 'right-triangle' | 'equilateral-triangle' | 'unknown'; profileVersion: 1
+  id: string; profileId: string; profileVersion: number
   color: string; outline: Vec[]; confidence: number; evidence: string; uncertainty: string
   origin: 'observed' | 'manual'; excluded: boolean
 }
@@ -21,7 +22,7 @@ export function parseEvidence(input: unknown): Evidence {
   if (!e || !['flat_photo','diagram','unsupported'].includes(e.sourceKind) || !boundedText(e.reason,2000) || !Array.isArray(e.observations) || e.observations.length > 25 || !Array.isArray(e.relations) || e.relations.length > 300) fail('识别/审核结构无效')
   const ids = new Set<string>()
   for (const o of e.observations) {
-    if (!o || !idPattern.test(o.id) || ids.has(o.id) || !['square','right-triangle','equilateral-triangle','unknown'].includes(o.profileId) || o.profileVersion !== 1 || !/^#[0-9a-fA-F]{6}$/.test(o.color) || !Array.isArray(o.outline) || o.outline.length < 3 || o.outline.length > 8 || o.outline.some(p => !Array.isArray(p) || p.length !== 2 || p.some(v => !Number.isFinite(v) || v < 0 || v > 1)) || !Number.isFinite(o.confidence) || o.confidence < 0 || o.confidence > 1 || !boundedText(o.evidence,2000) || !boundedText(o.uncertainty,2000) || !['observed','manual'].includes(o.origin) || typeof o.excluded !== 'boolean') fail('零件证据无效：'+String(o?.id))
+    if (!o || !idPattern.test(o.id) || ids.has(o.id) || !(o.profileId === 'unknown' ? o.profileVersion === 1 : profiles.some(p => p.id === o.profileId && p.version === o.profileVersion)) || !/^#[0-9a-fA-F]{6}$/.test(o.color) || !Array.isArray(o.outline) || o.outline.length < 3 || o.outline.length > 8 || o.outline.some(p => !Array.isArray(p) || p.length !== 2 || p.some(v => !Number.isFinite(v) || v < 0 || v > 1)) || !Number.isFinite(o.confidence) || o.confidence < 0 || o.confidence > 1 || !boundedText(o.evidence,2000) || !boundedText(o.uncertainty,2000) || !['observed','manual'].includes(o.origin) || typeof o.excluded !== 'boolean') fail('零件证据无效：'+String(o?.id))
     ids.add(o.id)
   }
   const pairs = new Set<string>()

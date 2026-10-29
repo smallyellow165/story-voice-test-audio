@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-export type Stage = 'source' | 'review' | 'reconstruction' | 'assembly' | 'build'
+export type Stage = 'source' | 'review' | 'reconstruction' | 'assembly' | 'build' | 'catalog'
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = [
@@ -35,6 +35,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       <aside className="studio-column studio-workflow" aria-label="Workflow">
         <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio</h1><p className="hint">图片到作品，一片一片搭。</p></header>
         <nav aria-label="工作阶段">{stages.map((s,i)=><button key={s.id} data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span>{i+1} · {s.label}</span><small>{s.detail}</small></button>)}</nav>
+        <button data-stage="catalog" aria-current={stage==='catalog'?'page':undefined} disabled={dragging} onClick={()=>navigate('catalog')}>Supported Tiles / 磁力片目录</button>
         <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workspace')}>查看工作区</button><button onClick={()=>setMobileColumn('inspector')}>查看检查器</button></div>
         <div ref={setWorkflow}/>
         <p className="hint">相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。</p>
@@ -42,7 +43,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       <Separator className="studio-separator studio-outer-separator" aria-label="调整左栏与中栏宽度" title="拖动或使用方向键调整左栏与中栏宽度"/>
       <Panel id="workspace" className="studio-panel studio-panel-workspace" defaultSize="58%" minSize="30%">
       <section className="studio-column studio-workspace" aria-label="Workspace">
-        <div className="studio-column-heading"><h2>{stages.find(s=>s.id===stage)!.label}</h2><div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
+        <div className="studio-column-heading"><h2>{stage==='catalog'?'Supported Tiles / 磁力片目录':stages.find(s=>s.id===stage)!.label}</h2><div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
         <div ref={setWorkspace}/>
       </section></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整中栏与右栏宽度" title="拖动或使用方向键调整中栏与右栏宽度"/>

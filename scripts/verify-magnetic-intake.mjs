@@ -97,7 +97,7 @@ try{
    await button('重建二维布局').click();const disconnected=await (await disconnectedResponse).json();await idle();assert.equal(disconnected.candidates.length,0)
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    await button('补一块漏检零件').click();assert.match(await page.locator('.intake-controls legend').innerText(),/人工补充/)
-   await stage(page,'review');await page.getByLabel('修正形状',{exact:true}).selectOption('right-triangle')
+   await stage(page,'review');await page.getByLabel('修正形状',{exact:true}).selectOption('right-triangle@1')
    await button('删除角点').first().click();assert.equal(await page.locator('.intake-point').count(),3)
    await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check()
    await button('保存审核快照').click();await idle()

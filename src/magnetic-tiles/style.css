@@ -24,3 +24,9 @@
 .observation:focus{outline:none}.observation:focus-visible{stroke:#006aff;stroke-width:4;vector-effect:non-scaling-stroke}
 
 .build-source{display:grid;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #bdcdbd}.build-source h3,.build-source p{margin:0}.build-source select{margin-top:4px}
+
+.supported-tiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 16px; }
+.supported-tile { display: flex; flex-direction: column; gap: 10px; min-width: 0; text-align: left; padding: 16px; }
+.supported-tile[aria-pressed="true"] { border-color: #267b69; box-shadow: inset 0 0 0 2px #267b69; }
+.supported-tile svg { width: 100%; height: 180px; display: block; }
+.supported-tile span { overflow-wrap: anywhere; }

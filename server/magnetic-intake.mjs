@@ -1,3 +1,4 @@
+import {createMagneticImageLibrary} from './magnetic-image-library.mjs'
 import {mkdir,readFile,readdir,writeFile,rename,link,unlink} from 'node:fs/promises'
 import path from 'node:path'
 import {randomUUID} from 'node:crypto'
@@ -13,7 +14,8 @@ import {reconstruct,reconstructionVersion} from '../src/magnetic-tiles/intake/re
 const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{statusCode})}
 const validId=id=>{if(typeof id!=='string'||!/^([a-f0-9]{64}|[a-f0-9-]{36})$/.test(id))fail('记录 ID 无效');return id}
 const kinds=['sources','analyses','reviews','reconstructions','origins']
-export function createMagneticIntake(directory){
+export function createMagneticIntake(directory,{libraryDirectory}={}){
+ const library=createMagneticImageLibrary(libraryDirectory)
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
  async function put(kind,value,{replace=false}={}){
   const {hash:_,...payload}=value, record={...payload,hash:await contentHash(payload)}
@@ -28,6 +30,8 @@ export function createMagneticIntake(directory){
  async function result(id){const r=await read('reconstructions',id),{review,source}=await reviewed(r.reviewId);if(r.reviewHash!==review.hash||r.sourceHash!==source.hash||r.profileHash!==await contentHash(profiles))fail('重建来源或 Profile 已改变');return {reconstruction:r,review,source}}
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return out}
  return {read,result,async dispatch(method,route,body={}){
+  if(method==='GET'&&route==='library')return library.list()
+  if(method==='POST'&&route==='library-image')return library.read(body.name)
   if(method==='GET'&&route==='status')return {schemaVersion:1,models:modelOptions('reverse'),providers:providerStatus(),promptVersion,algorithm:reconstructionVersion}
   if(method==='GET'&&route==='history')return history()
   if(method==='GET'&&route.startsWith('image/')){const s=await read('sources',route.slice(6));return view(s)}

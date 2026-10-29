@@ -20,3 +20,10 @@ export async function prepareImage(file: File) {
     return {name:file.name,original:{mimeType:file.type,imageBase64:await base64(file)},view:{mimeType:'image/png',imageBase64:await base64(png)}}
   }finally{bitmap.close()}
 }
+
+// Reuse the same browser decoder, orientation and PNG view preparation as upload.
+export async function prepareLibraryImage(name: string) {
+  const image=await intakeApi<{name:string;mimeType:string;imageBase64:string}>('library-image',{name})
+  const bytes=Uint8Array.from(atob(image.imageBase64),c=>c.charCodeAt(0))
+  return prepareImage(new File([bytes],image.name,{type:image.mimeType}))
+}

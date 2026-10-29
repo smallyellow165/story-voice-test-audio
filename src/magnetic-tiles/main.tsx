@@ -1,3 +1,5 @@
+import { SupportedTiles } from './SupportedTiles.tsx'
+import { profileSizeLabel, profileViewBox } from './profiles.ts'
 import { StudioLayout, StudioSlot } from './StudioLayout.tsx'
 import { checkArtwork, workMode } from './artwork.ts'
 import { useRef, useState } from 'react'
@@ -54,9 +56,9 @@ function Playground() {
     setMessage(notice); return true
   }
   function replace(tile: Tile, notice: string) { return commit({ ...current, instances: current.instances.map(t => t.id === tile.id ? tile : t) }, notice) }
-  function add(profileId: string) {
+  function add(profileId: string, profileVersion: number) {
     if (current.instances.length >= MAX_TILES) { setMessage(`最多 ${MAX_TILES} 块`); return }
-    const p = profiles.find(p => p.id === profileId)!
+    const p = profiles.find(p => p.id === profileId && p.version === profileVersion)!
     // Search free space in the visible work area; never generate an artwork.
     const halfH = view.width * .35
     for (let y = view.y + halfH - 1.35; y >= view.y - halfH + .15; y -= 1.25) for (let x = view.x - view.width / 2 + .35; x < view.x + view.width / 2 - 1.2; x += 1.25) {
@@ -145,10 +147,11 @@ function Playground() {
   }
   const height = view.width * .7
   return <StudioLayout dragging={!!drag}>
+    <SupportedTiles/>
     <ImageIntake assembly={current} onApply={applyImage}/>
     <StudioSlot column="inspector" stages={['assembly']}>
-      <aside className="tiles-panel"><h2>拿一块磁力片</h2><div className="tiles-palette">{profiles.map(p => <button key={p.id} onClick={() => add(p.id)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
-        <svg viewBox="-.15 -.15 1.3 1.3" aria-hidden="true"><g transform="translate(0 1) scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{p.id === 'right-triangle' ? '直角边 1 · 斜边 √2' : '边长 1'}</small></button>)}</div>
+      <aside className="tiles-panel"><h2>拿一块磁力片</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
+        <svg viewBox={profileViewBox(p)} aria-hidden="true"><g transform="scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{profileSizeLabel(p)}</small></button>)}</div>
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
         <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°` : '点击画布上的一块磁力片'}</p>
         <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
