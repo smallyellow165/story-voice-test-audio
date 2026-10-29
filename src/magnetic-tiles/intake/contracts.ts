@@ -34,6 +34,16 @@ export function parseEvidence(input: unknown): Evidence {
   return e
 }
 
-export function reconstructionSummary(r: Pick<Reconstruction, 'truncated' | 'candidates'>): string {
-  return r.truncated ? '搜索未完成：预算已用尽，请查看诊断。' : r.candidates.length ? `成功：生成 ${r.candidates.length} 个合法候选，可以查看和选择。` : '没有找到合法候选，请查看下方主要原因。'
+export function reconstructionSummary(r: Pick<Reconstruction, 'truncated' | 'candidates'>, evidence?: Evidence): string {
+  return r.truncated ? '搜索未完成：预算已用尽，请查看诊断。' : r.candidates.length ? `${evidence?.observations.some(o=>o.excluded)?'部分作品（已明确排除零件）· ':''}成功：生成 ${r.candidates.length} 个合法候选，可以查看和选择。` : '没有找到合法候选，请查看下方主要原因。'
+}
+
+// Presentation only: API completion is not evidence completeness or geometric validity.
+export function recognitionSummary(e?: Evidence): string {
+  if (!e?.observations.length) return '无可用识别结果：此记录没有可恢复的 Observation。可人工补片或由你决定重新识别；不会从旧空结果自动恢复零件。'
+  const active=e.observations.filter(o=>!o.excluded), unknown=active.filter(o=>o.profileId==='unknown').length
+  const excluded=e.observations.length-active.length
+  const partial=e.sourceKind==='unsupported'||unknown>0||excluded>0||active.some(o=>o.uncertainty.trim()||o.confidence<.7)||e.relations.some(r=>r.intent==='uncertain'&&active.some(o=>o.id===r.from)&&active.some(o=>o.id===r.to))
+  if (!active.length) return `无可用识别结果：全部 ${excluded} 块已排除，原始证据仍保留。`
+  return `${partial?'部分识别：存在 Unknown、不确定结构或已排除零件。':'完整识别（按当前证据，可尝试重建）。'}采用 ${active.length} 块 · Known ${active.length-unknown} · Unknown ${unknown} · 已排除 ${excluded}。识别状态不代表几何合法或与原图完全吻合。`
 }

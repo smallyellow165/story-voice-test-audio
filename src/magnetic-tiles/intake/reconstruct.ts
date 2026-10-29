@@ -13,7 +13,10 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   if(!Number.isInteger(stateLimit)||stateLimit<1||!Number.isInteger(trialLimit)||trialLimit<1)throw Error('搜索预算无效')
   const evidence = parseEvidence(input), diagnostics: string[] = [], observations = evidence.observations.filter(o=>!o.excluded)
   const empty = () => ({ candidates: [] as Candidate[], diagnostics, explored: 0, trials: 0, truncated: false, outcome: 'failed' as const })
-  if (evidence.sourceKind === 'unsupported') { diagnostics.push('图片被标为超出二维范围：'+evidence.reason); return empty() }
+  const unknown=observations.filter(o=>o.profileId==='unknown')
+  if(unknown.length)diagnostics.push('未解决的 Unknown：'+unknown.map(o=>o.id).join('、')+'。证据已保留；请匹配经过核实的 Profile，或明确排除后仅重建子集。')
+  if (evidence.sourceKind === 'unsupported') diagnostics.push('输入尚不支持完整二维重建：'+evidence.reason+'。请先审核证据；只有确认所采用部分适合二维后，才手动修改输入类别。')
+  if(unknown.length||evidence.sourceKind==='unsupported')return empty()
   if (!observations.length || observations.length > 25) {
     diagnostics.push('V1 只重建 1–25 块；请修正误检、漏检或拆分输入。')
     const unresolved=observations.filter(o=>!evidence.relations.some(r=>r.intent==='connect'&&(r.from===o.id||r.to===o.id)))
@@ -134,6 +137,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
     return {id:'candidate-'+(index+1),assembly:mode==='flat-mosaic'?{...common,schemaVersion:2,mode}:{...common,schemaVersion:1},imageError:s.score,fidelity:s.score<=.12?'close':'needs_review',connections:report.connections.length,components:report.components}
   })
   const outcome=truncated?'budget_exhausted':candidates.length?'success':'failed'
+  if(evidence.observations.some(o=>o.excluded))diagnostics.push('部分作品：已按 Review 明确排除 '+evidence.observations.filter(o=>o.excluded).map(o=>o.id).join('、')+'；候选仅代表采用的子集，不代表完整原图。')
   if(candidates.length)diagnostics.push('候选几何合法；轮廓偏差仅用于比较，不代表识别或实物连接已经正确。')
   else if(!truncated)diagnostics.push(local.some(g=>!g.length)?'没有找到合法候选：连接关系、轮廓拟合或碰撞/闭环约束冲突。请检查审核证据与 Profile；不代表所有几何解均不存在。':'各局部组件可重建，但组合后出现碰撞、部分边接触或连接意图矛盾；请检查组件间的位置证据。')
   if(!candidates.length){if(blocked.size)diagnostics.push('没有可行放置域的零件：'+[...blocked].sort().join('、'));diagnostics.push(`候选剪枝：图片轮廓偏差 ${rejected.outline} 次；碰撞/局部几何 ${rejected.geometry} 次；明确连接意图冲突 ${rejected.relation} 次。这些是搜索诊断，不是对识别错误的自动定论。`)}
