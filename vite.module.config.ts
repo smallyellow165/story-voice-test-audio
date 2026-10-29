@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 export default defineConfig({
+  // Library exports run directly in browsers as well as through Next.
+  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   // MediaPipe loads its WASM JS at runtime. Preserve that intent for downstream
   // bundlers (Next/Turbopack), which otherwise try to resolve the variable URL.
   plugins: [{ name: 'mediapipe-runtime-import', renderChunk(code) {
@@ -9,6 +11,6 @@ export default defineConfig({
   worker: { format: 'es' },
   build: {
     outDir: 'dist-module',
-    lib: { entry: { 'ble-switch': 'src/ble-switch-module.ts', 'brick-building': 'src/brick-building-module.ts', 'reading-tracker': 'src/reading-tracker.ts', 'storybook-navigation': 'src/storybook-navigation.ts', hopscotch: 'src/hopscotch-module.ts', 'hopscotch-scripts': 'src/hopscotch-scripts.ts', 'hopscotch-core': 'src/hopscotch-core.ts', permissions: 'src/game-permissions.ts', index: 'src/ring-feet-module.tsx', 'touch-color': 'src/touch-color-module.ts', 'simon-says': 'src/simon-says-module.ts' }, formats: ['es'], fileName: (_format, name) => `${name}.js` },
+    lib: { entry: { 'lego-gallery': 'src/brick-gallery-module.tsx', 'ble-switch': 'src/ble-switch-module.ts', 'brick-building': 'src/brick-building-module.ts', 'reading-tracker': 'src/reading-tracker.ts', 'storybook-navigation': 'src/storybook-navigation.ts', hopscotch: 'src/hopscotch-module.ts', 'hopscotch-scripts': 'src/hopscotch-scripts.ts', 'hopscotch-core': 'src/hopscotch-core.ts', permissions: 'src/game-permissions.ts', index: 'src/ring-feet-module.tsx', 'touch-color': 'src/touch-color-module.ts', 'simon-says': 'src/simon-says-module.ts' }, formats: ['es'], fileName: (_format, name) => `${name}.js` },
   },
 })

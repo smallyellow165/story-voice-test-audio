@@ -89,6 +89,10 @@
     "./brick-building": {
       "types": "./src/brick-building-module.d.ts",
       "import": "./dist-module/brick-building.js"
+    },
+    "./lego-gallery": {
+      "types": "./src/brick-gallery-module.d.ts",
+      "import": "./dist-module/lego-gallery.js"
     }
   }
 }
