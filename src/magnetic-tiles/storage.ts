@@ -5,9 +5,10 @@ export type Workspace = { schemaVersion: 1; current: Assembly; saved: Assembly[]
 export const emptyAssembly = (): Assembly => ({ schemaVersion: 1, id: crypto.randomUUID(), revision: 0, name: '我的磁力片作品', instances: [] })
 export function parseAssembly(value: unknown, profiles: readonly Profile[]): Assembly {
   const a = value as Assembly
-  if (!a || a.schemaVersion !== 1 || typeof a.id !== 'string' || !a.id || a.id.length > 100 || !Number.isSafeInteger(a.revision) || a.revision < 0
+  if (!a || ![1, 2].includes(a.schemaVersion) || typeof a.id !== 'string' || !a.id || a.id.length > 100 || !Number.isSafeInteger(a.revision) || a.revision < 0
     || typeof a.name !== 'string' || !a.name.trim() || a.name.length > 80 || !Array.isArray(a.instances)
-    || Object.keys(a).some(k => !['schemaVersion', 'id', 'revision', 'name', 'instances'].includes(k))) throw Error('Assembly 格式或版本无效')
+    || Object.keys(a).some(k => !['schemaVersion', 'id', 'revision', 'name', 'instances', ...(a.schemaVersion === 2 ? ['mode'] : [])].includes(k))
+    || (a.schemaVersion === 2 && !['connected-construction', 'flat-mosaic'].includes(a.mode))) throw Error('Assembly 格式或版本无效')
   const report = validate(a.instances, profiles)
   if (!report.draftValid) throw Error(report.issues.map(i => i.message).join('；'))
   return structuredClone(a)

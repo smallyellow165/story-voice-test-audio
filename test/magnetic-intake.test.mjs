@@ -49,6 +49,7 @@ test('immutable review/reconstruction lineage and hash integrity (fixture analys
   assert.equal((await store.read('analyses',a.id)).hash,a.hash)
   const c=result.candidates[0]
   const origin=await store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,revision:8}})
+  await assert.rejects(store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,schemaVersion:2,mode:'flat-mosaic'}}),/不一致/)
   assert.equal(origin.assembly.revision,8);assert.equal(origin.assemblyHash,await contentHash(origin.assembly))
   await assert.rejects(store.dispatch('POST','reconstruct',{reviewId:r.id,reviewHash:'bad'}))
   const raw=JSON.parse(await readFile(path.join(dir,'reviews',r.id+'.json'),'utf8'));raw.evidence.reason='tampered';await writeFile(path.join(dir,'reviews',r.id+'.json'),JSON.stringify(raw));await assert.rejects(store.result(result.id),/Hash/)
@@ -56,8 +57,8 @@ test('immutable review/reconstruction lineage and hash integrity (fixture analys
 })
 test('oversized observations, normalized coordinate contract and provider strict JSON schema',async()=>{
  const f=evidenceFor(cases[0].tiles,profiles,vertices,validate)
- const e=structuredClone(f.evidence);e.observations=Array.from({length:13},(_,i)=>({...e.observations[0],id:'o'+i}));e.relations=[]
- const r=reconstruct(e,f.width,f.height,profiles,'x');assert.equal(r.explored,0);assert.match(r.diagnostics[0],/1–12/)
+ const e=structuredClone(f.evidence);e.observations=Array.from({length:26},(_,i)=>({...e.observations[0],id:'o'+i}));e.relations=[]
+ assert.throws(()=>reconstruct(e,f.width,f.height,profiles,'x'),/结构无效/)
  const invalid=structuredClone(f.evidence);invalid.observations[0].outline[0][0]=80;assert.throws(()=>parseEvidence(invalid))
  const {recognitionRequest}=await import('../server/magnetic-intake-vision.mjs')
  const req=recognitionRequest('gpt-4.1',{width:10,height:10,mimeType:'image/png',imageBase64:'AA=='})

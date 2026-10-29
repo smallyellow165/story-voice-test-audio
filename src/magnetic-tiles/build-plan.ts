@@ -1,10 +1,12 @@
 import { profileFor, validate, vertices } from './geometry.ts'
 import type { Assembly, Connection, Profile, Tile } from './geometry.ts'
+import { checkArtwork, componentPlacement, workMode } from './artwork.ts'
+import type { WorkMode } from './geometry.ts'
 import { parseAssembly } from './storage.ts'
 
 export type Snapshot = { hash: string; profileHash: string; assembly: Assembly }
-export type BuildStep = { id: string; addInstanceId: string; anchor?: { ownEdgeId: string; targetInstanceId: string; targetEdgeId: string }; instruction: string }
-export type BuildPlan = { schemaVersion: 1; id: string; revision: number; title: string; assemblyRef: { id: string; revision: number; hash: string }; generatorVersion: 'connected-frontier-v1'; steps: BuildStep[] }
+export type BuildStep = { id: string; addInstanceId: string; anchor?: { ownEdgeId: string; targetInstanceId: string; targetEdgeId: string }; instruction: string; startsComponent?: true }
+export type BuildPlan = { schemaVersion: 1 | 2; mode?: WorkMode; id: string; revision: number; title: string; assemblyRef: { id: string; revision: number; hash: string }; generatorVersion: 'connected-frontier-v1' | 'component-frontier-v1'; steps: BuildStep[] }
 export type BuildBundle = { schemaVersion: 1; snapshot: Snapshot; plan: BuildPlan }
 export type BuildProgress = { planHash: string; step: number; completed: boolean }
 const fail = (message: string): never => { throw Error(message) }
@@ -41,47 +43,64 @@ export async function validateBuild(input: unknown, profiles: readonly Profile[]
   const { snapshot: s, plan: p } = bundle
   exact(s, ['hash', 'profileHash', 'assembly'])
   const assembly = parseAssembly(s.assembly, profiles)
-  if (!validate(assembly.instances, profiles).valid) fail('教学来源必须非空、几何合法且整体连通')
+  if (!checkArtwork(assembly, profiles).ready) fail('教学来源必须非空、几何合法，并满足作品模式的连通规则')
   if (s.profileHash !== await profileHash(assembly, profiles)) fail('Profile 内容或版本不匹配，不能替换来源规格')
   if (s.hash !== await contentHash({ assembly, profileHash: s.profileHash })) fail('Assembly Snapshot Hash 不一致')
-  exact(p, ['schemaVersion', 'id', 'revision', 'title', 'assemblyRef', 'generatorVersion', 'steps'])
+  exact(p, ['schemaVersion', 'id', 'revision', 'title', 'assemblyRef', 'generatorVersion', 'steps', ...(p?.schemaVersion === 2 ? ['mode'] : [])])
   exact(p.assemblyRef, ['id', 'revision', 'hash'])
-  if (p.schemaVersion !== 1 || (!text(p.id) || ['__proto__', 'constructor', 'prototype'].includes(p.id)) || !revision(p.revision) || !text(p.title) || p.generatorVersion !== 'connected-frontier-v1') fail('Build Plan 信息无效')
+  if (![1, 2].includes(p.schemaVersion) || (!text(p.id) || ['__proto__', 'constructor', 'prototype'].includes(p.id)) || !revision(p.revision) || !text(p.title) || !['connected-frontier-v1', 'component-frontier-v1'].includes(p.generatorVersion)) fail('Build Plan 信息无效')
+  const mosaic = workMode(assembly) === 'flat-mosaic'
+  if (p.schemaVersion === 1 ? assembly.schemaVersion !== 1 || p.generatorVersion !== 'connected-frontier-v1' : assembly.schemaVersion !== 2 || p.mode !== workMode(assembly) || p.generatorVersion !== 'component-frontier-v1') fail('教程模式与来源版本不一致')
   if (p.assemblyRef.id !== assembly.id || p.assemblyRef.revision !== assembly.revision || p.assemblyRef.hash !== s.hash) fail('Build Plan 来源引用不一致')
   if (!Array.isArray(p.steps) || p.steps.length !== assembly.instances.length) fail('步骤必须完整覆盖所有实例')
   const placed = new Set<string>(), stepIds = new Set<string>()
-  const all = validate(assembly.instances, profiles).connections
+  const finalReport = validate(assembly.instances, profiles), all = finalReport.connections
+  const componentOf = (id: string) => finalReport.components.find(c => c.includes(id))!
   for (const step of p.steps) {
-    exact(step, ['id', 'addInstanceId', 'anchor', 'instruction'])
+    exact(step, ['id', 'addInstanceId', 'anchor', 'instruction', ...(p.schemaVersion === 2 ? ['startsComponent'] : [])])
     if (!text(step.id) || stepIds.has(step.id) || !text(step.instruction, 500)) fail('步骤 ID 或说明无效')
     stepIds.add(step.id)
     if (!assembly.instances.some(t => t.id === step.addInstanceId) || placed.has(step.addInstanceId)) fail('实例重复或不存在')
     const options = contacts(step.addInstanceId, placed, all)
-    if (placed.size) {
+    const firstInComponent = !componentOf(step.addInstanceId).some(id => placed.has(id))
+    const independent = mosaic && firstInComponent
+    if (placed.size && !independent) {
       exact(step.anchor, ['ownEdgeId', 'targetInstanceId', 'targetEdgeId'])
       if (!options.some(a => canonical(a) === canonical(step.anchor))) fail('步骤连接边不存在或目标尚未放置')
-    } else if (step.anchor !== undefined) fail('第一步不能引用连接目标')
+    } else if (step.anchor !== undefined) fail('组件起始步骤不能虚构连接目标')
+    if (p.schemaVersion === 2 && (independent ? step.startsComponent !== true : step.startsComponent !== undefined)) fail('组件起始标记不正确')
+    // A component is built as a connected prefix even when other components exist.
     placed.add(step.addInstanceId)
-    if (!validate(assembly.instances.filter(t => placed.has(t.id)), profiles).valid) fail('步骤完成后的结构不合法或不连通')
+    const prefix = assembly.instances.filter(t => placed.has(t.id)), report = validate(prefix, profiles)
+    if (!report.draftValid || (!mosaic && !report.valid)) fail('步骤完成后的结构不合法或不连通')
+    for (const component of finalReport.components) {
+      const members = prefix.filter(t => component.includes(t.id))
+      if (members.length && !validate(members, profiles).valid) fail('同一组件内的步骤必须沿真实连接展开')
+    }
   }
   return bundle
 }
 export async function generateBuild(input: Assembly, profiles: readonly Profile[]): Promise<BuildBundle> {
   const assembly = parseAssembly(input, profiles), report = validate(assembly.instances, profiles)
-  if (!report.valid) fail('请先搭好非空、几何合法且整体连通的作品')
+  if (!checkArtwork(assembly, profiles).ready) fail('作品尚未满足当前模式的几何与连通要求')
+  const mosaic = workMode(assembly) === 'flat-mosaic'
   const center = (t: Tile) => vertices(t, profiles).reduce((s, v, _, vs) => [s[0] + v[0] / vs.length, s[1] + v[1] / vs.length], [0, 0])
   const sorted = [...assembly.instances].sort((a, b) => center(a)[1] - center(b)[1] || center(a)[0] - center(b)[0] || compare(a.id, b.id))
-  const root = sorted.find(t => t.profileId === 'square') ?? sorted[0]
+  const components = [...report.components].sort((a,b)=>b.length-a.length || compare(a[0],b[0]))
   const placed = new Set<string>(), steps: BuildStep[] = []
-  while (placed.size < sorted.length) {
-    const tile = placed.size ? sorted.find(t => !placed.has(t.id) && contacts(t.id, placed, report.connections).length)! : root
-    if (!tile) fail('无法找到与已有结构连接的下一块')
-    const anchor = contacts(tile.id, placed, report.connections)[0]
-    steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), instruction: anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : `先放好这块${profileFor(tile, profiles)!.name}。` })
-    placed.add(tile.id)
+  for (const component of components) {
+    const members = sorted.filter(t=>component.includes(t.id)), root = members.find(t=>t.profileId==='square') ?? members[0]
+    for (let index=0; index<members.length; index++) {
+      const tile = index ? members.find(t=>!placed.has(t.id)&&contacts(t.id,placed,report.connections).length)! : root
+      if (!tile) fail('无法找到与已有结构连接的下一块')
+      const anchor = contacts(tile.id, placed, report.connections)[0]
+      const previous = steps.map(s=>assembly.instances.find(t=>t.id===s.addInstanceId)!)
+      steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), ...(mosaic && index===0 ? {startsComponent:true as const} : {}), instruction: anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : mosaic ? componentPlacement(tile,previous,profiles) : `先放好这块${profileFor(tile, profiles)!.name}。` })
+      placed.add(tile.id)
+    }
   }
   const ph = await profileHash(assembly, profiles), hash = await contentHash({ assembly, profileHash: ph })
-  return validateBuild({ schemaVersion: 1, snapshot: { hash, profileHash: ph, assembly }, plan: { schemaVersion: 1, id: crypto.randomUUID(), revision: 1, title: assembly.name, assemblyRef: { id: assembly.id, revision: assembly.revision, hash }, generatorVersion: 'connected-frontier-v1', steps } }, profiles)
+  return validateBuild({ schemaVersion: 1, snapshot: { hash, profileHash: ph, assembly }, plan: { schemaVersion: assembly.schemaVersion, ...(assembly.schemaVersion === 2 ? {mode:workMode(assembly)} : {}), id: crypto.randomUUID(), revision: 1, title: assembly.name, assemblyRef: { id: assembly.id, revision: assembly.revision, hash }, generatorVersion: assembly.schemaVersion === 1 ? 'connected-frontier-v1' : 'component-frontier-v1', steps } }, profiles)
 }
 export function validateProgress(value: BuildProgress, plan: BuildPlan, planHash: string): BuildProgress {
   exact(value, ['planHash', 'step', 'completed'])

@@ -5,7 +5,7 @@ import type { BuildProgress } from './build-plan.ts'
 import { BUILD_KEY, bundleFor, emptyLibrary, loadLibrary, saveLibrary, storeBundle } from './build-storage.ts'
 import type { BuildLibrary } from './build-storage.ts'
 import type { Assembly, Profile } from './geometry.ts'
-import { validate } from './geometry.ts'
+import { checkArtwork } from './artwork.ts'
 function download(value: string, name: string) {
   const url = URL.createObjectURL(new Blob([value], { type: 'application/json' }))
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
@@ -39,7 +39,7 @@ export function BuildPanel({ assembly, profiles, dragging }: { assembly: Assembl
   return <section className="tiles-panel build-panel" aria-label="Build Steps">
     <h2>一片一片搭 · Build Steps</h2>
     <p>把当前作品变成教程。先预览，满意后保存；原画布仍可继续编辑。</p>
-    <div className="button-row"><button className="primary" disabled={disabled || dragging || !validate(assembly.instances, profiles).valid} onClick={() => void run(async () => {
+    <div className="button-row"><button className="primary" disabled={disabled || dragging || !checkArtwork(assembly, profiles).ready} onClick={() => void run(async () => {
       const b = await generateBuild(assembly, profiles), l = structuredClone(library)
       if (l.preview) delete l.progress[l.preview.plan.id]
       l.preview = b
@@ -51,7 +51,7 @@ export function BuildPanel({ assembly, profiles, dragging }: { assembly: Assembl
       const f = e.target.files?.[0]; e.target.value = ''
       if (f) void run(async () => { if (f.size > 1_000_000) throw Error('文件超过 1 MB'); const l = await storeBundle(library, JSON.parse(await f.text()), profiles); return activate(l, l.activeId!) }, '已验证并保存导入教程，可以重播。')
     }}/></div>
-    {!validate(assembly.instances, profiles).valid && <p className="hint">当前画布需要非空、几何合法且整体连通，才能生成教程。已有教程仍可播放。</p>}
+    {!checkArtwork(assembly, profiles).ready && <p className="hint">当前画布需要非空、几何合法并满足所选作品模式，才能生成教程。已有教程仍可播放。</p>}
     <div className="build-saved"><label>已保存教程<select value={selectedId} onChange={e => setSelectedId(e.target.value)}><option value="">选择教程</option>{library.plans.map(p => <option key={p.id} value={p.id}>{p.title} · {p.steps.length} 步 · {p.id.slice(0, 8)}</option>)}</select></label><button disabled={disabled || !selectedId} onClick={() => void run(() => activate(structuredClone(library), selectedId), '已打开保存教程并恢复播放进度。')}>打开教程</button></div>
     <p className="build-notice" aria-live="polite">{notice}</p>{error && <p className="storage-error" role="alert">{error}</p>}
     {blocked && <div className="button-row"><button onClick={() => download(localStorage.getItem(BUILD_KEY) ?? '', 'magnetic-tiles-build-recovery.json')}>备份无法读取的教程存档</button><button onClick={async () => {

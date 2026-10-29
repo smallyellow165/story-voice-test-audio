@@ -30,7 +30,9 @@
     "test:magnetic-build": "node --experimental-strip-types --test test/magnetic-build.test.mjs",
     "test:magnetic-build:browser": "node scripts/verify-magnetic-build.mjs",
     "test:magnetic-intake": "node --experimental-strip-types --test test/magnetic-intake.test.mjs",
-    "test:magnetic-intake:browser": "node scripts/verify-magnetic-intake.mjs"
+    "test:magnetic-intake:browser": "node scripts/verify-magnetic-intake.mjs",
+    "test:magnetic-mosaic": "node --experimental-strip-types --test test/magnetic-mosaic.test.mjs",
+    "test:magnetic-mosaic:browser": "node scripts/verify-magnetic-mosaic.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

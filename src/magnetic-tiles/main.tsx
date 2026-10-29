@@ -1,3 +1,4 @@
+import { checkArtwork, workMode } from './artwork.ts'
 import { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PointerEvent as ReactPointerEvent } from 'react'
@@ -113,7 +114,7 @@ function Playground() {
     if (storageBlocked) { setMessage('原存档读取失败，请先导出当前 JSON，或明确重置本模块存档。'); return }
     const next = { ...workspace, saved: [structuredClone(current), ...workspace.saved.filter(a => a.id !== current.id)] }
     if (next.saved.length > 50) { setMessage('已达到 50 个保存作品上限。'); return }
-    const stored = persist(next); setSavedId(current.id); setMessage(stored ? report.valid ? '已保存作品快照。' : '已保存草稿快照；组件尚未全部连接。' : '未写入浏览器存档；请导出 JSON 备份。')
+    const stored = persist(next); setSavedId(current.id); setMessage(stored ? checkArtwork(current, profiles).ready ? '已保存作品快照。' : '已保存草稿快照；组件尚未全部连接。' : '未写入浏览器存档；请导出 JSON 备份。')
   }
   function exportJson() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(current, null, 2)], { type: 'application/json' }))
@@ -131,7 +132,7 @@ function Playground() {
     if (storageBlocked || dragRef.current) throw Error('请先完成拖动或处理工作区存档错误')
     const before = workspaceRef.current
     const parsed = parseAssembly(candidate, profiles)
-    if (!validate(parsed.instances, profiles).valid) throw Error('重建候选未通过几何验证')
+    if (!checkArtwork(parsed, profiles).ready) throw Error('重建候选未通过几何验证')
     const actual = { ...parsed, revision: Math.max(parsed.revision, before.current.revision) + 1 }
     await bind(actual)
     if (workspaceRef.current !== before || dragRef.current) throw Error('来源已保存，但期间画布发生变化；未覆盖当前编辑，请重新打开候选')
@@ -178,9 +179,9 @@ function Playground() {
           </g>
         </svg>
         <p className={`board-message ${drag && !preview.draftValid ? 'warning' : ''}`} role="status">{drag?.moved ? drag.snap ? '可吸附 · 松手完成整边对齐' : preview.draftValid ? '自由移动 · 松手放下，Esc 取消' : '当前位置不合法 · 松手将恢复原位' : message}</p>
-        <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
+        <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid || (workMode(current)==='flat-mosaic'&&preview.draftValid&&display.length) ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : workMode(current)==='flat-mosaic' && display.length ? '正式有效 · 平面拼图' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
       </section>
-      <aside className="tiles-panel storage-panel"><h2>我的作品</h2><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
+      <aside className="tiles-panel storage-panel"><h2>我的作品</h2><label>作品模式<select aria-label="作品模式" disabled={!!drag} value={workMode(current)} onChange={e=>commit({...current,schemaVersion:2,mode:e.target.value as 'connected-construction'|'flat-mosaic'},'作品模式已更新；可撤销。')}><option value="connected-construction">Connected Construction · 连通搭建</option><option value="flat-mosaic">Flat Mosaic · 平面拼图</option></select></label><label>作品名称<input key={current.id + ':' + current.revision} defaultValue={current.name} maxLength={80} onBlur={e => { const name = e.target.value.trim(); if (name && name !== current.name) commit({ ...current, name }, '作品名称已更新。') }}/></label>
         <button className="primary" onClick={save} disabled={!!drag || storageBlocked || !current.instances.length}>保存作品快照</button>
         <label>已保存作品<select value={savedId} onChange={e => setSavedId(e.target.value)}><option value="">选择一个作品</option>{workspace.saved.map(a => <option key={a.id} value={a.id}>{a.name} · {a.instances.length} 块</option>)}</select></label>
         <button disabled={!savedId || !!drag} onClick={() => { const a = workspace.saved.find(s => s.id === savedId); if (a) { commit(structuredClone(a), '已加载保存快照，可以继续编辑。'); setSelected(null); fit(a) } }}>加载所选作品</button>
@@ -188,7 +189,7 @@ function Playground() {
         <p className="hint">每次有效编辑自动保存在当前浏览器，刷新可恢复。保存快照后，可随时加载重新编辑。JSON 可用于备份或换设备。</p>
         {storageError && <p role="alert" className="storage-error">{storageError}</p>}
         {storageBlocked && <button onClick={() => { if (!confirm('确认用当前工作区替换无法读取的磁力片存档？其他模块数据不会改变。')) return; try { saveWorkspace(localStorage, workspace, profiles); setStorageBlocked(false); setStorageError('') } catch (e) { setStorageError(String(e)) } }}>重置本模块存档</button>}
-        <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.map((i, index) => <li key={index}>{i.message}</li>)}</ul>{report.valid && !drag && <p className="success">所有检查通过。</p>}
+        <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
         <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
       </aside>
     </div><BuildPanel assembly={current} profiles={profiles} dragging={!!drag}/><footer>相对尺寸 · 单片零厚度二维几何 · 不代表实物三维磁吸或稳定性</footer>

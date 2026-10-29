@@ -7,7 +7,7 @@ import {recognize,promptVersion} from './magnetic-intake-vision.mjs'
 import {contentHash} from '../src/magnetic-tiles/build-plan.ts'
 import {profiles} from '../src/magnetic-tiles/profiles.ts'
 import {parseAssembly} from '../src/magnetic-tiles/storage.ts'
-import {validate} from '../src/magnetic-tiles/geometry.ts'
+import {checkArtwork,workMode} from '../src/magnetic-tiles/artwork.ts'
 import {parseEvidence} from '../src/magnetic-tiles/intake/contracts.ts'
 import {reconstruct,reconstructionVersion} from '../src/magnetic-tiles/intake/reconstruct.ts'
 const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{statusCode})}
@@ -62,14 +62,15 @@ export function createMagneticIntake(directory){
   }
   if(method==='POST'&&route==='reconstruct'){
    const {review,source}=await reviewed(body.reviewId);if(review.hash!==body.reviewHash)fail('Review Hash 不一致')
-   const id=randomUUID(),output=reconstruct(review.evidence,source.view.width,source.view.height,profiles,id)
-   return put('reconstructions',{schemaVersion:1,id,reviewId:review.id,reviewHash:review.hash,sourceId:source.id,sourceHash:source.hash,profileHash:await contentHash(profiles),algorithm:reconstructionVersion,...output,createdAt:new Date().toISOString()})
+   const mode=body.mode??'connected-construction';if(!['connected-construction','flat-mosaic'].includes(mode))fail('作品模式无效')
+   const id=randomUUID(),output=reconstruct(review.evidence,source.view.width,source.view.height,profiles,id,mode)
+   return put('reconstructions',{schemaVersion:2,mode,id,reviewId:review.id,reviewHash:review.hash,sourceId:source.id,sourceHash:source.hash,profileHash:await contentHash(profiles),algorithm:reconstructionVersion,...output,createdAt:new Date().toISOString()})
   }
   if(method==='POST'&&route==='origins'){
    const {reconstruction:r}=await result(body.reconstructionId),c=r.candidates.find(c=>c.id===body.candidateId)
    if(!c||r.hash!==body.reconstructionHash||body.visualChecked!==true)fail('请对照原图选择候选，并确认图片吻合情况')
    const a=parseAssembly(body.assembly,profiles)
-   if(!validate(a.instances,profiles).valid||await contentHash(a.instances)!==await contentHash(c.assembly.instances))fail('载入实例与重建候选不一致')
+   if(!checkArtwork(a,profiles).ready||workMode(a)!==workMode(c.assembly)||await contentHash(a.instances)!==await contentHash(c.assembly.instances))fail('载入实例与重建候选不一致')
    if(a.id!==c.assembly.id)fail('Assembly ID 与候选不一致')
    return put('origins',{schemaVersion:1,id:randomUUID(),reconstructionId:r.id,reconstructionHash:r.hash,candidateId:c.id,sourceId:r.sourceId,assembly:a,assemblyHash:await contentHash(a),instanceMap:a.instances.map(t=>({observationId:t.id,instanceId:t.id})),createdAt:new Date().toISOString()})
   }
