@@ -17,7 +17,7 @@ export function BuildPlayer({ bundle, progress, profiles, disabled, onProgress }
   const colorName = colorNames[tile.color.toLowerCase()] ?? '图示颜色'
   const move = (index: number, completed = false) => onProgress({ ...progress, step: index, completed })
   return <section className="build-player" aria-label="搭建教程播放器">
-    <h3>{plan.title} · {progress.completed ? '已完成！' : `第 ${progress.step + 1} / ${plan.steps.length} 步`}</h3>
+    <h3>教程播放 · {plan.title} · {progress.completed ? '已完成！' : `第 ${progress.step + 1} / ${plan.steps.length} 步`}</h3>
     <svg className="build-board" viewBox={viewBox} role="img" aria-label={`搭建教程，第 ${progress.step + 1} 步`}>
       <g transform="scale(1 -1)">{step.startsComponent && assembly.instances.filter(t=>!placed.has(t.id)&&t.id!==tile.id).map(t=><polygon key={"guide-"+t.id} points={vertices(t,profiles).map(v=>v.join(",")).join(" ")} fill="none" stroke="#829994" strokeWidth=".015" strokeDasharray=".06 .05"/>)}{visible.map(t => <polygon key={t.id === tile.id ? `${t.id}-${replay}` : t.id} data-build-tile={t.id} className={t.id === tile.id ? 'build-tile current' : 'build-tile'} points={vertices(t, profiles).map(v => v.join(',')).join(' ')} fill={t.color}/>)}
       {connections.map(c => { const edge = edges(assembly.instances.find(t => t.id === c.targetInstanceId)!, profiles).find(e => e.id === c.targetEdgeId)!; return <line key={`${c.targetInstanceId}-${c.targetEdgeId}`} className="build-edge" x1={edge.a[0]} y1={edge.a[1]} x2={edge.b[0]} y2={edge.b[1]}/> })}</g>

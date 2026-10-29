@@ -17,7 +17,7 @@ async function dragLast(x,y){
  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:12});await page.mouse.up()
 }
 async function add(name,x,y,rotations=0){await button('添加'+name).click();for(let i=0;i<rotations;i++)await button('旋转 90°').click();await dragLast(x,y)}
-async function exportBuild(){const dl=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await dl).path(),'utf8'))}
+async function exportBuild(){await stage(page,'build');if(await page.getByRole('button',{name:'继续上次教程',exact:true}).isVisible())await page.getByRole('button',{name:'继续上次教程',exact:true}).click();const dl=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await dl).path(),'utf8'))}
 async function waitReady(){await button('导入教程 JSON').waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='导入教程 JSON'&&!b.disabled))}
 try{
  await page.goto(process.env.MAGNETIC_URL||'http://127.0.0.1:5173/story-voice-test-audio/magnetic-tiles.html');await waitReady()

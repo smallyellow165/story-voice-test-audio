@@ -1,9 +1,10 @@
+import { AssemblyPreview } from '../AssemblyPreview.tsx'
 import { SourceComparison } from '../SourceComparison.tsx'
 import { StudioSlot, imageStages, useStudio } from '../StudioLayout.tsx'
 import { reconstructionSummary as resultMessage } from './contracts.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { Assembly, Vec, WorkMode } from '../geometry.ts'
-import { vertices, validate } from '../geometry.ts'
+import { validate } from '../geometry.ts'
 import { profiles } from '../profiles.ts'
 import { canonical, contentHash } from '../build-plan.ts'
 import { intakeApi, prepareImage } from './api.ts'
@@ -92,6 +93,5 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
 }
 
 function CandidateView({candidate,selected,onSelect}:{candidate:Candidate;selected:string;onSelect:(id:string)=>void}){
- const all=candidate.assembly.instances.flatMap(t=>vertices(t,profiles)),xs=all.map(v=>v[0]),ys=all.map(v=>-v[1]);const box=`${Math.min(...xs)-.3} ${Math.min(...ys)-.3} ${Math.max(...xs)-Math.min(...xs)+.6} ${Math.max(...ys)-Math.min(...ys)+.6}`
- return <svg className="intake-candidate" viewBox={box} aria-label="重建候选预览"><g transform="scale(1 -1)">{candidate.assembly.instances.map(t=><polygon key={t.id} data-candidate-piece={t.id} role="button" tabIndex={0} aria-label={`候选零件 ${t.id}`} aria-pressed={selected===t.id} onClick={()=>onSelect(t.id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(t.id)}}} points={vertices(t,profiles).map(v=>v.join(',')).join(' ')} fill={t.color} stroke={selected===t.id?'#006aff':'#243e3a'} vectorEffect="non-scaling-stroke" strokeWidth={selected === t.id ? 3.5 : 1.5}/>)}</g></svg>
+ return <AssemblyPreview assembly={candidate.assembly} profiles={profiles} selected={selected} onSelect={onSelect} label="重建候选预览"/>
 }

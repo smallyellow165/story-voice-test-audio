@@ -86,7 +86,7 @@ try{
   for(let i=1;i<17;i++){await button('下一步').click();await waitBuild();assert.equal(await player.locator('[data-build-tile]').count(),i+1);if(i===15){assert.equal(await player.locator('.build-edge').count(),0);await player.screenshot({path:out+'/component-root.png'})}}
   await page.screenshot({path:out+'/build-complete.png'});await button('完成搭建').click();await waitBuild();await page.reload();await stage(page,'build');await waitBuild();assert.match(await player.locator('h3').innerText(),/已完成/)
   assert.equal(await page.locator('polygon[data-tile-id]').count(),17)
-  await button('新建').click();await stage(page,'build');assert.equal(await player.locator('[data-build-tile]').count(),17)
+  await button('新建').click();await stage(page,'build');await page.getByRole('button',{name:'继续上次教程',exact:true}).click();assert.equal(await player.locator('[data-build-tile]').count(),17)
   await stage(page,'build');await page.getByTestId('build-import').setInputFiles({name:'mosaic.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bundle))});await waitBuild();await button('重新开始').click();await waitBuild();assert.equal(await player.locator('[data-build-tile]').count(),1)
   await page.setViewportSize({width:430,height:900});await stage(page,'build','workspace');await player.screenshot({path:out+'/build-narrow.png'})
  }
