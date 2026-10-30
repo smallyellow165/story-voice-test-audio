@@ -1,3 +1,5 @@
+import { diagnosticCollector, spatialEvidence } from './execution-trace.ts'
+import type { ExecutionTrace, FailedAttempt, AttemptedConnection } from './execution-trace.ts'
 // Image-space fitting is approximate. All committed connections still use geometry.ts EPS.
 import { alignEdge, distance, edges, validate, vertices, EPS } from '../geometry.ts'
 import type { Profile, Tile, Vec, WorkMode } from '../geometry.ts'
@@ -12,10 +14,12 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   const stateLimit=Math.min(MAX_STATES,limits.states??MAX_STATES), trialLimit=Math.min(MAX_TRIALS,limits.trials??MAX_TRIALS)
   if(!Number.isInteger(stateLimit)||stateLimit<1||!Number.isInteger(trialLimit)||trialLimit<1)throw Error('搜索预算无效')
   const evidence = parseEvidence(input), diagnostics: string[] = [], observations = evidence.observations.filter(o=>!o.excluded)
-  const empty = () => ({ candidates: [] as Candidate[], diagnostics, explored: 0, trials: 0, truncated: false, outcome: 'failed' as const })
+  const trace:ExecutionTrace={schemaVersion:1,phase:'admission',input:{evidence:structuredClone(evidence),width,height,profiles:structuredClone(profiles),mode},planning:spatialEvidence(evidence,width,height,profiles),search:{parameters:{stateLimit,trialLimit,maxOutlineRms:MAX_ERROR,eps:EPS,maxSolutionsPerGroup:3,maxCandidates:3,anchorDistanceLimit:3,mirroring:false},ranking:'Bounded representative Top 10 of observed failures, not global optimization: blocked required domains first; one pair/stage representative before alternatives; then placed count descending, attempted RMS ascending, trial index, geometric key. Diagnostic rechecks never affect search.'}}
+  const collector=diagnosticCollector(profiles)
+  const empty = () => ({ diagnosticCandidates:[],trace,candidates: [] as Candidate[], diagnostics, explored: 0, trials: 0, truncated: false, outcome: 'failed' as const })
   const unknown=observations.filter(o=>o.profileId==='unknown')
   if(unknown.length)diagnostics.push('未解决的 Unknown：'+unknown.map(o=>o.id).join('、')+'。证据已保留；请匹配经过核实的 Profile，或明确排除后仅重建子集。')
-  if (evidence.sourceKind === 'unsupported') diagnostics.push('输入尚不支持完整二维重建：'+evidence.reason+'。请先审核证据；只有确认所采用部分适合二维后，才手动修改输入类别。')
+  if (evidence.sourceKind === 'unsupported') diagnostics.push('输入审核未完成：当前 Review 的「输入类别」仍为 unsupported，尚未进入几何搜索。Known 只表示已选择 Profile；请在识别审核中确认采用部分是「二维平铺照片」或「平面示意图」，保存新 Review 后再生成。若存在三维、堆叠或无法确定的遮挡，请保留不支持状态。')
   if(unknown.length||evidence.sourceKind==='unsupported')return empty()
   if (!observations.length || observations.length > 25) {
     diagnostics.push('V1 只重建 1–25 块；请修正误检、漏检或拆分输入。')
@@ -24,6 +28,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
     return empty()
   }
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) throw Error('图片尺寸无效')
+  trace.phase='fitting'
   const image = new Map<string,Vec[]>(), ratios: number[] = []
   for (const o of observations) {
     const p = profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion)
@@ -53,7 +58,9 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
     return best!
   }
   const approx = observations.map(fitted).sort((a,b)=>a.id<b.id?-1:1)
-  if (approx.some(t=>error(t)>MAX_ERROR)) { diagnostics.push('轮廓无法用统一规格比例拟合：可能是错误形状、透视、不同尺寸或边界不准确。'); return empty() }
+  trace.planning.scalePixelsPerUnit=scale;trace.planning.fittedSeeds=approx.map(tile=>({tile,rms:error(tile)}))
+  const poorFits=approx.filter(t=>error(t)>MAX_ERROR)
+  if (poorFits.length) { diagnostics.push('轮廓拟合未通过，尚未进入几何搜索：统一尺度 '+scale.toFixed(2)+' px/标准单位；'+poorFits.map(t=>`${t.id} (${t.profileId}@${t.profileVersion}) RMS ${error(t).toFixed(3)}`).join('；')+'，超过上限 '+MAX_ERROR.toFixed(3)+' 标准单位。请检查 Profile 尺寸、轮廓角点、透视或遮挡；不会缩放 Profile 来强行匹配。'); return empty() }
   const required=evidence.relations.filter(r=>observations.some(o=>o.id===r.from)&&observations.some(o=>o.id===r.to))
   const links = required.filter(r=>r.intent==='connect')
   const linked = (a:string,b:string) => links.some(r=>(r.from===a&&r.to===b)||(r.from===b&&r.to===a))
@@ -65,20 +72,23 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
     groups.push(approx.filter(t=>ids.includes(t.id)))
   }
   const searchGroups=mode==='flat-mosaic'?groups:[approx]
+  trace.phase='search';trace.planning.searchGroups=searchGroups.map(g=>g.map(t=>t.id))
   const rejected={outline:0,geometry:0,relation:0}
   const blocked=new Set<string>()
+  // Diagnostics only: these measurements never change domains, ordering or thresholds.
+  const blockedDomains=new Map<string,{anchors:Set<string>;equalEdges:number;bestError:number}>()
   let explored=0,trials=0,truncated=false
   const budget=()=>{if(explored>=stateLimit||trials>=trialLimit){truncated=true;return false}return true}
   const key=(tiles:Tile[])=>[...tiles].sort((a,b)=>a.id.localeCompare(b.id)).map(t=>t.id+':'+vertices(t,profiles).map(([x,y])=>[x.toFixed(7),y.toFixed(7)].join(',')).sort().join(';')).join('|')
-  function acceptable(tiles:Tile[], connected:boolean){
+  function acceptable(tiles:Tile[], connected:boolean, attemptedConnection?:AttemptedConnection){
     const report=validate(tiles,profiles)
-    if(!report.draftValid||(connected&&!report.valid)){rejected.geometry++;return false}
+    if(!report.draftValid||(connected&&!report.valid)){rejected.geometry++;collector.offer({tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'geometry',reason:report.issues.map(i=>i.code+': '+i.message).join('; '),attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report});return false}
     const ids=new Set(tiles.map(t=>t.id))
     return required.every(r=>{
       if(!ids.has(r.from)||!ids.has(r.to)||r.intent==='uncertain')return true
       const contact=report.connections.some(c=>[c.a.tileId,c.b.tileId].includes(r.from)&&[c.a.tileId,c.b.tileId].includes(r.to))
       const ok=r.intent==='connect'?contact:!contact
-      if(!ok)rejected.relation++
+      if(!ok){rejected.relation++;collector.offer({tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'relation',reason:`${r.from} / ${r.to}: ${r.intent} contradicts actual connection`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report})}
       return ok
     })
   }
@@ -96,6 +106,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
       for(const raw of frontier.length?frontier:pending){
         const options:{tile:Tile;score:number}[]=[],duplicates=new Set<string>()
         const anchors=placed.filter(t=>!frontier.length||linked(raw.id,t.id))
+        let equalEdges=0,bestError=Infinity,nearestFailure:FailedAttempt|undefined
         for(const target of anchors){
           // A legal whole-edge alignment cannot place the centers arbitrarily far apart.
           if(distance(mean(vertices(raw,profiles)),mean(vertices(target,profiles)))>3)continue
@@ -104,13 +115,21 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
             trials++
             if(Math.abs(own.length-edge.length)>EPS)continue
             const candidate=alignEdge(raw,own,edge,profiles),score=error(candidate)
-            if(score>MAX_ERROR){rejected.outline++;continue}
+            equalEdges++;bestError=Math.min(bestError,score)
+            const attemptedConnection:AttemptedConnection={from:raw.id,ownEdgeId:own.id,to:target.id,targetEdgeId:edge.id,intent:required.find(r=>[r.from,r.to].includes(raw.id)&&[r.from,r.to].includes(target.id))?.intent??null}
+            if(score>MAX_ERROR){rejected.outline++;const failure:FailedAttempt={tiles:[...placed,candidate],phase:'edge-alignment',failureStage:'outline',reason:`Aligned tile RMS ${score} > ${MAX_ERROR} standard units`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:score};collector.offer(failure);if(!nearestFailure||score<nearestFailure.attemptedTileRms!)nearestFailure=failure;continue}
             const poseKey=key([candidate]);if(duplicates.has(poseKey))continue;duplicates.add(poseKey)
-            if(acceptable([...placed,candidate],true))options.push({tile:candidate,score})
+            if(acceptable([...placed,candidate],true,attemptedConnection))options.push({tile:candidate,score})
           }
         }
         // A required neighbor already placed fixes this domain: later pieces cannot repair it.
-        if(frontier.length&&!options.length){blocked.add(raw.id);return}
+        if(frontier.length&&!options.length){
+          if(nearestFailure)collector.offer({...nearestFailure,domainBlocked:true})
+          blocked.add(raw.id)
+          const previous=blockedDomains.get(raw.id)
+          blockedDomains.set(raw.id,{anchors:new Set([...(previous?.anchors??[]),...anchors.map(t=>t.id)]),equalEdges:(previous?.equalEdges??0)+equalEdges,bestError:Math.min(previous?.bestError??Infinity,bestError)})
+          return
+        }
         if(options.length)domains.push({id:raw.id,options:options.sort((a,b)=>a.score-b.score)})
       }
       domains.sort((a,b)=>a.options.length-b.options.length||a.options[0].score-b.options[0].score||a.id.localeCompare(b.id))
@@ -140,8 +159,17 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   if(evidence.observations.some(o=>o.excluded))diagnostics.push('部分作品：已按 Review 明确排除 '+evidence.observations.filter(o=>o.excluded).map(o=>o.id).join('、')+'；候选仅代表采用的子集，不代表完整原图。')
   if(candidates.length)diagnostics.push('候选几何合法；轮廓偏差仅用于比较，不代表识别或实物连接已经正确。')
   else if(!truncated)diagnostics.push(local.some(g=>!g.length)?'没有找到合法候选：连接关系、轮廓拟合或碰撞/闭环约束冲突。请检查审核证据与 Profile；不代表所有几何解均不存在。':'各局部组件可重建，但组合后出现碰撞、部分边接触或连接意图矛盾；请检查组件间的位置证据。')
-  if(!candidates.length){if(blocked.size)diagnostics.push('没有可行放置域的零件：'+[...blocked].sort().join('、'));diagnostics.push(`候选剪枝：图片轮廓偏差 ${rejected.outline} 次；碰撞/局部几何 ${rejected.geometry} 次；明确连接意图冲突 ${rejected.relation} 次。这些是搜索诊断，不是对识别错误的自动定论。`)}
+  if(!candidates.length){
+    if(blocked.size)diagnostics.push('没有可行放置域的零件：'+[...blocked].sort().join('、'))
+    for(const [id,d] of [...blockedDomains].sort(([a],[b])=>a.localeCompare(b)))diagnostics.push(`${id} 对明确连接邻居 ${[...d.anchors].sort().join('、')}：本次搜索尝试 ${d.equalEdges} 个等长边对齐${Number.isFinite(d.bestError)?`，最小轮廓 RMS ${d.bestError.toFixed(3)}（上限 ${MAX_ERROR.toFixed(3)} 标准单位）`:''}。${d.equalEdges===0?'请检查可用边长及邻居位置。':d.bestError>MAX_ERROR?'等长边存在，但对齐后偏离原图轮廓；请复核连接意图、边界或 Profile 尺寸。':'有对齐满足轮廓阈值，但未通过几何或连接意图检查。'}`)
+    diagnostics.push(`候选剪枝：图片轮廓偏差 ${rejected.outline} 次；碰撞/局部几何 ${rejected.geometry} 次；明确连接意图冲突 ${rejected.relation} 次。这些是搜索诊断，不是对识别错误的自动定论。`)
+    const overlaps=validate(approx,profiles).issues.filter(i=>i.code==='OVERLAP')
+    if(overlaps.length)diagnostics.push('按原图独立拟合的位置存在内部重叠：'+overlaps.slice(0,8).map(i=>i.tileIds.join(' / ')).join('；')+`（共 ${overlaps.length} 对）。这仅是原图近似位置诊断，不是搜索已接受的布局；相邻边界误差也会造成细微重叠。平面拼图也不允许重叠，请检查遮挡、堆叠或轮廓。`)
+    diagnostics.push(`统一拟合尺度 ${scale.toFixed(2)} px/标准单位；搜索仅保留轮廓 RMS ≤ ${MAX_ERROR.toFixed(3)} 的刚体放置。Profile 尺寸、严格整边连接和碰撞规则未放宽。`)
+  }
   if(truncated)diagnostics.push(`搜索预算耗尽（最多 ${stateLimit} 状态 / ${trialLimit} 对齐尝试），搜索未完成；请修正不确定连接或缩小输入范围后重建。`)
   if(observations.some(o=>o.confidence<.7||o.uncertainty))diagnostics.push('含低置信度或不确定识别项，请对照原图。')
-  return {candidates,diagnostics,explored,trials,truncated,outcome}
+  const diagnosticCandidates=collector.finish(observations.map(o=>o.id),required,error,tiles=>validate(tiles,profiles))
+  trace.search.stats={explored,trials,truncated,rejected,recordedFailures:collector.count}
+  return {candidates,diagnosticCandidates,trace,diagnostics,explored,trials,truncated,outcome}
 }

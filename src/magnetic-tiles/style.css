@@ -147,3 +147,36 @@
 .studio-inspector .build-panel h2{font-size:17px}
 
 .draft-recovery-row{display:flex;align-items:center;gap:6px;min-width:0}.draft-recovery-row>button{font-size:12px;padding:6px 8px}
+
+.reconstruction-input-warning{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:#805322}.reconstruction-input-warning button{font-size:12px;padding:5px 7px;min-height:30px}
+
+.review-input-row{display:flex;align-items:center;gap:6px;min-width:0;margin:6px 0}.review-input-row>.compact-field{width:min(100%,340px)}.review-input-row>.vision-info-hint{flex:none}
+/* Keep the Review's nested split measurable when mobile columns switch to block layout. */
+@media(max-width:760px){.studio[data-active-stage=review] .studio-panel-workspace{height:100dvh}}
+
+/* Review owns its single title; filters and category share the second toolbar row. */
+.studio[data-active-stage=review] .studio-workspace>.studio-column-heading{display:none}
+.review-title-row{gap:6px;flex-wrap:nowrap}
+.review-title-row h2{flex:1;min-width:0;margin:0;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-title-row button{flex:none;font-size:12px;min-height:34px;padding:6px 8px}
+.review-title-row [role=status]{flex:none;white-space:nowrap}
+.review-filter-row{display:flex;align-items:center;gap:8px;min-width:0;margin-top:6px}
+.review-table-tools{container-type:inline-size}
+.review-filter-row>.review-filters{flex:0 0 auto;min-width:0;flex-wrap:nowrap}
+.review-filter-row>.review-input-row{flex:0 1 310px;min-width:135px;margin:0 0 0 auto}
+.review-input-row>.compact-field{min-width:0}
+@media(max-width:760px){
+ .studio[data-active-stage=review] .studio-workspace>.studio-column-heading{display:flex;justify-content:flex-end;position:static;padding:0;margin-bottom:6px}
+ .review-title-row h2{font-size:15px}.review-title-row button{padding:5px 6px}
+}
+@container(max-width:430px){
+ .review-filter-row>.review-filters{flex:1 1 auto;flex-wrap:wrap;gap:3px}
+ .review-filter-row>.review-input-row{flex-basis:145px}
+ .review-filter-row .review-filters button{font-size:10px;padding:3px 4px}
+}
+.trace-open{font-size:11px;min-height:28px;padding:3px 6px;white-space:nowrap;flex:none}
+.magnetic-trace-dialog{width:min(1000px,95vw);height:min(800px,90dvh);border:1px solid #92aea0;border-radius:8px;padding:14px;color:#243e3a;background:#fffdf7}
+.magnetic-trace-dialog[open]{display:flex;flex-direction:column;gap:8px}.magnetic-trace-dialog::backdrop{background:#182f2855}
+.magnetic-trace-dialog header,.magnetic-trace-dialog footer,.magnetic-trace-dialog nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.magnetic-trace-dialog header b{flex:1}.magnetic-trace-dialog p{margin:0}
+.magnetic-trace-dialog textarea{flex:1;min-height:120px;resize:none;white-space:pre;font-family:monospace;font-size:12px}.magnetic-trace-dialog nav [aria-pressed=true]{background:#dcefe8}
+.diagnostic-label{font-size:12px;color:#815316}.diagnostic-evidence{font-size:12px}.diagnostic-evidence pre{max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}

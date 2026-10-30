@@ -56,7 +56,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       <Separator className="studio-separator studio-outer-separator" aria-label="调整左栏与中栏宽度" title="拖动或使用方向键调整左栏与中栏宽度"/>
       <Panel id="workspace" className="studio-panel studio-panel-workspace" defaultSize="58%" minSize="30%">
       <section className="studio-column studio-workspace" aria-label="Workspace">
-        <div className="studio-column-heading"><h2>{stages.find(s=>s.id===stage)!.label}</h2><div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
+        <div className="studio-column-heading">{stage!=='review'&&<h2>{stages.find(s=>s.id===stage)!.label}</h2>}<div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
         <div ref={setWorkspace}/>
       </section></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整中栏与右栏宽度" title="拖动或使用方向键调整中栏与右栏宽度"/>

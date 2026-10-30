@@ -26,7 +26,7 @@ try{
  assert.equal(await page.locator('.review-title-row').getByRole('button',{name:'保存审核快照',exact:true}).count(),1)
  assert.equal(await page.locator('.review-inspector input[type=checkbox]').count(),0)
  assert.equal(await page.locator('.review-advanced').evaluate(e=>e.open),false)
- assert.equal(await page.getByLabel('输入类别',{exact:true}).isVisible(),false)
+ assert.equal(await page.locator('.review-table-tools').getByLabel('输入类别',{exact:true}).isVisible(),true);assert.equal(await inspector.getByLabel('输入类别',{exact:true}).count(),0)
  const primary=matcher.getByRole('button',{name:'Find Matching Profile',exact:true}),box=await primary.boundingBox()
  assert.ok(box.y<330&&box.y+box.height<950,'primary action is visible without scrolling')
  const help=matcher.getByRole('button',{name:'Profile 匹配说明',exact:true})

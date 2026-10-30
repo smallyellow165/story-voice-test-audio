@@ -1,3 +1,4 @@
+import type { DiagnosticCandidate, ExecutionTrace } from './execution-trace.ts'
 import { profiles } from '../profiles.ts'
 import type { Assembly, Vec, WorkMode } from '../geometry.ts'
 export type Observation = {
@@ -11,7 +12,7 @@ export type Source = { schemaVersion: 1; id: string; hash: string; name: string;
 export type Analysis = { schemaVersion: 1; id: string; hash: string; sourceId: string; sourceHash: string; status: 'processing' | 'complete' | 'failed'; model: string; provider: string; modelVersion?: string; usageMetadata?: unknown; rawOutput?: string; evidence?: Evidence; error?: string; createdAt: string }
 export type Review = { schemaVersion: 1; id: string; hash: string; analysisId: string; analysisHash: string; evidence: Evidence; createdAt: string }
 export type Candidate = { id: string; assembly: Assembly; imageError: number; fidelity: 'close' | 'needs_review'; connections: number; components?: string[][] }
-export type Reconstruction = { schemaVersion: 1 | 2; mode?: WorkMode; outcome?: 'success' | 'failed' | 'budget_exhausted'; trials?: number; id: string; hash: string; reviewId: string; reviewHash: string; sourceId: string; sourceHash: string; profileHash: string; algorithm: 'planar-outline-v1' | 'planar-outline-v2'; candidates: Candidate[]; diagnostics: string[]; explored: number; truncated: boolean; createdAt: string }
+export type Reconstruction = { diagnosticCandidates?: DiagnosticCandidate[]; trace?: ExecutionTrace; traceAvailable?: boolean; diagnosticCount?: number; schemaVersion: 1 | 2; mode?: WorkMode; outcome?: 'success' | 'failed' | 'budget_exhausted'; trials?: number; id: string; hash: string; reviewId: string; reviewHash: string; sourceId: string; sourceHash: string; profileHash: string; algorithm: 'planar-outline-v1' | 'planar-outline-v2'; candidates: Candidate[]; diagnostics: string[]; explored: number; truncated: boolean; createdAt: string }
 export type Origin = { schemaVersion: 1; id: string; hash: string; reconstructionId: string; reconstructionHash: string; candidateId: string; sourceId: string; assembly: Assembly; assemblyHash: string; instanceMap: { observationId: string; instanceId: string }[]; createdAt: string }
 export type SelectedStage = 'analysis' | 'review'
 export type SelectedSnapshot = {schemaVersion:1;sourceId:string;stage:SelectedStage;snapshotId:string|null;revision:number|null;updatedAt:string|null;valid:boolean;error?:string;analysisId?:string}
@@ -37,7 +38,7 @@ export function parseEvidence(input: unknown): Evidence {
 }
 
 export function reconstructionSummary(r: Pick<Reconstruction, 'truncated' | 'candidates'>, evidence?: Evidence): string {
-  return r.truncated ? '搜索未完成：预算已用尽，请查看诊断。' : r.candidates.length ? `${evidence?.observations.some(o=>o.excluded)?'部分作品（已明确排除零件）· ':''}成功：生成 ${r.candidates.length} 个合法候选，可以查看和选择。` : '没有找到合法候选，请查看下方主要原因。'
+  return r.truncated ? '搜索未完成：预算已用尽，请查看诊断。' : r.candidates.length ? `${evidence?.observations.some(o=>o.excluded)?'部分作品（已明确排除零件）· ':''}成功：生成 ${r.candidates.length} 个合法候选，可以查看和选择。` : evidence&&(evidence.sourceKind==='unsupported'||evidence.observations.some(o=>!o.excluded&&o.profileId==='unknown')) ? '输入审核未完成，尚未进入几何搜索。' : '没有找到合法候选，请查看下方主要原因。'
 }
 
 // Presentation only: API completion is not evidence completeness or geometric validity.

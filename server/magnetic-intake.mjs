@@ -1,3 +1,5 @@
+import {shareText} from './llm-traces.mjs'
+import {spatialEvidence} from '../src/magnetic-tiles/intake/execution-trace.ts'
 import {createSelectedSnapshots} from './magnetic-selected-snapshots.mjs'
 import {createMagneticImageLibrary} from './magnetic-image-library.mjs'
 import {mkdir,readFile,readdir,writeFile,rename,link,unlink} from 'node:fs/promises'
@@ -39,12 +41,28 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
   if(r.reviewHash!==review.hash||r.sourceHash!==source.hash||!catalogMatches)fail('重建来源或 Profile 已改变')
   return {reconstruction:r,review,source}
  }
- async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
+ async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else if(kind==='reconstructions'){const {trace,diagnosticCandidates,...summary}=r;out[kind].push({...summary,traceAvailable:!!trace,diagnosticCount:diagnosticCandidates?.length??0})}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
  return {read,result,async dispatch(method,route,body={}){
   if(method==='GET'&&route==='library')return library.list()
   if(method==='POST'&&route==='library-image')return library.read(body.name)
   if(method==='GET'&&route==='status')return {schemaVersion:1,models:modelOptions('reverse'),providers:providerStatus(),promptVersion,algorithm:reconstructionVersion}
   if(method==='GET'&&route==='history')return history()
+  if(method==='GET'&&route.startsWith('trace/')){
+   const [,kind,value,section]=route.split('/')
+   let payload
+   if(kind==='reconstructions'){
+    const {reconstruction:r,review,source}=await result(value),analysis=await read('analyses',review.analysisId)
+    const references={source:{id:source.id,hash:source.hash},analysis:{id:analysis.id,hash:analysis.hash},review:{id:review.id,hash:review.hash},reconstruction:{id:r.id,hash:r.hash}}
+    payload=section==='planning'?{references,available:!!r.trace,planning:r.trace?.planning??null,note:r.trace?'Persisted deterministic execution input, not a model-generated Spatial Plan':'Historical planning trace unavailable; no reconstruction of missing execution evidence'}:{references,available:!!r.trace,execution:r,note:r.trace?'Saved execution trace and actual search attempts':'Historical execution trace unavailable; diagnostic poses were not recorded and are not fabricated'}
+   }else if(kind==='analyses'||kind==='reviews'){
+    const review=kind==='reviews'?await read('reviews',value):null,analysis=await read('analyses',review?review.analysisId:value),source=await read('sources',analysis.sourceId)
+    if(source.hash!==analysis.sourceHash||(review&&analysis.hash!==review.analysisHash))fail('Trace 来源不一致')
+    const references={source:{id:source.id,hash:source.hash},analysis:{id:analysis.id,hash:analysis.hash},review:review?{id:review.id,hash:review.hash}:null}
+    payload=section==='planning'?{references,scope:'deterministic derivation from saved evidence with current Catalog; not a historical execution snapshot',planning:spatialEvidence(review?.evidence??analysis.evidence??{sourceKind:'unsupported',reason:'No saved observations',observations:[],relations:[]},source.view.width,source.view.height,profiles)}:{references,analysis,review,wireAvailability:{request:analysis.request!==undefined,response:analysis.response!==undefined,rawResponseBody:analysis.rawResponseBody!==undefined,rawOutput:analysis.rawOutput!==undefined},note:'Only actually saved fields are shown; missing wire data is unavailable, never reconstructed from prompts or parsed output'}
+   }else fail('未知 Trace 来源',404)
+   return shareText(JSON.stringify(payload))
+  }
+
   if(method==='GET'&&/^selected\/[^/]+$/.test(route))return selectedSnapshots.getSource(route.slice(9))
   if(method==='POST'&&route==='selected')return selectedSnapshots.set(body)
   if(method==='GET'&&route.startsWith('image/')){const s=await read('sources',route.slice(6));return view(s)}
@@ -78,10 +96,12 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
    return put('reviews',{schemaVersion:1,id:randomUUID(),analysisId:a.id,analysisHash:a.hash,evidence,createdAt:new Date().toISOString()})
   }
   if(method==='POST'&&route==='reconstruct'){
-   const {review,source}=await reviewed(body.reviewId);if(review.hash!==body.reviewHash)fail('Review Hash 不一致')
+   const {review,analysis,source}=await reviewed(body.reviewId);if(review.hash!==body.reviewHash)fail('Review Hash 不一致')
    const mode=body.mode??'connected-construction';if(!['connected-construction','flat-mosaic'].includes(mode))fail('作品模式无效')
-   const id=randomUUID(),output=reconstruct(review.evidence,source.view.width,source.view.height,profiles,id,mode)
-   return put('reconstructions',{schemaVersion:2,mode,id,reviewId:review.id,reviewHash:review.hash,sourceId:source.id,sourceHash:source.hash,profileHash:await contentHash(profiles),algorithm:reconstructionVersion,...output,createdAt:new Date().toISOString()})
+   const id=randomUUID(),output=JSON.parse(JSON.stringify(reconstruct(review.evidence,source.view.width,source.view.height,profiles,id,mode)))
+   const profileHash=await contentHash(profiles)
+   output.trace.references={sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,reviewId:review.id,reviewHash:review.hash,profileHash,reconstructionId:id}
+   return put('reconstructions',{schemaVersion:2,mode,id,reviewId:review.id,reviewHash:review.hash,sourceId:source.id,sourceHash:source.hash,profileHash,algorithm:reconstructionVersion,...output,createdAt:new Date().toISOString()})
   }
   if(method==='POST'&&route==='origins'){
    const {reconstruction:r}=await result(body.reconstructionId),c=r.candidates.find(c=>c.id===body.candidateId)

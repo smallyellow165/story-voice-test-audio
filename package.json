@@ -41,7 +41,10 @@
     "test:magnetic-intake:browser": "node scripts/verify-magnetic-intake.mjs",
     "test:magnetic-mosaic": "node --experimental-strip-types --test test/magnetic-mosaic.test.mjs",
     "test:magnetic-mosaic:browser": "node scripts/verify-magnetic-mosaic.mjs",
-    "test:magnetic-workflow-ui:browser": "node scripts/verify-magnetic-workflow-ui.mjs"
+    "test:magnetic-workflow-ui:browser": "node scripts/verify-magnetic-workflow-ui.mjs",
+    "test:magnetic-review-reconstruction": "node --experimental-strip-types --test test/magnetic-review-reconstruction.test.mjs",
+    "test:magnetic-review-reconstruction:browser": "node scripts/verify-magnetic-review-reconstruction.mjs",
+    "test:magnetic-review-toolbar:browser": "node scripts/verify-magnetic-review-toolbar.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

@@ -1,3 +1,4 @@
+import { workflowTerms } from '../studio-terms.ts'
 import { matchOutline, needsOutlineConfirmation } from './profile-match.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -5,7 +6,7 @@ import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panel
 import { profiles, profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
 const status=(o:Observation)=>o.excluded?'Excluded':o.profileId==='unknown'?'Unknown':'Known'
-export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,onAdd,addDisabled,children}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode}){
+export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode}){
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
   const box=scroll.current,row=box?.querySelector<HTMLElement>('tr[aria-selected=true]')
@@ -20,8 +21,8 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
  return <Group orientation="vertical" className="review-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
   <Panel id="parts" defaultSize="65%" minSize="20%">
    <section className="review-parts" aria-label="Parts Review Table">
-    <div className="review-table-tools"><div className="review-title-row"><h3>零件审核（Parts Review）· {rows.length}/{observations.length}</h3><button disabled={addDisabled} onClick={()=>{setQuery('');setFilter('All');onAdd()}}>新增零件</button>{saveControl}</div>
-     <div className="review-filters">{['All','Known','Unknown','Excluded'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f==='All'?'全部':f} {f==='All'?observations.length:observations.filter(o=>status(o)===f).length}</button>)}</div>
+    <div className="review-table-tools"><div className="review-title-row"><h2 title={workflowTerms.review.label}>{workflowTerms.review.label}</h2><button disabled={addDisabled} onClick={()=>{setQuery('');setFilter('All');onAdd()}}>新增零件</button>{saveControl}</div>
+     <div className="review-filter-row"><div className="review-filters">{['All','Known','Unknown','Excluded'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f==='All'?'全部':f} {f==='All'?observations.length:observations.filter(o=>status(o)===f).length}</button>)}</div>{inputControl}</div>
      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="审核零件排序" value={sort} onChange={e=>setSort(e.target.value)}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
      {chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>{setQuery('');setFilter('All')}}>显示全部零件</button></p>}
     </div>
