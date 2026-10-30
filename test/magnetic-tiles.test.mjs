@@ -15,12 +15,12 @@ test('versioned profiles: real side lengths, CCW, convexity, bad edge IDs and se
  for(const vertices of [[[0,0],[0,1],[1,1],[1,0]],[[0,0],[1,1],[0,1],[1,0]],[[0,0],[1,0],[.5,.2],[0,1]],[[0,0],[1,0],[1,0],[0,1]]])assert.ok(profileIssues({...p,vertices}).length)
  assert.ok(profileIssues({...p,connectableEdges:['e9']}).length)
 })
-test('contacts: full edges connect; vertices alone do not; partial edges and overlaps are invalid',()=>{
+test('contacts: full edges connect; vertices alone do not; partial edges connect and overlaps are invalid',()=>{
  const r=validate(pair(),profiles);assert.equal(r.valid,true);assert.equal(r.connections.length,1)
  assert.deepEqual(r.connections[0],{a:{tileId:'a',edgeId:'e1'},b:{tileId:'b',edgeId:'e3'}})
  const corner=validate([tile('a'),tile('b','square',1,1)],profiles)
  assert.equal(corner.draftValid,true);assert.equal(corner.valid,false);assert.equal(corner.components.length,2)
- assert.ok(validate([tile('a'),tile('b','square',1,.5)],profiles).issues.some(i=>i.code==='EDGE_CONTACT'))
+ assert.equal(validate([tile('a'),tile('b','square',1,.5)],profiles).connections[0].contact.length,.5)
  assert.ok(validate([tile('a'),tile('b','square',.99,0)],profiles).issues.some(i=>i.code==='OVERLAP'))
  assert.equal(validate([tile('a'),tile('b','square',1+EPS*10,0)],profiles).connections.length,0)
  const disabled=profiles.map(p=>p.id==='square'?{...p,connectableEdges:[]}:p)
@@ -63,7 +63,7 @@ test('three equal triangles close a half hexagon; cycles and duplicate edge occu
  const duplicates=validate([...pair(),tile('duplicate','square',1,0)],profiles)
  assert.ok(duplicates.issues.some(i=>i.code==='EDGE_OCCUPIED'));assert.ok(duplicates.issues.some(i=>i.code==='OVERLAP'))
  const broken=ring.map((t,i)=>i===5?{...t,pose:{...t.pose,x:.001}}:t)
- assert.equal(validate(broken,profiles).valid,false)
+ assert.equal(validate(broken,profiles).valid,true);assert.equal(validate(broken,profiles).connections.length,5)
 })
 test('persistence round trip preserves poses and graph; disconnected drafts can reload',()=>{
  let data=null;const storage={getItem:()=>data,setItem:(_,v)=>{data=v}}
@@ -124,7 +124,7 @@ test('capture radius hysteresis, invalid lengths and occupied targets do not byp
  assert.equal(findSnap(tile('m','square',1.15,0),[tile('a')],profiles,.1,first.key),null)
  // Horizontal hypotenuse is close to a square's top edge but is sqrt(2), not 1.
  const hyp=tile('h','right-triangle',.5,1+Math.SQRT1_2+.01,-3*Math.PI/4)
- assert.equal(findSnap(hyp,[tile('a')],profiles,.05),null)
+ const partial=findSnap(hyp,[tile('a')],profiles,.05);assert.ok(partial);assert.equal(validate([tile('a'),partial.tile],profiles).valid,true)
  assert.equal(findSnap(tile('third','square',1,0),pair(),profiles,.2),null)
  assert.equal(findSnap(tile('m','square',1,0),[tile('a')],profiles,NaN),null)
  assert.equal(findSnap(tile('m','square',1.5,0),[tile('a')],profiles,10),null,'zoom out must not capture half a tile away')
@@ -142,5 +142,5 @@ test('multi-edge placements and cyclic closure are evaluated at the one exact pr
  assert.equal(validate([...ring.slice(0,5),closure.tile],profiles).connections.length,6)
  // Detached pieces lose old occupancy naturally; returning the same piece reattaches.
  assert.equal(findSnap({...snap.tile,pose:{...snap.tile.pose,x:4}},others,profiles,.2,snap.key),null)
- assert.deepEqual(findSnap({...snap.tile,pose:{...snap.tile.pose,x:1.03}},others,profiles,.2)?.tile.pose,snap.tile.pose)
+ const shifted=findSnap({...snap.tile,pose:{...snap.tile.pose,x:1.03}},others,profiles,.2);assert.ok(shifted);assert.equal(validate([...others,shifted.tile],profiles).valid,true);assert.deepEqual(shifted.tile.pose,snap.tile.pose)
 })

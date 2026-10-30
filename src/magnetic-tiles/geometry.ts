@@ -7,7 +7,9 @@ export type Tile = { id: string; profileId: string; profileVersion: number; colo
 export type WorkMode = 'connected-construction' | 'flat-mosaic'
 export type Assembly = { id: string; revision: number; name: string; instances: Tile[] } & ({ schemaVersion: 1; mode?: never } | { schemaVersion: 2; mode: WorkMode })
 export type Edge = { tileId: string; id: string; a: Vec; b: Vec; length: number; enabled: boolean }
-export type Connection = { a: { tileId: string; edgeId: string }; b: { tileId: string; edgeId: string } }
+export type EdgeContact = { aRange: Vec; bRange: Vec; start: Vec; end: Vec; length: number }
+export type Connection = { a: { tileId: string; edgeId: string }; b: { tileId: string; edgeId: string }; contact?: EdgeContact }
+export const connectionModel = 'segmented-edge-v1' as const
 export type Issue = { code: string; message: string; tileIds: string[] }
 export type Report = { draftValid: boolean; valid: boolean; issues: Issue[]; connections: Connection[]; components: string[][] }
 // Geometry tolerance in relative world units. Never use pointer/screen tolerance here.
@@ -65,11 +67,21 @@ export function overlaps(a: Vec[], b: Vec[]) {
   return true
 }
 export const matched = (a: Edge, b: Edge) => Math.abs(a.length - b.length) <= EPS && distance(a.a, b.b) <= EPS && distance(a.b, b.a) <= EPS
-function partialContact(a: Edge, b: Edge) {
-  const d = sub(a.b, a.a), axis: Vec = [d[0] / a.length, d[1] / a.length]
-  if (Math.abs(cross(axis, sub(b.a, a.a))) > EPS || Math.abs(cross(axis, sub(b.b, a.a))) > EPS) return false
-  const x = dot(sub(b.a, a.a), axis), y = dot(sub(b.b, a.a), axis)
-  return Math.min(a.length, Math.max(x, y)) - Math.max(0, Math.min(x, y)) > EPS
+// Ranges are normalized along each canonical directed edge; endpoints are world coordinates.
+// Canonical edges keep interiors to the left, including mirrored tiles.
+export function edgeContact(a:Edge,b:Edge):EdgeContact|null {
+ const u=sub(a.b,a.a).map(x=>x/a.length) as Vec,v=sub(b.b,b.a).map(x=>x/b.length) as Vec
+ if([b.a,b.b].some(p=>Math.abs(cross(u,sub(p,a.a)))>EPS)||[a.a,a.b].some(p=>Math.abs(cross(v,sub(p,b.a)))>EPS))return null
+ const x=dot(sub(b.a,a.a),u),y=dot(sub(b.b,a.a),u),lo=Math.max(0,Math.min(x,y)),hi=Math.min(a.length,Math.max(x,y))
+ if(hi-lo<=EPS)return null
+ const start:Vec=[a.a[0]+u[0]*lo,a.a[1]+u[1]*lo],end:Vec=[a.a[0]+u[0]*hi,a.a[1]+u[1]*hi]
+ const ba=dot(sub(start,b.a),v)/b.length,bb=dot(sub(end,b.a),v)/b.length
+ return {aRange:[lo/a.length,hi/a.length],bRange:[Math.max(0,Math.min(ba,bb)),Math.min(1,Math.max(ba,bb))],start,end,length:hi-lo}
+}
+export const opposingEdges=(a:Edge,b:Edge)=>dot(sub(a.b,a.a),sub(b.b,b.a))<0
+export function connectionSegment(c:Connection,tiles:readonly Tile[],profiles:readonly Profile[]):EdgeContact{
+ const a=edges(tiles.find(t=>t.id===c.a.tileId)!,profiles).find(e=>e.id===c.a.edgeId)!,b=edges(tiles.find(t=>t.id===c.b.tileId)!,profiles).find(e=>e.id===c.b.edgeId)!
+ return edgeContact(a,b)!
 }
 export function validate(instances: readonly Tile[], profiles: readonly Profile[]): Report {
   const issues: Issue[] = [], connections: Connection[] = []
@@ -93,19 +105,22 @@ export function validate(instances: readonly Tile[], profiles: readonly Profile[
     if (Object.keys(t).some(k => !['id', 'profileId', 'profileVersion', 'color', 'pose'].includes(k)) || (t.pose && Object.keys(t.pose).some(k => !['x', 'y', 'angleRad', 'mirrored'].includes(k)))) fail('INPUT', '实例不允许缩放或未定义字段', [t.id])
   }
   if (issues.length) return { draftValid: false, valid: false, issues, connections, components: [] }
-  const polygons = instances.map(t => vertices(t, profiles)), allEdges = instances.map(t => edges(t, profiles)), occupied = new Set<string>()
+  const polygons = instances.map(t => vertices(t, profiles)), allEdges = instances.map(t => edges(t, profiles)), occupied = new Map<string,Vec[]>()
   for (let i = 0; i < instances.length; i++) for (let j = i + 1; j < instances.length; j++) {
     const pair = [instances[i].id, instances[j].id]
     if (overlaps(polygons[i], polygons[j])) fail('OVERLAP', '零件内部重叠', pair)
     for (const a of allEdges[i]) for (const b of allEdges[j]) {
-      if (a.enabled && b.enabled && matched(a, b)) {
-        for (const e of [a, b]) {
-          const k = JSON.stringify([e.tileId, e.id])
-          if (occupied.has(k)) fail('EDGE_OCCUPIED', '一条边被重复占用', pair)
-          occupied.add(k)
+      const contact=edgeContact(a,b)
+      if(!contact)continue
+      if (a.enabled && b.enabled && opposingEdges(a,b)) {
+        for (const [e,range] of [[a,contact.aRange],[b,contact.bRange]] as const) {
+          const k=JSON.stringify([e.tileId,e.id]),interval:Vec=[range[0]*e.length,range[1]*e.length],prior=occupied.get(k)??[]
+          if(prior.some(p=>Math.min(p[1],interval[1])-Math.max(p[0],interval[0])>EPS))fail('EDGE_OCCUPIED','同一边上的连接区间被重复占用',pair)
+          occupied.set(k,[...prior,interval])
         }
-        connections.push({ a: { tileId: a.tileId, edgeId: a.id }, b: { tileId: b.tileId, edgeId: b.id } })
-      } else if (partialContact(a, b)) fail('EDGE_CONTACT', '边接触必须是可连接的等长整边；不支持部分边拼接', pair)
+        // Preserve historical full-edge Connection shape; partial contacts carry explicit intervals.
+        connections.push({a:{tileId:a.tileId,edgeId:a.id},b:{tileId:b.tileId,edgeId:b.id},...(!matched(a,b)?{contact}:{})})
+      } else fail('EDGE_CONTACT','正长度边接触必须启用连接边，且两块内部位于接触线的相反侧',pair)
     }
   }
   const graph = new Map(instances.map(t => [t.id, new Set<string>()]))
@@ -127,7 +142,25 @@ export function alignEdge(tile: Tile, own: Edge, target: Edge, profiles: readonl
   const rotated = transform(a, { ...tile.pose, x: 0, y: 0, angleRad })
   return { ...tile, pose: { ...tile.pose, x: target.b[0] - rotated[0], y: target.b[1] - rotated[1], angleRad } }
 }
-export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number; contactCount: number }
+// own.a maps to target.a + offset * targetUnit; own.b points backwards.
+export function alignEdgeAt(tile:Tile,own:Edge,target:Edge,offset:number,profiles:readonly Profile[]):Tile{
+ const aligned=alignEdge(tile,own,target,profiles),u=sub(target.b,target.a).map(x=>x/target.length) as Vec,shift=offset-target.length
+ return {...aligned,pose:{...aligned.pose,x:aligned.pose.x+u[0]*shift,y:aligned.pose.y+u[1]*shift}}
+}
+export function segmentAlignments(tile:Tile,own:Edge,target:Edge,profiles:readonly Profile[],reference:Vec[]=vertices(tile,profiles),hints:Vec[]=[]):{tile:Tile;offset:number;contact:EdgeContact}[]{
+ if(!own.enabled||!target.enabled)return []
+ const base=alignEdge(tile,own,target,profiles),u=sub(target.b,target.a).map(x=>x/target.length) as Vec,center=(v:Vec[]):Vec=>[v.reduce((n,p)=>n+p[0],0)/v.length,v.reduce((n,p)=>n+p[1],0)/v.length]
+ const ideal=target.length+dot(sub(center(reference),center(vertices(base,profiles))),u)
+ const offsets=[target.length,own.length,(target.length+own.length)/2,ideal]
+ for(const p of hints){const delta=sub(p,target.a),t=dot(delta,u);if(Math.abs(cross(u,delta))<=EPS&&t>=-EPS&&t<=target.length+EPS)offsets.push(t,t+own.length)}
+ const unique=new Set<string>(),out=[]
+ for(const offset of offsets){const k=offset.toFixed(9);if(unique.has(k)||offset<=EPS||offset>=target.length+own.length-EPS)continue;unique.add(k)
+  const placed=alignEdgeAt(tile,own,target,offset,profiles),contact=edgeContact(edges(placed,profiles).find(e=>e.id===own.id)!,target)
+  if(contact)out.push({tile:placed,offset,contact})
+ }
+ return out
+}
+export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number; contactCount: number;contactLength:number;coverageCount:number }
 const midpoint = (edge: Edge): Vec => [(edge.a[0] + edge.b[0]) / 2, (edge.a[1] + edge.b[1]) / 2]
 const SNAP_ANGLE = Math.PI / 4
 export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly Profile[], captureDistance: number, previousKey?: string): Snap | null {
@@ -138,32 +171,32 @@ export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly
   const candidates: Snap[] = []
   const targets = others.flatMap(other => edges(other, profiles).filter(e => e.enabled))
   for (const own of edges(tile, profiles).filter(e => e.enabled)) for (const target of targets) {
-    if (Math.abs(own.length - target.length) > EPS) continue
-    const key = JSON.stringify([own.id, target.tileId, target.id]), retained = key === previousKey
+    const baseKey = JSON.stringify([own.id, target.tileId, target.id]), retained = previousKey?.startsWith(baseKey)??false
     const delta = Math.abs(wrapAngle(Math.atan2(target.a[1] - target.b[1], target.a[0] - target.b[0]) - Math.atan2(own.b[1] - own.a[1], own.b[0] - own.a[0])))
     if (delta > SNAP_ANGLE * (retained ? 1.2 : 1) + EPS) continue
-    const separation = distance(midpoint(own), midpoint(target))
-    // Cap the screen radius relative to edge length at extreme zoom-out, so a
-    // whole neighbouring tile cannot become a magnetic capture zone.
-    const radius = Math.min(captureDistance, own.length * .3)
-    if (separation > radius * (retained ? 1.4 : 1)) continue
-    const aligned = alignEdge(tile, own, target, profiles)
-    const report = validate([...others, aligned], profiles)
-    if (!report.draftValid) continue
-    const contactCount = report.connections.filter(c => c.a.tileId === tile.id || c.b.tileId === tile.id).length
-    candidates.push({ tile: aligned, target, own, key, contactCount,
-      score: separation / radius + .35 * delta / SNAP_ANGLE })
+    const radius = Math.min(captureDistance,Math.min(own.length,target.length)*.3)
+    for(const proposal of segmentAlignments(tile,own,target,profiles,vertices(tile,profiles),others.flatMap(t=>vertices(t,profiles)))){
+      const aligned=proposal.tile,alignedOwn=edges(aligned,profiles).find(e=>e.id===own.id)!,separation=distance(midpoint(own),midpoint(alignedOwn)),key=baseKey+':'+proposal.offset.toFixed(7)
+      if(separation>radius*(retained?1.4:1))continue
+      const report=validate([...others,aligned],profiles)
+      if(!report.draftValid)continue
+      const contactCount=report.connections.filter(c=>c.a.tileId===tile.id||c.b.tileId===tile.id).length
+      const contactLength=report.connections.filter(c=>c.a.tileId===tile.id||c.b.tileId===tile.id).reduce((n,c)=>n+connectionSegment(c,[...others,aligned],profiles).length,0)
+      const coverageCount=report.connections.filter(c=>c.a.tileId===tile.id||c.b.tileId===tile.id).filter(c=>{const a=edges([...others,aligned].find(t=>t.id===c.a.tileId)!,profiles).find(e=>e.id===c.a.edgeId)!,b=edges([...others,aligned].find(t=>t.id===c.b.tileId)!,profiles).find(e=>e.id===c.b.edgeId)!;return Math.abs(connectionSegment(c,[...others,aligned],profiles).length-Math.min(a.length,b.length))<=EPS}).length
+      candidates.push({tile:aligned,target,own,key,contactCount,contactLength,coverageCount,score:separation/radius+.35*delta/SNAP_ANGLE})
+    }
   }
   if (!candidates.length) return null
   const bestScore = Math.min(...candidates.map(c => c.score))
-  // Prefer a genuinely closing placement only among similarly close candidates.
+  // Prefer closing/full-coverage placements within a small UX score band.
+  // This retains full-edge capture under pointer noise while allowing intentional slides.
   // Use a fixed shortlist rather than a non-transitive approximate comparator.
-  const close = candidates.filter(c => c.score <= bestScore + .1)
-  close.sort((a, b) => b.contactCount - a.contactCount || a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  const close = candidates.filter(c => c.score <= bestScore + .35 + EPS)
+  close.sort((a, b) => b.coverageCount-a.coverageCount || b.contactCount - a.contactCount || (Math.abs(b.contactLength-a.contactLength)>EPS?b.contactLength-a.contactLength:0) || a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   const best = close[0], previous = candidates.find(c => c.key === previousKey)
   // Keep small pointer noise from toggling previews, but allow a materially
   // closer candidate (or a similarly close multi-edge closure) to take over.
-  if (previous && previous.score <= bestScore + .2 && previous.contactCount >= best.contactCount) return previous
+  if (previous && previous.score <= bestScore + .2 && previous.contactCount >= best.contactCount && previous.coverageCount>=best.coverageCount) return previous
   return best
 }
 export function rotateTile(tile: Tile, delta: number, profiles: readonly Profile[]): Tile {

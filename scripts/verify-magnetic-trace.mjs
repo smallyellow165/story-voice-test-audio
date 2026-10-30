@@ -32,12 +32,12 @@ try{
  const pair=planning.planning.relations.find(r=>r.from==='p3'&&r.to==='p6');assert.equal(pair.intent,'connect');assert.equal(pair.verifiedConnection,false);assert.equal(pair.deltaPixels.length,2);assert.equal(planning.planning.observations.find(o=>o.id==='p3').mirrorHypothesis.mirrored,true)
  await page.screenshot({path:out+'/spatial-raw.png'});await closeTrace();assert.deepEqual(posts,[])
  await stage(page,'reconstruction','inspector')
- for(const [mode,states,trials] of [['connected-construction',13,708],['flat-mosaic',16,264]]){
+ for(const [mode,states,trials] of [['connected-construction',132,23422],['flat-mosaic',16,264]]){
   await page.getByLabel('几何重建作品模式',{exact:true}).selectOption(mode)
   const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct')&&r.request().method()==='POST')
   await page.getByRole('button',{name:'生成几何重建',exact:true}).click();const r=await(await response).json();await idle(page)
   assert.ok(r.id);assert.equal(r.candidates.length,0);assert.equal(r.diagnosticCandidates.length,10);assert.equal(r.explored,states);assert.equal(r.trials,trials)
-  assert.equal(r.algorithm,'planar-outline-v3');assert.equal(r.trace.search.parameters.mirroring,true);assert.equal(r.trace.references.reviewHash,review.hash)
+  assert.equal(r.algorithm,'planar-outline-v4');assert.equal(r.trace.search.parameters.mirroring,true);assert.equal(r.trace.references.reviewHash,review.hash)
   assert.equal(await selector.inputValue(),'diagnostic-1');await assertPreview(page,r.diagnosticCandidates[0])
   assert.match(await page.locator('.diagnostic-label').innerText(),new RegExp(r.diagnosticCandidates[0].layout==='partial'?'Partial.*Invalid':'Complete.*Invalid'))
   await page.screenshot({path:out+'/'+mode+'.png'})

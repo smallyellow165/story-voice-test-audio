@@ -1,12 +1,12 @@
-import { profileFor, validate, vertices } from './geometry.ts'
-import type { Assembly, Connection, Profile, Tile } from './geometry.ts'
+import { profileFor, validate, vertices,edges,EPS } from './geometry.ts'
+import type { Assembly, Connection, Profile, Tile, Vec } from './geometry.ts'
 import { checkArtwork, componentPlacement, workMode } from './artwork.ts'
 import type { WorkMode } from './geometry.ts'
 import { parseAssembly } from './storage.ts'
 
 export type Snapshot = { hash: string; profileHash: string; assembly: Assembly }
-export type BuildStep = { id: string; addInstanceId: string; anchor?: { ownEdgeId: string; targetInstanceId: string; targetEdgeId: string }; instruction: string; startsComponent?: true }
-export type BuildPlan = { schemaVersion: 1 | 2; mode?: WorkMode; id: string; revision: number; title: string; assemblyRef: { id: string; revision: number; hash: string }; generatorVersion: 'connected-frontier-v1' | 'component-frontier-v1'; steps: BuildStep[] }
+export type BuildStep = { id: string; addInstanceId: string; anchor?: { ownEdgeId: string; targetInstanceId: string; targetEdgeId: string;contact?:{ownRange:Vec;targetRange:Vec} }; instruction: string; startsComponent?: true }
+export type BuildPlan = { schemaVersion: 1 | 2; mode?: WorkMode; id: string; revision: number; title: string; assemblyRef: { id: string; revision: number; hash: string }; generatorVersion: 'connected-frontier-v1' | 'component-frontier-v1' | 'segmented-frontier-v1' | 'segmented-component-frontier-v1'; steps: BuildStep[] }
 export type BuildBundle = { schemaVersion: 1; snapshot: Snapshot; plan: BuildPlan }
 export type BuildProgress = { planHash: string; step: number; completed: boolean }
 const fail = (message: string): never => { throw Error(message) }
@@ -32,7 +32,7 @@ async function profileHash(assembly: Assembly, profiles: readonly Profile[]) {
 export function contacts(tileId: string, placed: Set<string>, connections: Connection[]) {
   return connections.flatMap(c => {
     const [own, target] = c.a.tileId === tileId ? [c.a, c.b] : [c.b, c.a]
-    return own.tileId === tileId && placed.has(target.tileId) ? [{ ownEdgeId: own.edgeId, targetInstanceId: target.tileId, targetEdgeId: target.edgeId }] : []
+    return own.tileId === tileId && placed.has(target.tileId) ? [{ ownEdgeId: own.edgeId, targetInstanceId: target.tileId, targetEdgeId: target.edgeId,...(c.contact?{contact:{ownRange:c.a.tileId===tileId?c.contact.aRange:c.contact.bRange,targetRange:c.a.tileId===tileId?c.contact.bRange:c.contact.aRange}}:{}) }] : []
   }).sort((a, b) => compare(a.targetInstanceId, b.targetInstanceId) || compare(a.ownEdgeId, b.ownEdgeId) || compare(a.targetEdgeId, b.targetEdgeId))
 }
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0
@@ -48,13 +48,14 @@ export async function validateBuild(input: unknown, profiles: readonly Profile[]
   if (s.hash !== await contentHash({ assembly, profileHash: s.profileHash })) fail('Assembly Snapshot Hash 不一致')
   exact(p, ['schemaVersion', 'id', 'revision', 'title', 'assemblyRef', 'generatorVersion', 'steps', ...(p?.schemaVersion === 2 ? ['mode'] : [])])
   exact(p.assemblyRef, ['id', 'revision', 'hash'])
-  if (![1, 2].includes(p.schemaVersion) || (!text(p.id) || ['__proto__', 'constructor', 'prototype'].includes(p.id)) || !revision(p.revision) || !text(p.title) || !['connected-frontier-v1', 'component-frontier-v1'].includes(p.generatorVersion)) fail('Build Plan 信息无效')
+  if (![1, 2].includes(p.schemaVersion) || (!text(p.id) || ['__proto__', 'constructor', 'prototype'].includes(p.id)) || !revision(p.revision) || !text(p.title) || !['connected-frontier-v1', 'component-frontier-v1','segmented-frontier-v1','segmented-component-frontier-v1'].includes(p.generatorVersion)) fail('Build Plan 信息无效')
   const mosaic = workMode(assembly) === 'flat-mosaic'
-  if (p.schemaVersion === 1 ? assembly.schemaVersion !== 1 || p.generatorVersion !== 'connected-frontier-v1' : assembly.schemaVersion !== 2 || p.mode !== workMode(assembly) || p.generatorVersion !== 'component-frontier-v1') fail('教程模式与来源版本不一致')
+  if (p.schemaVersion === 1 ? assembly.schemaVersion !== 1 || !['connected-frontier-v1','segmented-frontier-v1'].includes(p.generatorVersion) : assembly.schemaVersion !== 2 || p.mode !== workMode(assembly) || !['component-frontier-v1','segmented-component-frontier-v1'].includes(p.generatorVersion)) fail('教程模式与来源版本不一致')
   if (p.assemblyRef.id !== assembly.id || p.assemblyRef.revision !== assembly.revision || p.assemblyRef.hash !== s.hash) fail('Build Plan 来源引用不一致')
   if (!Array.isArray(p.steps) || p.steps.length !== assembly.instances.length) fail('步骤必须完整覆盖所有实例')
   const placed = new Set<string>(), stepIds = new Set<string>()
   const finalReport = validate(assembly.instances, profiles), all = finalReport.connections
+  if(all.some(c=>c.contact)&&!p.generatorVersion.startsWith('segmented-'))fail('分段连接教程必须记录分段生成器版本')
   const componentOf = (id: string) => finalReport.components.find(c => c.includes(id))!
   for (const step of p.steps) {
     exact(step, ['id', 'addInstanceId', 'anchor', 'instruction', ...(p.schemaVersion === 2 ? ['startsComponent'] : [])])
@@ -65,8 +66,20 @@ export async function validateBuild(input: unknown, profiles: readonly Profile[]
     const firstInComponent = !componentOf(step.addInstanceId).some(id => placed.has(id))
     const independent = mosaic && firstInComponent
     if (placed.size && !independent) {
-      exact(step.anchor, ['ownEdgeId', 'targetInstanceId', 'targetEdgeId'])
-      if (!options.some(a => canonical(a) === canonical(step.anchor))) fail('步骤连接边不存在或目标尚未放置')
+      exact(step.anchor, ['ownEdgeId', 'targetInstanceId', 'targetEdgeId','contact'])
+      if(step.anchor?.contact)exact(step.anchor.contact,['ownRange','targetRange'])
+      if (!options.some(a => {
+        const b=step.anchor!
+        if(a.ownEdgeId!==b.ownEdgeId||a.targetInstanceId!==b.targetInstanceId||a.targetEdgeId!==b.targetEdgeId)return false
+        if(!a.contact||!b.contact)return !a.contact&&!b.contact
+        const own=edges(assembly.instances.find(t=>t.id===step.addInstanceId)!,profiles).find(e=>e.id===a.ownEdgeId)!,target=edges(assembly.instances.find(t=>t.id===a.targetInstanceId)!,profiles).find(e=>e.id===a.targetEdgeId)!
+        // Persisted intervals tolerate only the existing world-space EPS, including
+        // the last-bit trigonometric differences between JS runtimes.
+        return ([['ownRange',own.length],['targetRange',target.length]] as const).every(([key,length])=>{
+          const range=b.contact![key],expected=a.contact![key]
+          return Array.isArray(range)&&range.length===2&&range.every(n=>Number.isFinite(n)&&n>=0&&n<=1)&&range[1]>range[0]&&range.every((n,i)=>Math.abs(n-expected[i])*length<=EPS)
+        })
+      })) fail('步骤连接边不存在或目标尚未放置')
     } else if (step.anchor !== undefined) fail('组件起始步骤不能虚构连接目标')
     if (p.schemaVersion === 2 && (independent ? step.startsComponent !== true : step.startsComponent !== undefined)) fail('组件起始标记不正确')
     // A component is built as a connected prefix even when other components exist.
@@ -95,12 +108,12 @@ export async function generateBuild(input: Assembly, profiles: readonly Profile[
       if (!tile) fail('无法找到与已有结构连接的下一块')
       const anchor = contacts(tile.id, placed, report.connections)[0]
       const previous = steps.map(s=>assembly.instances.find(t=>t.id===s.addInstanceId)!)
-      steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), ...(mosaic && index===0 ? {startsComponent:true as const} : {}), instruction: (tile.pose.mirrored?'先将这块翻面。':'') + (anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : mosaic ? componentPlacement(tile,previous,profiles) : `先放好这块${profileFor(tile, profiles)!.name}。`) })
+      steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), ...(mosaic && index===0 ? {startsComponent:true as const} : {}), instruction: (anchor?.contact?'按画布保持错位，仅对齐亮起的接触段。':'')+(tile.pose.mirrored?'先将这块翻面。':'') + (anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : mosaic ? componentPlacement(tile,previous,profiles) : `先放好这块${profileFor(tile, profiles)!.name}。`) })
       placed.add(tile.id)
     }
   }
   const ph = await profileHash(assembly, profiles), hash = await contentHash({ assembly, profileHash: ph })
-  return validateBuild({ schemaVersion: 1, snapshot: { hash, profileHash: ph, assembly }, plan: { schemaVersion: assembly.schemaVersion, ...(assembly.schemaVersion === 2 ? {mode:workMode(assembly)} : {}), id: crypto.randomUUID(), revision: 1, title: assembly.name, assemblyRef: { id: assembly.id, revision: assembly.revision, hash }, generatorVersion: assembly.schemaVersion === 1 ? 'connected-frontier-v1' : 'component-frontier-v1', steps } }, profiles)
+  return validateBuild({ schemaVersion: 1, snapshot: { hash, profileHash: ph, assembly }, plan: { schemaVersion: assembly.schemaVersion, ...(assembly.schemaVersion === 2 ? {mode:workMode(assembly)} : {}), id: crypto.randomUUID(), revision: 1, title: assembly.name, assemblyRef: { id: assembly.id, revision: assembly.revision, hash }, generatorVersion: report.connections.some(c=>c.contact)?assembly.schemaVersion===1?'segmented-frontier-v1':'segmented-component-frontier-v1':assembly.schemaVersion === 1 ? 'connected-frontier-v1' : 'component-frontier-v1', steps } }, profiles)
 }
 export function validateProgress(value: BuildProgress, plan: BuildPlan, planHash: string): BuildProgress {
   exact(value, ['planHash', 'step', 'completed'])

@@ -34,5 +34,5 @@ export function fitConnectedPair(from:Tile,to:Tile,fromImage:Vec[],toImage:Vec[]
   }
  }
  poses.sort((a,b)=>a.jointRms-b.jointRms||a.ownEdgeId.localeCompare(b.ownEdgeId)||a.targetEdgeId.localeCompare(b.targetEdgeId)||Number(a.fromMirrored)-Number(b.fromMirrored)||Number(a.toMirrored)-Number(b.toMirrored))
- return {provenance:'computed-free-pair-relaxation' as const,adoptable:false as const,fittedCorrespondences,poses}
+ return {connectionModel:'whole-edge-v1' as const,provenance:'computed-free-pair-relaxation' as const,adoptable:false as const,fittedCorrespondences,poses}
 }

@@ -37,8 +37,8 @@ test('closed loop preserves all connections and each prefix is connected',async(
  // Instance array order has no influence on generated traversal.
  assert.deepEqual((await generateBuild({...a,instances:[...a.instances].reverse()},profiles)).plan.steps,b.plan.steps)
 })
-test('reject empty, disconnected, overlap, partial edge and missing profile',async()=>{
- for(const a of [assembly([]),assembly([tile('a'),tile('b','square',3)]),assembly([tile('a'),tile('b','square',.9)]),assembly([tile('a'),tile('b','square',1,.5)]),assembly([{...tile('a'),profileVersion:99}])])await assert.rejects(generateBuild(a,profiles))
+test('reject empty, disconnected, overlap, disabled edge and missing profile',async()=>{
+ for(const a of [assembly([]),assembly([tile('a'),tile('b','square',3)]),assembly([tile('a'),tile('b','square',.9)]),assembly([{...tile('a'),profileVersion:99}])])await assert.rejects(generateBuild(a,profiles))
 })
 test('tamper rejection: hash, source, duplicate/missing instance, false/future edge, added pose, profile mutation',async()=>{
  const b=await generateBuild(squareLoop(),profiles)

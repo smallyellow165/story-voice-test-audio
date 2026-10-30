@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { profiles } from './profiles.ts'
-import { edges, findSnap, MAX_TILES, profileFor, rotateTile, mirrorTile, validate, vertices } from './geometry.ts'
+import { connectionSegment, findSnap, MAX_TILES, profileFor, rotateTile, mirrorTile, validate, vertices } from './geometry.ts'
 import type { Assembly, Pose, Snap, Tile, Vec } from './geometry.ts'
 import { emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace } from './storage.ts'
 import type { Workspace } from './storage.ts'
@@ -83,7 +83,7 @@ function Playground() {
     for (let y = view.y + halfH - 1.35; y >= view.y - halfH + .15; y -= 1.25) for (let x = view.x - view.width / 2 + .35; x < view.x + view.width / 2 - 1.2; x += 1.25) {
       const t: Tile = { id: crypto.randomUUID(), profileId: p.id, profileVersion: p.version, color, pose: { x, y, angleRad: 0 } }
       if (validate([...current.instances, t], profiles).draftValid) {
-        commit({ ...current, instances: [...current.instances, t] }, `已添加${p.name}；拖动靠近等长边进行吸附。`); setSelected(t.id); return
+        commit({ ...current, instances: [...current.instances, t] }, `已添加${p.name}；拖动靠近可连接边进行吸附。`); setSelected(t.id); return
       }
     }
     setMessage('当前视野没有空位，请缩小视图后再添加。')
@@ -115,7 +115,7 @@ function Playground() {
     if (!d || event.pointerId !== d.pointerId) return
     dragRef.current = null; setDrag(null)
     if (svg.current!.hasPointerCapture(event.pointerId)) svg.current!.releasePointerCapture(event.pointerId)
-    if (d.moved) replace(d.snap?.tile ?? d.raw, d.snap ? '已吸附：等长整边准确对齐。' : '已移动；连接关系已重新计算。')
+    if (d.moved) replace(d.snap?.tile ?? d.raw, d.snap ? '已吸附：有效边接触段准确对齐。' : '已移动；连接关系已重新计算。')
   }
   function cancel() { dragRef.current = null; setDrag(null); setMessage('已取消拖动，恢复原位置。') }
   function rotate(degrees: number) { if (chosen) replace(rotateTile(chosen, degrees * Math.PI / 180, profiles), '已旋转；连接关系已重新计算。') }
@@ -173,7 +173,7 @@ function Playground() {
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
         <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°${chosen.pose.mirrored?' · 镜像':''}` : '点击画布上的一块磁力片'}</p>
         <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={()=>{if(chosen)replace(mirrorTile(chosen,profiles),'已翻面；连接与碰撞按原规则重新计算。')}}>翻面选中</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
-        <p className="hint">直接拖动已连接的单片即可拿起。靠近等长边时，绿色虚线显示吸附预览；松手确认。可自动对齐约 45° 内的边，更大角度请先旋转。重叠会被拒绝。</p>
+        <p className="hint">直接拖动已连接的单片即可拿起。靠近可连接边时，绿色虚线显示吸附预览；松手确认。可自动对齐约 45° 内的边，更大角度请先旋转。重叠会被拒绝。</p>
         <details><summary>键盘操作</summary><p>在画布中选中零件：方向键移动 0.1 单位，R 旋转 15°，Delete 删除，Esc 取消拖动。Tab 可选择零件，Enter 确认选择。</p></details>
       </aside>
     </StudioSlot><StudioSlot column="workspace" stages={['assembly']}>
@@ -196,11 +196,11 @@ function Playground() {
               points={vertices(t, profiles).map(v => v.join(',')).join(' ')} fill={t.color} role="button" tabIndex={0} aria-label={`磁力片 ${index + 1} ${profileFor(t, profiles)!.name}`} aria-pressed={t.id === selected}
               onPointerDown={e => start(e, current.instances.find(b => b.id === t.id)!)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(t.id) } }}/>
           </g>)}
-          {preview.connections.map((c, i) => { const edge = edges(display.find(t => t.id === c.a.tileId)!, profiles).find(e => e.id === c.a.edgeId)!; return <line key={i} className="connection-line" x1={edge.a[0]} y1={edge.a[1]} x2={edge.b[0]} y2={edge.b[1]}/> })}
+          {preview.connections.map((c, i) => { const segment=connectionSegment(c,display,profiles),edge={a:segment.start,b:segment.end}; return <line key={i} className="connection-line" x1={edge.a[0]} y1={edge.a[1]} x2={edge.b[0]} y2={edge.b[1]}/> })}
           {drag?.snap && <polygon className="snap-preview" points={vertices(drag.snap.tile, profiles).map(v => v.join(',')).join(' ')}/>}
           </g>
         </svg>
-        <p className={`board-message ${drag && !preview.draftValid ? 'warning' : ''}`} role="status">{drag?.moved ? drag.snap ? '可吸附 · 松手完成整边对齐' : preview.draftValid ? '自由移动 · 松手放下，Esc 取消' : '当前位置不合法 · 松手将恢复原位' : message}</p>
+        <p className={`board-message ${drag && !preview.draftValid ? 'warning' : ''}`} role="status">{drag?.moved ? drag.snap ? '可吸附 · 松手完成接触段对齐' : preview.draftValid ? '自由移动 · 松手放下，Esc 取消' : '当前位置不合法 · 松手将恢复原位' : message}</p>
         <div className="tiles-stats"><span><b>{current.instances.length}</b> 块磁力片</span><span><b>{preview.connections.length}</b> 条连接</span><span><b>{preview.components.length}</b> 个组件</span><strong data-testid="validation" className={preview.valid || (workMode(current)==='flat-mosaic'&&preview.draftValid&&display.length) ? 'valid-badge' : 'draft-badge'}>{!preview.draftValid ? '位置无效 · 不可放置' : workMode(current)==='flat-mosaic' && display.length ? '正式有效 · 平面拼图' : preview.valid ? '正式有效 · 整体连通' : '草稿 · 尚未连通'}</strong></div>
       </section>
     </StudioSlot><StudioSlot column="inspector" stages={['assembly']}>
@@ -212,8 +212,8 @@ function Playground() {
         <p className="hint">每次有效编辑自动保存在当前浏览器，刷新可恢复。保存快照后，可随时加载重新编辑。JSON 可用于备份或换设备。</p>
         {storageError && <p role="alert" className="storage-error">{storageError}</p>}
         {storageBlocked && <button onClick={() => { if (!confirm('确认用当前工作区替换无法读取的磁力片存档？其他模块数据不会改变。')) return; try { saveWorkspace(localStorage, workspace, profiles); setStorageBlocked(false); setStorageError('') } catch (e) { setStorageError(String(e)) } }}>重置本模块存档</button>}
-        <h2>几何检查</h2><p>零件规格、位姿、重叠、整边匹配、边占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
-        <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}</li>)}</ul> : <p className="hint">尚无等长整边连接。</p>}</details>
+        <h2>几何检查</h2><p>零件规格、位姿、重叠、共线接触段、区间占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
+        <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}{c.contact?` · 接触段 ${c.contact.length.toFixed(3)}`:''}</li>)}</ul> : <p className="hint">尚无正长度边连接。</p>}</details>
       </aside>
     </StudioSlot><BuildPanel assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
   </StudioLayout>

@@ -1,12 +1,13 @@
+import {segmentAudit} from './segment-audit.ts'
 import {connectivityAudit} from './connectivity-audit.ts'
 import { diagnosticCollector, spatialEvidence } from './execution-trace.ts'
 import type { ExecutionTrace, FailedAttempt, AttemptedConnection } from './execution-trace.ts'
 // Image-space fitting is approximate. All committed connections still use geometry.ts EPS.
-import { alignEdge, distance, edges, validate, vertices, EPS, mirrorVariants } from '../geometry.ts'
+import { alignEdge, distance, edges, validate, vertices, EPS, mirrorVariants, segmentAlignments, connectionModel } from '../geometry.ts'
 import type { Profile, Tile, Vec, WorkMode } from '../geometry.ts'
 import { parseEvidence } from './contracts.ts'
 import type { Candidate, Evidence, Observation } from './contracts.ts'
-export const reconstructionVersion = 'planar-outline-v3'
+export const reconstructionVersion = 'planar-outline-v4'
 const MAX_STATES = 6000, MAX_TRIALS = 100000, MAX_ERROR = .30
 const mean = (v: Vec[]): Vec => [v.reduce((s,p)=>s+p[0],0)/v.length,v.reduce((s,p)=>s+p[1],0)/v.length]
 const variants = (v: Vec[]) => [v,[...v].reverse()].flatMap(a=>a.map((_,i)=>[...a.slice(i),...a.slice(0,i)]))
@@ -16,7 +17,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   if(!Number.isInteger(stateLimit)||stateLimit<1||!Number.isInteger(trialLimit)||trialLimit<1)throw Error('搜索预算无效')
   const mirroring=limits.mirroring??true,parities=new Map(profiles.map(p=>[p.id+'@'+p.version,mirroring?mirrorVariants(p):[false]]))
   const evidence = parseEvidence(input), diagnostics: string[] = [], observations = evidence.observations.filter(o=>!o.excluded)
-  const trace:ExecutionTrace={schemaVersion:1,phase:'admission',input:{evidence:structuredClone(evidence),width,height,profiles:structuredClone(profiles),mode},planning:spatialEvidence(evidence,width,height,profiles),search:{parameters:{stateLimit,trialLimit,maxOutlineRms:MAX_ERROR,eps:EPS,maxSolutionsPerGroup:3,maxCandidates:3,anchorDistanceLimit:3,mirroring},ranking:'Bounded representative Top 10 of observed failures, not global optimization: '+(mode==='connected-construction'?'exhausted connection domains':'blocked required domains')+' first; one pair/stage representative before alternatives; then placed count descending, attempted RMS ascending, trial index, geometric key. Diagnostic rechecks never affect search.'}}
+  const trace:ExecutionTrace={schemaVersion:1,phase:'admission',input:{evidence:structuredClone(evidence),width,height,profiles:structuredClone(profiles),mode},planning:spatialEvidence(evidence,width,height,profiles),search:{parameters:{stateLimit,trialLimit,maxOutlineRms:MAX_ERROR,eps:EPS,maxSolutionsPerGroup:3,maxCandidates:3,anchorDistanceLimit:3,mirroring,connectionModel,alignmentStrategy:mode==='connected-construction'?'bounded-segment-offsets-v1':'whole-edge-offset-v1'},ranking:'Bounded representative Top 10 of observed failures, not global optimization: '+(mode==='connected-construction'?'exhausted connection domains':'blocked required domains')+' first; one pair/stage representative before alternatives; then placed count descending, attempted RMS ascending, trial index, geometric key. Diagnostic rechecks never affect search.'}}
   const collector=diagnosticCollector(profiles)
   const empty = () => ({ diagnosticCandidates:[],trace,candidates: [] as Candidate[], diagnostics, explored: 0, trials: 0, truncated: false, outcome: 'failed' as const })
   const unknown=observations.filter(o=>o.profileId==='unknown')
@@ -26,7 +27,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   if (!observations.length || observations.length > 25) {
     diagnostics.push('V1 只重建 1–25 块；请修正误检、漏检或拆分输入。')
     const unresolved=observations.filter(o=>!evidence.relations.some(r=>r.intent==='connect'&&(r.from===o.id||r.to===o.id)))
-    if(observations.length>1&&unresolved.length)diagnostics.push('这些零件没有明确整边连接证据：'+unresolved.map(o=>o.id).join('、')+'；点接触不构成磁吸整边连接。')
+    if(observations.length>1&&unresolved.length)diagnostics.push('这些零件没有明确边连接证据：'+unresolved.map(o=>o.id).join('、')+'；点接触不构成边吸附连接。')
     return empty()
   }
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) throw Error('图片尺寸无效')
@@ -82,18 +83,19 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   const blocked=new Set<string>()
   // Diagnostics only: these measurements never change domains, ordering or thresholds.
   const blockedDomains=new Map<string,{anchors:Set<string>;equalEdges:number;bestError:number;required?:boolean}>()
-  let explored=0,trials=0,truncated=false
+  let explored=0,trials=0,truncated=false,recentFailure:FailedAttempt|undefined
   const budget=()=>{if(explored>=stateLimit||trials>=trialLimit){truncated=true;return false}return true}
   const key=(tiles:Tile[])=>[...tiles].sort((a,b)=>a.id.localeCompare(b.id)).map(t=>t.id+':'+vertices(t,profiles).map(([x,y])=>[x.toFixed(7),y.toFixed(7)].join(',')).sort().join(';')).join('|')
   function acceptable(tiles:Tile[], connected:boolean, attemptedConnection?:AttemptedConnection){
+    recentFailure=undefined
     const report=validate(tiles,profiles)
-    if(!report.draftValid||(connected&&!report.valid)){rejected.geometry++;collector.offer({tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'geometry',reason:report.issues.map(i=>i.code+': '+i.message).join('; '),attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report});return false}
+    if(!report.draftValid||(connected&&!report.valid)){rejected.geometry++;collector.offer(recentFailure={tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'geometry',reason:report.issues.map(i=>i.code+': '+i.message).join('; '),attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report});return false}
     const ids=new Set(tiles.map(t=>t.id))
     return required.every(r=>{
       if(!ids.has(r.from)||!ids.has(r.to)||r.intent==='uncertain')return true
       const contact=report.connections.some(c=>[c.a.tileId,c.b.tileId].includes(r.from)&&[c.a.tileId,c.b.tileId].includes(r.to))
       const ok=r.intent==='connect'?contact:!contact
-      if(!ok){rejected.relation++;collector.offer({tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'relation',reason:`${r.from} / ${r.to}: ${r.intent} contradicts actual connection`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report})}
+      if(!ok){rejected.relation++;collector.offer(recentFailure={tiles,phase:attemptedConnection?'edge-alignment':'component-combination',failureStage:'relation',reason:`${r.from} / ${r.to}: ${r.intent} contradicts actual connection`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:attemptedConnection?error(tiles.at(-1)!):null,solverValidator:report})}
       return ok
     })
   }
@@ -122,14 +124,21 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
           void previousParity
           for(const own of edges(oriented,profiles))for(const edge of edges(target,profiles)){
             if(!budget())return
-            trials++
-            if(Math.abs(own.length-edge.length)>EPS)continue
-            const candidate=alignEdge(oriented,own,edge,profiles),score=error(candidate)
+            if(mode==='flat-mosaic')trials++
+            if(!own.enabled||!edge.enabled)continue
+            const proposals=mode==='connected-construction'?segmentAlignments(oriented,own,edge,profiles,image.get(raw.id)!,placed.flatMap(t=>vertices(t,profiles))):Math.abs(own.length-edge.length)<=EPS?[{tile:alignEdge(oriented,own,edge,profiles),offset:edge.length,contact:undefined}]:[]
+            for(const proposal of proposals){
+            if(!budget())return
+            if(mode==='connected-construction')trials++
+            const candidate=proposal.tile,score=error(candidate)
             equalEdges++;bestError=Math.min(bestError,score)
-            const attemptedConnection:AttemptedConnection={from:raw.id,ownEdgeId:own.id,to:target.id,targetEdgeId:edge.id,intent:required.find(r=>[r.from,r.to].includes(raw.id)&&[r.from,r.to].includes(target.id))?.intent??null}
-            if(score>MAX_ERROR){rejected.outline++;const failure:FailedAttempt={tiles:[...placed,candidate],phase:'edge-alignment',failureStage:'outline',reason:`Aligned tile RMS ${score} > ${MAX_ERROR} standard units`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:score};collector.offer(failure);if(!nearestFailure||score<nearestFailure.attemptedTileRms!)nearestFailure=failure;continue}
+            const attemptedConnection:AttemptedConnection={from:raw.id,ownEdgeId:own.id,to:target.id,targetEdgeId:edge.id,intent:required.find(r=>[r.from,r.to].includes(raw.id)&&[r.from,r.to].includes(target.id))?.intent??null,...(mode==='connected-construction'?{offset:proposal.offset,contact:proposal.contact,connectionModel}:{})}
             const poseKey=key([candidate]);if(duplicates.has(poseKey))continue;duplicates.add(poseKey)
+            if(score>MAX_ERROR){rejected.outline++;const failure:FailedAttempt={tiles:[...placed,candidate],phase:'edge-alignment',failureStage:'outline',reason:`Aligned tile RMS ${score} > ${MAX_ERROR} standard units`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:score};collector.offer(failure);if(!nearestFailure||score<nearestFailure.attemptedTileRms!)nearestFailure=failure;continue}
             if(acceptable([...placed,candidate],true,attemptedConnection))options.push({tile:candidate,score})
+            else if(recentFailure&&(!nearestFailure||score<nearestFailure.attemptedTileRms!))nearestFailure=recentFailure
+            }
+
           }
           }
         }
@@ -146,7 +155,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
       }
       if(mode==='connected-construction'&&!frontier.length&&!domains.length)for(const d of emptyDomains){
         if(d.nearestFailure)collector.offer({...d.nearestFailure,domainBlocked:true})
-        blocked.add(d.id);blockedDomains.set(d.id,{anchors:new Set(d.anchors.map(t=>t.id)),equalEdges:d.equalEdges,bestError:d.bestError,required:false})
+        blocked.add(d.id);const previous=blockedDomains.get(d.id);blockedDomains.set(d.id,{anchors:new Set([...(previous?.anchors??[]),...d.anchors.map(t=>t.id)]),equalEdges:(previous?.equalEdges??0)+d.equalEdges,bestError:Math.min(previous?.bestError??Infinity,d.bestError),required:false})
       }
       domains.sort((a,b)=>a.options.length-b.options.length||a.options[0].score-b.options[0].score||a.id.localeCompare(b.id))
       for(const option of domains[0]?.options??[]){visit([...placed,option.tile]);if(!budget()||solutions.length>=3)break}
@@ -174,20 +183,23 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   const outcome=truncated?'budget_exhausted':candidates.length?'success':'failed'
   if(evidence.observations.some(o=>o.excluded))diagnostics.push('部分作品：已按 Review 明确排除 '+evidence.observations.filter(o=>o.excluded).map(o=>o.id).join('、')+'；候选仅代表采用的子集，不代表完整原图。')
   if(candidates.length)diagnostics.push('候选几何合法；轮廓偏差仅用于比较，不代表识别或实物连接已经正确。')
-  else if(!truncated)diagnostics.push(local.some(g=>!g.length)?'没有找到合法候选：连接关系、轮廓拟合或碰撞/闭环约束冲突。请检查审核证据与 Profile；不代表所有几何解均不存在。':'各局部组件可重建，但组合后出现碰撞、部分边接触或连接意图矛盾；请检查组件间的位置证据。')
+  else if(!truncated)diagnostics.push(local.some(g=>!g.length)?'没有找到合法候选：连接关系、轮廓拟合或碰撞/闭环约束冲突。请检查审核证据与 Profile；不代表所有几何解均不存在。':'各局部组件可重建，但组合后出现面积碰撞、区间占用或连接意图矛盾；请检查组件间的位置证据。')
   if(!candidates.length){
     if(blocked.size)diagnostics.push('没有可行放置域的零件：'+[...blocked].sort().join('、'))
-    for(const [id,d] of [...blockedDomains].sort(([a],[b])=>a.localeCompare(b)))diagnostics.push(`${id} 对${d.required===false?'已尝试连接邻居':'明确连接邻居'} ${[...d.anchors].sort().join('、')}：本次搜索尝试 ${d.equalEdges} 个等长边对齐${Number.isFinite(d.bestError)?`，最小轮廓 RMS ${d.bestError.toFixed(3)}（上限 ${MAX_ERROR.toFixed(3)} 标准单位）`:''}。${d.equalEdges===0?'请检查可用边长及邻居位置。':d.bestError>MAX_ERROR?'等长边存在，但对齐后偏离原图轮廓；请复核连接意图、边界或 Profile 尺寸。':'有对齐满足轮廓阈值，但未通过几何或连接意图检查。'}`)
+    for(const [id,d] of [...blockedDomains].sort(([a],[b])=>a.localeCompare(b)))diagnostics.push(`${id} 对${d.required===false?'已尝试连接邻居':'明确连接邻居'} ${[...d.anchors].sort().join('、')}：本次搜索尝试 ${d.equalEdges} 个边接触对齐${Number.isFinite(d.bestError)?`，最小轮廓 RMS ${d.bestError.toFixed(3)}（上限 ${MAX_ERROR.toFixed(3)} 标准单位）`:''}。${d.equalEdges===0?'请检查可用边长及邻居位置。':d.bestError>MAX_ERROR?'接触边存在，但对齐后偏离原图轮廓；请复核连接意图、边界或 Profile 尺寸。':'有对齐满足轮廓阈值，但未通过几何或连接意图检查。'}`)
     diagnostics.push(`候选剪枝：图片轮廓偏差 ${rejected.outline} 次；碰撞/局部几何 ${rejected.geometry} 次；明确连接意图冲突 ${rejected.relation} 次。这些是搜索诊断，不是对识别错误的自动定论。`)
     const overlaps=validate(approx,profiles).issues.filter(i=>i.code==='OVERLAP')
     if(overlaps.length)diagnostics.push('按原图独立拟合的位置存在内部重叠：'+overlaps.slice(0,8).map(i=>i.tileIds.join(' / ')).join('；')+`（共 ${overlaps.length} 对）。这仅是原图近似位置诊断，不是搜索已接受的布局；相邻边界误差也会造成细微重叠。平面拼图也不允许重叠，请检查遮挡、堆叠或轮廓。`)
-    diagnostics.push(`统一拟合尺度 ${scale.toFixed(2)} px/标准单位；搜索仅保留轮廓 RMS ≤ ${MAX_ERROR.toFixed(3)} 的等距放置（平移、旋转及启用时的镜像）。Profile 尺寸、严格整边连接和碰撞规则未放宽。`)
+    diagnostics.push(`统一拟合尺度 ${scale.toFixed(2)} px/标准单位；搜索仅保留轮廓 RMS ≤ ${MAX_ERROR.toFixed(3)} 的等距放置（平移、旋转及启用时的镜像）。Profile 尺寸、共线/相反侧正长度连接与碰撞标准保持严格。`)
   }
   if(truncated)diagnostics.push(`搜索预算耗尽（最多 ${stateLimit} 状态 / ${trialLimit} 对齐尝试），搜索未完成；请修正不确定连接或缩小输入范围后重建。`)
   if(observations.some(o=>o.confidence<.7||o.uncertainty))diagnostics.push('含低置信度或不确定识别项，请对照原图。')
+  if(mode==='connected-construction'){
+    trace.search.segmentAudit=segmentAudit(evidence,width,height,profiles,trace.planning.fittedSeeds!,scale)
+  }
   if(mode==='connected-construction'&&!candidates.length&&!truncated){
     const audit=connectivityAudit(evidence,width,height,profiles,trace.planning.fittedSeeds!,scale,MAX_ERROR,mirroring);trace.search.connectivityAudit=audit
-    if(audit.incompatible)diagnostics.push('Connected 输入连接与轮廓不相容（固定执行尺度）：放开双方 Pose 后的等长整边连接联合 RMS 下界仍使可能连接图断开；'+audit.isolatedIds.map(id=>{const p=audit.parts.find(p=>p.id===id)!;return id+'：'+(p.bounds.length?p.bounds.map(b=>b.other+' ≥ '+b.lowerBound.toFixed(6)).join('，'):'没有等长可连接边邻居')}).join('；')+'。若每块 RMS ≤ '+MAX_ERROR.toFixed(3)+'，联合 RMS 必须也 ≤ 该阈值。请核查轮廓、Profile 和遮挡证据；增加搜索预算不能解除这个必要条件冲突。详见 Trace 的 connectivityAudit。')
+    if(audit.incompatible)diagnostics.push('旧等长整边模型下的输入连接与轮廓不相容（不适用于当前分段连接结论）：放开双方 Pose 后的等长整边连接联合 RMS 下界仍使可能连接图断开；'+audit.isolatedIds.map(id=>{const p=audit.parts.find(p=>p.id===id)!;return id+'：'+(p.bounds.length?p.bounds.map(b=>b.other+' ≥ '+b.lowerBound.toFixed(6)).join('，'):'没有等长可连接边邻居')}).join('；')+'。若每块 RMS ≤ '+MAX_ERROR.toFixed(3)+'，联合 RMS 必须也 ≤ 该阈值。请核查轮廓、Profile 和遮挡证据；该结论仅适用于旧整边规则；当前分段连接请查看真实搜索的碰撞与区间诊断。详见 Trace 的 connectivityAudit。')
   }
   const diagnosticCandidates=collector.finish(observations.map(o=>o.id),required,error,tiles=>validate(tiles,profiles))
   trace.search.stats={explored,trials,truncated,rejected,recordedFailures:collector.count}

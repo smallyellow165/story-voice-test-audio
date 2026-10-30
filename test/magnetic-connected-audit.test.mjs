@@ -13,9 +13,9 @@ import {contentHash,generateBuild,validateBuild} from '../src/magnetic-tiles/bui
 import {createMagneticIntake} from '../server/magnetic-intake.mjs'
 import {evidenceFor,tile} from './fixtures/magnetic-intake/cases.mjs'
 const old=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-p3-p6-connected.json',import.meta.url),'utf8')),input=old.trace.input
-const run=()=>reconstruct(input.evidence,input.width,input.height,profiles,'rose-p2'),near=(a,b)=>assert.ok(Math.abs(a-b)<1e-12,`${a} != ${b}`)
+const historical=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-connected-v3.json',import.meta.url),'utf8')),run=()=>structuredClone(historical),near=(a,b)=>assert.ok(Math.abs(a-b)<1e-12,`${a} != ${b}`)
 
-test('reproduce V3 P2 failure exactly; diagnostic-only audit does not alter candidate domains, attempts or Flat output',()=>{
+test('reproduce V3 P2 failure exactly; immutable V3 audit and Flat search remain readable',()=>{
  const r=run(),d=r.diagnosticCandidates[0];assert.equal(r.explored,13);assert.equal(r.trials,708);assert.equal(r.candidates.length,0);assert.equal(d.tiles.length,14);assert.equal(d.attemptIndex,696);assert.equal(d.failureStage,'outline');near(d.attemptedTileRms,1.742852589630778);assert.equal(d.validator.report.valid,true);assert.equal(d.domainBlocked,true)
  assert.match(r.diagnostics.join('\n'),/p2 对已尝试连接邻居/);assert.match(r.diagnostics.join('\n'),/增加搜索预算不能/)
  assert.ok(JSON.stringify(r).length<200000);assert.equal(new Set(r.diagnosticCandidates.map(d=>JSON.stringify(d.tiles))).size,10)
@@ -62,7 +62,7 @@ test('actual execution audit persists under immutable hash/lineage; metadata sta
   const source=await seed('sources',{schemaVersion:1,id:crypto.randomUUID(),view:{width:input.width,height:input.height},createdAt:new Date().toISOString()}),analysis=await seed('analyses',{schemaVersion:1,id:crypto.randomUUID(),sourceId:source.id,sourceHash:source.hash,status:'complete',evidence:input.evidence,createdAt:new Date().toISOString()}),review=await api.dispatch('POST','reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:input.evidence}),r=await api.dispatch('POST','reconstruct',{reviewId:review.id,reviewHash:review.hash,mode:'connected-construction'})
   const next=createMagneticIntake(dir),loaded=await next.read('reconstructions',r.id);assert.deepEqual(loaded,r);const {hash,...payload}=loaded;assert.equal(await contentHash(payload),hash)
   const trace=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id)).text);assert.deepEqual(trace.execution.trace.search.connectivityAudit,r.trace.search.connectivityAudit);assert.equal(trace.references.review.hash,review.hash)
-  const alignment=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id+'/alignment/diagnostic-1')).text).alignment;near(alignment.freePair.poses[0].jointRms,.5635206387078651)
+  const alignment=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id+'/alignment/diagnostic-1')).text).alignment;assert.equal(alignment.actual.connection.connectionModel,'segmented-edge-v1');assert.ok(alignment.actual.edges.contact.length>0);assert.equal(r.trace.search.connectivityAudit.connectionModel,'whole-edge-v1')
   const h=await next.dispatch('GET','history');assert.equal(h.reconstructions[0].trace,undefined);await assert.rejects(next.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:'diagnostic-1',visualChecked:true,assembly:r.diagnosticCandidates[0].tiles}),/选择候选/)
   assert.deepEqual(await next.read('reviews',review.id),review);assert.deepEqual(await next.read('analyses',analysis.id),analysis)
  }finally{await rm(dir,{recursive:true,force:true})}
