@@ -45,6 +45,8 @@
     "test:magnetic-review-reconstruction": "node --experimental-strip-types --test test/magnetic-review-reconstruction.test.mjs",
     "test:magnetic-review-reconstruction:browser": "node scripts/verify-magnetic-review-reconstruction.mjs",
     "test:magnetic-review-toolbar:browser": "node scripts/verify-magnetic-review-toolbar.mjs",
+    "test:magnetic-connected-audit": "node --experimental-strip-types --test test/magnetic-connected-audit.test.mjs",
+    "test:magnetic-connected-audit:browser": "node --experimental-strip-types scripts/verify-magnetic-connected-audit.mjs",
     "test:magnetic-mirror": "node --experimental-strip-types --test test/magnetic-mirror.test.mjs",
     "test:magnetic-mirror:browser": "node --experimental-strip-types scripts/verify-magnetic-mirror.mjs",
     "test:magnetic-trace": "node --experimental-strip-types --test test/magnetic-trace.test.mjs",
