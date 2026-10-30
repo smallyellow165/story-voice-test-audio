@@ -21,8 +21,15 @@ export function studioButton(page,name){
  const locator=page.getByRole('button',{name,exact:true})
  return new Proxy(locator,{get(target,prop){const value=target[prop];if(typeof value!=='function')return value
   if(!['click','waitFor','isDisabled'].includes(String(prop)))return value.bind(target)
-  return async(...args)=>{if(['click','waitFor','isDisabled'].includes(String(prop))){if(build.has(name))await stage(page,'build','inspector');else if(name==='保存审核快照')await stage(page,'review','workspace');else if(['设置关系','补一块漏检零件'].includes(name))await stage(page,'review','inspector');else if(name==='重建二维布局'||name==='在作品编辑器中打开')await stage(page,'reconstruction','inspector');else if(center.has(name)||assembly.has(name)||name.startsWith('添加'))await stage(page,'assembly',center.has(name)?'workspace':'inspector')}
+  return async(...args)=>{if(['click','waitFor','isDisabled'].includes(String(prop))){if(build.has(name))await stage(page,'build','inspector');else if(['保存审核快照','新增零件'].includes(name))await stage(page,'review','workspace');else if(['设置关系'].includes(name))await stage(page,'review','inspector');else if(name==='重建二维布局'||name==='在作品编辑器中打开')await stage(page,'reconstruction','inspector');else if(center.has(name)||assembly.has(name)||name.startsWith('添加'))await stage(page,'assembly',center.has(name)?'workspace':'inspector')}
    return value.apply(target,args)
   }
  }})
+}
+
+// Review fields stay available in collapsed sections; tests use the visible UI.
+export async function reviewDetails(page,name){
+ await stage(page,'review','inspector')
+ const summary=page.getByText(name,{exact:true})
+ if(!await summary.evaluate(el=>el.parentElement.open))await summary.click()
 }

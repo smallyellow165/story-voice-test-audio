@@ -1,6 +1,9 @@
 import { PREFERENCES_KEY, resolveIntakePreferences, readStudioUrl, useUrlRequest, writeStudioUrl } from '../studio-url.ts'
 import { estimateRelativeScale } from './relative-size.ts'
 import { outlineEvidenceKey } from './profile-match.ts'
+import { InfoHint } from '../../brick-vision/InfoHint.tsx'
+import { PartActions } from './PartActions.tsx'
+import { compactReviewSummary, removeManualPart, setPartExcluded } from './review-edit.ts'
 import { ProfileMatcher } from './ProfileMatcher.tsx'
 import { ReviewWorkspace } from './ReviewWorkspace.tsx'
 import { AssemblyPreview } from '../AssemblyPreview.tsx'
@@ -14,15 +17,17 @@ import { profiles } from '../profiles.ts'
 import { canonical, contentHash } from '../build-plan.ts'
 import { intakeApi, prepareImage, prepareLibraryImage } from './api.ts'
 import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin, Reconstruction, Review, Source } from './contracts.ts'
+type ReviewUndo={evidence:Evidence;review:Review|null;selected:string;label:string}
 type Config={models:{id:string;label:string;provider:string}[];providers:Record<string,boolean>}
 const emptyHistory=():IntakeHistory=>({sources:[],analyses:[],reviews:[],reconstructions:[],origins:[],warnings:[]})
 export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candidate:Assembly,bind:(actual:Assembly)=>Promise<Origin>)=>Promise<void>}){
  const {stage,navigate}=useStudio()
  const urlRequest=useUrlRequest(), restored=useRef<typeof urlRequest|null>(null)
  const [urlReady,setUrlReady]=useState(false),[draftAvailable,setDraftAvailable]=useState(false)
- const [confirmedOutlines,setConfirmedOutlines]=useState<Set<string>>(()=>new Set())
+ const [confirmedProfiles,setConfirmedProfiles]=useState<Set<string>>(()=>new Set())
  const [config,setConfig]=useState<Config|null>(null),[history,setHistory]=useState<IntakeHistory>(emptyHistory),[source,setSource]=useState<Source|null>(null),[image,setImage]=useState('')
  const [analysis,setAnalysis]=useState<Analysis|null>(null),[draft,setDraft]=useState<Evidence|null>(null),[review,setReview]=useState<Review|null>(null),[result,setResult]=useState<Reconstruction|null>(null)
+ const [reviewUndo,setReviewUndo]=useState<ReviewUndo|null>(null)
  const [selected,setSelected]=useState(''),[model,setModel]=useState(''),[candidateId,setCandidateId]=useState(''),[checked,setChecked]=useState(false)
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('上传图片后点击识别；模型只在明确点击时调用。'),[error,setError]=useState(''),[currentHash,setCurrentHash]=useState('')
  const [target,setTarget]=useState(''),[intent,setIntent]=useState<'connect'|'separate'|'uncertain'>('connect')
@@ -32,6 +37,8 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const [preferenceStorageError,setPreferenceStorageError]=useState('')
  const [mode,setMode]=useState<WorkMode>('connected-construction')
 
+ const reviewInspector=useRef<HTMLElement>(null)
+ useEffect(()=>{if(stage==='review')reviewInspector.current?.closest<HTMLElement>('.studio-inspector')?.scrollTo({top:0})},[selected,stage])
  const lock=useRef(false),file=useRef<HTMLInputElement>(null),svg=useRef<SVGSVGElement>(null),drag=useRef<{id:string;index:number;pointerId:number}|null>(null)
  useEffect(()=>{let live=true;Promise.all([intakeApi<Config>('status'),intakeApi<IntakeHistory>('history')]).then(([c,h])=>{if(live){setConfig(c);setHistory(h)}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{let live=true;void contentHash(assembly).then(h=>{if(live)setCurrentHash(h)});return()=>{live=false}},[assembly])
@@ -65,15 +72,23 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  async function preserveEdits(){
   if(analysis?.status==='complete'&&draft&&!review&&canonical(draft)!==canonical(analysis.evidence)){
    const saved=await intakeApi<Review>('reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:draft})
-   setReview(saved);await refresh()
+   setReview(saved);setReviewUndo(null);await refresh()
   }
  }
- async function openSource(s:Source){await preserveEdits();const img=await intakeApi<{mimeType:string;imageBase64:string}>('image/'+s.id);setSource(s);setLibraryName('');setImage(`data:${img.mimeType};base64,${img.imageBase64}`);setAnalysis(null);setDraft(null);setReview(null);setResult(null);setChecked(false);setSelected('');setMessage('图片已打开。选择历史分析，或明确发起一次新识别。')}
- function edit(next:Evidence){setDraft(next);setReview(null);setResult(null);setChecked(false)}
+ async function openSource(s:Source){await preserveEdits();const img=await intakeApi<{mimeType:string;imageBase64:string}>('image/'+s.id);setSource(s);setLibraryName('');setImage(`data:${img.mimeType};base64,${img.imageBase64}`);setAnalysis(null);setReviewUndo(null);setConfirmedProfiles(new Set());setDraft(null);setReview(null);setResult(null);setChecked(false);setSelected('');setMessage('图片已打开。选择历史分析，或明确发起一次新识别。')}
+ function edit(next:Evidence,undo:ReviewUndo|null=null){setDraft(next);setReview(null);setResult(null);setChecked(false);setReviewUndo(undo)}
+ function editPart(next:Evidence,label:string){if(draft)edit(next,{evidence:draft,review,selected,label})}
+ function undoPartEdit(){if(!reviewUndo)return;setDraft(reviewUndo.evidence);setReview(reviewUndo.review);setSelected(reviewUndo.selected);setResult(null);setChecked(false);setReviewUndo(null);setTarget('');if(reviewUndo.review&&analysis){localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false)}}
+ function assignProfile(o:Observation,profileId:string,profileVersion:number){
+  patch(o.id,{profileId,profileVersion})
+  if(source)setConfirmedProfiles(previous=>{const next=new Set(previous),key=outlineEvidenceKey(o,source.id);if(profileId==='unknown')next.delete(key);else next.add(key);return next})
+ }
+ function deletePart(o:Observation){if(!draft)return;const index=draft.observations.findIndex(p=>p.id===o.id),next=removeManualPart(draft,o.id);editPart(next,`删除 ${o.id}`);setSelected(next.observations[Math.min(index,next.observations.length-1)]?.id??'');setTarget('')}
+ function toggleExcluded(o:Observation){if(draft)editPart(setPartExcluded(draft,o.id,!o.excluded),`${o.excluded?'恢复':'排除'} ${o.id}`)}
  function patch(id:string,change:Partial<Observation>){if(draft)edit({...draft,observations:draft.observations.map(o=>o.id===id?{...o,...change}:o)})}
- async function openAnalysis(a:Analysis,preserve=true){if(preserve)await preserveEdits();const full=await intakeApi<Analysis>('analyses/'+a.id);setAnalysis(full);setDraft(full.evidence?structuredClone(full.evidence):null);setSelected(full.evidence?.observations[0]?.id??'');setReview(null);setResult(null);setChecked(false);setMessage(full.status==='complete'?recognitionSummary(full.evidence):full.status==='processing'?'请求进行中或服务曾中断；刷新历史查看结果，不自动重试。':'识别失败，原始记录已保留。')}
+ async function openAnalysis(a:Analysis,preserve=true){if(preserve)await preserveEdits();const full=await intakeApi<Analysis>('analyses/'+a.id);setAnalysis(full);setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');setDraft(full.evidence?structuredClone(full.evidence):null);setSelected(full.evidence?.observations[0]?.id??'');setReview(null);setResult(null);setChecked(false);setMessage(full.status==='complete'?recognitionSummary(full.evidence):full.status==='processing'?'请求进行中或服务曾中断；刷新历史查看结果，不自动重试。':'识别失败，原始记录已保留。')}
  async function openReview(r:Review){const a=history.analyses.find(a=>a.id===r.analysisId);if(!a)throw Error('审核来源不在历史中');await openAnalysis(a);setDraft(structuredClone(r.evidence));setReview(r);setSelected(r.evidence.observations[0]?.id??'')}
- async function saveReview(){await run(async()=>{if(!analysis||!draft)return;const r=await intakeApi<Review>('reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:draft});setReview(r);setMessage('审核快照已保存。');localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false);await refresh()})}
+ async function saveReview(){await run(async()=>{if(!analysis||!draft)return;const r=await intakeApi<Review>('reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:draft});setReview(r);setReviewUndo(null);setMessage('审核快照已保存。');localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false);await refresh()})}
  // Keep unsaved evidence local, separately from immutable server snapshots.
  useEffect(()=>{if(urlReady&&restored.current===urlRequest&&analysis&&draft&&!review&&canonical(draft)!==canonical(analysis.evidence)){
   try{localStorage.setItem('magnetic-review-draft:'+analysis.id,JSON.stringify({analysisHash:analysis.hash,evidence:draft}));setDraftAvailable(true)}catch(e){setError('审核草稿本地保存失败：'+String(e))}
@@ -98,7 +113,7 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    if(v.observationId&&!evidence?.observations.some(o=>o.id===v.observationId))throw Error('URL Observation 不属于所选审核 / 分析')
    const img=src?await intakeApi<{mimeType:string;imageBase64:string}>('image/'+src.id):null
    if(!alive)return
-   setHistory(h);setSource(src??null);setImage(img?`data:${img.mimeType};base64,${img.imageBase64}`:'');setAnalysis(full);setDraft(evidence?structuredClone(evidence):null);setReview(rv??null);setResult(rc??null);setCandidateId(v.candidateId??'');setSelected(v.observationId??'');setChecked(false)
+   setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');setHistory(h);setSource(src??null);setImage(img?`data:${img.mimeType};base64,${img.imageBase64}`:'');setAnalysis(full);setDraft(evidence?structuredClone(evidence):null);setReview(rv??null);setResult(rc??null);setCandidateId(v.candidateId??'');setSelected(v.observationId??'');setChecked(false)
    if(rc)setMode(rc.mode??'connected-construction')
    setDraftAvailable(!!a&&!!localStorage.getItem('magnetic-review-draft:'+a.id))
    setError('');if(src)setMessage('已按 URL 恢复保存的图片与工作上下文；未执行识别、重建或教程生成。');restored.current=urlRequest;setUrlReady(true)
@@ -114,7 +129,7 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const shown=draft??analysis?.evidence
  const resultEvidence=result?history.reviews.find(r=>r.id===result.reviewId)?.evidence:undefined
  const disabled=busy||!config||!urlReady||!preferencesReady
- function addPiece(){if(!draft)return;const p=profiles[0],xs=p.vertices.map(v=>v[0]),ys=p.vertices.map(v=>v[1]),scale=.2/Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));const id='manual-'+crypto.randomUUID().slice(0,8);edit({...draft,observations:[...draft.observations,{id,profileId:profiles[0].id,profileVersion:profiles[0].version,color:'#f5b942',outline:p.vertices.map(([x,y])=>[.4+(x-Math.min(...xs))*scale,.4+(Math.max(...ys)-y)*scale]),confidence:0,evidence:'人工补片',uncertainty:'请将轮廓角点拖到图片中真实边界',origin:'manual',excluded:false}]});setSelected(id)}
+ function addPiece(){if(!draft||draft.observations.length>=25)return;const p=profiles[0],xs=p.vertices.map(v=>v[0]),ys=p.vertices.map(v=>v[1]),scale=.2/Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));const id='manual-'+crypto.randomUUID().slice(0,8);editPart({...draft,observations:[...draft.observations,{id,profileId:profiles[0].id,profileVersion:profiles[0].version,color:'#f5b942',outline:p.vertices.map(([x,y])=>[.4+(x-Math.min(...xs))*scale,.4+(Math.max(...ys)-y)*scale]),confidence:0,evidence:'人工补片',uncertainty:'请将轮廓角点拖到图片中真实边界',origin:'manual',excluded:false}]},`新增 ${id}`);setSelected(id)}
  return <>
   <StudioSlot column="workflow" stages={imageStages}><section className="intake-controls" aria-label="图片与分析">
    <label>图片来源<select aria-label="图片来源" disabled={disabled} value={imageSource} onChange={e=>{const value=e.target.value as 'upload'|'server';chooseSource(value)}}><option value="" disabled>选择图片来源</option><option value="upload">Uploaded Images / 上传图片与历史</option><option value="server">Server Library / 服务器图片</option></select></label>
@@ -129,7 +144,7 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    <label>历史重建<select aria-label="历史重建" disabled={disabled} value={result?.id??''} onChange={e=>{const r=history.reconstructions.find(r=>r.id===e.target.value);if(r)void run(async()=>{const rv=history.reviews.find(v=>v.id===r.reviewId);if(!rv)throw Error('缺少来源 Review');await openReview(rv);setMode(r.mode??'connected-construction');setResult(r);setCandidateId(r.candidates[0]?.id??'');setChecked(false);navigate('reconstruction')})}}><option value="">选择结果</option>{history.reconstructions.filter(r=>r.sourceId===source?.id).map(r=><option key={r.id} value={r.id}>{r.createdAt.slice(0,19)} · {r.candidates.length} 个候选</option>)}</select></label>
   </section></StudioSlot>
   <StudioSlot column="workspace" stages={imageStages}>
-    <ReviewWorkspace active={stage==='review'} evidence={shown} confirmedOutlines={confirmedOutlines} sourceId={source?.id??''} imageWidth={source?.view.width??0} imageHeight={source?.view.height??0} selected={selected} onSelect={setSelected} busy={busy} saveControl={<><span role="status">{draft?(review?'已保存':'未保存'):'未打开审核'}</span><button disabled={disabled||!draft||!analysis} onClick={()=>void saveReview()}>保存审核快照</button></>}><SourceComparison comparing={stage==='reconstruction'} source={
+    <ReviewWorkspace active={stage==='review'} evidence={shown} onAdd={addPiece} addDisabled={disabled||!draft||draft.observations.length>=25} imageWidth={source?.view.width??0} imageHeight={source?.view.height??0} selected={selected} onSelect={setSelected} busy={busy} saveControl={<><span role="status">{draft?(review?'已保存':'未保存'):'未打开审核'}</span><button disabled={disabled||!draft||!analysis} onClick={()=>void saveReview()}>保存审核快照</button></>}><SourceComparison comparing={stage==='reconstruction'} source={
       <section aria-label="来源图片"><h3>Source · 原图与编号轮廓</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
    {source&&<svg ref={svg} className="intake-image" viewBox={`0 0 ${source.view.width} ${source.view.height}`} aria-label="图片与识别轮廓" onPointerMove={e=>{const d=drag.current;if(!d||d.pointerId!==e.pointerId||!chosen||busy)return;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.current!.getScreenCTM()!.inverse());patch(d.id,{outline:chosen.outline.map((v,i)=>i===d.index?[Math.max(0,Math.min(1,p.x/source.view.width)),Math.max(0,Math.min(1,p.y/source.view.height))]:v)})}} onPointerUp={()=>{drag.current=null}} onPointerCancel={()=>{drag.current=null}}>
     <image href={image} width={source.view.width} height={source.view.height}/>
@@ -143,18 +158,31 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
   <StudioSlot column="inspector" stages={['source']}><section className="intake-controls"><h2>Analysis · 识别信息</h2>{analysis?.status==='complete'&&<><p role="status" data-testid="recognition-summary">{recognitionSummary(analysis.evidence)}</p><p>{analysis.evidence?.reason}</p></>}<p className="hint">清晰平铺照片 / 分块示意图 · 1–25 片 · 有限搜索预算。上传、重建和打开历史不调用模型。</p>
    {analysis&&<p>实际分析模型：{analysis.model} · {analysis.status}</p>}{analysis&&<details><summary>实际模型、Usage 与原始输出</summary><p>{analysis.model} / {analysis.modelVersion??'版本未返回'} · {analysis.status}</p>{analysis.error&&<p>{analysis.error}</p>}<pre>{JSON.stringify(analysis.usageMetadata,null,2)}</pre><pre>{analysis.rawOutput}</pre></details>}
   </section></StudioSlot>
-  <StudioSlot column="inspector" stages={['review']}><section className="intake-controls" aria-label="审核与重建"><h2>Review · 修正证据</h2>{draft&&<><p role="status" data-testid="review-summary">{recognitionSummary(draft)}</p><p className="hint">Unknown 会保留编号与轮廓，但不能进入正式作品。请查看证据和未知原因，再选择经核实的 Profile；不要为了重建而猜测替换。若输入类别为超出支持范围，需先确认所采用部分适合二维再手动修改。排除零件后只重建部分作品。</p></>}
-   {draft&&<><label>输入类别<select aria-label="输入类别" disabled={busy} value={draft.sourceKind} onChange={e=>edit({...draft,sourceKind:e.target.value as Evidence['sourceKind']})}><option value="flat_photo">二维平铺照片</option><option value="diagram">平面示意图</option><option value="unsupported">超出支持范围</option></select></label><label>输入说明 / 修正理由<textarea aria-label="输入说明 / 修正理由" disabled={busy} value={draft.reason} onChange={e=>edit({...draft,reason:e.target.value})}/></label>
-   <p>{draft.observations.filter(o=>!o.excluded).length} 块采用 · {draft.relations.length} 个关系假设</p>
-
-   <button disabled={busy||draft.observations.length>=25} onClick={addPiece}>补一块漏检零件</button>
-   {chosen&&<fieldset disabled={busy}><legend>{chosen.id} · {chosen.origin==='manual'?'人工补充':'图片观察'} · 模型置信度 {chosen.confidence}</legend><label>形状<select aria-label="修正形状" value={chosen.profileId==='unknown'?'unknown':`${chosen.profileId}@${chosen.profileVersion}`} onChange={e=>{const p=profiles.find(p=>`${p.id}@${p.version}`===e.target.value);patch(chosen.id,{profileId:p?.id??'unknown',profileVersion:p?.version??1})}}>{profiles.map(p=><option key={`${p.id}@${p.version}`} value={`${p.id}@${p.version}`}>{p.name} · v{p.version}</option>)}<option value="unknown">未知 / 不支持</option></select></label>{source&&<ProfileMatcher key={JSON.stringify([chosen.id,chosen.outline,chosen.uncertainty,chosen.confidence,source.id])} observation={chosen} scale={estimateRelativeScale(draft?.observations??[],chosen.id,source.view.width,source.view.height,profiles,confirmedOutlines,source.id)} confirmed={confirmedOutlines.has(outlineEvidenceKey(chosen,source.id))} onConfirm={value=>setConfirmedOutlines(previous=>{const next=new Set(previous),key=outlineEvidenceKey(chosen,source.id);if(value)next.add(key);else next.delete(key);return next})} width={source.view.width} height={source.view.height} onApply={(profileId,profileVersion)=>patch(chosen.id,{profileId,profileVersion})}/>}<label>颜色<input aria-label="修正颜色" type="color" value={chosen.color} onChange={e=>patch(chosen.id,{color:e.target.value})}/></label><label className="intake-check"><input type="checkbox" checked={chosen.excluded} onChange={e=>patch(chosen.id,{excluded:e.target.checked})}/>不采用本片（误检或仅重建局部）</label><p className="hint">观察证据 / 候选形状：{chosen.evidence||'未提供'}</p><p className="hint">未知原因 / 不确定性：{chosen.uncertainty||'未提供；不代表已核实'}</p>
+  <StudioSlot column="inspector" stages={['review']}><section ref={reviewInspector} className="intake-controls review-inspector" aria-label="审核与重建">
+   <div className="review-inspector-heading"><h2>Review · 零件审核</h2><InfoHint label="审核状态">{draft&&<p>{recognitionSummary(draft)}</p>}<p>Unknown 保留编号与轮廓，需人工选择 Profile 后才能进入正式作品。轮廓不确定时分数仅供参考，匹配结果不代表几何合法或与原图完全吻合。排除零件后只重建采用部分；超出二维支持范围的输入可在高级信息中审查和修正。</p></InfoHint></div>
+   {draft&&<><p className="review-compact-summary" role="status" data-testid="review-summary">{compactReviewSummary(draft)}</p>
+   {reviewUndo&&<div className="review-undo" role="status">已{reviewUndo.label}<button disabled={busy} onClick={undoPartEdit}>撤销{reviewUndo.label}</button></div>}
+   {chosen?<fieldset disabled={busy}><legend>{chosen.id} · {chosen.origin==='manual'?'人工补充':'图片观察'} · 置信度 {Math.round(chosen.confidence*100)}%</legend>
+    <label>Profile<select aria-label="修正形状" value={chosen.profileId==='unknown'?'unknown':`${chosen.profileId}@${chosen.profileVersion}`} onChange={e=>{const p=profiles.find(p=>`${p.id}@${p.version}`===e.target.value);assignProfile(chosen,p?.id??'unknown',p?.version??1)}}>{profiles.map(p=><option key={`${p.id}@${p.version}`} value={`${p.id}@${p.version}`}>{p.name} · v{p.version}</option>)}<option value="unknown">未知 / 不支持</option></select></label>
+    {source&&<ProfileMatcher key={JSON.stringify([chosen.id,chosen.outline,chosen.uncertainty,chosen.confidence,source.id])} observation={chosen} scale={estimateRelativeScale(draft.observations,chosen.id,source.view.width,source.view.height,profiles,confirmedProfiles,source.id)} width={source.view.width} height={source.view.height} onApply={(profileId,profileVersion)=>assignProfile(chosen,profileId,profileVersion)}/>}
+    <PartActions key={chosen.id} observation={chosen} relationCount={draft.relations.filter(r=>r.from===chosen.id||r.to===chosen.id).length} onDelete={()=>deletePart(chosen)} onExclude={()=>toggleExcluded(chosen)}/>
+    <details className="review-part-details"><summary>零件证据与轮廓编辑</summary>
+     <label>颜色<input aria-label="修正颜色" type="color" value={chosen.color} onChange={e=>patch(chosen.id,{color:e.target.value})}/></label><p>观察证据 / 候选形状：{chosen.evidence||'未提供'}</p><p>未知原因 / 不确定性：{chosen.uncertainty||'未提供；不代表已核实'}</p>
     <p className="hint">拖动图片上的角点修正外轮廓，也可输入坐标（0–1；左上为原点）。改形状后请检查角点数。</p>
     {chosen.outline.map((p,i)=><div className="intake-point" key={i}><span>角 {i+1}</span>{p.map((v,j)=><input key={j} aria-label={`角 ${i+1} ${j?'y':'x'}`} type="number" min="0" max="1" step=".001" value={v} onChange={e=>patch(chosen.id,{outline:chosen.outline.map((a,k)=>k===i?a.map((b,l)=>l===j?Number(e.target.value):b) as Vec:a)})}/>)}<button disabled={chosen.outline.length<=3} onClick={()=>patch(chosen.id,{outline:chosen.outline.filter((_,k)=>k!==i)})}>删除角点</button></div>)}<button disabled={chosen.outline.length>=8} onClick={()=>{const a=chosen.outline.at(-1)!,b=chosen.outline[0];patch(chosen.id,{outline:[...chosen.outline,[(a[0]+b[0])/2,(a[1]+b[1])/2]]})}}>增加角点（拖到真实角）</button>
+    </details>
+    <details className="review-part-details"><summary>连接关系编辑</summary>
     <label>连接到<select aria-label="连接到" value={target} onChange={e=>setTarget(e.target.value)}><option value="">选择目标零件</option>{draft.observations.filter(o=>o.id!==chosen.id&&!o.excluded).map(o=><option key={o.id}>{o.id}</option>)}</select></label><label>关系<select aria-label="关系意图" value={intent} onChange={e=>setIntent(e.target.value as typeof intent)}><option value="connect">必须整边连接</option><option value="separate">不得接触连接</option><option value="uncertain">不确定，仅作为线索</option></select></label><button disabled={!target||target===chosen.id} onClick={()=>edit({...draft,relations:[...draft.relations.filter(r=>!([r.from,r.to].includes(chosen.id)&&[r.from,r.to].includes(target))),{from:chosen.id,to:target,intent,evidence:'人工修正关系'}]})}>设置关系</button>
-   </fieldset>}
+    </details>
+   </fieldset>:<p>从表格选择零件，或点击「新增零件」。</p>}
+   <details className="review-advanced"><summary>高级信息 / 编辑</summary>
+    <label>输入类别<select aria-label="输入类别" disabled={busy} value={draft.sourceKind} onChange={e=>edit({...draft,sourceKind:e.target.value as Evidence['sourceKind']})}><option value="flat_photo">二维平铺照片</option><option value="diagram">平面示意图</option><option value="unsupported">超出支持范围</option></select></label>
+    <label>输入说明 / 修正理由<textarea aria-label="输入说明 / 修正理由" disabled={busy} value={draft.reason} onChange={e=>edit({...draft,reason:e.target.value})}/></label>
+    <p>{draft.observations.filter(o=>!o.excluded).length} 块采用 · {draft.relations.length} 个关系假设</p>
    <ul className="intake-relations">{draft.relations.map((r,i)=><li key={i}>{r.from} ↔ {r.to} · {r.intent}<p>{r.evidence}</p><button disabled={busy} onClick={()=>edit({...draft,relations:draft.relations.filter((_,j)=>i!==j)})}>删除关系</button></li>)}</ul>
-</>}{!draft&&<p>请先从左栏打开 Analysis 或 Review。</p>}</section></StudioSlot>
+   </details>
+   </>}{!draft&&<p>请先从左栏打开 Analysis 或 Review。</p>}
+  </section></StudioSlot>
   <StudioSlot column="inspector" stages={['review','reconstruction']}><section className="intake-controls">
 {draft&&<><label>重建作品模式<select aria-label="重建作品模式" disabled={busy} value={mode} onChange={e=>setMode(e.target.value as WorkMode)}><option value="connected-construction">Connected Construction · 整体连通</option><option value="flat-mosaic">Flat Mosaic · 允许独立组件</option></select></label><p className="hint">平面拼图按明确整边连接意图分组；独立组件按图片位置摆放，不虚构磁吸。</p><div className="button-row"><button className="primary" disabled={busy||!review} onClick={()=>void run(async()=>{const r=await intakeApi<Reconstruction>('reconstruct',{reviewId:review!.id,reviewHash:review!.hash,mode});setMode(r.mode??'connected-construction');setResult(r);setCandidateId(r.candidates[0]?.id??'');setChecked(false);setMessage(resultMessage(r,review!.evidence));navigate('reconstruction');await refresh()})}>重建二维布局</button></div></>}</section></StudioSlot>
   <StudioSlot column="inspector" stages={['reconstruction']}><section className="intake-controls" aria-label="重建结果"><h2>Reconstruction · 候选与诊断</h2>

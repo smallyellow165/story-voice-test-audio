@@ -1,4 +1,4 @@
-import {stage,studioButton} from './magnetic-studio-browser.mjs'
+import {stage,studioButton,reviewDetails} from './magnetic-studio-browser.mjs'
 // Real saved observations; no Vision calls. Separate browser workspace, immutable server records.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
@@ -21,7 +21,7 @@ try{
  await stage(page,'reconstruction')
  // Review edits and selected observation survive all stage changes without a save.
  await stage(page,'review')
- const reason=await page.getByLabel('输入说明 / 修正理由',{exact:true}).inputValue()
+ await reviewDetails(page,'高级信息 / 编辑');const reason=await page.getByLabel('输入说明 / 修正理由',{exact:true}).inputValue()
  await page.getByLabel('输入说明 / 修正理由',{exact:true}).fill(reason+' UI draft')
  await page.locator('[data-review-id="b1"]').click()
  const shape=await page.getByLabel('修正形状',{exact:true}).inputValue()

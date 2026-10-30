@@ -1,4 +1,4 @@
-import {stage,studioButton} from './magnetic-studio-browser.mjs'
+import {stage,studioButton,reviewDetails} from './magnetic-studio-browser.mjs'
 // Real browser UI. Paid recognition is explicitly opt-in and limited to two images.
 // Default replays previously saved real analyses; never injects mock provider output.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -16,6 +16,7 @@ const selectedModel=process.env.MAGNETIC_MODEL||'gpt-4.1'
 await mkdir(output,{recursive:true})
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']})
 const page=await browser.newPage({viewport:{width:1500,height:1050},acceptDownloads:true}),errors=[];page.on('pageerror',e=>errors.push(e.message))
+if(!live)await page.route('**/api/magnetic-intake/recognize',r=>r.abort())
 const button=name=>studioButton(page,name)
 const report={live,calls:0,cases:[]}
 async function idle(){await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='上传磁力片图片'&&!b.disabled),{},{timeout:240000})}
@@ -29,7 +30,7 @@ try{
  for(const entry of [{id:'two-squares',file:`${output}/benchmark-two-squares.png`},{id:'duck',file:duck}]){
   await stage(page,'source')
   const upload=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/sources')&&r.request().method()==='POST');await page.getByTestId('intake-upload').setInputFiles(entry.file);const source=await (await upload).json();await idle()
-  await page.getByLabel('识别模型',{exact:true}).selectOption(selectedModel)
+  if(live)await page.getByLabel('识别模型',{exact:true}).selectOption(selectedModel)
   let analysis
   if(live&&liveCases.includes(entry.id)){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/recognize'),{timeout:240000});await button('识别图片（调用模型）').click();report.calls++;analysis=await (await response).json();await idle()}
   else {const h=await getHistory();analysis=h.analyses.find(a=>a.sourceId===source.id&&a.status==='complete');if(!analysis)throw Error('Missing saved real analysis; explicitly run MAGNETIC_LIVE=1 once');await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle();analysis=await (await page.request.get(base+'/api/magnetic-intake/analyses/'+analysis.id)).json()}
@@ -48,9 +49,9 @@ try{
     await stage(page,'review')
     for(const o of analysis.evidence.observations.filter(o=>!headIds.includes(o.id))){
      await page.locator('[data-review-id]').filter({has:page.locator('td:first-child',{hasText:new RegExp('^'+o.id+'$')})}).click()
-     await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check()
+     await page.getByRole('button',{name:'排除零件',exact:true}).click()
     }
-    await page.getByLabel('输入说明 / 修正理由',{exact:true}).fill('人工局部验收：仅重建六块鸭头三角形和嘴部；身体与脚并非误检，本次有意排除，不代表完整小鸭子成功。')
+    await reviewDetails(page,'高级信息 / 编辑');await page.getByLabel('输入说明 / 修正理由',{exact:true}).fill('人工局部验收：仅重建六块鸭头三角形和嘴部；身体与脚并非误检，本次有意排除，不代表完整小鸭子成功。')
     const saved=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await button('保存审核快照').click();const partialReview=await (await saved).json();await idle()
     const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('重建二维布局').click();const partial=await (await response).json();await idle()
     summary.manualSubset={description:'Only six head triangles and beak; body/feet intentionally excluded for a 7-piece subassembly test',reviewId:partialReview.id,result:partial}
@@ -75,12 +76,12 @@ try{
    await page.getByLabel('已保存图片',{exact:true}).selectOption(source.id);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle()
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    // Create a new manual review; retain the old immutable review, assembly and Build.
-   await stage(page,'review');await page.getByLabel('修正颜色',{exact:true}).fill('#4466aa');await button('保存审核快照').click();await idle()
+   await stage(page,'review');await reviewDetails(page,'零件证据与轮廓编辑');await page.getByLabel('修正颜色',{exact:true}).fill('#4466aa');await button('保存审核快照').click();await idle()
    const h=await getHistory();assert.ok(h.reviews.filter(r=>r.analysisId===analysis.id).length>=2)
    assert.equal(h.reviews.find(r=>r.id===review.id).hash,review.hash)
    assert.deepEqual(await exportBuild(),bundle)
    // Switching context preserves an unsaved manual edit as a new immutable snapshot.
-   await stage(page,'review');await page.getByLabel('修正颜色',{exact:true}).fill('#118855')
+   await stage(page,'review');await reviewDetails(page,'零件证据与轮廓编辑');await page.getByLabel('修正颜色',{exact:true}).fill('#118855')
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    assert.ok((await getHistory()).reviews.some(r=>r.analysisId===analysis.id&&r.evidence.observations.some(o=>o.color==='#118855')))
    // Shape correction and relation editing exercise the same real Review UI.
@@ -90,16 +91,16 @@ try{
    await button('重建二维布局').click();const unknownResult=await (await unknownResponse).json();await idle()
    assert.equal(unknownResult.candidates.length,0)
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
-   await stage(page,'review');await page.getByLabel('连接到',{exact:true}).selectOption(analysis.evidence.observations[1].id)
+   await stage(page,'review');await reviewDetails(page,'连接关系编辑');await page.getByLabel('连接到',{exact:true}).selectOption(analysis.evidence.observations[1].id)
    await page.getByLabel('关系意图',{exact:true}).selectOption('separate');await button('设置关系').click()
    await button('保存审核快照').click();await idle()
    const disconnectedResponse=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'))
    await button('重建二维布局').click();const disconnected=await (await disconnectedResponse).json();await idle();assert.equal(disconnected.candidates.length,0)
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
-   await button('补一块漏检零件').click();assert.match(await page.locator('.intake-controls legend').innerText(),/人工补充/)
+   await button('新增零件').click();assert.match(await page.locator('.intake-controls legend').innerText(),/人工补充/)
    await stage(page,'review');await page.getByLabel('修正形状',{exact:true}).selectOption('right-triangle@1')
-   await button('删除角点').first().click();assert.equal(await page.locator('.intake-point').count(),3)
-   await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check()
+   await reviewDetails(page,'零件证据与轮廓编辑');await button('删除角点').first().click();assert.equal(await page.locator('.intake-point').count(),3)
+   await page.getByRole('button',{name:'排除零件',exact:true}).click()
    await button('保存审核快照').click();await idle()
    const manualHistory=await getHistory();assert.ok(manualHistory.reviews.some(r=>r.analysisId===analysis.id&&r.evidence.observations.some(o=>o.origin==='manual'&&o.excluded)))
    // Editing the loaded assembly preserves its ancestry but invalidates exact-match wording.

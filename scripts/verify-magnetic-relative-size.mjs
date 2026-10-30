@@ -16,7 +16,7 @@ await context.route('**/api/magnetic-intake/recognize',r=>{forbidden.push(r.requ
 const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="已保存图片"]');return s&&!s.disabled})
 const matcher=page.getByRole('region',{name:'Find Matching Profile',exact:true})
 const candidate=id=>matcher.locator(`[data-match-profile="${id}"]`)
-async function find(id){await page.locator(`[data-review-id="${id}"]`).click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();const box=matcher.getByRole('checkbox');if(await box.count()&&!await box.isChecked())await box.check()}
+async function find(id){await page.locator(`[data-review-id="${id}"]`).click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();assert.equal(await matcher.getByRole('checkbox').count(),0)}
 async function save(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await studioButton(page,'保存审核快照').click();const review=await(await response).json();await idle(page);return review}
 const output=process.env.MAGNETIC_SCREENSHOTS||'/tmp/magnetic-relative-size';await mkdir(output,{recursive:true})
 try{
@@ -28,7 +28,7 @@ try{
   assert.equal(await matcher.locator('[data-match-profile]').first().getAttribute('data-match-profile'),profile)
   assert.match(await candidate(profile).getByTestId('shape-score').innerText(),new RegExp(shape.replace('.','\\.')))
   assert.match(await candidate(profile).getByTestId('size-score').innerText(),new RegExp(size.replace('.','\\.')))
-  assert.match(await matcher.innerText(),/4 个参考 s1、s2、s3、s4/)
+  assert.match(await matcher.locator('.profile-scale-details summary').innerText(),/4 块 \/ 113\.00/)
   if(id==='p2'){
    assert.match(await candidate('equilateral-triangle').getByTestId('shape-score').innerText(),/100\.0%/)
    assert.match(await candidate('equilateral-triangle').getByTestId('size-score').innerText(),/0\.1%/)
@@ -54,8 +54,8 @@ try{
  assert.equal(await tab.getByLabel('修正形状',{exact:true}).inputValue(),'tall-right-triangle@1')
  await tab.reload();await idle(tab);assert.equal(await tab.getByLabel('修正形状',{exact:true}).inputValue(),'tall-right-triangle@1')
  // No reliable references: exclude every other tile through existing controls.
- for(const o of review.evidence.observations.filter(o=>o.id!=='p2')){await page.locator(`[data-review-id="${o.id}"]`).click();await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check()}
- await find('p2');assert.match(await matcher.innerText(),/Size Unknown：没有可靠/)
+ for(const o of review.evidence.observations.filter(o=>o.id!=='p2')){await page.locator(`[data-review-id="${o.id}"]`).click();await page.getByRole('button',{name:'排除零件',exact:true}).click()}
+ await find('p2');await matcher.locator('.profile-scale-details summary').click();assert.match(await matcher.innerText(),/Size Unknown：没有可靠/)
  assert.match(await candidate('equilateral-triangle').getByTestId('size-score').innerText(),/Size Unknown/)
  assert.match(await candidate('large-equilateral-triangle').getByTestId('size-score').innerText(),/Size Unknown/)
  await page.screenshot({path:output+'/size-unknown.png'})

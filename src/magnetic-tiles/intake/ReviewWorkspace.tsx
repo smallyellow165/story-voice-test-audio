@@ -1,11 +1,11 @@
-import { matchOutline, needsOutlineConfirmation, outlineEvidenceKey } from './profile-match.ts'
+import { matchOutline, needsOutlineConfirmation } from './profile-match.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { profiles, profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
 const status=(o:Observation)=>o.excluded?'Excluded':o.profileId==='unknown'?'Unknown':'Known'
-export function ReviewWorkspace({active,evidence,confirmedOutlines,sourceId,imageWidth,imageHeight,selected,onSelect,busy,saveControl,children}:{active:boolean;evidence?:Evidence;confirmedOutlines:ReadonlySet<string>;sourceId:string;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;children:ReactNode}){
+export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,onAdd,addDisabled,children}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode}){
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
   const box=scroll.current,row=box?.querySelector<HTMLElement>('tr[aria-selected=true]')
@@ -20,7 +20,7 @@ export function ReviewWorkspace({active,evidence,confirmedOutlines,sourceId,imag
  return <Group orientation="vertical" className="review-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
   <Panel id="parts" defaultSize="65%" minSize="20%">
    <section className="review-parts" aria-label="Parts Review Table">
-    <div className="review-table-tools"><div className="review-title-row"><h3>Parts Review · 零件审核（{rows.length}/{observations.length}）</h3>{saveControl}</div>
+    <div className="review-table-tools"><div className="review-title-row"><h3>Parts Review · 零件审核（{rows.length}/{observations.length}）</h3><button disabled={addDisabled} onClick={()=>{setQuery('');setFilter('All');onAdd()}}>新增零件</button>{saveControl}</div>
      <div className="review-filters">{['All','Known','Unknown','Excluded'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f==='All'?'全部':f} {f==='All'?observations.length:observations.filter(o=>status(o)===f).length}</button>)}</div>
      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="审核零件排序" value={sort} onChange={e=>setSort(e.target.value)}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
      {chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>{setQuery('');setFilter('All')}}>显示全部零件</button></p>}
@@ -31,7 +31,7 @@ export function ReviewWorkspace({active,evidence,confirmedOutlines,sourceId,imag
      return <tr key={o.id} data-review-id={o.id} aria-selected={selected===o.id} tabIndex={busy?-1:0} onClick={()=>{if(!busy)onSelect(o.id)}} onKeyDown={e=>{if(!busy&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onSelect(o.id)}}}>
       <td>{o.id}</td><td>{p?<>{p.name}<small>{p.id} · v{p.version}</small></>:<>Unknown<small>无正式 Profile</small></>}</td>
       <td>{p?profileSizeLabel(p):<>视觉估计：图片包围框 {((Math.max(...xs)-Math.min(...xs))*100).toFixed(1)}% × {((Math.max(...ys)-Math.min(...ys))*100).toFixed(1)}%<small>非物理尺寸，非正式规格</small></>}</td>
-      <td><span className="review-color" style={{background:o.color}}/>{o.color}</td><td>{Math.round(o.confidence*100)}%</td><td title={match.reason}>{match.status==='invalid'?'无法评分':needsOutlineConfirmation(o)&&!confirmedOutlines.has(outlineEvidenceKey(o,sourceId))?`${name} · 待核实`:`${name} · ${best?.similarityScore.toFixed(1)}%`}</td><td>{status(o)}{o.excluded&&<small>{o.profileId==='unknown'?'Unknown':'Known'} · 证据保留</small>}</td><td>{links.length} 条关系 · {links.filter(r=>r.intent==='uncertain').length} 条不确定{o.uncertainty&&<small className="review-uncertainty" title={o.uncertainty}>⚑ {o.uncertainty}</small>}</td>
+      <td><span className="review-color" style={{background:o.color}}/>{o.color}</td><td>{Math.round(o.confidence*100)}%</td><td title={match.reason}>{match.status==='invalid'?'无法评分':`${name} · ${best?.similarityScore.toFixed(1)}%${needsOutlineConfirmation(o)?' · ⚠ 仅供参考':''}`}</td><td>{status(o)}{o.excluded&&<small>{o.profileId==='unknown'?'Unknown':'Known'} · 证据保留</small>}</td><td>{links.length} 条关系 · {links.filter(r=>r.intent==='uncertain').length} 条不确定{o.uncertainty&&<small className="review-uncertainty" title={o.uncertainty}>⚑ {o.uncertainty}</small>}</td>
      </tr>
     })}</tbody></table>{!rows.length&&<p>没有符合筛选条件的零件。请调整筛选或从左栏打开 Analysis / Review。</p>}</div>
    </section>

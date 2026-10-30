@@ -75,3 +75,22 @@
 .review-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .review-title-row h3 { margin-right:auto; }
 .review-title-row [role=status] { font-size:12px; }
+
+/* Review keeps primary actions visible; evidence and measurements expand on demand. */
+.review-inspector-heading,.profile-match-action,.profile-match-heading{display:flex;align-items:center;gap:8px;min-width:0}
+.profile-match-action>button{flex:1;min-width:0;font-weight:650}
+.profile-match-heading svg{flex:none;width:48px;height:38px}
+.profile-match-heading b{font-size:13px}
+.profile-match-scores{display:flex;gap:4px 12px;flex-wrap:wrap}
+.profile-match-scores p{font-size:12px}
+.review-match-warning{padding:7px 9px;background:#fff5dc;border-left:3px solid #b68124;border-radius:4px;color:#705315}
+.review-match-warning .vision-info-hint{display:inline-flex;vertical-align:middle}
+.profile-match-candidate details p,.profile-scale-details p{margin-top:6px}
+.profile-scale-details small{display:block;font-size:11px}
+.review-part-details[open],.review-advanced[open]{display:grid;gap:10px}
+.review-undo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;background:#e9f2e9;padding:6px;border-radius:6px}
+.review-undo button{font-size:12px;min-height:30px;padding:4px 7px}
+.review-part-actions{display:grid;gap:8px}
+.review-delete{color:#a13e32;border-color:#d7aca5}
+.review-delete-confirm{padding:8px;background:#fff0eb;border-radius:6px;display:grid;gap:8px}
+.review-title-row button{white-space:nowrap}

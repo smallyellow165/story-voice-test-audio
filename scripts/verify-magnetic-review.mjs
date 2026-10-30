@@ -1,6 +1,6 @@
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
-import {stage,studioButton} from './magnetic-studio-browser.mjs'
+import {stage,studioButton,reviewDetails} from './magnetic-studio-browser.mjs'
 const base=process.env.MAGNETIC_ORIGIN||'http://127.0.0.1:5173'
 const history=await(await fetch(base+'/api/magnetic-intake/history')).json(),a=history.analyses.find(a=>a.evidence?.observations.length===14&&a.evidence.observations.filter(o=>o.profileId==='unknown').length===6);assert.ok(a)
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']})
@@ -18,10 +18,10 @@ try{
  // Keyboard activation uses the existing image outline handler, sharing selection.
  await page.locator(`[data-observation="${k.id}"]`).focus();const point=await page.locator(`[data-observation="${k.id}"]`).evaluate(el=>{const vs=el.getAttribute('points').split(' ').map(p=>p.split(',').map(Number));const p=new DOMPoint(vs.reduce((s,v)=>s+v[0],0)/vs.length,vs.reduce((s,v)=>s+v[1],0)/vs.length).matrixTransform(el.getScreenCTM());return {x:p.x,y:p.y}});await page.mouse.click(point.x,point.y);assert.match(await page.locator('.review-table-tools').innerText(),/被筛选隐藏/)
  await page.getByRole('button',{name:'显示全部零件',exact:true}).click();assert.equal(await page.locator(`[data-review-id="${k.id}"]`).getAttribute('aria-selected'),'true')
- const color=page.getByLabel('修正颜色',{exact:true});await color.fill('#123456');assert.match(await page.locator(`[data-review-id="${k.id}"]`).innerText(),/#123456/)
+ await reviewDetails(page,'零件证据与轮廓编辑');const color=page.getByLabel('修正颜色',{exact:true});await color.fill('#123456');assert.match(await page.locator(`[data-review-id="${k.id}"]`).innerText(),/#123456/)
  await page.getByLabel('角 1 x',{exact:true}).fill('0.25');assert.ok((await page.locator(`[data-observation="${k.id}"]`).getAttribute('points')).startsWith(String(.25*history.sources.find(s=>s.id===a.sourceId).view.width)))
  await page.locator(`[data-review-id="${u.id}"]`).click();await page.getByLabel('修正形状',{exact:true}).selectOption('square@1');assert.match(await page.locator(`[data-review-id="${u.id}"]`).innerText(),/正方形.*square/s)
- await page.getByLabel('不采用本片（误检或仅重建局部）',{exact:true}).check();await page.getByRole('button',{name:'Excluded 1',exact:true}).click();assert.equal(await rows.count(),1)
+ await page.getByRole('button',{name:'排除零件',exact:true}).click();await page.getByRole('button',{name:'Excluded 1',exact:true}).click();assert.equal(await rows.count(),1)
  await page.getByRole('button',{name:'全部 14',exact:true}).click();await page.getByLabel('搜索审核零件').fill(k.id);assert.ok(await rows.count()<14);await page.getByLabel('搜索审核零件').fill('');await page.getByLabel('审核零件排序').selectOption('confidence')
  const handle=page.getByRole('separator',{name:'调整零件表与原图高度'}),b=await handle.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2,b.y-150,{steps:15});await page.mouse.up();const savedRatio=await ratio();assert.ok(savedRatio<.60);await stage(page,'assembly');await stage(page,'review');assert.ok(Math.abs(await ratio()-savedRatio)<.02,'stage changes retain review ratio')
  const table=page.locator('.review-table-scroll'),evidence=page.locator('.review-evidence-scroll');await table.hover();await page.mouse.wheel(0,600);await page.waitForFunction(()=>document.querySelector('.review-table-scroll').scrollTop>0);assert.equal(await evidence.evaluate(e=>e.scrollTop),0)

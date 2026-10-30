@@ -1,6 +1,6 @@
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
-import {stage,studioButton} from './magnetic-studio-browser.mjs'
+import {stage,studioButton,reviewDetails} from './magnetic-studio-browser.mjs'
 const base=process.env.MAGNETIC_ORIGIN||'http://127.0.0.1:5173',h=await(await fetch(base+'/api/magnetic-intake/history')).json(),a=h.analyses.find(a=>a.evidence?.observations.length===14&&a.evidence.observations.filter(o=>o.profileId==='unknown').length===6);assert.ok(a)
 const original=await(await fetch(base+'/api/magnetic-intake/analyses/'+a.id)).json()
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']})
@@ -12,12 +12,12 @@ try{
  await page.goto(base+'/story-voice-test-audio/magnetic-tiles.html');await open()
  for(const o of a.evidence.observations.filter(o=>o.profileId==='unknown')){
   await page.locator(`[data-review-id="${o.id}"]`).click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click()
-  assert.equal(await matcher.locator('[data-match-profile]').count(),3);assert.match(await matcher.innerText(),/暂不能可靠评分/)
-  for(const button of await matcher.getByRole('button',{name:/^确认应用 /}).all())assert.equal(await button.isDisabled(),true)
+  assert.equal(await matcher.locator('[data-match-profile]').count(),3);assert.match(await matcher.innerText(),/Warning.*仅供参考/);assert.equal(await matcher.getByRole('checkbox').count(),0)
+  for(const button of await matcher.getByRole('button',{name:/^确认应用 /}).all())assert.equal(await button.isDisabled(),false)
   assert.equal(await page.getByLabel('修正形状',{exact:true}).inputValue(),'unknown')
  }
- // Evidence confirmation is a UI-only prerequisite; does not assign Profile.
- await page.locator('[data-review-id="p4"]').click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();await matcher.getByRole('checkbox').check()
+ // Matching directly exposes advisory scores without assigning a Profile.
+ await page.locator('[data-review-id="p4"]').click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click()
  assert.equal(await matcher.locator('[data-match-profile]').first().getAttribute('data-match-profile'),'equilateral-triangle');assert.match(await matcher.innerText(),/85\.1%/)
  assert.equal(await page.getByLabel('修正形状',{exact:true}).inputValue(),'unknown');assert.match(await page.locator('[data-review-id="p4"]').innerText(),/85\.1%/)
  await page.screenshot({path:'/tmp/magnetic-profile-match.png'})
@@ -28,6 +28,6 @@ try{
  await page.reload();await open();await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle();await page.locator('[data-review-id="p4"]').click();assert.equal(await page.getByLabel('修正形状',{exact:true}).inputValue(),'equilateral-triangle@1')
  assert.deepEqual(await(await page.request.get(base+'/api/magnetic-intake/analyses/'+a.id)).json(),original)
  assert.deepEqual(await(await page.request.get(base+'/api/magnetic-intake/reviews/'+review.id)).json(),review)
- await page.getByLabel('角 2 x',{exact:true}).fill(await page.getByLabel('角 1 x',{exact:true}).inputValue());await page.getByLabel('角 2 y',{exact:true}).fill(await page.getByLabel('角 1 y',{exact:true}).inputValue());await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();assert.match(await matcher.innerText(),/无法可靠评分/);assert.equal(await matcher.locator('[data-match-profile]').count(),0)
- assert.deepEqual(errors,[]);console.log('PASS: actual rose P1–P6 candidate rankings, evidence gate, explicit apply only, original outlines and Analysis unchanged, Review save/reload, invalid geometry rejection; zero model calls. Screenshot /tmp/magnetic-profile-match.png')
+ await reviewDetails(page,'零件证据与轮廓编辑');await page.getByLabel('角 2 x',{exact:true}).fill(await page.getByLabel('角 1 x',{exact:true}).inputValue());await page.getByLabel('角 2 y',{exact:true}).fill(await page.getByLabel('角 1 y',{exact:true}).inputValue());await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();assert.match(await matcher.innerText(),/无法评分/);assert.equal(await matcher.locator('[data-match-profile]').count(),0)
+ assert.deepEqual(errors,[]);console.log('PASS: actual rose P1–P6 candidate rankings, advisory warnings without a confirmation gate, explicit apply only, original outlines and Analysis unchanged, Review save/reload, invalid geometry rejection; zero model calls. Screenshot /tmp/magnetic-profile-match.png')
 }finally{await browser.close()}
