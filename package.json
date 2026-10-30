@@ -25,6 +25,8 @@
     "reading:replay": "node scripts/reading-tracker.mjs",
     "test:reading": "node --test test/reading-tracker.test.mjs",
     "test:brick-building": "node --experimental-strip-types --test test/brick-building.test.mjs",
+    "test:magnetic-relative-size": "node --experimental-strip-types --test test/magnetic-relative-size.test.mjs",
+    "test:magnetic-relative-size:browser": "node scripts/verify-magnetic-relative-size.mjs",
     "test:magnetic-tiles": "node --experimental-strip-types --test test/magnetic-tiles.test.mjs",
     "test:magnetic-tiles:browser": "node scripts/verify-magnetic-tiles.mjs",
     "test:magnetic-build": "node --experimental-strip-types --test test/magnetic-build.test.mjs",

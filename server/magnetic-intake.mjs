@@ -27,7 +27,16 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
  async function asset(input){const img=validateImage(input),id=img.sha256;const existing=await read('assets',id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(existing)return existing;return put('assets',{schemaVersion:1,id,mimeType:img.mimeType,imageBase64:img.imageBase64,bytes:img.bytes})}
  async function view(source){const a=await read('assets',source.view.hash);if(validateImage(a).sha256!==source.view.hash)fail('图片字节 Hash 不一致');return {...a,...source.view}}
  async function reviewed(id){const r=await read('reviews',id),a=await read('analyses',r.analysisId);if(a.hash!==r.analysisHash||a.status!=='complete')fail('Review 来源不一致');const s=await read('sources',a.sourceId);if(s.hash!==a.sourceHash)fail('Analysis 来源不一致');return {review:r,analysis:a,source:s}}
- async function result(id){const r=await read('reconstructions',id),{review,source}=await reviewed(r.reviewId);if(r.reviewHash!==review.hash||r.sourceHash!==source.hash||r.profileHash!==await contentHash(profiles))fail('重建来源或 Profile 已改变');return {reconstruction:r,review,source}}
+ async function result(id){
+  const r=await read('reconstructions',id),{review,source}=await reviewed(r.reviewId)
+  // Catalog additions are append-only. A historical full-Catalog hash remains
+  // valid only when an unchanged prefix matches it and covers every used Profile.
+  const used=[...review.evidence.observations.filter(o=>!o.excluded&&o.profileId!=='unknown'),...r.candidates.flatMap(c=>c.assembly.instances)]
+  let catalogMatches=false
+  for(let n=profiles.length;n>0;n--){const prefix=profiles.slice(0,n);if(used.every(t=>prefix.some(p=>p.id===t.profileId&&p.version===t.profileVersion))&&r.profileHash===await contentHash(prefix)){catalogMatches=true;break}}
+  if(r.reviewHash!==review.hash||r.sourceHash!==source.hash||!catalogMatches)fail('重建来源或 Profile 已改变')
+  return {reconstruction:r,review,source}
+ }
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return out}
  return {read,result,async dispatch(method,route,body={}){
   if(method==='GET'&&route==='library')return library.list()

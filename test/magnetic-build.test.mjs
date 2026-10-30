@@ -12,10 +12,13 @@ const memory=()=>{const m=new Map();return {getItem:k=>m.get(k)??null,setItem:(k
 test('all profiles and arbitrary rotations yield steps using original poses',async()=>{
  for(const p of profiles){
   const root=tile('base','square',2,3,.37), raw=tile('new',p.id)
-  const moving=alignEdge(raw,edges(raw,profiles)[0],edges(root,profiles)[2],profiles)
-  const a=assembly([moving,root]),b=await generateBuild(a,profiles)
-  assert.equal(b.plan.steps[0].addInstanceId,'base')
-  assert.equal(b.plan.steps[1].addInstanceId,'new')
+  // A large profile may have no unit edge: use an equal-length catalog anchor.
+  const anchor=p.id==='large-equilateral-triangle'?tile('base',p.id,2,3,.37):root
+  const own=edges(raw,profiles).find(e=>Math.abs(e.length-edges(anchor,profiles)[2].length)<1e-7)
+  const moving=alignEdge(raw,own,edges(anchor,profiles)[2],profiles)
+  const a=assembly([moving,anchor]),b=await generateBuild(a,profiles)
+  assert.deepEqual(new Set(b.plan.steps.map(s=>s.addInstanceId)),new Set(['base','new']))
+  if(anchor.profileId==='square')assert.equal(b.plan.steps[0].addInstanceId,'base')
   assert.deepEqual(b.snapshot.assembly,a)
   assert.deepEqual(await validateBuild(b,profiles),b)
   assert.deepEqual(b.plan.steps,(await generateBuild(a,profiles)).plan.steps)

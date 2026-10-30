@@ -13,7 +13,7 @@ try{
  for(const o of a.evidence.observations.filter(o=>o.profileId==='unknown')){
   await page.locator(`[data-review-id="${o.id}"]`).click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click()
   assert.equal(await matcher.locator('[data-match-profile]').count(),3);assert.match(await matcher.innerText(),/暂不能可靠评分/)
-  assert.equal(await matcher.getByRole('button',{name:'确认应用 等边三角形',exact:true}).isDisabled(),true)
+  for(const button of await matcher.getByRole('button',{name:/^确认应用 /}).all())assert.equal(await button.isDisabled(),true)
   assert.equal(await page.getByLabel('修正形状',{exact:true}).inputValue(),'unknown')
  }
  // Evidence confirmation is a UI-only prerequisite; does not assign Profile.

@@ -47,6 +47,17 @@ test('immutable review/reconstruction lineage and hash integrity (fixture analys
   const next=structuredClone(a.evidence);next.observations[0].color='#ff0000'
   const r2=await store.dispatch('POST','reviews',{analysisId:a.id,analysisHash:a.hash,evidence:next});assert.notEqual(r2.id,r.id)
   assert.equal((await store.read('analyses',a.id)).hash,a.hash)
+  // Previously stored full-Catalog hashes survive append-only additions, while
+  // changed old definitions and references outside the old prefix still fail.
+  const {hash:oldHash,id:oldId,...payload}=result
+  const legacy=await seed('reconstructions',{...payload,id:crypto.randomUUID(),profileHash:await contentHash(profiles.slice(0,3))})
+  assert.equal((await store.result(legacy.id)).reconstruction.hash,legacy.hash)
+  const changed=structuredClone(profiles.slice(0,3));changed[0].vertices[1][0]=1.1
+  const invalid=await seed('reconstructions',{...payload,id:crypto.randomUUID(),profileHash:await contentHash(changed)})
+  await assert.rejects(store.result(invalid.id),/Profile/)
+  const outside=structuredClone(legacy);delete outside.hash;outside.id=crypto.randomUUID();outside.candidates[0].assembly.instances[0].profileId='large-equilateral-triangle'
+  const invalidReference=await seed('reconstructions',outside)
+  await assert.rejects(store.result(invalidReference.id),/Profile/)
   const c=result.candidates[0]
   const origin=await store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,revision:8}})
   await assert.rejects(store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,schemaVersion:2,mode:'flat-mosaic'}}),/不一致/)

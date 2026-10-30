@@ -1,6 +1,6 @@
 // Planar, zero-thickness geometry only. This is not a contract for future 3D joints.
 export type Vec = [number, number]
-export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[] }
+export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; sizeEvidence?: { status: 'estimated'; source: string } }
 export type Pose = { x: number; y: number; angleRad: number }
 export type Tile = { id: string; profileId: string; profileVersion: number; color: string; pose: Pose }
 export type WorkMode = 'connected-construction' | 'flat-mosaic'

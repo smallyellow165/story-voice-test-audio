@@ -1,0 +1,485 @@
+{
+  "description": "Captured existing rose Review; no Vision rerun. Original Analysis and Review are immutable.",
+  "sourceName": "connetix-rose.png",
+  "width": 792,
+  "height": 977,
+  "sourceId": "5fc64c5cfbbd7e39e1abe7198ee373cf3f60f268698a7e7b87302a5c494e6e7f",
+  "analysisId": "ec08916f-a0d5-4be7-964e-f63a52df22b9",
+  "reviewId": "622be109-1345-4abb-abf2-a97538e27cca",
+  "evidence": {
+    "sourceKind": "unsupported",
+    "reason": "Clean tile diagram with 14 distinguishable pieces. Complete reconstruction is unsupported: the two tall pink side triangles do not match catalog proportions, the large upper central triangle is partly obscured and approximately twice the unit edge length, and the three lower pink triangles have uncertain catalog proportions. Observable pieces and adjacency evidence are retained.",
+    "observations": [
+      {
+        "id": "p1",
+        "profileId": "unknown",
+        "profileVersion": 1,
+        "color": "#B33E73",
+        "outline": [
+          [
+            0.3598,
+            0.129
+          ],
+          [
+            0.5051,
+            0.3378
+          ],
+          [
+            0.3598,
+            0.3378
+          ]
+        ],
+        "confidence": 0.97,
+        "evidence": "Separate tall pink triangular tile with a vertical left edge, horizontal bottom edge and diagonal right edge. Its legs are approximately 110 and 195 image pixels.",
+        "uncertainty": "Right-angled but not isosceles; it does not match right-triangle version 1. Its transparent rim belongs to this single tile.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "p2",
+        "profileId": "unknown",
+        "profileVersion": 1,
+        "color": "#B44879",
+        "outline": [
+          [
+            0.5013,
+            0.1372
+          ],
+          [
+            0.6439,
+            0.3378
+          ],
+          [
+            0.3586,
+            0.3378
+          ]
+        ],
+        "confidence": 0.82,
+        "evidence": "Large upper central pink triangle identified by its exposed apex, upper sloping edges and three-way interior decoration. The side triangles obscure its lower lateral regions.",
+        "uncertainty": "The lower corners and portions of the base are estimated behind p1 and p3, not directly observed. An equilateral-triangle version 1 shape is plausible, but its inferred edge is about twice the square edge, so the catalog scale is unsupported.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "p3",
+        "profileId": "unknown",
+        "profileVersion": 1,
+        "color": "#B33E73",
+        "outline": [
+          [
+            0.6439,
+            0.129
+          ],
+          [
+            0.6439,
+            0.3378
+          ],
+          [
+            0.4975,
+            0.3378
+          ]
+        ],
+        "confidence": 0.97,
+        "evidence": "Separate tall pink triangular tile with a vertical right edge and horizontal bottom edge. Its unequal perpendicular legs mirror p1.",
+        "uncertainty": "Not an isosceles right triangle; no supported catalog profile matches the observed proportions.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "p4",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#B54879",
+        "outline": [
+          [
+            0.3598,
+            0.3388
+          ],
+          [
+            0.5025,
+            0.3388
+          ],
+          [
+            0.4255,
+            0.4309
+          ]
+        ],
+        "confidence": 0.91,
+        "evidence": "One downward-pointing pink triangular tile below the left tall triangle. Its outer rim encloses all internal shaded facets.",
+        "uncertainty": "Equilateral-triangle version 1 is a tentative interpretation, but the illustrated edge lengths and altitude are unequal enough that a supported profile is not assigned.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "p5",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#B54879",
+        "outline": [
+          [
+            0.5013,
+            0.3378
+          ],
+          [
+            0.5846,
+            0.4309
+          ],
+          [
+            0.4192,
+            0.4309
+          ]
+        ],
+        "confidence": 0.9,
+        "evidence": "Distinct upward-pointing pink triangular tile between the two lower side triangles, with a horizontal lower rim.",
+        "uncertainty": "Tentatively resembles equilateral-triangle version 1, but its approximately 120-pixel base and 90-pixel altitude do not reliably match the unit equilateral profile.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "p6",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#B54879",
+        "outline": [
+          [
+            0.5,
+            0.3388
+          ],
+          [
+            0.6452,
+            0.3388
+          ],
+          [
+            0.577,
+            0.4309
+          ]
+        ],
+        "confidence": 0.91,
+        "evidence": "One downward-pointing pink triangular tile below the right tall triangle, bounded by its own triangular rim.",
+        "uncertainty": "Equilateral-triangle version 1 is a tentative candidate, but the drawn proportions do not establish an equal-sided unit triangle.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "s1",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.4318,
+            0.4299
+          ],
+          [
+            0.5745,
+            0.4299
+          ],
+          [
+            0.5745,
+            0.5455
+          ],
+          [
+            0.4318,
+            0.5455
+          ]
+        ],
+        "confidence": 0.99,
+        "evidence": "Uppermost mint square, approximately 113 by 113 image pixels including its outer rim. Interior diagonals are decoration.",
+        "uncertainty": "Small corner and rim-position uncertainty from illustration stroke width.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "s2",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.4318,
+            0.5466
+          ],
+          [
+            0.5745,
+            0.5466
+          ],
+          [
+            0.5745,
+            0.6622
+          ],
+          [
+            0.4318,
+            0.6622
+          ]
+        ],
+        "confidence": 0.99,
+        "evidence": "Second mint square in the vertical column, matching the width and height of s1.",
+        "uncertainty": "Outer rim is close to neighboring leaf rims but remains distinguishable.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "s3",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.4318,
+            0.6622
+          ],
+          [
+            0.5745,
+            0.6622
+          ],
+          [
+            0.5745,
+            0.7779
+          ],
+          [
+            0.4318,
+            0.7779
+          ]
+        ],
+        "confidence": 0.99,
+        "evidence": "Third mint square in the column, with four approximately equal outer edges.",
+        "uncertainty": "Minor stroke-width uncertainty at shared boundaries.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "s4",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.4318,
+            0.7779
+          ],
+          [
+            0.5745,
+            0.7779
+          ],
+          [
+            0.5745,
+            0.8936
+          ],
+          [
+            0.4318,
+            0.8936
+          ]
+        ],
+        "confidence": 0.99,
+        "evidence": "Bottom mint square, matching the three squares above. Its shaded internal triangles are not separate tiles.",
+        "uncertainty": "Only minor outer-stroke localization uncertainty.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "l1",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.3176,
+            0.4964
+          ],
+          [
+            0.4318,
+            0.5507
+          ],
+          [
+            0.3176,
+            0.6162
+          ]
+        ],
+        "confidence": 0.83,
+        "evidence": "Upper left mint leaf tile has three near-equal edges at approximately the square-edge scale, with a vertical outer edge.",
+        "uncertainty": "The illustration is not metrically exact; the apex is slightly off the midpoint and the vertical edge is somewhat longer than the sloping edges.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "l2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.3176,
+            0.6111
+          ],
+          [
+            0.4318,
+            0.5455
+          ],
+          [
+            0.4318,
+            0.6643
+          ]
+        ],
+        "confidence": 0.83,
+        "evidence": "Lower left mint leaf tile is separately bounded and approximately equilateral at the square-edge scale.",
+        "uncertainty": "Small drawing asymmetry and adjoining rim strokes limit metric precision.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "r1",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.5758,
+            0.6653
+          ],
+          [
+            0.6881,
+            0.6111
+          ],
+          [
+            0.6881,
+            0.7329
+          ]
+        ],
+        "confidence": 0.83,
+        "evidence": "Upper right mint leaf tile has its own triangular perimeter, with three approximately unit-length sides.",
+        "uncertainty": "The drawn apex is slightly asymmetric relative to the vertical edge; profile recognition is approximate.",
+        "origin": "observed",
+        "excluded": false
+      },
+      {
+        "id": "r2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#80C5AB",
+        "outline": [
+          [
+            0.5758,
+            0.6602
+          ],
+          [
+            0.6881,
+            0.7267
+          ],
+          [
+            0.5758,
+            0.7799
+          ]
+        ],
+        "confidence": 0.83,
+        "evidence": "Lower right mint leaf tile is a separate approximately equilateral triangle at the same scale as the other green pieces.",
+        "uncertainty": "Illustrated edge lengths differ slightly; rim thickness introduces additional corner uncertainty.",
+        "origin": "observed",
+        "excluded": false
+      }
+    ],
+    "relations": [
+      {
+        "from": "p1",
+        "to": "p2",
+        "intent": "uncertain",
+        "evidence": "p1 appears to obscure the lower-left portion of the large central triangle; this is overlap rather than an established shared edge."
+      },
+      {
+        "from": "p2",
+        "to": "p3",
+        "intent": "uncertain",
+        "evidence": "p3 appears to obscure the lower-right portion of p2. The hidden boundary cannot be established directly."
+      },
+      {
+        "from": "p1",
+        "to": "p3",
+        "intent": "uncertain",
+        "evidence": "The two tall triangles converge only near their lower inner tips, not along a full edge."
+      },
+      {
+        "from": "p1",
+        "to": "p4",
+        "intent": "connect",
+        "evidence": "Their horizontal rims face each other across essentially the full bottom edge of p1 and top edge of p4."
+      },
+      {
+        "from": "p3",
+        "to": "p6",
+        "intent": "connect",
+        "evidence": "The horizontal bottom rim of p3 aligns with the full upper rim of p6."
+      },
+      {
+        "from": "p4",
+        "to": "p5",
+        "intent": "connect",
+        "evidence": "The lower pink tiles have matching adjacent diagonal rims from the central upper junction to the lower-left junction."
+      },
+      {
+        "from": "p5",
+        "to": "p6",
+        "intent": "connect",
+        "evidence": "Matching diagonal rims run between the central upper junction and the lower-right junction."
+      },
+      {
+        "from": "p5",
+        "to": "s1",
+        "intent": "uncertain",
+        "evidence": "The square sits beneath p5, but its upper edge is shorter than the triangle's lower edge; only partial-edge alignment is evident."
+      },
+      {
+        "from": "s1",
+        "to": "s2",
+        "intent": "connect",
+        "evidence": "Full horizontal square edges align in the vertical column."
+      },
+      {
+        "from": "s2",
+        "to": "s3",
+        "intent": "connect",
+        "evidence": "The lower edge of s2 and upper edge of s3 align across their full widths."
+      },
+      {
+        "from": "s3",
+        "to": "s4",
+        "intent": "connect",
+        "evidence": "Full horizontal square rims align between the two bottom squares."
+      },
+      {
+        "from": "l1",
+        "to": "l2",
+        "intent": "connect",
+        "evidence": "The left leaf consists of two triangles with matching diagonal boundary rims."
+      },
+      {
+        "from": "l2",
+        "to": "s2",
+        "intent": "connect",
+        "evidence": "The vertical right edge of l2 aligns with the full left edge of s2."
+      },
+      {
+        "from": "l1",
+        "to": "s1",
+        "intent": "uncertain",
+        "evidence": "The right tip of l1 approaches the lower-left corner of s1; this is point adjacency, not a shared edge."
+      },
+      {
+        "from": "r1",
+        "to": "r2",
+        "intent": "connect",
+        "evidence": "The two right leaf triangles have matching diagonal rims."
+      },
+      {
+        "from": "r2",
+        "to": "s3",
+        "intent": "connect",
+        "evidence": "The vertical left edge of r2 aligns with the full right edge of s3."
+      },
+      {
+        "from": "r1",
+        "to": "s2",
+        "intent": "uncertain",
+        "evidence": "The left tip of r1 approaches the lower-right corner of s2, giving only point adjacency."
+      }
+    ]
+  }
+}

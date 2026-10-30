@@ -3,6 +3,8 @@
   "profiles": [
     {"id":"square","version":1,"name":"正方形","vertices":[[0,0],[1,0],[1,1],[0,1]],"connectableEdges":["e0","e1","e2","e3"]},
     {"id":"right-triangle","version":1,"name":"等腰直角三角形","vertices":[[0,0],[1,0],[0,1]],"connectableEdges":["e0","e1","e2"]},
-    {"id":"equilateral-triangle","version":1,"name":"等边三角形","vertices":[[0,0],[1,0],[0.5,0.8660254037844386]],"connectableEdges":["e0","e1","e2"]}
+    {"id":"equilateral-triangle","version":1,"name":"等边三角形","vertices":[[0,0],[1,0],[0.5,0.8660254037844386]],"connectableEdges":["e0","e1","e2"]},
+    {"id":"large-equilateral-triangle","version":1,"name":"大型等边三角形","vertices":[[0,0],[2,0],[1,1.7320508075688772]],"connectableEdges":["e0","e1","e2"],"sizeEvidence":{"status":"estimated","source":"V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。边长约 15 cm，不是 CONNETIX 官方精确规格。"}},
+    {"id":"tall-right-triangle","version":1,"name":"细长直角三角形","vertices":[[0,0],[1,0],[0,2]],"connectableEdges":["e0","e1","e2"],"sizeEvidence":{"status":"estimated","source":"V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。直角边约 7.5 × 15 cm，不是 CONNETIX 官方精确规格。"}}
   ]
 }

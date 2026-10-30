@@ -6,7 +6,7 @@ import {emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace} from '../src
 const tile=(id,profileId='square',x=0,y=0,angleRad=0)=>({id,profileId,profileVersion:1,color:'#f5b942',pose:{x,y,angleRad}})
 const pair=()=>[tile('a'),tile('b','square',1,0)]
 test('versioned profiles: real side lengths, CCW, convexity, bad edge IDs and self-intersection',()=>{
- assert.equal(profiles.length,3)
+ assert.equal(profiles.length,5)
  profiles.forEach(p=>assert.deepEqual(profileIssues(p),[]))
  const lens=edges(tile('t','right-triangle'),profiles).map(e=>e.length)
  assert.deepEqual(lens,[1,Math.SQRT2,1])
