@@ -39,12 +39,15 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
   const [library, setLibrary] = useState<BuildLibrary>(emptyLibrary)
   const [busy, setBusy] = useState(true), [blocked, setBlocked] = useState(false), [notice, setNotice] = useState('正在恢复教程…'), [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  // Registry is loaded before mount and only appends immutable versions.
+  // An addition must not reload the tutorial or reset its in-memory selection.
+  const bootProfiles=useRef(profiles)
   const lock = useRef(true), file = useRef<HTMLInputElement>(null)
   useEffect(() => {
     let alive = true
-    loadLibrary(localStorage, profiles).then(l => { if (alive) { setLibrary(l); setSelectedId(l.plans[0]?.id ?? ''); setNotice('预览与已保存教程分别管理；修改画布不会改变教程。') } }).catch(e => { if (alive) { setBlocked(true); setError(`无法恢复教程，原存档未覆盖：${String(e)}`) } }).finally(() => { if (alive) { lock.current = false; setBusy(false);setLoaded(true) } })
+    loadLibrary(localStorage, bootProfiles.current).then(l => { if (alive) { setLibrary(l); setSelectedId(l.plans[0]?.id ?? ''); setNotice('预览与已保存教程分别管理；修改画布不会改变教程。') } }).catch(e => { if (alive) { setBlocked(true); setError(`无法恢复教程，原存档未覆盖：${String(e)}`) } }).finally(() => { if (alive) { lock.current = false; setBusy(false);setLoaded(true) } })
     return () => { alive = false }
-  }, [profiles])
+  }, [])
   useEffect(()=>{
     if(!loaded)return
     const {values:v,errors}=readStudioUrl(urlRequest.href)

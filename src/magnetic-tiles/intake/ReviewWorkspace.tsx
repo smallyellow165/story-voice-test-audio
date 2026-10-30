@@ -1,12 +1,14 @@
+import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import { workflowTerms } from '../studio-terms.ts'
 import { matchOutline, needsOutlineConfirmation } from './profile-match.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
-import { profiles, profileSizeLabel } from '../profiles.ts'
+import { profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
 const status=(o:Observation)=>o.excluded?'Excluded':o.profileId==='unknown'?'Unknown':'Known'
 export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode}){
+ const {registry:{profiles}}=useProfileRegistry()
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
   const box=scroll.current,row=box?.querySelector<HTMLElement>('tr[aria-selected=true]')

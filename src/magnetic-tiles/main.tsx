@@ -1,3 +1,4 @@
+import { useProfileRegistry, ProfileRegistryProvider } from './ProfileRegistry.tsx'
 import { workflowTerms, workModeNames } from './studio-terms.ts'
 import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
 import { canonical } from './build-plan.ts'
@@ -7,7 +8,6 @@ import { checkArtwork, workMode } from './artwork.ts'
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { profiles } from './profiles.ts'
 import { connectionSegment, findSnap, MAX_TILES, profileFor, rotateTile, mirrorTile, validate, vertices } from './geometry.ts'
 import type { Assembly, Pose, Snap, Tile, Vec } from './geometry.ts'
 import { emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace } from './storage.ts'
@@ -19,14 +19,15 @@ import { BuildPanel } from './BuildPanel.tsx'
 
 const palette = ['#f5b942', '#ef795d', '#55b8ac', '#7e9bda', '#b895cf']
 type Drag = { pointerId: number; id: string; start: Vec; original: Pose; moved: boolean; raw: Tile; snap: Snap | null }
-function initial(): { workspace: Workspace; error: string } {
+function initial(profiles: import('./geometry.ts').Profile[]): { workspace: Workspace; error: string } {
   try { return { workspace: loadWorkspace(localStorage, profiles) ?? { schemaVersion: 1, current: emptyAssembly(), saved: [] }, error: '' } }
   catch (e) { return { workspace: { schemaVersion: 1, current: emptyAssembly(), saved: [] }, error: `无法恢复存档，原数据未覆盖。${String(e)}` } }
 }
 function Playground() {
+ const {registry:{profiles}}=useProfileRegistry()
   const urlRequest=useUrlRequest()
   const [draftBackup,setDraftBackup]=useState(()=>!!localStorage.getItem('magnetic-assembly-url-backup'))
-  const [boot] = useState(initial)
+  const [boot] = useState(()=>initial(profiles))
   const [workspace, setWorkspace] = useState(boot.workspace)
   const workspaceRef = useRef(workspace)
   workspaceRef.current = workspace
@@ -168,8 +169,8 @@ function Playground() {
   return <StudioLayout dragging={!!drag}>
     <ImageIntake assembly={current} onApply={applyImage}/>
     <StudioSlot column="inspector" stages={['assembly']}>
-      <aside className="tiles-panel"><h2>{workflowTerms.assembly.label}</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
-        <svg viewBox={profileViewBox(p)} aria-hidden="true"><g transform="scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{profileSizeLabel(p)}</small></button>)}</div>
+      <aside className="tiles-panel"><h2>{workflowTerms.assembly.label}</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" title={`${p.id}@${p.version}`} data-palette-profile={`${p.id}@${p.version}`} aria-label={`添加${p.name}`}>
+        <svg viewBox={profileViewBox(p)} aria-hidden="true"><g transform="scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name} · v{p.version}</span><small>{profileSizeLabel(p)}</small></button>)}</div>
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
         <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°${chosen.pose.mirrored?' · 镜像':''}` : '点击画布上的一块磁力片'}</p>
         <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={()=>{if(chosen)replace(mirrorTile(chosen,profiles),'已翻面；连接与碰撞按原规则重新计算。')}}>翻面选中</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
@@ -218,4 +219,4 @@ function Playground() {
     </StudioSlot><BuildPanel assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
   </StudioLayout>
 }
-createRoot(document.getElementById('root')!).render(<Playground/>)
+createRoot(document.getElementById('root')!).render(<ProfileRegistryProvider><Playground/></ProfileRegistryProvider>)

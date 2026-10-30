@@ -1,3 +1,4 @@
+import {useProfileRegistry} from './ProfileRegistry.tsx'
 import { workflowTerms } from './studio-terms.ts'
 import { SupportedTiles } from './SupportedTiles.tsx'
 import { PANEL_PREFERENCES_KEY, resolvePanelState } from './studio-panel-state.ts'
@@ -23,14 +24,15 @@ export function StudioSlot({column,stages:visible,children}:{column:Column;stage
   return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)}>{children}</div>,host) : null
 }
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
+  const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
   const request=useUrlRequest(), parsed=readStudioUrl(request.href)
   const readPreferences=()=>{try{return {saved:JSON.parse(localStorage.getItem(PANEL_PREFERENCES_KEY)||'{}'),warning:''}}catch{return {saved:{},warning:'右栏 UI 偏好无法读取；工作快照和草稿未修改。'}}}
-  const [boot]=useState(()=>{const p=readPreferences();return {...resolvePanelState(request.href,p.saved),storageWarning:p.warning}})
+  const [boot]=useState(()=>{const p=readPreferences();return {...resolvePanelState(request.href,p.saved,profiles),storageWarning:p.warning}})
   const [stage,setStage]=useState<Stage>(boot.stage),[rightTab,setRightTab]=useState<RightTab>(boot.rightTab),[catalogProfile,setCatalogProfile]=useState(boot.catalogProfile)
   const [appliedRequest,setAppliedRequest]=useState(request),[warnings,setWarnings]=useState(boot.warnings),[storageWarning,setStorageWarning]=useState(boot.storageWarning)
   const rightColumn=useRef<HTMLElement>(null),scrollOffsets=useRef({inspector:0,catalog:0})
-  useEffect(()=>{const p=readPreferences(),state=resolvePanelState(request.href,p.saved);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
+  useEffect(()=>{const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
   useEffect(()=>{
     if(appliedRequest!==request)return
     writeStudioUrl({stage,rightTab,catalogProfile})

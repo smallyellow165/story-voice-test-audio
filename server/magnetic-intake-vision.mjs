@@ -7,9 +7,11 @@ export const prompt=`Analyze the provided image for a planar magnetic tile recon
 Each observation is one tile with a stable short ID, profileId and profileVersion from the exact Catalog pair, or profileId unknown with profileVersion 1 (a sentinel, never a geometric Profile), hex color, outer outline in cyclic order: [x/IMAGE_WIDTH,y/IMAGE_HEIGHT] with origin TOP LEFT. For a supported Profile use the number of corners defined by its vertices. EVERY coordinate MUST be a decimal between 0.0 and 1.0 inclusive, NEVER pixel coordinates or a 0–1000 scale. For example a point halfway across and a quarter down is [0.5,0.25]. Use the actual supplied image width and height, not an internally resized view. Outline must track physical outer perimeter including transparent margins; ignore INTERNAL magnetic bars and highlight lines. Orientation comes from outline, not invented world coordinates. origin is observed, excluded false. Include confidence 0..1, evidence and uncertainty strings. Color is approximate body hue, not reflection. Unknown shape still has an approximate outer outline (3–8 points). In evidence/uncertainty describe the observed proportions, unknown reason and any tentative catalog ID/version candidates with reasons for doubt; these are suggestions, not a Profile assignment. Relations express connect (likely full shared boundary), separate (explicit noncontact), uncertain (unclear). For occlusion, suspected overlap, point/partial-edge contact or ambiguous adjacency use intent uncertain and describe the visible relationship in evidence, including which piece may obscure the other. Never label overlap or partial-edge contact as connect. Keep supported connect/separate evidence even when other pieces are unknown. Emit only one relation per unordered pair. Describe unsupported specifications in reason/uncertainty. Do not claim geometric validity or exact reconstruction. No world poses, no build steps.`
 const str={type:'STRING'},num={type:'NUMBER'},arr=items=>({type:'ARRAY',items}),obj=properties=>({type:'OBJECT',properties,required:Object.keys(properties)})
 export const recognitionSchema=obj({sourceKind:{type:'STRING',enum:['flat_photo','diagram','unsupported']},reason:str,observations:arr(obj({id:str,profileId:{type:'STRING',enum:[...new Set(profiles.map(p=>p.id)), 'unknown']},profileVersion:{type:'INTEGER',enum:[...new Set([1,...profiles.map(p=>p.version)])]},color:{type:'STRING',pattern:'^#[0-9a-fA-F]{6}$'},outline:arr({type:'ARRAY',items:{type:'NUMBER',minimum:0,maximum:1},minItems:2,maxItems:2}),confidence:num,evidence:str,uncertainty:str,origin:{type:'STRING',enum:['observed']},excluded:{type:'BOOLEAN'}})),relations:arr(obj({from:str,to:str,intent:{type:'STRING',enum:['connect','separate','uncertain']},evidence:str}))})
-export function recognitionRequest(model,view){
+export function recognitionRequest(model,view,catalog=profiles){
+ const promptText=prompt.replace(JSON.stringify(profiles.map(profileSpec)),JSON.stringify(catalog.map(profileSpec)))
+ const schema=structuredClone(recognitionSchema);schema.properties.observations.items.properties.profileId.enum=[...new Set(catalog.map(p=>p.id)),'unknown'];schema.properties.observations.items.properties.profileVersion.enum=[...new Set([1,...catalog.map(p=>p.version)])]
  const definition=resolveModel(model,'reverse')
- if(definition.provider==='openai'){const request=buildOpenaiRequest({model,task:'reverse',prompt,schema:recognitionSchema,content:[{type:'input_text',text:`Image dimensions ${view.width} x ${view.height}. Return the observation JSON.`},{type:'input_image',image_url:`data:${view.mimeType};base64,${view.imageBase64}`,detail:'high'}]})
+ if(definition.provider==='openai'){const request=buildOpenaiRequest({model,task:'reverse',prompt:promptText,schema,content:[{type:'input_text',text:`Image dimensions ${view.width} x ${view.height}. Return the observation JSON.`},{type:'input_image',image_url:`data:${view.mimeType};base64,${view.imageBase64}`,detail:'high'}]})
   // Magnetic-specific strict output contract; shared DUPLO transport is unchanged.
   const lower = node => {
     const result={...node,type:node.type.toLowerCase()}
@@ -17,13 +19,13 @@ export function recognitionRequest(model,view){
     if(node.items)result.items=lower(node.items)
     return result
   }
-  request.text={format:{type:'json_schema',name:'magnetic_planar_observation',strict:true,schema:lower(recognitionSchema)}}
+  request.text={format:{type:'json_schema',name:'magnetic_planar_observation',strict:true,schema:lower(schema)}}
   return request
  }
- return {model,contents:[{role:'user',parts:[{text:prompt+`\nImage dimensions ${view.width} x ${view.height}.`},{inlineData:{mimeType:view.mimeType,data:view.imageBase64}}]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:recognitionSchema}}
+ return {model,contents:[{role:'user',parts:[{text:promptText+`\nImage dimensions ${view.width} x ${view.height}.`},{inlineData:{mimeType:view.mimeType,data:view.imageBase64}}]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:schema}}
 }
-export async function recognize(model,view,record){
- const request=recognitionRequest(model,view)
+export async function recognize(model,view,record,catalog=profiles){
+ const request=recognitionRequest(model,view,catalog)
  record.promptVersion=promptVersion;record.request=request
  await callBrickModel({model,task:'reverse',request,record})
  if(record.provider==='gemini'&&record.finishReason!=='STOP')throw Error('模型输出未完整结束：'+record.finishReason)

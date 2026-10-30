@@ -1,6 +1,7 @@
+import type { Parameters } from './parametric-profile.ts'
 // Planar, zero-thickness geometry only. This is not a contract for future 3D joints.
 export type Vec = [number, number]
-export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; sizeEvidence?: { status: 'estimated'; source: string } }
+export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; parametric?: Parameters; geometrySource?: string; sizeEvidence?: { status: 'estimated'; source: string } }
 // Reflect local X before rotating. Missing mirrored means false for every historical pose.
 export type Pose = { x: number; y: number; angleRad: number; mirrored?: boolean }
 export type Tile = { id: string; profileId: string; profileVersion: number; color: string; pose: Pose }

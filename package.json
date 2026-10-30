@@ -55,7 +55,9 @@
     "test:magnetic-mirror": "node --experimental-strip-types --test test/magnetic-mirror.test.mjs",
     "test:magnetic-mirror:browser": "node --experimental-strip-types scripts/verify-magnetic-mirror.mjs",
     "test:magnetic-trace": "node --experimental-strip-types --test test/magnetic-trace.test.mjs",
-    "test:magnetic-trace:browser": "node scripts/verify-magnetic-trace.mjs"
+    "test:magnetic-trace:browser": "node scripts/verify-magnetic-trace.mjs",
+    "test:magnetic-profile-editor": "node --experimental-strip-types --test test/magnetic-profile-editor.test.mjs",
+    "test:magnetic-profile-editor:browser": "node --experimental-strip-types scripts/verify-magnetic-profile-editor.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

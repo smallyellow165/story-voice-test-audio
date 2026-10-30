@@ -11,7 +11,7 @@ import {validateImage} from './brick-image-validation.mjs'
 import {modelOptions,providerStatus,resolveModel,providerConfigured} from './brick-model-registry.mjs'
 import {recognize,promptVersion} from './magnetic-intake-vision.mjs'
 import {contentHash} from '../src/magnetic-tiles/build-plan.ts'
-import {profiles} from '../src/magnetic-tiles/profiles.ts'
+import {createProfileRegistry} from './magnetic-profile-registry.mjs'
 import {parseAssembly} from '../src/magnetic-tiles/storage.ts'
 import {checkArtwork,workMode} from '../src/magnetic-tiles/artwork.ts'
 import {parseEvidence} from '../src/magnetic-tiles/intake/contracts.ts'
@@ -20,6 +20,7 @@ const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{status
 const validId=id=>{if(typeof id!=='string'||!/^([a-f0-9]{64}|[a-f0-9-]{36})$/.test(id))fail('记录 ID 无效');return id}
 const kinds=['sources','analyses','reviews','reconstructions','origins']
 export function createMagneticIntake(directory,{libraryDirectory}={}){
+ const registry=createProfileRegistry(directory)
  const library=createMagneticImageLibrary(libraryDirectory)
  const selectedSnapshots=createSelectedSnapshots(directory,{read})
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
@@ -34,6 +35,7 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
  async function view(source){const a=await read('assets',source.view.hash);if(validateImage(a).sha256!==source.view.hash)fail('图片字节 Hash 不一致');return {...a,...source.view}}
  async function reviewed(id){const r=await read('reviews',id),a=await read('analyses',r.analysisId);if(a.hash!==r.analysisHash||a.status!=='complete')fail('Review 来源不一致');const s=await read('sources',a.sourceId);if(s.hash!==a.sourceHash)fail('Analysis 来源不一致');return {review:r,analysis:a,source:s}}
  async function result(id){
+  const {profiles}=await registry.get()
   const r=await read('reconstructions',id),{review,source}=await reviewed(r.reviewId)
   // Catalog additions are append-only. A historical full-Catalog hash remains
   // valid only when an unchanged prefix matches it and covers every used Profile.
@@ -50,6 +52,9 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
  }
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else if(kind==='reconstructions'){const {trace,diagnosticCandidates,...summary}=r;out[kind].push({...summary,traceAvailable:!!trace,diagnosticCount:diagnosticCandidates?.length??0})}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
  return {read,result,async dispatch(method,route,body={}){
+  if(method==='GET'&&route==='profiles')return registry.get()
+  if(method==='POST'&&route==='profiles')return registry.save(body)
+  const {profiles}=await registry.get()
   if(method==='GET'&&route==='library')return library.list()
   if(method==='POST'&&route==='library-image')return library.read(body.name)
   if(method==='GET'&&route==='status')return {schemaVersion:1,models:modelOptions('reverse'),providers:providerStatus(),promptVersion,algorithm:reconstructionVersion}
@@ -94,12 +99,12 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
    try{await writeFile(path.join(directory,'requests',id),fingerprint,{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('识别请求已提交；请加载历史，不会重复调用模型',409);throw e}
    const record={schemaVersion:1,id,fingerprint,sourceId:source.id,sourceHash:source.hash,status:'processing',model:body.model,provider:definition.provider,promptVersion,createdAt:new Date().toISOString()}
    await put('analyses',record)
-   try {record.evidence=parseEvidence(await recognize(body.model,await view(source),record));for(const o of record.evidence.observations){if(o.origin!=='observed'||o.excluded)fail('模型输出了非观察来源或排除项')}record.status='complete'}catch(e){record.status='failed';record.error=String(e.message).slice(0,3000)}
+   try {record.evidence=parseEvidence(await recognize(body.model,await view(source),record,profiles),profiles);for(const o of record.evidence.observations){if(o.origin!=='observed'||o.excluded)fail('模型输出了非观察来源或排除项')}record.status='complete'}catch(e){record.status='failed';record.error=String(e.message).slice(0,3000)}
    return put('analyses',record,{replace:true})
   }
   if(method==='POST'&&route==='reviews'){
    const a=await read('analyses',body.analysisId);if(a.status!=='complete'||a.hash!==body.analysisHash)fail('Analysis 尚未完成或版本不一致')
-   const evidence=parseEvidence(body.evidence)
+   const evidence=parseEvidence(body.evidence,profiles)
    for(const o of evidence.observations){const old=a.evidence.observations.find(p=>p.id===o.id);if(o.origin!==(old?'observed':'manual'))fail('新增零件必须标记为人工补充')}
    return put('reviews',{schemaVersion:1,id:randomUUID(),analysisId:a.id,analysisHash:a.hash,evidence,createdAt:new Date().toISOString()})
   }

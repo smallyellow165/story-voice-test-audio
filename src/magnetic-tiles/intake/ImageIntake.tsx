@@ -1,3 +1,4 @@
+import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import {inspectDiagnosticConflicts} from './candidate-conflicts.ts'
 import {DiagnosticConflictInspector} from './DiagnosticConflicts.tsx'
 import { AlignmentView } from './AlignmentView.tsx'
@@ -22,7 +23,6 @@ import { parseEvidence, recognitionSummary, reconstructionSummary as resultMessa
 import { useEffect, useRef, useState, useMemo } from 'react'
 import type { Assembly, Vec, WorkMode } from '../geometry.ts'
 import { validate } from '../geometry.ts'
-import { profiles } from '../profiles.ts'
 import { canonical, contentHash } from '../build-plan.ts'
 import { intakeApi, prepareImage, prepareLibraryImage } from './api.ts'
 import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin, Reconstruction, Review, SelectedStage, Source } from './contracts.ts'
@@ -30,6 +30,7 @@ type ReviewUndo={evidence:Evidence;review:Review|null;selected:string;label:stri
 type Config={models:{id:string;label:string;provider:string}[];providers:Record<string,boolean>}
 const emptyHistory=():IntakeHistory=>({selectedSnapshots:[],sources:[],analyses:[],reviews:[],reconstructions:[],origins:[],warnings:[]})
 export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candidate:Assembly,bind:(actual:Assembly)=>Promise<Origin>)=>Promise<void>}){
+ const {registry:{profiles}}=useProfileRegistry()
  const {stage,navigate}=useStudio()
  const urlRequest=useUrlRequest(), currentRequest=useRef<typeof urlRequest>(urlRequest), restored=useRef<typeof urlRequest|null>(null)
  currentRequest.current=urlRequest
@@ -242,11 +243,12 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    {origin&&<p className="intake-origin">当前画布来源：图片 {origin.sourceId.slice(0,8)} / {origin.candidateId}。{origin.assemblyHash===currentHash?'与打开时的快照一致。':'已手动修改或修订，不再宣称与原候选完全一致。'}</p>}
 </StudioSlot>
   <StudioSlot column="workflow" stages={[...workflowStages]}><div className="intake-feedback">
-{draftAvailable&&analysis&&<div className="draft-recovery-row"><button onClick={()=>{try{const saved=JSON.parse(localStorage.getItem('magnetic-review-draft:'+analysis.id)||'null');if(!saved||saved.analysisHash!==analysis.hash)throw Error('草稿来源不匹配');edit(parseEvidence(saved.evidence));setMessage('已恢复本地未保存草稿；请另存审核快照。')}catch(e){setError(String(e))}}}>恢复本地审核草稿</button><InfoHint label="审核草稿恢复">此 Analysis 有本地未保存草稿。{review?'当前显示已保存审核快照。':'URL 不包含未保存的草稿内容。'}恢复后请另存 Review 快照。</InfoHint></div>}
+{draftAvailable&&analysis&&<div className="draft-recovery-row"><button onClick={()=>{try{const saved=JSON.parse(localStorage.getItem('magnetic-review-draft:'+analysis.id)||'null');if(!saved||saved.analysisHash!==analysis.hash)throw Error('草稿来源不匹配');edit(parseEvidence(saved.evidence,profiles));setMessage('已恢复本地未保存草稿；请另存审核快照。')}catch(e){setError(String(e))}}}>恢复本地审核草稿</button><InfoHint label="审核草稿恢复">此 Analysis 有本地未保存草稿。{review?'当前显示已保存审核快照。':'URL 不包含未保存的草稿内容。'}恢复后请另存 Review 快照。</InfoHint></div>}
 <p className="context-notice" title={message} aria-live="polite">{busy?'正在处理… ':''}{message}</p>{error&&<p className="storage-error" role="alert">{error}</p>}{history.warnings.map(w=><p key={w} className="storage-error">{w}</p>)}</div></StudioSlot>
  </>
 }
 
 function CandidateView({candidate,selected,onSelect}:{candidate:Candidate;selected:string;onSelect:(id:string)=>void}){
+ const {registry:{profiles}}=useProfileRegistry()
  return <AssemblyPreview assembly={candidate.assembly} profiles={profiles} selected={selected} onSelect={onSelect} label="几何重建候选预览"/>
 }

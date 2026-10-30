@@ -1,12 +1,14 @@
+import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import { useState } from 'react'
 import { InfoHint } from '../../brick-vision/InfoHint.tsx'
-import { profiles, profileViewBox } from '../profiles.ts'
+import { profileViewBox } from '../profiles.ts'
 import type { RelativeScale } from './relative-size.ts'
 import { matchRelativeProfiles } from './relative-size.ts'
 import type { Observation } from './contracts.ts'
 import { needsOutlineConfirmation } from './profile-match.ts'
 
 export function ProfileMatcher({observation,width,height,scale,onApply}:{observation:Observation;width:number;height:number;scale:RelativeScale;onApply:(id:string,version:number)=>void}){
+ const {registry:{profiles}}=useProfileRegistry()
  const [requested,setRequested]=useState(false),[all,setAll]=useState(false)
  const result=requested?matchRelativeProfiles(observation,width,height,profiles,scale):null
  return <section className="profile-matcher" aria-label="Find Matching Profile">

@@ -183,3 +183,20 @@
 .alignment-inspection{min-width:0;font-size:12px}.alignment-inspection p{font-size:12px;margin:5px 0}.alignment-inspection select{flex:1;min-width:0;font-size:12px}.alignment-inspection table{width:100%;font-size:11px}.alignment-inspection pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.alignment-toggle{font-size:12px;min-height:30px;padding:4px 7px;margin-bottom:5px}
 .candidate-conflict-toolbar{align-items:center;gap:5px;margin-bottom:5px}.candidate-conflict-toolbar button{font-size:12px;padding:4px 7px;min-height:28px}.candidate-conflict-toolbar [aria-pressed=true]{background:#f9e6da;border-color:#c88b55}
 .candidate-conflict-inspector{font-size:12px;margin:8px 0;padding:7px 0;border-block:1px solid #d2dfd7;min-width:0}.candidate-conflict-inspector p{font-size:12px;margin:5px 0}.candidate-conflict-inspector .button-row{justify-content:space-between}.candidate-conflict-inspector button{font-size:11px;padding:4px 6px;min-height:26px}.candidate-conflict-list{list-style:none;margin:5px 0;padding:0}.candidate-conflict-list li{margin:3px 0}.candidate-conflict-list button{width:100%;text-align:left;overflow-wrap:anywhere}.candidate-conflict-list button[aria-pressed=true]{background:#f8e0cf;border-color:#cb8d54}.candidate-conflict-list span{display:block;overflow-wrap:anywhere;font-size:11px}.candidate-conflict-inspector pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.reconstruction-search-notes{margin:8px 0}
+
+/* Parametric Catalog stays within the existing independently scrolling panel. */
+.catalog-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:5px 0}
+.catalog-actions button{padding:5px 8px;font-size:12px}
+.catalog-actions strong{margin-right:auto;min-width:0}
+.profile-editor{border:1px solid #b8cbc3;padding:8px;border-radius:5px;margin:6px 0;min-width:0}
+.profile-editor fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:6px}
+.profile-editor label{font-size:12px;margin:0;min-width:0}
+.profile-editor input,.profile-editor select{width:100%;min-width:0;max-width:100%;padding:5px;box-sizing:border-box}
+.profile-dimensions{display:flex;gap:6px}.profile-dimensions label{flex:1}
+.profile-editor .profile-estimated,.profile-editor .profile-edge{display:inline-flex;align-items:center;gap:4px}
+.profile-editor input[type=checkbox]{width:auto;margin:0}
+.profile-live-preview{margin:6px 0;min-width:0}
+.profile-live-preview svg{width:100%;height:105px;display:block;background:#f5f8f2}
+.profile-live-preview small{display:block;overflow-wrap:anywhere;font-size:11px}
+.profile-computed{margin-top:4px}
+.profile-editor [role=alert],.profile-editor [role=status]{font-size:12px;overflow-wrap:anywhere}
