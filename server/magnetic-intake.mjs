@@ -1,3 +1,4 @@
+import {alignmentInspection} from '../src/magnetic-tiles/intake/alignment-inspection.ts'
 import {shareText} from './llm-traces.mjs'
 import {spatialEvidence} from '../src/magnetic-tiles/intake/execution-trace.ts'
 import {createSelectedSnapshots} from './magnetic-selected-snapshots.mjs'
@@ -39,6 +40,11 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
   let catalogMatches=false
   for(let n=profiles.length;n>0;n--){const prefix=profiles.slice(0,n);if(used.every(t=>prefix.some(p=>p.id===t.profileId&&p.version===t.profileVersion))&&r.profileHash===await contentHash(prefix)){catalogMatches=true;break}}
   if(r.reviewHash!==review.hash||r.sourceHash!==source.hash||!catalogMatches)fail('重建来源或 Profile 已改变')
+  if(r.trace){
+   const ref=r.trace.references,input=r.trace.input
+   if(!ref||ref.reconstructionId!==r.id||ref.reviewId!==review.id||ref.reviewHash!==review.hash||ref.analysisId!==review.analysisId||ref.analysisHash!==review.analysisHash||ref.sourceId!==source.id||ref.sourceHash!==source.hash||ref.profileHash!==r.profileHash||input.mode!==(r.mode??'connected-construction')||input.width!==source.view.width||input.height!==source.view.height||await contentHash(input.evidence)!==await contentHash(review.evidence)||await contentHash(input.profiles)!==r.profileHash)fail('Trace 输入或来源引用不一致')
+  }
+
   return {reconstruction:r,review,source}
  }
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else if(kind==='reconstructions'){const {trace,diagnosticCandidates,...summary}=r;out[kind].push({...summary,traceAvailable:!!trace,diagnosticCount:diagnosticCandidates?.length??0})}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
@@ -53,12 +59,13 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
    if(kind==='reconstructions'){
     const {reconstruction:r,review,source}=await result(value),analysis=await read('analyses',review.analysisId)
     const references={source:{id:source.id,hash:source.hash},analysis:{id:analysis.id,hash:analysis.hash},review:{id:review.id,hash:review.hash},reconstruction:{id:r.id,hash:r.hash}}
-    payload=section==='planning'?{references,available:!!r.trace,planning:r.trace?.planning??null,note:r.trace?'Persisted deterministic execution input, not a model-generated Spatial Plan':'Historical planning trace unavailable; no reconstruction of missing execution evidence'}:{references,available:!!r.trace,execution:r,note:r.trace?'Saved execution trace and actual search attempts':'Historical execution trace unavailable; diagnostic poses were not recorded and are not fabricated'}
+    payload=section==='alignment'?{references,alignment:alignmentInspection(r,route.split('/')[4])}:section==='planning'?{references,available:!!r.trace,planning:r.trace?.planning??null,note:r.trace?'Persisted deterministic execution input, not a model-generated Spatial Plan':'Historical planning trace unavailable; no reconstruction of missing execution evidence'}:{references,available:!!r.trace,execution:r,note:r.trace?'Saved execution trace and actual search attempts':'Historical execution trace unavailable; diagnostic poses were not recorded and are not fabricated'}
    }else if(kind==='analyses'||kind==='reviews'){
     const review=kind==='reviews'?await read('reviews',value):null,analysis=await read('analyses',review?review.analysisId:value),source=await read('sources',analysis.sourceId)
     if(source.hash!==analysis.sourceHash||(review&&analysis.hash!==review.analysisHash))fail('Trace 来源不一致')
     const references={source:{id:source.id,hash:source.hash},analysis:{id:analysis.id,hash:analysis.hash},review:review?{id:review.id,hash:review.hash}:null}
-    payload=section==='planning'?{references,scope:'deterministic derivation from saved evidence with current Catalog; not a historical execution snapshot',planning:spatialEvidence(review?.evidence??analysis.evidence??{sourceKind:'unsupported',reason:'No saved observations',observations:[],relations:[]},source.view.width,source.view.height,profiles)}:{references,analysis,review,wireAvailability:{request:analysis.request!==undefined,response:analysis.response!==undefined,rawResponseBody:analysis.rawResponseBody!==undefined,rawOutput:analysis.rawOutput!==undefined},note:'Only actually saved fields are shown; missing wire data is unavailable, never reconstructed from prompts or parsed output'}
+    const savedEvidence=review?.evidence??analysis.evidence
+    payload=section==='planning'?{references,scope:'deterministic derivation from saved evidence with current Catalog; not a historical execution snapshot',available:!!savedEvidence,planning:savedEvidence?spatialEvidence(savedEvidence,source.view.width,source.view.height,profiles):null,note:savedEvidence?'Review relations and deterministic derivations only':'No saved structured evidence; planning unavailable'}:{references,analysis,review,savedFieldAvailability:{request:analysis.request!==undefined,response:analysis.response!==undefined,rawResponseBody:analysis.rawResponseBody!==undefined,rawOutput:analysis.rawOutput!==undefined},origins:{request:'saved application request; not claimed to be exact HTTP wire bytes',response:'saved provider response object',rawResponseBody:'raw response text only if actually captured',rawOutput:'extracted model text, not the HTTP response'},note:'Only actually saved fields are shown. Missing raw wire data is unavailable and is never reconstructed from prompts or parsed output'}
    }else fail('未知 Trace 来源',404)
    return shareText(JSON.stringify(payload))
   }

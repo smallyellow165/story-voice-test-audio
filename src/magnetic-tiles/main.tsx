@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { profiles } from './profiles.ts'
-import { edges, findSnap, MAX_TILES, profileFor, rotateTile, validate, vertices } from './geometry.ts'
+import { edges, findSnap, MAX_TILES, profileFor, rotateTile, mirrorTile, validate, vertices } from './geometry.ts'
 import type { Assembly, Pose, Snap, Tile, Vec } from './geometry.ts'
 import { emptyAssembly, loadWorkspace, parseAssembly, saveWorkspace } from './storage.ts'
 import type { Workspace } from './storage.ts'
@@ -171,8 +171,8 @@ function Playground() {
       <aside className="tiles-panel"><h2>{workflowTerms.assembly.label}</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>
         <svg viewBox={profileViewBox(p)} aria-hidden="true"><g transform="scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name}</span><small>{profileSizeLabel(p)}</small></button>)}</div>
         <div className="swatches" aria-label="新磁力片颜色">{palette.map(c => <button key={c} aria-label={`颜色 ${c}`} aria-pressed={c === color} style={{ background: c }} onClick={() => setColor(c)}/>)}</div>
-        <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°` : '点击画布上的一块磁力片'}</p>
-        <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
+        <h2>当前选中</h2><p>{chosen ? `${profileFor(chosen, profiles)!.name} · ${Math.round(chosen.pose.angleRad * 180 / Math.PI)}°${chosen.pose.mirrored?' · 镜像':''}` : '点击画布上的一块磁力片'}</p>
+        <div className="button-row"><button disabled={!chosen || !!drag} onClick={() => rotate(-15)}>↶ 15°</button><button disabled={!chosen || !!drag} onClick={() => rotate(15)}>↷ 15°</button><button disabled={!chosen || !!drag} onClick={()=>{if(chosen)replace(mirrorTile(chosen,profiles),'已翻面；连接与碰撞按原规则重新计算。')}}>翻面选中</button><button disabled={!chosen || !!drag} onClick={() => rotate(90)}>旋转 90°</button><button disabled={!chosen || !!drag} onClick={remove}>删除选中</button></div>
         <p className="hint">直接拖动已连接的单片即可拿起。靠近等长边时，绿色虚线显示吸附预览；松手确认。可自动对齐约 45° 内的边，更大角度请先旋转。重叠会被拒绝。</p>
         <details><summary>键盘操作</summary><p>在画布中选中零件：方向键移动 0.1 单位，R 旋转 15°，Delete 删除，Esc 取消拖动。Tab 可选择零件，Enter 确认选择。</p></details>
       </aside>

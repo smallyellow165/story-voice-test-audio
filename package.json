@@ -44,7 +44,11 @@
     "test:magnetic-workflow-ui:browser": "node scripts/verify-magnetic-workflow-ui.mjs",
     "test:magnetic-review-reconstruction": "node --experimental-strip-types --test test/magnetic-review-reconstruction.test.mjs",
     "test:magnetic-review-reconstruction:browser": "node scripts/verify-magnetic-review-reconstruction.mjs",
-    "test:magnetic-review-toolbar:browser": "node scripts/verify-magnetic-review-toolbar.mjs"
+    "test:magnetic-review-toolbar:browser": "node scripts/verify-magnetic-review-toolbar.mjs",
+    "test:magnetic-mirror": "node --experimental-strip-types --test test/magnetic-mirror.test.mjs",
+    "test:magnetic-mirror:browser": "node --experimental-strip-types scripts/verify-magnetic-mirror.mjs",
+    "test:magnetic-trace": "node --experimental-strip-types --test test/magnetic-trace.test.mjs",
+    "test:magnetic-trace:browser": "node scripts/verify-magnetic-trace.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

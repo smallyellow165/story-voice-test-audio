@@ -46,7 +46,8 @@ try{
  for(const mode of modes){
   const r=await generate(mode);assert.equal(r.reviewId,corrected.id);assert.equal(r.reviewHash,corrected.hash)
   assert.ok(r.explored>0&&r.trials>0);assert.equal(r.candidates.length,0);assert.equal(r.truncated,false)
-  assert.match(r.diagnostics.join('\n'),/p3 对明确连接邻居 p6.*等长边对齐.*最小轮廓 RMS.*上限 0\.300/)
+  assert.equal(r.algorithm,'planar-outline-v3');assert.equal(r.trace.search.parameters.mirroring,true)
+  const first=r.diagnosticCandidates[0];assert.equal(first.failureStage,mode==='flat-mosaic'?'geometry':'outline');assert.equal(first.tiles.length,mode==='flat-mosaic'?13:14);if(mode==='connected-construction')assert.equal(first.attemptedConnection.from,'p2')
   assert.ok(!r.diagnostics.join('\n').includes('unsupported'));assert.ok(!r.diagnostics.join('\n').includes(analysis.evidence.reason))
   assert.match(await page.getByRole('region',{name:'几何重建结果',exact:true}).innerText(),new RegExp(r.trials+' 次对齐尝试'))
   results.after[mode]=r;await page.screenshot({path:out+'/'+mode+'.png'})

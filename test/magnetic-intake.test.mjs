@@ -49,7 +49,7 @@ test('immutable review/reconstruction lineage and hash integrity (fixture analys
   assert.equal((await store.read('analyses',a.id)).hash,a.hash)
   // Previously stored full-Catalog hashes survive append-only additions, while
   // changed old definitions and references outside the old prefix still fail.
-  const {hash:oldHash,id:oldId,...payload}=result
+  const {hash:oldHash,id:oldId,trace,diagnosticCandidates,...payload}=result
   const legacy=await seed('reconstructions',{...payload,id:crypto.randomUUID(),profileHash:await contentHash(profiles.slice(0,3))})
   assert.equal((await store.result(legacy.id)).reconstruction.hash,legacy.hash)
   const changed=structuredClone(profiles.slice(0,3));changed[0].vertices[1][0]=1.1

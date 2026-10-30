@@ -95,7 +95,7 @@ export async function generateBuild(input: Assembly, profiles: readonly Profile[
       if (!tile) fail('无法找到与已有结构连接的下一块')
       const anchor = contacts(tile.id, placed, report.connections)[0]
       const previous = steps.map(s=>assembly.instances.find(t=>t.id===s.addInstanceId)!)
-      steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), ...(mosaic && index===0 ? {startsComponent:true as const} : {}), instruction: anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : mosaic ? componentPlacement(tile,previous,profiles) : `先放好这块${profileFor(tile, profiles)!.name}。` })
+      steps.push({ id: `place-${tile.id}`, addInstanceId: tile.id, ...(anchor ? { anchor } : {}), ...(mosaic && index===0 ? {startsComponent:true as const} : {}), instruction: (tile.pose.mirrored?'先将这块翻面。':'') + (anchor ? `拿一块${profileFor(tile, profiles)!.name}，沿第 ${steps.findIndex(s => s.addInstanceId === anchor.targetInstanceId) + 1} 块亮起的边放好。` : mosaic ? componentPlacement(tile,previous,profiles) : `先放好这块${profileFor(tile, profiles)!.name}。`) })
       placed.add(tile.id)
     }
   }

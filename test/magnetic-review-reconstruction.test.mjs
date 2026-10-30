@@ -72,16 +72,16 @@ test('new triangle profiles have usable whole-edge connections under the unchang
  const b=validate([placedTall,placedLarge],profiles);assert.equal(b.valid,true);assert.equal(b.connections.length,1)
 })
 
-test('rose reviewed profiles reach the real search; diagnostics distinguish tried alignment errors from sampled-layout overlap',async()=>{
+test('rigid-only replay: rose reviewed profiles reach the real search; diagnostics distinguish tried alignment errors from sampled-layout overlap',async()=>{
  const fixture=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-relative-size.json',import.meta.url),'utf8'))
  const e=structuredClone(fixture.evidence);e.sourceKind='diagram'
  for(const [id,profileId] of [['p1','tall-right-triangle'],['p2','large-equilateral-triangle'],['p3','tall-right-triangle']])e.observations.find(o=>o.id===id).profileId=profileId
  for(const mode of modes){
-  const r=reconstruct(e,fixture.width,fixture.height,profiles,'rose',mode)
+  const r=reconstruct(e,fixture.width,fixture.height,profiles,'rose',mode,{mirroring:false})
   assert.ok(r.explored>0&&r.trials>0);assert.equal(r.candidates.length,0);assert.equal(r.truncated,false)
   assert.ok(!r.diagnostics.some(d=>d.includes('unsupported')||d.includes(e.reason)))
   assert.match(r.diagnostics.join('\n'),/p3 对明确连接邻居 p6.*等长边对齐.*最小轮廓 RMS.*上限 0\.300/)
   assert.match(r.diagnostics.join('\n'),/原图独立拟合.*p1 \/ p2.*不是搜索已接受的布局/)
-  assert.deepEqual(reconstruct(e,fixture.width,fixture.height,profiles,'rose',mode),r)
+  assert.deepEqual(reconstruct(e,fixture.width,fixture.height,profiles,'rose',mode,{mirroring:false}),r)
  }
 })

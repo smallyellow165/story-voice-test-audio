@@ -26,7 +26,7 @@ export async function rightTab(page,tab){
 }
 const build=new Set(['生成搭建步骤','保存教程','导出教程 JSON','导入教程 JSON','打开教程','下一步','上一步','重播当前步','重新开始','完成搭建'])
 const center=new Set(['新建','撤销','适合画布','放大视图','缩小视图'])
-const assembly=new Set(['保存作品快照','加载所选作品','导出 JSON','导入 JSON','旋转 90°','↷ 15°','↶ 15°','删除选中'])
+const assembly=new Set(['保存作品快照','加载所选作品','导出 JSON','导入 JSON','旋转 90°','翻面选中','↷ 15°','↶ 15°','删除选中'])
 export function studioButton(page,name){
  const locator=page.getByRole('button',{name,exact:true})
  return new Proxy(locator,{get(target,prop){const value=target[prop];if(typeof value!=='function')return value

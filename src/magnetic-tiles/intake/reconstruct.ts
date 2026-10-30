@@ -1,20 +1,21 @@
 import { diagnosticCollector, spatialEvidence } from './execution-trace.ts'
 import type { ExecutionTrace, FailedAttempt, AttemptedConnection } from './execution-trace.ts'
 // Image-space fitting is approximate. All committed connections still use geometry.ts EPS.
-import { alignEdge, distance, edges, validate, vertices, EPS } from '../geometry.ts'
+import { alignEdge, distance, edges, validate, vertices, EPS, mirrorVariants } from '../geometry.ts'
 import type { Profile, Tile, Vec, WorkMode } from '../geometry.ts'
 import { parseEvidence } from './contracts.ts'
 import type { Candidate, Evidence, Observation } from './contracts.ts'
-export const reconstructionVersion = 'planar-outline-v2'
+export const reconstructionVersion = 'planar-outline-v3'
 const MAX_STATES = 6000, MAX_TRIALS = 100000, MAX_ERROR = .30
 const mean = (v: Vec[]): Vec => [v.reduce((s,p)=>s+p[0],0)/v.length,v.reduce((s,p)=>s+p[1],0)/v.length]
 const variants = (v: Vec[]) => [v,[...v].reverse()].flatMap(a=>a.map((_,i)=>[...a.slice(i),...a.slice(0,i)]))
 const rms = (a: Vec[],b: Vec[]) => Math.sqrt(a.reduce((s,p,i)=>s+distance(p,b[i])**2,0)/a.length)
-export function reconstruct(input: Evidence, width: number, height: number, profiles: readonly Profile[], assemblyId: string, mode: WorkMode = 'connected-construction', limits: {states?:number;trials?:number} = {}) {
+export function reconstruct(input: Evidence, width: number, height: number, profiles: readonly Profile[], assemblyId: string, mode: WorkMode = 'connected-construction', limits: {states?:number;trials?:number;mirroring?:boolean} = {}) {
   const stateLimit=Math.min(MAX_STATES,limits.states??MAX_STATES), trialLimit=Math.min(MAX_TRIALS,limits.trials??MAX_TRIALS)
   if(!Number.isInteger(stateLimit)||stateLimit<1||!Number.isInteger(trialLimit)||trialLimit<1)throw Error('搜索预算无效')
+  const mirroring=limits.mirroring??true,parities=new Map(profiles.map(p=>[p.id+'@'+p.version,mirroring?mirrorVariants(p):[false]]))
   const evidence = parseEvidence(input), diagnostics: string[] = [], observations = evidence.observations.filter(o=>!o.excluded)
-  const trace:ExecutionTrace={schemaVersion:1,phase:'admission',input:{evidence:structuredClone(evidence),width,height,profiles:structuredClone(profiles),mode},planning:spatialEvidence(evidence,width,height,profiles),search:{parameters:{stateLimit,trialLimit,maxOutlineRms:MAX_ERROR,eps:EPS,maxSolutionsPerGroup:3,maxCandidates:3,anchorDistanceLimit:3,mirroring:false},ranking:'Bounded representative Top 10 of observed failures, not global optimization: blocked required domains first; one pair/stage representative before alternatives; then placed count descending, attempted RMS ascending, trial index, geometric key. Diagnostic rechecks never affect search.'}}
+  const trace:ExecutionTrace={schemaVersion:1,phase:'admission',input:{evidence:structuredClone(evidence),width,height,profiles:structuredClone(profiles),mode},planning:spatialEvidence(evidence,width,height,profiles),search:{parameters:{stateLimit,trialLimit,maxOutlineRms:MAX_ERROR,eps:EPS,maxSolutionsPerGroup:3,maxCandidates:3,anchorDistanceLimit:3,mirroring},ranking:'Bounded representative Top 10 of observed failures, not global optimization: blocked required domains first; one pair/stage representative before alternatives; then placed count descending, attempted RMS ascending, trial index, geometric key. Diagnostic rechecks never affect search.'}}
   const collector=diagnosticCollector(profiles)
   const empty = () => ({ diagnosticCandidates:[],trace,candidates: [] as Candidate[], diagnostics, explored: 0, trials: 0, truncated: false, outcome: 'failed' as const })
   const unknown=observations.filter(o=>o.profileId==='unknown')
@@ -46,14 +47,17 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
   for (const [id,pts] of image) image.set(id,pts.map(([x,y])=>[x/scale,y/scale]))
   const error = (t: Tile) => Math.min(...variants(image.get(t.id)!).map(v=>rms(vertices(t,profiles),v)))
   function fitted(o: Observation): Tile {
-    const p = profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion)!, local = p.vertices, lc = mean(local)
+    const p = profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion)!
     let best: Tile | null = null, score = Infinity
+    for (const mirrored of parities.get(p.id+'@'+p.version)!) {
+    const local=p.vertices.map(([x,y]):Vec=>[mirrored?-x:x,y]),lc=mean(local)
     for (const target of variants(image.get(o.id)!)) {
       const tc=mean(target); let dot=0,cross=0
       local.forEach((v,i)=>{const x=v[0]-lc[0],y=v[1]-lc[1],u=target[i][0]-tc[0],w=target[i][1]-tc[1];dot+=x*u+y*w;cross+=x*w-y*u})
       const angleRad=Math.atan2(cross,dot),c=Math.cos(angleRad),s=Math.sin(angleRad)
-      const t: Tile={id:o.id,profileId:p.id,profileVersion:p.version,color:o.color,pose:{x:tc[0]-c*lc[0]+s*lc[1],y:tc[1]-s*lc[0]-c*lc[1],angleRad}}
+      const t: Tile={id:o.id,profileId:p.id,profileVersion:p.version,color:o.color,pose:{x:tc[0]-c*lc[0]+s*lc[1],y:tc[1]-s*lc[0]-c*lc[1],angleRad,...(mirrored?{mirrored:true}:{})}}
       const e=error(t);if(e<score-1e-10){best=t;score=e}
+    }
     }
     return best!
   }
@@ -110,16 +114,21 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
         for(const target of anchors){
           // A legal whole-edge alignment cannot place the centers arbitrarily far apart.
           if(distance(mean(vertices(raw,profiles)),mean(vertices(target,profiles)))>3)continue
-          for(const own of edges(raw,profiles))for(const edge of edges(target,profiles)){
+          for(const mirrored of parities.get(raw.profileId+'@'+raw.profileVersion)!){
+          const {mirrored:previousParity,...rigidPose}=raw.pose
+          const oriented:Tile={...raw,pose:{...rigidPose,...(mirrored?{mirrored:true}:{})}}
+          void previousParity
+          for(const own of edges(oriented,profiles))for(const edge of edges(target,profiles)){
             if(!budget())return
             trials++
             if(Math.abs(own.length-edge.length)>EPS)continue
-            const candidate=alignEdge(raw,own,edge,profiles),score=error(candidate)
+            const candidate=alignEdge(oriented,own,edge,profiles),score=error(candidate)
             equalEdges++;bestError=Math.min(bestError,score)
             const attemptedConnection:AttemptedConnection={from:raw.id,ownEdgeId:own.id,to:target.id,targetEdgeId:edge.id,intent:required.find(r=>[r.from,r.to].includes(raw.id)&&[r.from,r.to].includes(target.id))?.intent??null}
             if(score>MAX_ERROR){rejected.outline++;const failure:FailedAttempt={tiles:[...placed,candidate],phase:'edge-alignment',failureStage:'outline',reason:`Aligned tile RMS ${score} > ${MAX_ERROR} standard units`,attemptIndex:trials,stateIndex:explored,attemptedConnection,attemptedTileRms:score};collector.offer(failure);if(!nearestFailure||score<nearestFailure.attemptedTileRms!)nearestFailure=failure;continue}
             const poseKey=key([candidate]);if(duplicates.has(poseKey))continue;duplicates.add(poseKey)
             if(acceptable([...placed,candidate],true,attemptedConnection))options.push({tile:candidate,score})
+          }
           }
         }
         // A required neighbor already placed fixes this domain: later pieces cannot repair it.
@@ -165,7 +174,7 @@ export function reconstruct(input: Evidence, width: number, height: number, prof
     diagnostics.push(`候选剪枝：图片轮廓偏差 ${rejected.outline} 次；碰撞/局部几何 ${rejected.geometry} 次；明确连接意图冲突 ${rejected.relation} 次。这些是搜索诊断，不是对识别错误的自动定论。`)
     const overlaps=validate(approx,profiles).issues.filter(i=>i.code==='OVERLAP')
     if(overlaps.length)diagnostics.push('按原图独立拟合的位置存在内部重叠：'+overlaps.slice(0,8).map(i=>i.tileIds.join(' / ')).join('；')+`（共 ${overlaps.length} 对）。这仅是原图近似位置诊断，不是搜索已接受的布局；相邻边界误差也会造成细微重叠。平面拼图也不允许重叠，请检查遮挡、堆叠或轮廓。`)
-    diagnostics.push(`统一拟合尺度 ${scale.toFixed(2)} px/标准单位；搜索仅保留轮廓 RMS ≤ ${MAX_ERROR.toFixed(3)} 的刚体放置。Profile 尺寸、严格整边连接和碰撞规则未放宽。`)
+    diagnostics.push(`统一拟合尺度 ${scale.toFixed(2)} px/标准单位；搜索仅保留轮廓 RMS ≤ ${MAX_ERROR.toFixed(3)} 的等距放置（平移、旋转及启用时的镜像）。Profile 尺寸、严格整边连接和碰撞规则未放宽。`)
   }
   if(truncated)diagnostics.push(`搜索预算耗尽（最多 ${stateLimit} 状态 / ${trialLimit} 对齐尝试），搜索未完成；请修正不确定连接或缩小输入范围后重建。`)
   if(observations.some(o=>o.confidence<.7||o.uncertainty))diagnostics.push('含低置信度或不确定识别项，请对照原图。')

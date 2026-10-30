@@ -1,7 +1,8 @@
 // Planar, zero-thickness geometry only. This is not a contract for future 3D joints.
 export type Vec = [number, number]
 export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; sizeEvidence?: { status: 'estimated'; source: string } }
-export type Pose = { x: number; y: number; angleRad: number }
+// Reflect local X before rotating. Missing mirrored means false for every historical pose.
+export type Pose = { x: number; y: number; angleRad: number; mirrored?: boolean }
 export type Tile = { id: string; profileId: string; profileVersion: number; color: string; pose: Pose }
 export type WorkMode = 'connected-construction' | 'flat-mosaic'
 export type Assembly = { id: string; revision: number; name: string; instances: Tile[] } & ({ schemaVersion: 1; mode?: never } | { schemaVersion: 2; mode: WorkMode })
@@ -39,8 +40,8 @@ export function profileFor(tile: Tile, profiles: readonly Profile[]) {
   return profiles.find(p => p.id === tile.profileId && p.version === tile.profileVersion)
 }
 export function transform(v: Vec, pose: Pose): Vec {
-  const c = Math.cos(pose.angleRad), s = Math.sin(pose.angleRad)
-  return [v[0] * c - v[1] * s + pose.x, v[0] * s + v[1] * c + pose.y]
+  const c = Math.cos(pose.angleRad), s = Math.sin(pose.angleRad), x=pose.mirrored?-v[0]:v[0]
+  return [x * c - v[1] * s + pose.x, x * s + v[1] * c + pose.y]
 }
 export function vertices(tile: Tile, profiles: readonly Profile[]): Vec[] {
   const p = profileFor(tile, profiles)
@@ -49,7 +50,9 @@ export function vertices(tile: Tile, profiles: readonly Profile[]): Vec[] {
 }
 export function edges(tile: Tile, profiles: readonly Profile[]): Edge[] {
   const p = profileFor(tile, profiles)!, v = vertices(tile, profiles)
-  return v.map((a, i) => ({ tileId: tile.id, id: `e${i}`, a, b: v[(i + 1) % v.length], length: distance(a, v[(i + 1) % v.length]), enabled: p.connectableEdges.includes(`e${i}`) }))
+  // Edge IDs retain the original local vertex pair. Reverse direction on reflection
+  // so the polygon interior remains on the left; matched() still requires opposed ends.
+  return v.map((v0, i) => {const v1=v[(i+1)%v.length],a=tile.pose.mirrored?v1:v0,b=tile.pose.mirrored?v0:v1;return { tileId: tile.id, id: `e${i}`, a, b, length: distance(a,b), enabled: p.connectableEdges.includes(`e${i}`) }})
 }
 export function overlaps(a: Vec[], b: Vec[]) {
   // SAT distinguishes positive interior overlap from boundary contact.
@@ -85,8 +88,9 @@ export function validate(instances: readonly Tile[], profiles: readonly Profile[
     ids.add(t.id)
     if (!profileFor(t, profiles)) fail('PROFILE', '缺少指定版本的 Profile', [t.id])
     if (!t.pose || ![t.pose.x, t.pose.y, t.pose.angleRad].every(finite) || Math.abs(t.pose.x) > 1000 || Math.abs(t.pose.y) > 1000 || Math.abs(t.pose.angleRad) > Math.PI * 2) fail('POSE', '位姿无效或超出范围', [t.id])
+    if(t.pose&&'mirrored' in t.pose&&typeof t.pose.mirrored!=='boolean')fail('POSE', 'mirrored 必须是布尔值', [t.id])
     if (typeof t.color !== 'string' || !/^#[a-f0-9]{6}$/i.test(t.color)) fail('COLOR', '颜色必须为六位十六进制', [t.id])
-    if (Object.keys(t).some(k => !['id', 'profileId', 'profileVersion', 'color', 'pose'].includes(k)) || (t.pose && Object.keys(t.pose).some(k => !['x', 'y', 'angleRad'].includes(k)))) fail('INPUT', '实例不允许缩放或未定义字段', [t.id])
+    if (Object.keys(t).some(k => !['id', 'profileId', 'profileVersion', 'color', 'pose'].includes(k)) || (t.pose && Object.keys(t.pose).some(k => !['x', 'y', 'angleRad', 'mirrored'].includes(k)))) fail('INPUT', '实例不允许缩放或未定义字段', [t.id])
   }
   if (issues.length) return { draftValid: false, valid: false, issues, connections, components: [] }
   const polygons = instances.map(t => vertices(t, profiles)), allEdges = instances.map(t => edges(t, profiles)), occupied = new Set<string>()
@@ -118,10 +122,10 @@ export function validate(instances: readonly Tile[], profiles: readonly Profile[
   return { draftValid, valid: draftValid && instances.length > 0 && components.length === 1, issues, connections, components }
 }
 export function alignEdge(tile: Tile, own: Edge, target: Edge, profiles: readonly Profile[]): Tile {
-  const p = profileFor(tile, profiles)!, index = Number(own.id.slice(1)), a = p.vertices[index], b = p.vertices[(index + 1) % p.vertices.length]
-  const d = sub(target.a, target.b), v = sub(b, a), angleRad = wrapAngle(Math.atan2(d[1], d[0]) - Math.atan2(v[1], v[0]))
-  const rotated = transform(a, { x: 0, y: 0, angleRad })
-  return { ...tile, pose: { x: target.b[0] - rotated[0], y: target.b[1] - rotated[1], angleRad } }
+  const p = profileFor(tile, profiles)!, index = Number(own.id.slice(1)), a = p.vertices[tile.pose.mirrored?(index+1)%p.vertices.length:index], b = p.vertices[tile.pose.mirrored?index:(index+1)%p.vertices.length]
+  const d = sub(target.a, target.b), v = sub([tile.pose.mirrored?-b[0]:b[0],b[1]], [tile.pose.mirrored?-a[0]:a[0],a[1]]), angleRad = wrapAngle(Math.atan2(d[1], d[0]) - Math.atan2(v[1], v[0]))
+  const rotated = transform(a, { ...tile.pose, x: 0, y: 0, angleRad })
+  return { ...tile, pose: { ...tile.pose, x: target.b[0] - rotated[0], y: target.b[1] - rotated[1], angleRad } }
 }
 export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number; contactCount: number }
 const midpoint = (edge: Edge): Vec => [(edge.a[0] + edge.b[0]) / 2, (edge.a[1] + edge.b[1]) / 2]
@@ -164,6 +168,23 @@ export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly
 }
 export function rotateTile(tile: Tile, delta: number, profiles: readonly Profile[]): Tile {
   const v = profileFor(tile, profiles)!.vertices, center: Vec = [v.reduce((s, p) => s + p[0], 0) / v.length, v.reduce((s, p) => s + p[1], 0) / v.length]
-  const before = transform(center, tile.pose), angleRad = wrapAngle(tile.pose.angleRad + delta), after = transform(center, { x: 0, y: 0, angleRad })
-  return { ...tile, pose: { x: before[0] - after[0], y: before[1] - after[1], angleRad } }
+  const before = transform(center, tile.pose), angleRad = wrapAngle(tile.pose.angleRad + delta), after = transform(center, { ...tile.pose, x: 0, y: 0, angleRad })
+  return { ...tile, pose: { ...tile.pose, x: before[0] - after[0], y: before[1] - after[1], angleRad } }
+}
+
+// Flip around the tile centroid, independently of world rotation or translation.
+export function mirrorTile(tile:Tile,profiles:readonly Profile[]):Tile{
+ const local=profileFor(tile,profiles)!.vertices,center:Vec=[local.reduce((n,v)=>n+v[0],0)/local.length,local.reduce((n,v)=>n+v[1],0)/local.length],before=transform(center,tile.pose),pose={...tile.pose,mirrored:!tile.pose.mirrored},after=transform(center,pose)
+ return {...tile,pose:{...pose,x:pose.x+before[0]-after[0],y:pose.y+before[1]-after[1]}}
+}
+// Avoid duplicate reflection domains only when both footprint AND enabled edges
+// can be represented by an existing rigid rotation of the same Profile.
+export function mirrorVariants(p:Profile):boolean[]{
+ const base:Tile={id:'symmetry',profileId:p.id,profileVersion:p.version,color:'#000000',pose:{x:0,y:0,angleRad:0}},catalog=[p],target=vertices({...base,pose:{...base.pose,mirrored:true}},catalog),source=vertices(base,catalog),length=distance(source[0],source[1])
+ for(let j=0;j<target.length;j++)for(const direction of [-1,1]){
+  const a=target[j],b=target[(j+direction+target.length)%target.length];if(Math.abs(distance(a,b)-length)>EPS)continue
+  const angleRad=wrapAngle(Math.atan2(b[1]-a[1],b[0]-a[0])-Math.atan2(source[1][1]-source[0][1],source[1][0]-source[0][0])),origin=transform(source[0],{x:0,y:0,angleRad}),tile={...base,pose:{x:a[0]-origin[0],y:a[1]-origin[1],angleRad}},vs=vertices(tile,catalog)
+  if(vs.every(v=>target.some(q=>distance(v,q)<=EPS))&&edges(tile,catalog).every(e=>edges({...base,pose:{...base.pose,mirrored:true}},catalog).some(q=>q.enabled===e.enabled&&((distance(e.a,q.a)<=EPS&&distance(e.b,q.b)<=EPS)||(distance(e.a,q.b)<=EPS&&distance(e.b,q.a)<=EPS)))))return [false]
+ }
+ return [false,true]
 }
