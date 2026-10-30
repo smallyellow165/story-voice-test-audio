@@ -94,3 +94,16 @@
 .review-delete{color:#a13e32;border-color:#d7aca5}
 .review-delete-confirm{padding:8px;background:#fff0eb;border-radius:6px;display:grid;gap:8px}
 .review-title-row button{white-space:nowrap}
+
+/* Current and Selected share each existing history row; no extra vertical panel. */
+.snapshot-history{container-name:snapshot-history;container-type:inline-size;display:grid;grid-template-columns:minmax(0,auto) minmax(40px,1fr) 28px 20px;align-items:center;gap:5px;min-width:0}
+.snapshot-history>label{display:block;white-space:nowrap;font-size:12px;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.snapshot-history select{min-width:0;width:100%;padding:8px 4px;font-size:12px;height:40px}
+.snapshot-history .snapshot-star{width:28px;min-width:0;min-height:32px;height:32px;padding:0;font-size:21px;line-height:1;color:#7e661f}
+.snapshot-star[aria-pressed=true]{background:#fff1ba;border-color:#b89b42}
+.snapshot-warning{color:#a15a16}
+.snapshot-history .vision-review-info{width:20px;height:28px;min-height:28px;font-size:14px}
+.snapshot-history .vision-info-hint{min-width:0}
+
+.snapshot-label-short{display:none}
+@container snapshot-history (max-width:220px){.snapshot-label-long{display:none}.snapshot-label-short{display:inline}}

@@ -4,6 +4,8 @@ import { outlineEvidenceKey } from './profile-match.ts'
 import { InfoHint } from '../../brick-vision/InfoHint.tsx'
 import { PartActions } from './PartActions.tsx'
 import { compactReviewSummary, removeManualPart, setPartExcluded } from './review-edit.ts'
+import { SnapshotHistory } from './SnapshotHistory.tsx'
+import { mergeSelectedHistory, resolveSelectedDefaults, selectedFor, sourceReviews } from './selected-snapshots.ts'
 import { ProfileMatcher } from './ProfileMatcher.tsx'
 import { ReviewWorkspace } from './ReviewWorkspace.tsx'
 import { AssemblyPreview } from '../AssemblyPreview.tsx'
@@ -16,13 +18,14 @@ import { validate } from '../geometry.ts'
 import { profiles } from '../profiles.ts'
 import { canonical, contentHash } from '../build-plan.ts'
 import { intakeApi, prepareImage, prepareLibraryImage } from './api.ts'
-import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin, Reconstruction, Review, Source } from './contracts.ts'
+import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin, Reconstruction, Review, SelectedStage, Source } from './contracts.ts'
 type ReviewUndo={evidence:Evidence;review:Review|null;selected:string;label:string}
 type Config={models:{id:string;label:string;provider:string}[];providers:Record<string,boolean>}
-const emptyHistory=():IntakeHistory=>({sources:[],analyses:[],reviews:[],reconstructions:[],origins:[],warnings:[]})
+const emptyHistory=():IntakeHistory=>({selectedSnapshots:[],sources:[],analyses:[],reviews:[],reconstructions:[],origins:[],warnings:[]})
 export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candidate:Assembly,bind:(actual:Assembly)=>Promise<Origin>)=>Promise<void>}){
  const {stage,navigate}=useStudio()
- const urlRequest=useUrlRequest(), restored=useRef<typeof urlRequest|null>(null)
+ const urlRequest=useUrlRequest(), currentRequest=useRef<typeof urlRequest>(urlRequest), restored=useRef<typeof urlRequest|null>(null)
+ currentRequest.current=urlRequest
  const [urlReady,setUrlReady]=useState(false),[draftAvailable,setDraftAvailable]=useState(false)
  const [confirmedProfiles,setConfirmedProfiles]=useState<Set<string>>(()=>new Set())
  const [config,setConfig]=useState<Config|null>(null),[history,setHistory]=useState<IntakeHistory>(emptyHistory),[source,setSource]=useState<Source|null>(null),[image,setImage]=useState('')
@@ -40,7 +43,7 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const reviewInspector=useRef<HTMLElement>(null)
  useEffect(()=>{if(stage==='review')reviewInspector.current?.closest<HTMLElement>('.studio-inspector')?.scrollTo({top:0})},[selected,stage])
  const lock=useRef(false),file=useRef<HTMLInputElement>(null),svg=useRef<SVGSVGElement>(null),drag=useRef<{id:string;index:number;pointerId:number}|null>(null)
- useEffect(()=>{let live=true;Promise.all([intakeApi<Config>('status'),intakeApi<IntakeHistory>('history')]).then(([c,h])=>{if(live){setConfig(c);setHistory(h)}}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
+ useEffect(()=>{let live=true;intakeApi<Config>('status').then(c=>{if(live)setConfig(c)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{let live=true;void contentHash(assembly).then(h=>{if(live)setCurrentHash(h)});return()=>{live=false}},[assembly])
  useEffect(()=>{
   if(!config)return
@@ -66,16 +69,39 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  },[imageSource])
  function chooseSource(value:'upload'|'server'){setImageSource(value);setPreferenceWarnings(w=>({...w,sourceType:''}))}
  function chooseModel(value:string){setModel(value);setPreferenceWarnings(w=>({...w,model:''}))}
- async function refresh(){setHistory(await intakeApi<IntakeHistory>('history'))}
+ function acceptHistory(next:IntakeHistory){setHistory(previous=>mergeSelectedHistory(previous,next))}
+ async function refresh(){acceptHistory(await intakeApi<IntakeHistory>('history'))}
+ function defaults(h:IntakeHistory,sourceId:string,requestedStage:string){
+  try{return {...resolveSelectedDefaults(h,sourceId,requestedStage,id=>!!localStorage.getItem('magnetic-review-draft:'+id)),warning:''}}
+  catch(e){return {analysisId:undefined,reviewId:undefined,draftBlocked:false,warning:String((e as Error).message)}}
+ }
+ async function toggleSelected(kind:SelectedStage){
+  if(!source)return
+  const state=selectedFor(history,source.id,kind),id=kind==='analysis'?analysis?.id:review?.id
+  const snapshotId=!state.valid||state.snapshotId===id?null:id
+  if(snapshotId===undefined||state.revision===null)return
+  try{await intakeApi('selected',{sourceId:source.id,stage:kind,snapshotId,expectedRevision:state.revision})}
+  finally{await refresh()}
+ }
+
  async function refreshLibrary(){const list=await intakeApi<{images:{name:string;mimeType:string}[]}>('library');setLibrary(list.images);setLibraryName('')}
  async function run(action:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await action()}catch(e){setError(String(e))}finally{lock.current=false;setBusy(false)}}
  async function preserveEdits(){
   if(analysis?.status==='complete'&&draft&&!review&&canonical(draft)!==canonical(analysis.evidence)){
    const saved=await intakeApi<Review>('reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:draft})
-   setReview(saved);setReviewUndo(null);await refresh()
+   setReview(saved);setReviewUndo(null);localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false);await refresh()
   }
  }
- async function openSource(s:Source){await preserveEdits();const img=await intakeApi<{mimeType:string;imageBase64:string}>('image/'+s.id);setSource(s);setLibraryName('');setImage(`data:${img.mimeType};base64,${img.imageBase64}`);setAnalysis(null);setReviewUndo(null);setConfirmedProfiles(new Set());setDraft(null);setReview(null);setResult(null);setChecked(false);setSelected('');setMessage('图片已打开。选择历史分析，或明确发起一次新识别。')}
+ async function openSource(s:Source){
+  const request=urlRequest;await preserveEdits()
+  const h=await intakeApi<IntakeHistory>('history'),choice=defaults(h,s.id,stage)
+  const full=choice.analysisId?await intakeApi<Analysis>('analyses/'+choice.analysisId):null,rv=h.reviews.find(r=>r.id===choice.reviewId)
+  const img=await intakeApi<{mimeType:string;imageBase64:string}>('image/'+s.id)
+  if(currentRequest.current!==request)return
+  acceptHistory(h);setSource(s);setLibraryName('');setImage(`data:${img.mimeType};base64,${img.imageBase64}`);setAnalysis(full);setReviewUndo(null);setConfirmedProfiles(new Set());setDraft(rv?structuredClone(rv.evidence):(full?.evidence?structuredClone(full.evidence):null));setReview(rv??null);setResult(null);setChecked(false);setSelected('');setTarget('');setDraftAvailable(!!full&&!!localStorage.getItem('magnetic-review-draft:'+full.id))
+  setMessage(choice.warning|| (choice.draftBlocked?'存在本地未保存草稿，暂不自动打开 Selected；可恢复草稿或从历史选择快照。':choice.analysisId?'已打开该阶段的 Selected Snapshot；浏览其他记录不会改变 Selected。':'图片已打开。选择历史分析，或明确发起一次新识别。'))
+ }
+
  function edit(next:Evidence,undo:ReviewUndo|null=null){setDraft(next);setReview(null);setResult(null);setChecked(false);setReviewUndo(undo)}
  function editPart(next:Evidence,label:string){if(draft)edit(next,{evidence:draft,review,selected,label})}
  function undoPartEdit(){if(!reviewUndo)return;setDraft(reviewUndo.evidence);setReview(reviewUndo.review);setSelected(reviewUndo.selected);setResult(null);setChecked(false);setReviewUndo(null);setTarget('');if(reviewUndo.review&&analysis){localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false)}}
@@ -86,8 +112,8 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  function deletePart(o:Observation){if(!draft)return;const index=draft.observations.findIndex(p=>p.id===o.id),next=removeManualPart(draft,o.id);editPart(next,`删除 ${o.id}`);setSelected(next.observations[Math.min(index,next.observations.length-1)]?.id??'');setTarget('')}
  function toggleExcluded(o:Observation){if(draft)editPart(setPartExcluded(draft,o.id,!o.excluded),`${o.excluded?'恢复':'排除'} ${o.id}`)}
  function patch(id:string,change:Partial<Observation>){if(draft)edit({...draft,observations:draft.observations.map(o=>o.id===id?{...o,...change}:o)})}
- async function openAnalysis(a:Analysis,preserve=true){if(preserve)await preserveEdits();const full=await intakeApi<Analysis>('analyses/'+a.id);setAnalysis(full);setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');setDraft(full.evidence?structuredClone(full.evidence):null);setSelected(full.evidence?.observations[0]?.id??'');setReview(null);setResult(null);setChecked(false);setMessage(full.status==='complete'?recognitionSummary(full.evidence):full.status==='processing'?'请求进行中或服务曾中断；刷新历史查看结果，不自动重试。':'识别失败，原始记录已保留。')}
- async function openReview(r:Review){const a=history.analyses.find(a=>a.id===r.analysisId);if(!a)throw Error('审核来源不在历史中');await openAnalysis(a);setDraft(structuredClone(r.evidence));setReview(r);setSelected(r.evidence.observations[0]?.id??'')}
+ async function openAnalysis(a:Analysis,preserve=true){const request=urlRequest;if(preserve)await preserveEdits();const full=await intakeApi<Analysis>('analyses/'+a.id);if(currentRequest.current!==request)return;setAnalysis(full);setDraftAvailable(!!localStorage.getItem('magnetic-review-draft:'+a.id));setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');setDraft(full.evidence?structuredClone(full.evidence):null);setSelected(full.evidence?.observations[0]?.id??'');setReview(null);setResult(null);setChecked(false);setMessage(full.status==='complete'?recognitionSummary(full.evidence):full.status==='processing'?'请求进行中或服务曾中断；刷新历史查看结果，不自动重试。':'识别失败，原始记录已保留。')}
+ async function openReview(r:Review){const request=urlRequest,a=history.analyses.find(a=>a.id===r.analysisId);if(!a)throw Error('审核来源不在历史中');await openAnalysis(a);if(currentRequest.current!==request)return;setDraft(structuredClone(r.evidence));setReview(r);setSelected(r.evidence.observations[0]?.id??'')}
  async function saveReview(){await run(async()=>{if(!analysis||!draft)return;const r=await intakeApi<Review>('reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:draft});setReview(r);setReviewUndo(null);setMessage('审核快照已保存。');localStorage.removeItem('magnetic-review-draft:'+analysis.id);setDraftAvailable(false);await refresh()})}
  // Keep unsaved evidence local, separately from immutable server snapshots.
  useEffect(()=>{if(urlReady&&restored.current===urlRequest&&analysis&&draft&&!review&&canonical(draft)!==canonical(analysis.evidence)){
@@ -101,9 +127,13 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    const h=await intakeApi<IntakeHistory>('history')
    const find=<T extends {id:string}>(items:T[],id:string|undefined,label:string)=>{if(!id)return undefined;const item=items.find(x=>x.id===id);if(!item)throw Error(label+' 不存在或不可读取：'+id);return item}
    const rc=find(h.reconstructions,v.reconstructionId,'Reconstruction')
-   const rv=find(h.reviews,v.reviewId||rc?.reviewId,'Review')
-   const a=find(h.analyses,v.analysisId||rv?.analysisId,'Analysis')
+   let rv=find(h.reviews,v.reviewId||rc?.reviewId,'Review')
+   let a=find(h.analyses,v.analysisId||rv?.analysisId,'Analysis')
    const src=find(h.sources,v.sourceId||a?.sourceId||rc?.sourceId,'Source')
+   const explicit=['analysisId','reviewId','reconstructionId','candidateId','observationId'].some(key=>v[key])
+   const choice=src&&!explicit?defaults(h,src.id,v.stage||'assembly'):null
+   if(choice?.reviewId)rv=find(h.reviews,choice.reviewId,'Review')
+   if(choice?.analysisId)a=find(h.analyses,choice.analysisId,'Analysis')
    if(rc&&(!rv||rc.reviewId!==rv.id||rc.reviewHash!==rv.hash||rc.sourceId!==src?.id||rc.sourceHash!==src?.hash))throw Error('URL Reconstruction 与 Review / Source 来源不匹配')
    if(rv&&(!a||rv.analysisId!==a.id||rv.analysisHash!==a.hash))throw Error('URL Review 与 Analysis 来源不匹配')
    if(a&&(!src||a.sourceId!==src.id||a.sourceHash!==src.hash))throw Error('URL Analysis 与 Source 来源不匹配')
@@ -113,10 +143,10 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    if(v.observationId&&!evidence?.observations.some(o=>o.id===v.observationId))throw Error('URL Observation 不属于所选审核 / 分析')
    const img=src?await intakeApi<{mimeType:string;imageBase64:string}>('image/'+src.id):null
    if(!alive)return
-   setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');setHistory(h);setSource(src??null);setImage(img?`data:${img.mimeType};base64,${img.imageBase64}`:'');setAnalysis(full);setDraft(evidence?structuredClone(evidence):null);setReview(rv??null);setResult(rc??null);setCandidateId(v.candidateId??'');setSelected(v.observationId??'');setChecked(false)
+   setReviewUndo(null);setConfirmedProfiles(new Set());setTarget('');acceptHistory(h);setSource(src??null);setImage(img?`data:${img.mimeType};base64,${img.imageBase64}`:'');setAnalysis(full);setDraft(evidence?structuredClone(evidence):null);setReview(rv??null);setResult(rc??null);setCandidateId(v.candidateId??'');setSelected(v.observationId??'');setChecked(false)
    if(rc)setMode(rc.mode??'connected-construction')
    setDraftAvailable(!!a&&!!localStorage.getItem('magnetic-review-draft:'+a.id))
-   setError('');if(src)setMessage('已按 URL 恢复保存的图片与工作上下文；未执行识别、重建或教程生成。');restored.current=urlRequest;setUrlReady(true)
+   setError('');if(src)setMessage(choice?.warning|| (choice?.draftBlocked?'存在本地未保存草稿，暂不自动打开 Selected；可恢复草稿或从历史选择快照。':choice?.analysisId?'已恢复该阶段的 Selected Snapshot；Current 已写入 URL。':'已按 URL 恢复保存的图片与工作上下文；未执行识别、重建或教程生成。'));restored.current=urlRequest;setUrlReady(true)
   }
   void restore().catch(e=>{if(alive){setError('URL 恢复失败：'+String(e));restored.current=urlRequest;setUrlReady(true)}})
   return()=>{alive=false}
@@ -128,6 +158,8 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const origins=history.origins.filter(o=>o.assembly.id===assembly.id),origin=origins.find(o=>o.assemblyHash===currentHash)??origins[0]
  const shown=draft??analysis?.evidence
  const resultEvidence=result?history.reviews.find(r=>r.id===result.reviewId)?.evidence:undefined
+ const selectedAnalysis=selectedFor(history,source?.id??'','analysis'),selectedReview=selectedFor(history,source?.id??'','review')
+ const selectedMismatch=selectedReview.analysisId&&selectedAnalysis.snapshotId&&selectedReview.analysisId!==selectedAnalysis.snapshotId?`Selected Review 来源 Analysis ${selectedReview.analysisId} 与 Selected Analysis ${selectedAnalysis.snapshotId} 不同；关联保持原样。`:undefined
  const disabled=busy||!config||!urlReady||!preferencesReady
  function addPiece(){if(!draft||draft.observations.length>=25)return;const p=profiles[0],xs=p.vertices.map(v=>v[0]),ys=p.vertices.map(v=>v[1]),scale=.2/Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));const id='manual-'+crypto.randomUUID().slice(0,8);editPart({...draft,observations:[...draft.observations,{id,profileId:profiles[0].id,profileVersion:profiles[0].version,color:'#f5b942',outline:p.vertices.map(([x,y])=>[.4+(x-Math.min(...xs))*scale,.4+(Math.max(...ys)-y)*scale]),confidence:0,evidence:'人工补片',uncertainty:'请将轮廓角点拖到图片中真实边界',origin:'manual',excluded:false}]},`新增 ${id}`);setSelected(id)}
  return <>
@@ -139,8 +171,8 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
    {preferenceWarnings.sourceType&&<p role="alert">{preferenceWarnings.sourceType}</p>}{preferenceWarnings.model&&<p role="alert">{preferenceWarnings.model}</p>}{preferenceStorageError&&<p role="alert">{preferenceStorageError}</p>}
    <label>下次识别模型<select aria-label="识别模型" disabled={disabled} value={model} onChange={e=>chooseModel(e.target.value)}><option value="">选择模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
    <button className="primary" disabled={disabled||!source||!model} onClick={()=>void run(async()=>{await preserveEdits();setMessage('正在真实识别，可能需要数分钟；不会自动重试。');const a=await intakeApi<Analysis>('recognize',{sourceId:source!.id,model,requestId:crypto.randomUUID()});await refresh();await openAnalysis(a,false)})}>识别图片（调用模型）</button>
-   <label>历史 Analysis<select aria-label="历史 Analysis" disabled={disabled} value={analysis?.id??''} onChange={e=>{const a=history.analyses.find(a=>a.id===e.target.value);if(a)void run(()=>openAnalysis(a))}}><option value="">选择分析</option>{history.analyses.filter(a=>a.sourceId===source?.id).map(a=><option key={a.id} value={a.id}>{a.createdAt.slice(0,19)} · {a.model} · {a.status}</option>)}</select></label>
-   <label>历史 Review<select aria-label="历史 Review" disabled={disabled} value={review?.id??''} onChange={e=>{const r=history.reviews.find(r=>r.id===e.target.value);if(r)void run(()=>openReview(r))}}><option value="">当前编辑 / 未保存</option>{history.reviews.filter(r=>r.analysisId===analysis?.id).map(r=><option key={r.id} value={r.id}>{r.createdAt.slice(0,19)} · {r.id.slice(0,8)}</option>)}</select></label>
+   <SnapshotHistory stage="analysis" currentId={analysis?.id??''} selection={selectedAnalysis} disabled={disabled||!source} canSelect={!!analysis&&analysis.status!=='processing'} entries={history.analyses.filter(a=>a.sourceId===source?.id).map(a=>({id:a.id,label:`${a.createdAt.slice(0,19)} · ${a.id.slice(0,8)} · ${a.model} · ${a.status}`}))} onOpen={id=>{const a=history.analyses.find(a=>a.id===id);if(a)void run(()=>openAnalysis(a))}} onToggle={()=>void run(()=>toggleSelected('analysis'))}/>
+   <SnapshotHistory stage="review" currentId={review?.id??''} selection={selectedReview} disabled={disabled||!source} entries={sourceReviews(history,source?.id??'').map(r=>({id:r.id,label:`${r.createdAt.slice(0,19)} · ${r.id.slice(0,8)} · A:${r.analysisId.slice(0,8)}`}))} mismatch={selectedMismatch} onOpen={id=>{const r=history.reviews.find(r=>r.id===id);if(r)void run(()=>openReview(r))}} onToggle={()=>void run(()=>toggleSelected('review'))}/>
    <label>历史重建<select aria-label="历史重建" disabled={disabled} value={result?.id??''} onChange={e=>{const r=history.reconstructions.find(r=>r.id===e.target.value);if(r)void run(async()=>{const rv=history.reviews.find(v=>v.id===r.reviewId);if(!rv)throw Error('缺少来源 Review');await openReview(rv);setMode(r.mode??'connected-construction');setResult(r);setCandidateId(r.candidates[0]?.id??'');setChecked(false);navigate('reconstruction')})}}><option value="">选择结果</option>{history.reconstructions.filter(r=>r.sourceId===source?.id).map(r=><option key={r.id} value={r.id}>{r.createdAt.slice(0,19)} · {r.candidates.length} 个候选</option>)}</select></label>
   </section></StudioSlot>
   <StudioSlot column="workspace" stages={imageStages}>
