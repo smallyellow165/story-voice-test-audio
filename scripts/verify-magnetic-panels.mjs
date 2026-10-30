@@ -12,8 +12,8 @@ const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[]
 page.on('pageerror',e=>errors.push(e.message));await page.route('**/api/magnetic-intake/recognize',()=>{throw Error('Paid calls forbidden')})
 async function open(r=records[0]){
  await stage(page,'source');await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='刷新图片历史'&&!b.disabled))
- await page.getByLabel('已保存图片',{exact:true}).selectOption(r.sourceId)
- await page.getByLabel('历史重建',{exact:true}).selectOption(r.id)
+ await page.getByLabel('当前图片',{exact:true}).selectOption(r.sourceId)
+ await page.getByLabel('历史 Reconstruction',{exact:true}).selectOption(r.id)
  await page.locator('.intake-candidate polygon').first().waitFor()
 }
 const widths=()=>page.locator('.studio-panels > [data-panel]').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().width))
@@ -51,7 +51,7 @@ try{
   for(const delta of [25,-35,10]){await drag('调整原图与候选宽度',delta);await drag('调整左栏与中栏宽度',delta);await drag('调整中栏与右栏宽度',-delta)}
   await stage(page,'review');await stage(page,'reconstruction');await pixels('width-'+width)
  }
- if(records[1]){await page.getByLabel('历史重建',{exact:true}).selectOption(records[1].id);await page.getByLabel('重建候选',{exact:true}).selectOption(records[1].candidates[0].id);await pixels('history-change')}
+ if(records[1]){await page.getByLabel('历史 Reconstruction',{exact:true}).selectOption(records[1].id);await page.getByLabel('几何重建候选',{exact:true}).selectOption(records[1].candidates[0].id);await pixels('history-change')}
  await page.screenshot({path:out+'/studio-resized.png'})
  // Each column scrolls without moving the page or its neighbors.
  await page.setViewportSize({width:1600,height:480})

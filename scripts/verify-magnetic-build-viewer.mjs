@@ -22,11 +22,11 @@ try{
  const five=await exportJson('导出教程 JSON');assert.equal(five.plan.steps.length,5)
  for(let i=1;i<5;i++){await button('下一步').click();await ready()}
  await button('完成搭建').click();await ready()
- await stage(page,'source');await idle();await page.getByLabel('已保存图片',{exact:true}).selectOption(record.sourceId);await idle();await page.getByLabel('历史重建',{exact:true}).selectOption(record.id);await idle()
+ await stage(page,'source');await idle();await page.getByLabel('当前图片',{exact:true}).selectOption(record.sourceId);await idle();await page.getByLabel('历史 Reconstruction',{exact:true}).selectOption(record.id);await idle()
  await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await idle();await name('小鸭子保存作品');await button('保存作品快照').click();const duck=await exportJson('导出 JSON')
  await name('小鸭子未保存修改');const draft=await exportJson('导出 JSON')
  await stage(page,'build');await assertPreview(17);assert.equal(await source.inputValue(),'current');assert.match(await page.getByTestId('build-source-status').innerText(),/未保存草稿/)
- assert.equal(await page.locator('.studio-workflow').getByLabel('教程来源作品',{exact:true}).count(),1);assert.equal(await page.locator('.studio-inspector').getByLabel('教程来源作品',{exact:true}).count(),0)
+ assert.equal(await page.locator('.studio-workflow').getByLabel('教程来源作品',{exact:true}).count(),0);assert.equal(await page.locator('.studio-inspector').getByLabel('教程来源作品',{exact:true}).count(),1)
  await source.selectOption('saved:'+duck.id);await assertPreview(17);assert.match(await preview.innerText(),/小鸭子保存作品/)
  await button('生成搭建步骤').click();await ready();await button('保存教程').click();await ready();const seventeen=await exportJson('导出教程 JSON');assert.equal(seventeen.plan.steps.length,17);assert.deepEqual(seventeen.snapshot.assembly,duck)
  await button('下一步').click();await ready();assert.equal(await player.locator('[data-build-tile]').count(),2)
@@ -43,5 +43,5 @@ try{
  for(let i=1;i<17;i++){await button('下一步').click();await ready()}
  await button('完成搭建').click();await ready();await page.screenshot({path:'/tmp/magnetic-build-viewer/duck-tutorial.png'})
  assert.deepEqual(await exportJson('导出教程 JSON'),seventeen);assert.deepEqual(errors,[])
- console.log('PASS: real historical duck 17 + manually built 5; source preview in Workspace; source controls only in Workflow; tutorial controls only when playing; immutable plans and editor draft preserved; independent progress, reload and replay.')
+ console.log('PASS: real historical duck 17 + manually built 5; source preview in Workspace; source controls only in Build Inspector; tutorial controls only when playing; immutable plans and editor draft preserved; independent progress, reload and replay.')
 }finally{await browser.close()}

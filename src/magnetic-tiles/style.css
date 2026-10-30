@@ -129,3 +129,21 @@
 .catalog-details th,.catalog-details td{padding:5px 2px;border-bottom:1px solid #d6e1d7;text-align:left;overflow-wrap:anywhere}
 .catalog-details th:first-child{width:45%}
 @media(max-width:1150px){.studio-inspector-heading{top:-12px}}
+
+/* Shared context stays compact; stage-only operations use their Inspector slots. */
+.compact-field{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;white-space:nowrap;min-width:0}
+.compact-field select{min-width:0;width:100%;padding:8px 5px;font-size:12px}
+.shared-intake-context{gap:10px}.intake-history{display:grid;gap:6px;min-width:0}
+.intake-history-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;font-size:12px}
+.intake-history-heading button{padding:4px 6px;min-height:28px;font-size:11px;white-space:nowrap}
+.source-library-row{display:flex;align-items:center;gap:5px;min-width:0}
+.source-library-row>.compact-field{flex:1}.source-library-row>button{padding:7px;min-height:36px;font-size:12px;flex:none}
+.context-notice-row{display:flex;align-items:center;gap:5px;min-width:0;font-size:12px}
+.context-notice{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.6;margin:0}
+.context-notice-row>.context-notice{flex:1}.context-notice-row>.vision-info-hint{flex:none}
+.source-inspector .review-inspector-heading h2{font-size:15px}
+.studio-inspector .build-source{gap:8px;margin:0;padding:0;border:0}
+.studio-inspector .build-source h2{font-size:17px;margin:0}
+.studio-inspector .build-panel h2{font-size:17px}
+
+.draft-recovery-row{display:flex;align-items:center;gap:6px;min-width:0}.draft-recovery-row>button{font-size:12px;padding:6px 8px}

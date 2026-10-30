@@ -6,7 +6,7 @@ const history=await(await fetch(base+'/api/magnetic-intake/history')).json(),a=h
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']})
 const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/api/magnetic-intake/recognize',()=>{throw Error('Paid calls forbidden')})
 const rows=page.locator('[data-review-id]'),idle=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='刷新图片历史'&&!b.disabled))
-async function open(){await stage(page,'source');await idle();await page.getByLabel('已保存图片',{exact:true}).selectOption(a.sourceId);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(a.id);await idle();await stage(page,'review')}
+async function open(){await stage(page,'source');await idle();await page.getByLabel('当前图片',{exact:true}).selectOption(a.sourceId);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(a.id);await idle();await stage(page,'review')}
 const ratio=()=>page.locator('.review-workspace > [data-panel]').evaluateAll(es=>es[0].getBoundingClientRect().height/(es[0].getBoundingClientRect().height+es[1].getBoundingClientRect().height))
 try{
  await page.goto(base+'/story-voice-test-audio/magnetic-tiles.html');await open();assert.equal(await rows.count(),14);assert.ok(Math.abs(await ratio()-.65)<.02)

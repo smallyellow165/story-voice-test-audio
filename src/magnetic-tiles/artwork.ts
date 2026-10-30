@@ -1,3 +1,4 @@
+import { workModeNames } from './studio-terms.ts'
 import { validate, vertices } from './geometry.ts'
 import type { Assembly, Profile, Tile, WorkMode } from './geometry.ts'
 // V1 always means Connected Construction. No guessing from the current graph.
@@ -6,7 +7,7 @@ export function checkArtwork(a: Assembly, profiles: readonly Profile[]) {
   const geometry = validate(a.instances, profiles), mode = workMode(a)
   return { geometry, mode, ready: a.instances.length > 0 && geometry.draftValid && (mode === 'flat-mosaic' || geometry.valid) }
 }
-export const modeLabel = (mode: WorkMode) => mode === 'flat-mosaic' ? 'Flat Mosaic · 平面拼图' : 'Connected Construction · 连通搭建'
+export const modeLabel = (mode: WorkMode) => workModeNames[mode]
 export function componentPlacement(tile: Tile, previous: Tile[], profiles: readonly Profile[]) {
   if (!previous.length) return '先放好第一块，位置见画布。'
   const center = (t: Tile) => { const vs = vertices(t, profiles); return [vs.reduce((s,v)=>s+v[0],0)/vs.length, vs.reduce((s,v)=>s+v[1],0)/vs.length] }

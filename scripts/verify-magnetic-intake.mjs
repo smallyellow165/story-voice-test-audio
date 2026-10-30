@@ -38,7 +38,7 @@ try{
   report.cases.push(summary);await writeFile(output+'/report.json',JSON.stringify(report,null,2))
   assert.equal(analysis.status,'complete',JSON.stringify(summary))
   const saved=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await button('保存审核快照').click();const review=await (await saved).json();await idle()
-  const reconstructed=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('重建二维布局').click();const result=await (await reconstructed).json();await idle()
+  const reconstructed=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('生成几何重建').click();const result=await (await reconstructed).json();await idle()
   summary.reviewId=review.id;summary.reconstructionId=result.id;summary.reconstruction=result
   await page.locator('.studio').screenshot({path:`${output}/${entry.id}-intake.png`,animations:'disabled'})
   await writeFile(output+'/report.json',JSON.stringify(report,null,2))
@@ -53,7 +53,7 @@ try{
     }
     await reviewDetails(page,'高级信息 / 编辑');await page.getByLabel('输入说明 / 修正理由',{exact:true}).fill('人工局部验收：仅重建六块鸭头三角形和嘴部；身体与脚并非误检，本次有意排除，不代表完整小鸭子成功。')
     const saved=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await button('保存审核快照').click();const partialReview=await (await saved).json();await idle()
-    const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('重建二维布局').click();const partial=await (await response).json();await idle()
+    const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('生成几何重建').click();const partial=await (await response).json();await idle()
     summary.manualSubset={description:'Only six head triangles and beak; body/feet intentionally excluded for a 7-piece subassembly test',reviewId:partialReview.id,result:partial}
     assert.ok(partial.candidates.length,'real photo head subset should reconstruct after explicit review')
     assert.equal(partial.candidates[0].assembly.instances.length,7)
@@ -73,7 +73,7 @@ try{
    await button('生成搭建步骤').click();await button('保存教程').click();await button('下一步').click()
    const bundle=await exportBuild();assert.equal(bundle.plan.steps.length,2);summary.buildPlanId=bundle.plan.id
    await page.reload();await stage(page,'source');await idle()
-   await page.getByLabel('已保存图片',{exact:true}).selectOption(source.id);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle()
+   await page.getByLabel('当前图片',{exact:true}).selectOption(source.id);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle()
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    // Create a new manual review; retain the old immutable review, assembly and Build.
    await stage(page,'review');await reviewDetails(page,'零件证据与轮廓编辑');await page.getByLabel('修正颜色',{exact:true}).fill('#4466aa');await button('保存审核快照').click();await idle()
@@ -88,14 +88,14 @@ try{
    await stage(page,'review');await page.getByLabel('修正形状',{exact:true}).selectOption('unknown')
    await button('保存审核快照').click();await idle()
    const unknownResponse=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'))
-   await button('重建二维布局').click();const unknownResult=await (await unknownResponse).json();await idle()
+   await button('生成几何重建').click();const unknownResult=await (await unknownResponse).json();await idle()
    assert.equal(unknownResult.candidates.length,0)
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    await stage(page,'review');await reviewDetails(page,'连接关系编辑');await page.getByLabel('连接到',{exact:true}).selectOption(analysis.evidence.observations[1].id)
    await page.getByLabel('关系意图',{exact:true}).selectOption('separate');await button('设置关系').click()
    await button('保存审核快照').click();await idle()
    const disconnectedResponse=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'))
-   await button('重建二维布局').click();const disconnected=await (await disconnectedResponse).json();await idle();assert.equal(disconnected.candidates.length,0)
+   await button('生成几何重建').click();const disconnected=await (await disconnectedResponse).json();await idle();assert.equal(disconnected.candidates.length,0)
    await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle()
    await button('新增零件').click();assert.match(await page.locator('.intake-controls legend').innerText(),/人工补充/)
    await stage(page,'review');await page.getByLabel('修正形状',{exact:true}).selectOption('right-triangle@1')

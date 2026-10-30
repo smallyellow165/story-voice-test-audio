@@ -1,3 +1,4 @@
+import { workflowTerms } from './studio-terms.ts'
 import { SupportedTiles } from './SupportedTiles.tsx'
 import { PANEL_PREFERENCES_KEY, resolvePanelState } from './studio-panel-state.ts'
 import type { RightTab } from './studio-panel-state.ts'
@@ -12,13 +13,7 @@ import { createPortal } from 'react-dom'
 export type Stage = WorkflowStage
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
-const stages: {id:Stage;label:string;detail:string}[] = [
-  {id:'source',label:'图片与识别',detail:'上传 · 历史 · 识别'},
-  {id:'review',label:'识别审核',detail:'零件 · 轮廓 · 关系'},
-  {id:'reconstruction',label:'几何重建',detail:'原图对照 · 选择候选'},
-  {id:'assembly',label:'作品编辑（Assembly）',detail:'自由搭建 · 保存作品'},
-  {id:'build',label:'搭建教程（Build）',detail:'生成 · 保存 · 重播'},
-]
+const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
 const Context = createContext<{stage:Stage; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.

@@ -13,7 +13,7 @@ context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)))
 context.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/magnetic-intake/'))writes.push(r.url())})
 await context.route('**/api/magnetic-intake/recognize',r=>r.abort())
 const page=await context.newPage(),catalog=page.getByRole('region',{name:'Tiles Catalog',exact:true}),rows=catalog.locator('[data-catalog-profile]'),right=page.locator('.studio-inspector')
-const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="已保存图片"]');return s&&!s.disabled})
+const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="当前图片"]');return s&&!s.disabled})
 const catalogActive=p=>p.getByRole('tab',{name:'Tiles Catalog',exact:true}).getAttribute('aria-selected')
 const rose=path+`?stage=review&sourceId=${fixture.sourceId}&analysisId=${fixture.analysisId}&reviewId=${fixture.reviewId}&observationId=p1`
 const key=p=>p.id+'@'+p.version

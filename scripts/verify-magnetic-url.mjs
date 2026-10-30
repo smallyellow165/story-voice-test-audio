@@ -8,7 +8,7 @@ const context=await browser.newContext({viewport:{width:1800,height:1050}}),erro
 context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)))
 await context.route('**/api/magnetic-intake/recognize',r=>{forbidden.push(r.request().url());return r.abort()})
 await context.route('**/api/magnetic-intake/reconstruct',r=>{forbidden.push(r.request().url());return r.abort()})
-const page=await context.newPage(),idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="已保存图片"]');return s&&!s.disabled}),button=n=>studioButton(page,n)
+const page=await context.newPage(),idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="当前图片"]');return s&&!s.disabled}),button=n=>studioButton(page,n)
 try{
  await page.goto(path+'?stage=review&sourceId='+a.sourceId+'&analysisId='+a.id+'&observationId=p6');await idle(page)
  assert.equal(await page.getByLabel('修正形状',{exact:true}).inputValue(),'unknown')
@@ -25,7 +25,7 @@ try{
  await stage(page,'catalog');await stage(page,'build');await page.goBack();await idle(page);assert.equal(await page.locator('main').getAttribute('data-active-stage'),'review');assert.equal(await page.getByRole('tab',{name:'Tiles Catalog',exact:true}).getAttribute('aria-selected'),'true');assert.equal(await page.locator('tr[aria-selected=true]').getAttribute('data-review-id'),'p4');await page.goForward();await page.waitForFunction(()=>document.querySelector('main').dataset.activeStage==='build')
  await page.goto(link);await idle(page);await reviewDetails(page,'零件证据与轮廓编辑');await page.getByLabel('修正颜色',{exact:true}).fill('#123456');await page.getByLabel('修正颜色',{exact:true}).dispatchEvent('change');await page.waitForFunction(()=>!new URL(location.href).searchParams.has('reviewId'));await page.goto(link);await idle(page);assert.equal(await page.getByLabel('修正颜色',{exact:true}).inputValue(),review.evidence.observations.find(o=>o.id==='p6').color.toLowerCase());await button('恢复本地审核草稿').click();assert.equal(await page.getByLabel('修正颜色',{exact:true}).inputValue(),'#123456');assert.equal(new URL(page.url()).searchParams.has('reviewId'),false)
  const duckLink=path+'?stage=reconstruction&sourceId='+duck.sourceId+'&reconstructionId='+duck.id+'&candidateId='+duck.candidates[0].id
- await page.goto(duckLink);await idle(page);assert.equal(await page.getByLabel('重建候选',{exact:true}).inputValue(),duck.candidates[0].id);assert.equal(await page.locator('[aria-label="重建候选预览"] [data-preview-piece]').count(),17);await page.reload();await idle(page)
+ await page.goto(duckLink);await idle(page);assert.equal(await page.getByLabel('几何重建候选',{exact:true}).inputValue(),duck.candidates[0].id);assert.equal(await page.locator('[aria-label="几何重建候选预览"] [data-preview-piece]').count(),17);await page.reload();await idle(page)
  await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await idle(page);await button('保存作品快照').click();const assemblyId=new URL(page.url()).searchParams.get('assemblyId');assert.ok(assemblyId)
  await page.reload();await idle(page);assert.equal(await page.locator('[data-tile-id]').count(),17)
  const assemblyLink=page.url(),savedName=await page.getByLabel('作品名称',{exact:true}).inputValue()

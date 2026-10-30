@@ -1,3 +1,5 @@
+import { workflowTerms } from './studio-terms.ts'
+import { InfoHint } from '../brick-vision/InfoHint.tsx'
 import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
 import { AssemblyPreview } from './AssemblyPreview.tsx'
 import { assemblySaveStatus, sameAssemblyContents } from './assembly-source.ts'
@@ -74,24 +76,20 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
   }
   const playing=viewer==='tutorial'&&!!bundle&&!!progress
   const disabled = busy || blocked
-  return <><StudioSlot column="workflow" stages={['build']}>
+  return <><StudioSlot column="inspector" stages={['build']}>
     <section className="build-source" aria-label="生成教程的作品来源">
-      <h3>待生成教程来源 · 作品</h3>
-      <label>教程来源作品<select aria-label="教程来源作品" value={sourceId} disabled={disabled || dragging} onChange={e=>{setSourceId(e.target.value);setViewer('source');writeStudioUrl({buildId:undefined})}}>
+      <h2>{workflowTerms.build.label}</h2>
+      <label className="compact-field">教程来源作品<select aria-label="教程来源作品" value={sourceId} disabled={disabled || dragging} onChange={e=>{setSourceId(e.target.value);setViewer('source');writeStudioUrl({buildId:undefined})}}>
         <option value="current">使用当前作品 · {assembly.name}</option>
         <optgroup label="已保存作品">{savedAssemblies.map(a=><option key={a.id} value={`saved:${a.id}`}>{a.name} · {a.instances.length} 块 · revision {a.revision}</option>)}</optgroup>
       </select></label>
-      {source?<><p><b>{source.name}</b> · {source.instances.length} 块 · {modeLabel(workMode(source))}</p>
-      <p data-testid="build-source-status">{sourceId==='current'?assemblySaveStatus(assembly,savedAssemblies):'已保存作品快照 · 使用保存时的内容'}</p>
-      <p className="hint">来源 ID {source.id} · revision {source.revision}</p>
-      {sourceId!=='current'&&<p className="hint">仅将所选快照用于生成教程，不会覆盖作品编辑器中的未保存修改。{assembly.id===source.id&&!sameAssemblyContents(assembly,source)?' 编辑器中的同名作品已有不同内容。':''}</p>}
+      {source?<><div className="context-notice-row"><p className="context-notice" title={`${source.name} · ${source.instances.length} 块 · ${modeLabel(workMode(source))}`}>{source.name} · {source.instances.length} 块 · {modeLabel(workMode(source))}</p><InfoHint label="搭建教程来源"><p>来源 ID {source.id} · revision {source.revision}</p><p>当前有效草稿无需先保存作品，也可生成预览。保存教程会固定独立来源快照；旧教程及播放进度保持不变。</p>{sourceId!=='current'&&<p>所选保存快照不会覆盖作品编辑中的未保存修改。{assembly.id===source.id&&!sameAssemblyContents(assembly,source)?'编辑器中的同名作品已有不同内容。':''}</p>}</InfoHint></div>
+      <p className="context-notice" data-testid="build-source-status" title={sourceId==='current'?assemblySaveStatus(assembly,savedAssemblies):'已保存作品快照 · 使用保存时的内容'}>{sourceId==='current'?assemblySaveStatus(assembly,savedAssemblies):'已保存作品快照 · 使用保存时的内容'}</p>
       </>:<p role="alert">所选作品已不可用，请重新选择来源。</p>}
       {workspaceError&&<p role="alert" className="storage-error">作品存储有错误，不能确认当前内容已写入浏览器：{workspaceError}</p>}
-      <p className="hint">当前有效草稿无需先保存作品，也可生成预览。保存教程会固定其独立来源快照。选择来源后，中栏显示完整作品预览；旧教程及其进度保持不变。</p>
-      <button onClick={()=>navigate('assembly')}>返回作品编辑器</button>
+      <button onClick={()=>navigate('assembly')}>返回作品编辑（Assembly）</button>
     </section></StudioSlot>
     <StudioSlot column="inspector" stages={['build']}><section className="tiles-panel build-panel" aria-label="搭建教程（Build）">
-    <h2>搭建教程（Build）</h2>
     {!playing&&<p>作品预览 · 尚未生成教程。点击生成后开始分步骤搭建。</p>}
     {!playing&&bundle&&<button disabled={disabled} onClick={()=>{setViewer('tutorial');writeStudioUrl({buildId:library.plans.some(p=>p.id===library.activeId)?library.activeId??undefined:undefined})}}>继续上次教程</button>}
     <div className="button-row"><button className="primary" disabled={disabled || dragging || !source || !checkArtwork(source, profiles).ready} onClick={() => void run(async () => {
@@ -114,5 +112,5 @@ export function BuildPanel({ assembly, savedAssemblies, workspaceError, profiles
       try { await saveLibrary(localStorage, emptyLibrary(), profiles); setLibrary(emptyLibrary()); setBlocked(false); setError(''); setNotice('教程存档已重置。') } catch (e) { setError(String(e)) }
     }}>重置教程存档</button></div>}
     {playing && bundle && progress && <><p className="hint" data-testid="build-playback-source"><b>当前播放教程的固定来源</b><br/>{bundle.snapshot.assembly.name} · {bundle.snapshot.assembly.instances.length} 块 · {modeLabel(workMode(bundle.snapshot.assembly))}<br/>{library.preview?.plan.id === bundle.plan.id ? '未保存预览' : '已保存教程'} · 方案版本 {bundle.plan.revision} · 来源 ID {bundle.snapshot.assembly.id} / revision {bundle.snapshot.assembly.revision} · Hash {bundle.snapshot.hash.slice(0, 12)}</p></>}
-  </section></StudioSlot><StudioSlot column="workspace" stages={['build']}>{playing && bundle && progress ? <BuildPlayer key={bundle.plan.id} bundle={bundle} progress={progress} profiles={profiles} disabled={disabled} onProgress={(p: BuildProgress) => void run(async () => ({ ...library, progress: { ...library.progress, [bundle.plan.id]: p } }), p.completed ? '已记录完成；这不会自动判断实物搭建。' : '播放进度已保存。')}/> : <section aria-label="Build 作品预览"><h3>作品预览 · 尚未生成教程</h3>{source?<><p>{source.name} · {source.instances.length} 块 · {modeLabel(workMode(source))}</p><AssemblyPreview assembly={source} profiles={profiles} className="build-board"/>{!source.instances.length&&<p>当前作品为空，请先在作品编辑器中添加磁力片。</p>}</>:<p>请从左栏选择来源作品。</p>}</section>}</StudioSlot></>
+  </section></StudioSlot><StudioSlot column="workspace" stages={['build']}>{playing && bundle && progress ? <BuildPlayer key={bundle.plan.id} bundle={bundle} progress={progress} profiles={profiles} disabled={disabled} onProgress={(p: BuildProgress) => void run(async () => ({ ...library, progress: { ...library.progress, [bundle.plan.id]: p } }), p.completed ? '已记录完成；这不会自动判断实物搭建。' : '播放进度已保存。')}/> : <section aria-label="Build 作品预览"><h3>作品预览 · 尚未生成教程</h3>{source?<><p>{source.name} · {source.instances.length} 块 · {modeLabel(workMode(source))}</p><AssemblyPreview assembly={source} profiles={profiles} className="build-board"/>{!source.instances.length&&<p>当前作品为空，请先在作品编辑器中添加磁力片。</p>}</>:<p>请在右栏 Inspector 选择教程来源作品。</p>}</section>}</StudioSlot></>
 }

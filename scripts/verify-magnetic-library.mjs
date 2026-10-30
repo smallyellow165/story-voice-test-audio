@@ -25,7 +25,7 @@ try{
  await copyFile(new URL(rose,directory),new URL(extra,directory));await page.getByRole('button',{name:'刷新 Server Library',exact:true}).click();await idle();assert.ok((await list.locator('option').allTextContents()).includes(extra))
  assert.equal((await choose(extra)).id,r.id)
  await unlink(new URL(extra,directory));await page.getByRole('button',{name:'刷新 Server Library',exact:true}).click();await idle();assert.ok(!(await list.locator('option').allTextContents()).includes(extra))
- await page.getByLabel('已保存图片',{exact:true}).selectOption(d.id);await idle();await page.getByLabel('已保存图片',{exact:true}).selectOption(r.id);await idle();assert.ok(await page.locator('.intake-image image').getAttribute('href'))
+ await page.getByLabel('当前图片',{exact:true}).selectOption(d.id);await idle();await page.getByLabel('当前图片',{exact:true}).selectOption(r.id);await idle();assert.ok(await page.locator('.intake-image image').getAttribute('href'))
  const uploaded=page.waitForResponse(x=>x.url().endsWith('/api/magnetic-intake/sources')&&x.request().method()==='POST');await page.getByTestId('intake-upload').setInputFiles(new URL(rose,directory).pathname);assert.equal((await(await uploaded).json()).id,r.id);await idle()
  const after=await(await page.request.get(base+'/api/magnetic-intake/history')).json();assert.equal(after.sources.length,history.sources.length)
  assert.deepEqual(after.analyses,history.analyses)

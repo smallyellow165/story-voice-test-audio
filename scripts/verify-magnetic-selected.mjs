@@ -18,7 +18,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/u
 const context=await browser.newContext({viewport:{width:1600,height:1000}}),errors=[],forbidden=[]
 context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)))
 await context.route('**/api/magnetic-intake/recognize',route=>{forbidden.push(route.request().url());return route.abort()})
-const page=await context.newPage(),idle=p=>p.waitForFunction(()=>{const e=document.querySelector('select[aria-label="已保存图片"]');return e&&!e.disabled}),row=(p,kind)=>p.locator(`[data-snapshot-stage="${kind}"]`)
+const page=await context.newPage(),idle=p=>p.waitForFunction(()=>{const e=document.querySelector('select[aria-label="当前图片"]');return e&&!e.disabled}),row=(p,kind)=>p.locator(`[data-snapshot-stage="${kind}"]`)
 async function record(kind,id){const s=(await json('selected/'+a.sourceId)).find(s=>s.stage===kind);assert.equal(s.snapshotId,id);owned.set(kind,s);return s}
 async function choose(p,kind,id){await p.getByLabel('历史 '+(kind==='analysis'?'Analysis':'Review'),{exact:true}).selectOption(id);await idle(p)}
 async function mark(p,kind,id){await row(p,kind).getByRole('button',{name:`设为 Selected ${kind==='analysis'?'Analysis':'Review'}`,exact:true}).click();await idle(p);return record(kind,id)}

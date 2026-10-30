@@ -13,7 +13,7 @@ const context=await browser.newContext({viewport:{width:1600,height:950}}),error
 context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)))
 await context.route('**/api/magnetic-intake/recognize',r=>{forbidden.push(r.request().url());return r.abort()})
 const page=await context.newPage(),inspector=page.locator('.studio-inspector'),rows=page.locator('[data-review-id]'),matcher=page.getByRole('region',{name:'Find Matching Profile',exact:true})
-const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="已保存图片"]');return s&&!s.disabled})
+const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="当前图片"]');return s&&!s.disabled})
 async function save(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await studioButton(page,'保存审核快照').click();const r=await(await response).json();await idle(page);assert.ok(r.id);return r}
 async function selected(){return page.locator('tr[aria-selected=true]').getAttribute('data-review-id')}
 async function remove(){await page.getByRole('button',{name:'删除零件',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click()}

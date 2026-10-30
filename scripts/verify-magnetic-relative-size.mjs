@@ -13,7 +13,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/u
 const context=await browser.newContext({viewport:{width:1800,height:1050}}),page=await context.newPage(),errors=[],forbidden=[]
 context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));page.on('pageerror',e=>errors.push(e.message))
 await context.route('**/api/magnetic-intake/recognize',r=>{forbidden.push(r.request().url());return r.abort()})
-const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="已保存图片"]');return s&&!s.disabled})
+const idle=p=>p.waitForFunction(()=>{const s=document.querySelector('select[aria-label="当前图片"]');return s&&!s.disabled})
 const matcher=page.getByRole('region',{name:'Find Matching Profile',exact:true})
 const candidate=id=>matcher.locator(`[data-match-profile="${id}"]`)
 async function find(id){await page.locator(`[data-review-id="${id}"]`).click();await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();assert.equal(await matcher.getByRole('checkbox').count(),0)}

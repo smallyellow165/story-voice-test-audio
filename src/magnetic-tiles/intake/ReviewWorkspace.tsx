@@ -20,7 +20,7 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
  return <Group orientation="vertical" className="review-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
   <Panel id="parts" defaultSize="65%" minSize="20%">
    <section className="review-parts" aria-label="Parts Review Table">
-    <div className="review-table-tools"><div className="review-title-row"><h3>Parts Review · 零件审核（{rows.length}/{observations.length}）</h3><button disabled={addDisabled} onClick={()=>{setQuery('');setFilter('All');onAdd()}}>新增零件</button>{saveControl}</div>
+    <div className="review-table-tools"><div className="review-title-row"><h3>零件审核（Parts Review）· {rows.length}/{observations.length}</h3><button disabled={addDisabled} onClick={()=>{setQuery('');setFilter('All');onAdd()}}>新增零件</button>{saveControl}</div>
      <div className="review-filters">{['All','Known','Unknown','Excluded'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)}>{f==='All'?'全部':f} {f==='All'?observations.length:observations.filter(o=>status(o)===f).length}</button>)}</div>
      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="审核零件排序" value={sort} onChange={e=>setSort(e.target.value)}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
      {chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>{setQuery('');setFilter('All')}}>显示全部零件</button></p>}
@@ -38,7 +38,7 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
   </Panel>
   <Separator className="studio-separator review-separator" aria-label="调整零件表与原图高度" title="拖动或使用方向键调整上下高度"/>
   <Panel id="evidence" defaultSize="35%" minSize="15%">
-   <section className="review-evidence" aria-label="Source Evidence"><div className="review-evidence-tools"><b>Source Evidence · 原图证据</b><label>缩放<select aria-label="审核原图缩放" value={zoom} onChange={e=>setZoom(Number(e.target.value))}><option value={100}>完整图片</option><option value={200}>200%</option><option value={300}>300%</option></select></label></div>
+   <section className="review-evidence" aria-label="Source Evidence"><div className="review-evidence-tools"><b>原图证据（Source Evidence）</b><label>缩放<select aria-label="审核原图缩放" value={zoom} onChange={e=>setZoom(Number(e.target.value))}><option value={100}>完整图片</option><option value={200}>200%</option><option value={300}>300%</option></select></label></div>
     <div className="review-evidence-scroll" tabIndex={0} aria-label="原图证据滚动区"><div className="review-evidence-content" style={{width:`${zoom}%`,height:`${zoom}%`}}>{children}</div>{chosen&&<div className="review-selected-evidence"><b>{chosen.id}{chosen.excluded?' · 已排除，原图不显示轮廓':''}</b><p>{chosen.evidence}</p><p>{chosen.uncertainty}</p></div>}</div>
    </section>
   </Panel>

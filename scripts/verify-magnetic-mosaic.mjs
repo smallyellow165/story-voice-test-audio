@@ -15,7 +15,7 @@ const button=name=>studioButton(page,name)
 async function ready(){await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='刷新图片历史'&&!b.disabled))}
 try{
  await page.goto(base+'/story-voice-test-audio/magnetic-tiles.html');await stage(page,'source');await ready()
- await page.getByLabel('已保存图片',{exact:true}).selectOption(analysis.sourceId);await ready()
+ await page.getByLabel('当前图片',{exact:true}).selectOption(analysis.sourceId);await ready()
  await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await ready()
  await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await ready()
  await stage(page,'reconstruction')
@@ -35,14 +35,14 @@ try{
  await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await ready()
  await stage(page,'reconstruction')
  const failedResponse=page.waitForResponse(r=>r.url().endsWith('/reconstruct')&&r.request().method()==='POST')
- await button('重建二维布局').click();const failed=await (await failedResponse).json();await ready();assert.equal(failed.candidates.length,0);assert.match(await page.getByRole('region',{name:'重建结果',exact:true}).innerText(),/没有找到合法候选/)
- await page.getByRole('region',{name:'重建结果',exact:true}).screenshot({path:out+'/connected-failure.png'})
- await page.getByLabel('重建作品模式',{exact:true}).selectOption('flat-mosaic')
+ await button('生成几何重建').click();const failed=await (await failedResponse).json();await ready();assert.equal(failed.candidates.length,0);assert.match(await page.getByRole('region',{name:'几何重建结果',exact:true}).innerText(),/没有找到合法候选/)
+ await page.getByRole('region',{name:'几何重建结果',exact:true}).screenshot({path:out+'/connected-failure.png'})
+ await page.getByLabel('几何重建作品模式',{exact:true}).selectOption('flat-mosaic')
  const response=page.waitForResponse(r=>r.url().endsWith('/reconstruct')&&r.request().method()==='POST')
- await button('重建二维布局').click();const result=await (await response).json();await ready()
+ await button('生成几何重建').click();const result=await (await response).json();await ready()
  assert.equal(result.outcome,'success');assert.ok(result.candidates.length)
  const c=result.candidates[0];assert.equal(c.assembly.instances.length,17);assert.equal(c.components.length,3);assert.equal(c.connections,17)
- assert.match(await page.getByRole('region',{name:'重建结果',exact:true}).innerText(),/成功：生成/)
+ assert.match(await page.getByRole('region',{name:'几何重建结果',exact:true}).innerText(),/成功：生成/)
  await page.locator('.studio').screenshot({path:out+'/source-candidate.png'})
  const layout=await page.evaluate(()=>{
   const main=document.querySelector('main'),cols=[...main.querySelectorAll('.studio-column')],rects=cols.map(c=>c.getBoundingClientRect())
@@ -50,7 +50,8 @@ try{
  })
  assert.equal(layout.children,3);assert.equal(layout.rootChildren,1);assert.ok(layout.pageHeight<=layout.height);assert.ok(layout.pageWidth<=layout.width);assert.ok(layout.ordered&&layout.largest);assert.deepEqual(layout.overflow,['auto','auto','auto'])
  // Wheel input scrolls each column independently, with no document movement.
- await page.setViewportSize({width:1440,height:720})
+ // The compact shared context fits at 720px; use a short viewport to exercise overflow.
+ await page.setViewportSize({width:1440,height:480})
  for(const column of ['workflow','inspector']){
   const el=page.locator('.studio-'+column);await el.evaluate(e=>{e.scrollTop=0});const box=await el.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height-30);await page.mouse.wheel(0,600)
   await page.waitForFunction(c=>document.querySelector('.studio-'+c).scrollTop>0,column)
@@ -64,7 +65,7 @@ try{
  assert.equal(await page.locator('[data-observation="f1"]').getAttribute('class'),'observation selected')
  await button('修正选中零件').click();assert.match(await page.locator('.intake-controls legend').innerText(),/f1/)
  await stage(page,'assembly');await stage(page,'reconstruction')
- assert.equal(await page.getByLabel('重建候选',{exact:true}).inputValue(),c.id)
+ assert.equal(await page.getByLabel('几何重建候选',{exact:true}).inputValue(),c.id)
  await writeFile(out+'/result.json' ,JSON.stringify(result,null,2))
  if(process.env.MAGNETIC_VISUAL_ACCEPTED==='1'){
   await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await ready()

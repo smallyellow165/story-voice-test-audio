@@ -7,9 +7,9 @@ const original=await(await fetch(base+'/api/magnetic-intake/analyses/'+analysis.
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']})
 const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/api/magnetic-intake/recognize',()=>{throw Error('Paid call forbidden')})
 const button=n=>studioButton(page,n),idle=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='刷新图片历史'&&!b.disabled))
-async function open(){await stage(page,'source');await idle();await page.getByLabel('已保存图片',{exact:true}).selectOption(source.id);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle()}
+async function open(){await stage(page,'source');await idle();await page.getByLabel('当前图片',{exact:true}).selectOption(source.id);await idle();await page.getByLabel('历史 Analysis',{exact:true}).selectOption(analysis.id);await idle()}
 async function save(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reviews')&&r.request().method()==='POST');await button('保存审核快照').click();const review=await(await response).json();await idle();assert.ok(review.id);return review}
-async function reconstruct(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('重建二维布局').click();const r=await(await response).json();await idle();return r}
+async function reconstruct(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/reconstruct'));await button('生成几何重建').click();const r=await(await response).json();await idle();return r}
 try{
  await page.goto(base+'/story-voice-test-audio/magnetic-tiles.html');await open();assert.match(await page.getByTestId('recognition-summary').innerText(),/无可用识别结果.*没有可恢复/)
  await button('新增零件').click();await button('新增零件').click();await page.getByLabel('修正形状',{exact:true}).selectOption('unknown')
