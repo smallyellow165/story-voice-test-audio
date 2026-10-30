@@ -1,6 +1,5 @@
 import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
 import { canonical } from './build-plan.ts'
-import { SupportedTiles } from './SupportedTiles.tsx'
 import { profileSizeLabel, profileViewBox } from './profiles.ts'
 import { StudioLayout, StudioSlot } from './StudioLayout.tsx'
 import { checkArtwork, workMode } from './artwork.ts'
@@ -166,7 +165,6 @@ function Playground() {
   }
   const height = view.width * .7
   return <StudioLayout dragging={!!drag}>
-    <SupportedTiles/>
     <ImageIntake assembly={current} onApply={applyImage}/>
     <StudioSlot column="inspector" stages={['assembly']}>
       <aside className="tiles-panel"><h2>拿一块磁力片</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" aria-label={`添加${p.name}`}>

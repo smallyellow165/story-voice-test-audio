@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-export const stages = ['source','review','reconstruction','assembly','build','catalog'] as const
+export const workflowStages = ['source','review','reconstruction','assembly','build'] as const
+export type WorkflowStage = typeof workflowStages[number]
+export const stages = [...workflowStages,'catalog'] as const
+// Old Catalog URLs keep every identity while resolving to a real work stage.
+export function catalogWorkStage(values:Record<string,string>):WorkflowStage {
+ return values.buildId?'build':values.assemblyId?'assembly':values.reconstructionId||values.candidateId?'reconstruction':values.reviewId||values.observationId?'review':values.analysisId||values.sourceId?'source':'assembly'
+}
 export const identityKeys = ['sourceId','analysisId','reviewId','reconstructionId','candidateId','observationId','assemblyId','buildId'] as const
 export function readStudioUrl(href:string) {
  const p=new URL(href).searchParams, values:Record<string,string>={}, errors:string[]=[]
@@ -8,6 +14,7 @@ export function readStudioUrl(href:string) {
   if(key==='stage'?!stages.includes(v as typeof stages[number]):! /^[a-zA-Z0-9_-]{1,100}$/.test(v))errors.push(`URL ${key} 无效`)
   else values[key]=v
  }
+ if(values.stage==='catalog')values.stage=catalogWorkStage(values)
  return {values,errors}
 }
 export function writeStudioUrl(values:Record<string,string|undefined>,push=false){

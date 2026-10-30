@@ -1,6 +1,6 @@
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
-const base='http://127.0.0.1:5173',path=base+'/story-voice-test-audio/magnetic-tiles.html'
+const base=process.env.MAGNETIC_ORIGIN||'http://127.0.0.1:5173',path=base+'/story-voice-test-audio/magnetic-tiles.html'
 const h=await(await fetch(base+'/api/magnetic-intake/history')).json(),a=h.analyses.find(a=>a.evidence?.observations.length===14),r=h.reviews.find(r=>r.analysisId===a.id)
 assert.ok(a&&r)
 const link=path+`?stage=review&sourceId=${a.sourceId}&analysisId=${a.id}&reviewId=${r.id}&observationId=p6`
@@ -23,7 +23,7 @@ try{
  await p.goto(link);await ready(p);assert.equal(await source(p).inputValue(),'upload');assert.equal(await model(p).inputValue(),'gpt-4.1')
  // Explicit URL overrides newer local preference, including after asynchronous initialization.
  await p.goto(copied);await ready(p);assert.equal(await model(p).inputValue(),'gpt-6.1-sol')
- await p.locator('[data-stage="catalog"]').click();await p.goBack();await ready(p);assert.equal(await source(p).inputValue(),'server');assert.equal(await model(p).inputValue(),'gpt-6.1-sol');assert.equal(await p.locator('tr[aria-selected=true]').getAttribute('data-review-id'),'p6')
+ await p.getByRole('tab',{name:'Tiles Catalog',exact:true}).click();await p.locator('[data-stage="build"]').click();await p.goBack();await ready(p);assert.equal(await source(p).inputValue(),'server');assert.equal(await model(p).inputValue(),'gpt-6.1-sol');assert.equal(await p.locator('tr[aria-selected=true]').getAttribute('data-review-id'),'p6')
  await p.goto(link+'&sourceType=bad&model=unknown-model');await ready(p)
  assert.equal(await source(p).inputValue(),'');assert.equal(await model(p).inputValue(),'');assert.match(await p.locator('.studio-workflow').innerText(),/sourceType 无效/);assert.match(await p.locator('.studio-workflow').innerText(),/model 不可用/)
  assert.equal(new URL(p.url()).searchParams.get('model'),'unknown-model');assert.equal(await p.getByLabel('历史 Review',{exact:true}).inputValue(),r.id)

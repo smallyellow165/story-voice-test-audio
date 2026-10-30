@@ -1,5 +1,6 @@
 // Navigate the production Studio UI; no runtime state injection.
 export async function stage(page,id,column='workspace'){
+ if(id==='catalog'){await rightTab(page,'catalog');return}
  const tab=page.locator(`[data-stage="${id}"]`)
  await tab.waitFor({state:'attached'})
  if(!await tab.isVisible())await page.getByRole('button',{name:'工作阶段',exact:true}).filter({visible:true}).click()
@@ -13,6 +14,15 @@ export async function stage(page,id,column='workspace'){
    else await page.getByRole('button',{name:column==='inspector'?'查看检查器':'查看工作区',exact:true}).click()
   }
  }
+ if(column==='inspector')await rightTab(page,'inspector')
+}
+export async function rightTab(page,tab){
+ const pane=page.locator('.studio-inspector')
+ if(!await pane.isVisible()){
+  const short=page.getByRole('button',{name:'检查器',exact:true}).filter({visible:true})
+  if(await short.count())await short.click();else await page.getByRole('button',{name:'查看检查器',exact:true}).filter({visible:true}).click()
+ }
+ await page.getByRole('tab',{name:tab==='catalog'?'Tiles Catalog':'Inspector',exact:true}).click()
 }
 const build=new Set(['生成搭建步骤','保存教程','导出教程 JSON','导入教程 JSON','打开教程','下一步','上一步','重播当前步','重新开始','完成搭建'])
 const center=new Set(['新建','撤销','适合画布','放大视图','缩小视图'])

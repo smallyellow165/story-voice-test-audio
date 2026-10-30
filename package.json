@@ -25,6 +25,8 @@
     "reading:replay": "node scripts/reading-tracker.mjs",
     "test:reading": "node --test test/reading-tracker.test.mjs",
     "test:brick-building": "node --experimental-strip-types --test test/brick-building.test.mjs",
+    "test:magnetic-catalog-tab": "node --experimental-strip-types --test test/magnetic-catalog-tab.test.mjs",
+    "test:magnetic-catalog:browser": "node scripts/verify-magnetic-catalog.mjs",
     "test:magnetic-selected": "node --experimental-strip-types --test test/magnetic-selected-snapshots.test.mjs",
     "test:magnetic-selected:browser": "node scripts/verify-magnetic-selected.mjs",
     "test:magnetic-review-ui": "node --experimental-strip-types --test test/magnetic-review-edit.test.mjs",

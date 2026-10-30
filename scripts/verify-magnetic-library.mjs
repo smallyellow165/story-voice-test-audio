@@ -14,7 +14,7 @@ async function choose(name){const response=page.waitForResponse(r=>r.url().endsW
 try{
  await page.goto(base+'/story-voice-test-audio/magnetic-tiles.html');await stage(page,'source');await idle()
  await page.getByLabel('图片来源',{exact:true}).selectOption('server');await idle()
- const names=await list.locator('option').allTextContents();assert.ok(names.includes(rose));assert.ok(names.includes(duck))
+ await list.locator(`option[value="${rose}"]`).waitFor({state:'attached'});const names=await list.locator('option').allTextContents();assert.ok(names.includes(rose));assert.ok(names.includes(duck))
  const r=await choose(rose);assert.equal(r.originalHash,createHash('sha256').update(await readFile(new URL(rose,directory))).digest('hex'))
  await page.screenshot({path:'/tmp/magnetic-library-rose.png'})
  const d=await choose(duck);assert.equal(d.originalHash,createHash('sha256').update(await readFile(new URL(duck,directory))).digest('hex'))
@@ -29,9 +29,9 @@ try{
  const uploaded=page.waitForResponse(x=>x.url().endsWith('/api/magnetic-intake/sources')&&x.request().method()==='POST');await page.getByTestId('intake-upload').setInputFiles(new URL(rose,directory).pathname);assert.equal((await(await uploaded).json()).id,r.id);await idle()
  const after=await(await page.request.get(base+'/api/magnetic-intake/history')).json();assert.equal(after.sources.length,history.sources.length)
  assert.deepEqual(after.analyses,history.analyses)
- await writeFile(new URL(broken,directory),'not an image');await page.getByLabel('图片来源',{exact:true}).selectOption('server');await idle();await list.selectOption(broken);await idle();assert.match(await page.getByRole('alert').innerText(),/图片类型与内容不匹配/)
+ await writeFile(new URL(broken,directory),'not an image');await page.getByLabel('图片来源',{exact:true}).selectOption('server');await idle();await list.selectOption(broken);await idle();assert.match(await page.getByRole('alert').filter({hasText:'图片类型与内容不匹配'}).innerText(),/图片类型与内容不匹配/)
  for(const name of ['../connetix-rose.png','/etc/passwd','..\\secret.png']){const response=await page.request.post(base+'/api/magnetic-intake/library-image',{data:{name}});assert.equal(response.status(),400)}
- await stage(page,'catalog');assert.equal(await page.locator('.supported-tile').count(),3)
+ await stage(page,'catalog');assert.equal(await page.locator('.catalog-row').count(),5)
  assert.ok(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight+1));assert.deepEqual(errors,[])
  console.log('PASS: rose + duck preview, existing Analysis association, hot library refresh, same-content upload/library dedup, saved source after library deletion, corrupt-file error, path rejection, Catalog navigation; 0 model calls. Screenshot /tmp/magnetic-library-rose.png')
 }finally{await browser.close();for(const name of [extra,broken])await unlink(new URL(name,directory)).catch(e=>{if(e.code!=='ENOENT')throw e})}

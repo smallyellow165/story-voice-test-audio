@@ -1,32 +1,21 @@
-import { useState } from 'react'
-import { StudioSlot } from './StudioLayout.tsx'
+import { InfoHint } from '../brick-vision/InfoHint.tsx'
 import { profiles, profileKey, profileSpec, profileSizeLabel, profileViewBox } from './profiles.ts'
 
-export function SupportedTiles() {
-  const [selected, setSelected] = useState(profileKey(profiles[0]))
-  const profile = profiles.find(p => profileKey(p) === selected)!
-  const spec = profileSpec(profile)
-  return <>
-    <StudioSlot column="workflow" stages={['catalog']}>
-      <p>只读目录 · {profiles.length} 个 Profile</p>
-      <label>支持的磁力片<select aria-label="支持的磁力片" value={selected} onChange={e=>setSelected(e.target.value)}>{profiles.map(p=><option key={profileKey(p)} value={profileKey(p)}>{p.name} · v{p.version}</option>)}</select></label>
-      <p className="hint">规格来自 profiles.json。选择卡片可查看顶点与可连接边；五阶段工作内容会保留。</p>
-    </StudioSlot>
-    <StudioSlot column="workspace" stages={['catalog']}>
-      <div className="supported-tiles-grid">{profiles.map(p=><button className="supported-tile" key={profileKey(p)} aria-pressed={selected===profileKey(p)} onClick={()=>setSelected(profileKey(p))}>
-        <strong>{p.name}</strong><span>{p.id} · Version {p.version}</span>
-        <svg viewBox={profileViewBox(p)} aria-label={`${p.name}真实几何`}><g transform="scale(1 -1)"><polygon points={p.vertices.map(v=>v.join(',')).join(' ')} fill="#f5b942" stroke="#243e3a" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>{profileSpec(p).edges.filter(e=>e.connectable).map(e=><line key={e.id} x1={p.vertices[e.from][0]} y1={p.vertices[e.from][1]} x2={p.vertices[e.to][0]} y2={p.vertices[e.to][1]} stroke="#267b69" strokeWidth="3" vectorEffect="non-scaling-stroke"/>)}</g></svg>
-        <span>{profileSizeLabel(p)}</span>{p.sizeEvidence&&<small>Estimated · V1 估计规格</small>}<small>可连接边：{p.connectableEdges.join('、') || '无'}（绿色）</small>
-      </button>)}</div>
-    </StudioSlot>
-    <StudioSlot column="inspector" stages={['catalog']}>
-      <section aria-label="Profile 规格"><h3>{profile.name}</h3><p>Profile ID：{profile.id}<br/>Version：{profile.version}</p>
-        <p>相对单位 · 2D 零厚度 · 严格凸多边形<br/>局部坐标 Y 向上，顶点逆时针；不允许缩放。</p>
-        {profile.sizeEvidence&&<p data-testid="profile-size-source">Estimated · {profile.sizeEvidence.source}</p>}
-        <h4>顶点坐标</h4><ol start={0}>{profile.vertices.map((v,i)=><li key={i}>v{i} = [{v.join(', ')}]</li>)}</ol>
-        <h4>边与连接器</h4>{spec.edges.map(e=><p key={e.id}>{e.id}：v{e.from} → v{e.to}<br/>边长 {Number(e.length.toFixed(9))} · {e.connectable?'可整边连接':'不可连接'}</p>)}
-        <p className="hint">仅等长整边可连接，最终连接仍由 Geometry Validator 检查。未知规格不会自动替换为目录中的形状。</p>
-      </section>
-    </StudioSlot>
-  </>
+export function SupportedTiles({selected,onSelect}:{selected:string;onSelect:(key:string)=>void}) {
+ const profile=profiles.find(p=>profileKey(p)===selected)!,spec=profileSpec(profile)
+ return <section className="tiles-catalog" aria-label="Tiles Catalog">
+  <div className="catalog-list" role="list" aria-label="支持的磁力片">{profiles.map(p=><div key={profileKey(p)} role="listitem">
+   <button className="catalog-row" data-catalog-profile={profileKey(p)} aria-pressed={selected===profileKey(p)} onClick={()=>onSelect(profileKey(p))} title={`${p.name} · ${profileKey(p)} · ${profileSizeLabel(p)}${p.sizeEvidence?' · Estimated':''}`}>
+    <svg viewBox={profileViewBox(p)} aria-label={`${p.name}真实几何`}><g transform="scale(1 -1)"><polygon points={p.vertices.map(v=>v.join(',')).join(' ')} fill="#f5b942" stroke="#243e3a" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>{profileSpec(p).edges.filter(e=>e.connectable).map(e=><line key={e.id} x1={p.vertices[e.from][0]} y1={p.vertices[e.from][1]} x2={p.vertices[e.to][0]} y2={p.vertices[e.to][1]} stroke="#267b69" strokeWidth="2" vectorEffect="non-scaling-stroke"/>)}</g></svg>
+    <span className="catalog-row-text"><span className="catalog-row-name"><strong>{p.name}</strong>{p.sizeEvidence&&<small className="catalog-estimated">Estimated</small>}</span><span className="catalog-row-meta"><span title={profileKey(p)}>{p.id} · v{p.version}</span><span title={profileSizeLabel(p)}>{profileSizeLabel(p).replace(/^边长 /,'')}</span></span></span>
+   </button>
+  </div>)}</div>
+  <section className="catalog-details" aria-label="Profile 规格">
+   <div className="catalog-detail-heading"><strong>{profile.name}</strong><InfoHint label="Profile 几何">规格只读，来自 profiles.json。标准正方形边长 = 1；局部坐标 Y 向上，顶点逆时针，二维零厚度且不允许缩放。绿色标出可连接边；仅等长整边可连接，最终由现有 Geometry Validator 检查。</InfoHint></div>
+   <p className="catalog-identity">Profile ID：{profile.id} · Version：{profile.version}</p>
+   {profile.sizeEvidence&&<p className="catalog-size-source" data-testid="profile-size-source">Estimated · {profile.sizeEvidence.source}</p>}
+   <h3>顶点坐标</h3><ol className="catalog-vertices" start={0}>{profile.vertices.map((v,i)=><li key={i}>v{i} = [{v.join(', ')}]</li>)}</ol>
+   <h3>边与连接器</h3><table><thead><tr><th>边</th><th>长度</th><th>连接</th></tr></thead><tbody>{spec.edges.map(e=><tr key={e.id}><td>{e.id} · v{e.from} → v{e.to}</td><td>{Number(e.length.toFixed(9))}</td><td>{e.connectable?'可连接':'不可连接'}</td></tr>)}</tbody></table>
+  </section>
+ </section>
 }

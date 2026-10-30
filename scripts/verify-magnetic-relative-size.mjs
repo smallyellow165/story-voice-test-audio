@@ -61,8 +61,8 @@ try{
  await page.screenshot({path:output+'/size-unknown.png'})
  // Restore the saved result; unsaved exclusions are never a historical rewrite.
  await page.goto(link);await idle(page)
- await stage(page,'catalog');assert.equal(await page.locator('.supported-tile').count(),5)
- for(const id of ['large-equilateral-triangle','tall-right-triangle']){await page.getByLabel('支持的磁力片',{exact:true}).selectOption(id+'@1');assert.match(await page.getByTestId('profile-size-source').innerText(),/Estimated.*V1 Estimated Geometry/)}
+ await stage(page,'catalog');assert.equal(await page.locator('.catalog-row').count(),5)
+ for(const id of ['large-equilateral-triangle','tall-right-triangle']){await page.locator(`[data-catalog-profile="${id}@1"]`).click();assert.match(await page.getByTestId('profile-size-source').innerText(),/Estimated.*V1 Estimated Geometry/)}
  await page.screenshot({path:output+'/catalog.png'})
  await stage(page,'review');await page.setViewportSize({width:430,height:900});await stage(page,'review','inspector')
  await matcher.getByRole('button',{name:'Find Matching Profile',exact:true}).click();assert.match(await matcher.innerText(),/Relative Size Score/)
