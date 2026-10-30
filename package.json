@@ -59,7 +59,9 @@
     "test:magnetic-profile-editor": "node --experimental-strip-types --test test/magnetic-profile-editor.test.mjs",
     "test:magnetic-profile-editor:browser": "node --experimental-strip-types scripts/verify-magnetic-profile-editor.mjs",
     "test:magnetic-search": "node --experimental-strip-types --test test/magnetic-search-v5.test.mjs",
-    "test:magnetic-search:browser": "node --experimental-strip-types scripts/verify-magnetic-search-v5.mjs"
+    "test:magnetic-search:browser": "node --experimental-strip-types scripts/verify-magnetic-search-v5.mjs",
+    "test:magnetic-click-snap": "node --experimental-strip-types --test test/magnetic-click-snap.test.mjs",
+    "test:magnetic-click-snap:browser": "node --experimental-strip-types scripts/verify-magnetic-click-snap.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

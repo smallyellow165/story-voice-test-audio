@@ -164,11 +164,11 @@ export function segmentAlignments(tile:Tile,own:Edge,target:Edge,profiles:readon
 export type Snap = { tile: Tile; key: string; target: Edge; own: Edge; score: number; contactCount: number;contactLength:number;coverageCount:number }
 const midpoint = (edge: Edge): Vec => [(edge.a[0] + edge.b[0]) / 2, (edge.a[1] + edge.b[1]) / 2]
 const SNAP_ANGLE = Math.PI / 4
-export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly Profile[], captureDistance: number, previousKey?: string): Snap | null {
+export function findSnapCandidates(tile: Tile, others: readonly Tile[], profiles: readonly Profile[], captureDistance: number, previousKey?: string): Snap[] {
   // UX capture thresholds never participate in validate(). Rotation is measured
   // separately: endpoint displacement otherwise silently reduces the angle limit
   // as the canvas is zoomed in (even when the two edge centres coincide).
-  if (!Number.isFinite(captureDistance) || captureDistance <= 0) return null
+  if (!Number.isFinite(captureDistance) || captureDistance <= 0) return []
   const candidates: Snap[] = []
   const targets = others.flatMap(other => edges(other, profiles).filter(e => e.enabled))
   for (const own of edges(tile, profiles).filter(e => e.enabled)) for (const target of targets) {
@@ -187,14 +187,24 @@ export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly
       candidates.push({tile:aligned,target,own,key,contactCount,contactLength,coverageCount,score:separation/radius+.35*delta/SNAP_ANGLE})
     }
   }
-  if (!candidates.length) return null
+  return candidates
+}
+// Shared existing shortlist/ranking for both pointer and click activation.
+export function rankSnapCandidates(candidates: readonly Snap[]): Snap[] {
+  if (!candidates.length) return []
   const bestScore = Math.min(...candidates.map(c => c.score))
   // Prefer closing/full-coverage placements within a small UX score band.
   // This retains full-edge capture under pointer noise while allowing intentional slides.
   // Use a fixed shortlist rather than a non-transitive approximate comparator.
   const close = candidates.filter(c => c.score <= bestScore + .35 + EPS)
   close.sort((a, b) => b.coverageCount-a.coverageCount || b.contactCount - a.contactCount || (Math.abs(b.contactLength-a.contactLength)>EPS?b.contactLength-a.contactLength:0) || a.score - b.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-  const best = close[0], previous = candidates.find(c => c.key === previousKey)
+  return close
+}
+export function findSnap(tile: Tile, others: readonly Tile[], profiles: readonly Profile[], captureDistance: number, previousKey?: string): Snap | null {
+  const candidates=findSnapCandidates(tile,others,profiles,captureDistance,previousKey)
+  if(!candidates.length)return null
+  const bestScore=Math.min(...candidates.map(c=>c.score))
+  const best = rankSnapCandidates(candidates)[0], previous = candidates.find(c => c.key === previousKey)
   // Keep small pointer noise from toggling previews, but allow a materially
   // closer candidate (or a similarly close multi-edge closure) to take over.
   if (previous && previous.score <= bestScore + .2 && previous.contactCount >= best.contactCount && previous.coverageCount>=best.coverageCount) return previous

@@ -200,3 +200,7 @@
 .profile-live-preview small{display:block;overflow-wrap:anywhere;font-size:11px}
 .profile-computed{margin-top:4px}
 .profile-editor [role=alert],.profile-editor [role=status]{font-size:12px;overflow-wrap:anywhere}
+
+.snap-mode-switch{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.snap-mode-switch select{width:auto;max-width:125px;min-width:0;padding:7px;font-size:12px}
+.tiles-workspace[data-snap-mode=click] .tile{cursor:pointer}

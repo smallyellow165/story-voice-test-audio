@@ -1,0 +1,285 @@
+{
+  "provenance": {
+    "reconstructionId": "84c1d431-7a18-4ecf-8e62-553e2cecc10e",
+    "reconstructionHash": "6f389f661d7a4571785f9ed24e83dfe3b5507a29a4b1b19f149ba4f4ea3f301a",
+    "candidateId": "candidate-1"
+  },
+  "assembly": {
+    "id": "84c1d431-7a18-4ecf-8e62-553e2cecc10e-0",
+    "revision": 0,
+    "name": "图片磁力片作品",
+    "instances": [
+      {
+        "id": "t1",
+        "profileId": "right-triangle",
+        "profileVersion": 1,
+        "color": "#D93615",
+        "pose": {
+          "x": 0.8612525143604226,
+          "y": 2.916455317630721,
+          "angleRad": 2.1038633855109916
+        }
+      },
+      {
+        "id": "t2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#EBDDB9",
+        "pose": {
+          "x": 0.9012662956262187,
+          "y": 1.9345234256626371,
+          "angleRad": 1.5802646099126927
+        }
+      },
+      {
+        "id": "t3",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#48A8DB",
+        "pose": {
+          "x": 0.9013223672436479,
+          "y": 1.9286015556525267,
+          "angleRad": 0.009468283117795996
+        }
+      },
+      {
+        "id": "t4",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#EBDDB9",
+        "pose": {
+          "x": 1.891750629545466,
+          "y": 2.9442319581267506,
+          "angleRad": -1.5613280436771007
+        }
+      },
+      {
+        "id": "t5",
+        "profileId": "right-triangle",
+        "profileVersion": 1,
+        "color": "#D33118",
+        "pose": {
+          "x": 1.9119333389377733,
+          "y": 2.9328328818362976,
+          "angleRad": -0.514130492480503
+        }
+      },
+      {
+        "id": "t6",
+        "profileId": "narrow-isosceles-triangle",
+        "profileVersion": 1,
+        "color": "#91B52B",
+        "pose": {
+          "x": 1.8979678211521147,
+          "y": 1.9380383589779417,
+          "angleRad": -3.132124370471997
+        }
+      },
+      {
+        "id": "t7",
+        "profileId": "narrow-isosceles-triangle",
+        "profileVersion": 1,
+        "color": "#F04B13",
+        "pose": {
+          "x": 0.4286012831418782,
+          "y": 0.011517729826392653,
+          "angleRad": 0.009468283117796128
+        }
+      },
+      {
+        "id": "t8",
+        "profileId": "narrow-isosceles-triangle",
+        "profileVersion": 1,
+        "color": "#F04B13",
+        "pose": {
+          "x": 1.4156580258889027,
+          "y": 0.06736253061047215,
+          "angleRad": 0.009468283117796128
+        }
+      },
+      {
+        "id": "t9",
+        "profileId": "right-triangle",
+        "profileVersion": 1,
+        "color": "#DC3517",
+        "pose": {
+          "x": 2.169028641756071,
+          "y": 0.9634319942508913,
+          "angleRad": -1.2995286553709324
+        }
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "profiles": [
+    {
+      "id": "square",
+      "version": 1,
+      "name": "正方形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "id": "right-triangle",
+      "version": 1,
+      "name": "等腰直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "equilateral-triangle",
+      "version": 1,
+      "name": "等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          0.8660254037844386
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "large-equilateral-triangle",
+      "version": 1,
+      "name": "大型等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          1.7320508075688772
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。边长约 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "tall-right-triangle",
+      "version": 1,
+      "name": "细长直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。直角边约 7.5 × 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "narrow-isosceles-triangle",
+      "name": "细长等腰三角形",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          1.8660254
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "isosceles-triangle",
+        "dimensions": {
+          "base": 1,
+          "height": 1.8660254
+        }
+      },
+      "geometrySource": "项目 V1 估计几何规格，非官方实测",
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "项目 V1 估计几何规格，非官方实测"
+      }
+    }
+  ]
+}
