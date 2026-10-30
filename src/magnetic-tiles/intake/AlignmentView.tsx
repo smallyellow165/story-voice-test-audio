@@ -1,3 +1,5 @@
+import {ConflictOverlay} from './DiagnosticConflicts.tsx'
+import type {DiagnosticConflicts} from './candidate-conflicts.ts'
 import {intersectionPolygon,polygonArea} from './segment-audit.ts'
 import {useMemo,useState} from 'react'
 import {AssemblyPreview} from '../AssemblyPreview.tsx'
@@ -6,11 +8,12 @@ import type {Vec} from '../geometry.ts'
 import type {Reconstruction} from './contracts.ts'
 import type {DiagnosticCandidate} from './execution-trace.ts'
 import {alignmentInspection,contourResidual} from './alignment-inspection.ts'
-export function AlignmentView({record,diagnostic,selected,onSelect}:{record:Reconstruction;diagnostic:DiagnosticCandidate;selected:string;onSelect:(id:string)=>void}){
- const [overlay,setOverlay]=useState(false),[choice,setChoice]=useState('saved')
+export function AlignmentView({record,diagnostic,selected,onSelect,conflicts,focus,onFocus}:{conflicts:DiagnosticConflicts;focus:string;onFocus:(id:string)=>void;record:Reconstruction;diagnostic:DiagnosticCandidate;selected:string;onSelect:(id:string)=>void}){
+ const [showConflicts,setShowConflicts]=useState(true),[overlay,setOverlay]=useState(false),[choice,setChoice]=useState('saved')
  const data=useMemo(()=>overlay?alignmentInspection(record,diagnostic.id):null,[overlay,record,diagnostic.id])
- const defaultView=record.trace?<AssemblyPreview assembly={{schemaVersion:2,mode:'flat-mosaic',id:record.id,revision:0,name:'Diagnostic only',instances:diagnostic.tiles}} profiles={record.trace.input.profiles} selected={selected} onSelect={onSelect} label="Diagnostic 几何摆放"/>:<p>该历史记录缺少执行 Profile 快照，无法显示诊断几何。</p>
- if(!overlay)return <><button className="alignment-toggle" disabled={!record.trace||!diagnostic.attemptedConnection} onClick={()=>setOverlay(true)}>对齐 / 镜像叠加</button>{defaultView}</>
+ const items=conflicts.available?[...conflicts.current.overlaps,...conflicts.current.occupancy,...conflicts.current.edgeContacts]:[],focused=items.find(i=>i.id===focus)
+ const defaultView=record.trace?<AssemblyPreview assembly={{schemaVersion:2,mode:'flat-mosaic',id:record.id,revision:0,name:'Diagnostic only',instances:diagnostic.tiles}} profiles={record.trace.input.profiles} selected={selected} onSelect={onSelect} label="Diagnostic 几何摆放" focusIds={showConflicts?focused?.tileIds:undefined} overlay={showConflicts&&conflicts.available?<ConflictOverlay conflicts={conflicts.current} tiles={diagnostic.tiles} profiles={record.trace.input.profiles} focus={focus}/>:undefined}/>:<p>该历史记录缺少执行 Profile 快照，无法显示诊断几何。</p>
+ if(!overlay)return <><div className="button-row candidate-conflict-toolbar"><button disabled={!conflicts.available} aria-pressed={showConflicts} onClick={()=>setShowConflicts(v=>!v)}>实际冲突：{showConflicts?'开':'关'}</button>{focus&&<button onClick={()=>onFocus('')}>查看全图</button>}<button className="alignment-toggle" disabled={!record.trace||!diagnostic.attemptedConnection} onClick={()=>setOverlay(true)}>对齐 / 镜像叠加</button></div>{defaultView}</>
  if(!data?.available)return <><button onClick={()=>setOverlay(false)}>返回实际布局</button><p>{data?.reason}</p>{defaultView}</>
  const alternative=data.alternatives.find(a=>a.id===choice),joint=choice.startsWith('joint-')?data.freePair.poses[Number(choice.slice(6))]:undefined
  const independent=choice==='independent',independentFit=data.independent.rigid.residual.rms<=data.independent.mirrored.residual.rms?data.independent.rigid:data.independent.mirrored

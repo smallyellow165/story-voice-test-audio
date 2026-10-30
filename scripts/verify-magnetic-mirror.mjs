@@ -16,7 +16,7 @@ const page=await ctx.newPage(),button=name=>studioButton(page,name),idle=p=>p.wa
 const url=root+`?stage=reconstruction&sourceId=${r.sourceId}&analysisId=${review.analysisId}&reviewId=${review.id}&reconstructionId=${r.id}&candidateId=diagnostic-1&observationId=p3&rightTab=inspector`
 try{
  await mkdir(out,{recursive:true});await page.goto(url);await idle(page)
- assert.equal(await page.getByLabel('Diagnostic 几何摆放',{exact:true}).locator('polygon').count(),11)
+ assert.equal(await page.getByLabel('Diagnostic 几何摆放',{exact:true}).locator('[data-preview-piece]').count(),11)
  await page.getByRole('button',{name:'对齐 / 镜像叠加',exact:true}).click();const summary=page.getByTestId('alignment-summary'),select=page.getByLabel('对齐比较方案',{exact:true});assert.match(await summary.innerText(),/0\.591023527.*0\.300.*pair valid true.*context valid true.*镜像 false/)
  await page.screenshot({path:out+'/saved-rigid-overlay.png'})
  const expected=alignmentInspection(r,'diagnostic-1'),mirrored=expected.alternatives.find(a=>a.id==='mirror-e0-e2')

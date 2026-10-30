@@ -36,7 +36,7 @@ try{
  const savedUrl=page.url();await rightTab(page,'catalog');await rightTab(page,'inspector');assert.equal(await option.inputValue(),'saved');await option.selectOption('independent')
  await page.reload();await idle(page);await overlay();assert.equal(await option.inputValue(),'saved');assert.equal(await page.getByLabel('历史 Review',{exact:true}).inputValue(),review.id)
  const tab=await ctx.newPage();await tab.goto(savedUrl);await idle(tab);await overlay(tab);assert.match(await tab.getByTestId('connectivity-audit').innerText(),/p2 无可行连接邻居/)
- await page.getByRole('button',{name:'返回实际布局',exact:true}).click();const candidate=page.getByLabel('Diagnostic 几何摆放',{exact:true});assert.equal(await candidate.locator('polygon').count(),14)
+ await page.getByRole('button',{name:'返回实际布局',exact:true}).click();const candidate=page.getByLabel('Diagnostic 几何摆放',{exact:true});assert.equal(await candidate.locator('[data-preview-piece]').count(),14)
  await stage(page,'review','workspace');await page.goBack();await idle(page);assert.equal(await page.getByLabel('历史 Reconstruction',{exact:true}).inputValue(),r.id);assert.equal(await page.getByLabel('几何重建候选',{exact:true}).inputValue(),'diagnostic-1')
  await page.setViewportSize({width:430,height:900});await stage(page,'reconstruction','workspace');await overlay();await option.selectOption('independent');assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:out+'/mobile-near.png'})
  const api=JSON.parse((await get('trace/reconstructions/'+r.id+'/alignment/diagnostic-1')).text);assert.equal(api.references.review.id,review.id);assert.equal(api.alignment.actual.connection.connectionModel,'segmented-edge-v1');assert.ok(api.alignment.actual.edges.contact.length>0)

@@ -1,0 +1,1411 @@
+{
+  "available": true,
+  "version": "diagnostic-conflicts-v1",
+  "provenance": "read-only-recheck-of-saved-diagnostic-poses",
+  "persisted": false,
+  "adoptable": false,
+  "references": {
+    "sourceId": "5fc64c5cfbbd7e39e1abe7198ee373cf3f60f268698a7e7b87302a5c494e6e7f",
+    "sourceHash": "7e95b6651f68fd84c36cb0e67ad6399d4325ea4c15c2b315956e8b8e5def4e45",
+    "analysisId": "ec08916f-a0d5-4be7-964e-f63a52df22b9",
+    "analysisHash": "18895b11da989af89c15f622017a5703267275f5a5e268affd91ddff9eb9b4e8",
+    "reviewId": "836c266b-1b94-40c9-aa96-a7631cd94d3d",
+    "reviewHash": "770ffa53b109e65f3018ca9fdb99794411b4d1b2ff906687988ab86021c573e8",
+    "profileHash": "e000950525b37b82363afdfed611454a3c4870c038f6573da6008073eb908bef",
+    "reconstructionId": "7274e2c2-9353-4382-b0b6-6cbb60583227",
+    "reconstructionHash": "388bc90d212165ef3c8ed876bb29ce5bed286b1a694076db5de773f28d72fe37",
+    "diagnosticId": "diagnostic-1",
+    "attemptIndex": 3392,
+    "stateIndex": 24
+  },
+  "geometryInputs": {
+    "poses": "diagnosticCandidates[id].tiles",
+    "profiles": "trace.input.profiles",
+    "usesReviewContourForOverlay": false,
+    "tileCount": 14,
+    "tilePoses": [
+      {
+        "id": "s4",
+        "profileId": "square",
+        "profileVersion": 1,
+        "pose": {
+          "x": 4.025928521373514,
+          "y": -6.724732875354815,
+          "angleRad": 3.141592653589793
+        }
+      },
+      {
+        "id": "s3",
+        "profileId": "square",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.0259285213735136,
+          "y": -6.724732875354815,
+          "angleRad": 0
+        }
+      },
+      {
+        "id": "s2",
+        "profileId": "square",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.0259285213735136,
+          "y": -5.724732875354815,
+          "angleRad": 0
+        }
+      },
+      {
+        "id": "s1",
+        "profileId": "square",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.0259285213735136,
+          "y": -4.724732875354815,
+          "angleRad": 0
+        }
+      },
+      {
+        "id": "l2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.0259285213735136,
+          "y": -5.746990165613155,
+          "angleRad": 1.5707963267948966
+        }
+      },
+      {
+        "id": "l1",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 2.1599031175890753,
+          "y": -5.246990165613155,
+          "angleRad": 0.523598775598299
+        }
+      },
+      {
+        "id": "r2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 4.025928521373514,
+          "y": -5.743713707974398,
+          "angleRad": -1.5707963267948966
+        }
+      },
+      {
+        "id": "r1",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 4.025928521373514,
+          "y": -5.743713707974398,
+          "angleRad": -0.523598775598299
+        }
+      },
+      {
+        "id": "p5",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.0259285213735136,
+          "y": -3.724732875354815,
+          "angleRad": 0
+        }
+      },
+      {
+        "id": "p4",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.001224956988919,
+          "y": -3.767520703996982,
+          "angleRad": 1.0471975511965976
+        }
+      },
+      {
+        "id": "p1",
+        "profileId": "tall-right-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 2.501224956988919,
+          "y": -2.901495300212543,
+          "angleRad": -4.440892098500626e-16
+        }
+      },
+      {
+        "id": "p6",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 3.5454347019692736,
+          "y": -2.8924931674238468,
+          "angleRad": -1.0471975511965976
+        }
+      },
+      {
+        "id": "p3",
+        "profileId": "tall-right-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 4.545434701969274,
+          "y": -2.8924931674238468,
+          "angleRad": 0,
+          "mirrored": true
+        }
+      },
+      {
+        "id": "p2",
+        "profileId": "large-equilateral-triangle",
+        "profileVersion": 1,
+        "pose": {
+          "x": 2.5127306704041135,
+          "y": -2.901495300212543,
+          "angleRad": -4.440892098500626e-16
+        }
+      }
+    ]
+  },
+  "historical": {
+    "connectionModel": "segmented-edge-v1",
+    "validator": {
+      "checkedBy": "search",
+      "report": {
+        "draftValid": false,
+        "valid": false,
+        "issues": [
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p5",
+              "p2"
+            ]
+          },
+          {
+            "code": "EDGE_OCCUPIED",
+            "message": "同一边上的连接区间被重复占用",
+            "tileIds": [
+              "p4",
+              "p2"
+            ]
+          },
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p1",
+              "p2"
+            ]
+          },
+          {
+            "code": "EDGE_CONTACT",
+            "message": "正长度边接触必须启用连接边，且两块内部位于接触线的相反侧",
+            "tileIds": [
+              "p1",
+              "p2"
+            ]
+          },
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p6",
+              "p2"
+            ]
+          },
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p3",
+              "p2"
+            ]
+          }
+        ],
+        "connections": [
+          {
+            "a": {
+              "tileId": "s4",
+              "edgeId": "e0"
+            },
+            "b": {
+              "tileId": "s3",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "s4",
+              "edgeId": "e3"
+            },
+            "b": {
+              "tileId": "r2",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0.981019167380417,
+                1
+              ],
+              "bRange": [
+                0.981019167380417,
+                1
+              ],
+              "start": [
+                4.025928521373514,
+                -6.743713707974398
+              ],
+              "end": [
+                4.025928521373514,
+                -6.724732875354815
+              ],
+              "length": 0.018980832619583055
+            }
+          },
+          {
+            "a": {
+              "tileId": "s3",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "s2",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "s3",
+              "edgeId": "e3"
+            },
+            "b": {
+              "tileId": "l2",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0,
+                0.02225729025833978
+              ],
+              "bRange": [
+                0,
+                0.02225729025833978
+              ],
+              "start": [
+                3.0259285213735136,
+                -5.724732875354815
+              ],
+              "end": [
+                3.0259285213735136,
+                -5.746990165613155
+              ],
+              "length": 0.02225729025833978
+            }
+          },
+          {
+            "a": {
+              "tileId": "s3",
+              "edgeId": "e1"
+            },
+            "b": {
+              "tileId": "r2",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0,
+                0.981019167380417
+              ],
+              "bRange": [
+                0,
+                0.981019167380417
+              ],
+              "start": [
+                4.025928521373514,
+                -6.724732875354815
+              ],
+              "end": [
+                4.025928521373514,
+                -5.743713707974398
+              ],
+              "length": 0.981019167380417
+            }
+          },
+          {
+            "a": {
+              "tileId": "s2",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "s1",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "s2",
+              "edgeId": "e3"
+            },
+            "b": {
+              "tileId": "l2",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0.02225729025833978,
+                1
+              ],
+              "bRange": [
+                0.02225729025833978,
+                1
+              ],
+              "start": [
+                3.0259285213735136,
+                -4.746990165613155
+              ],
+              "end": [
+                3.0259285213735136,
+                -5.724732875354815
+              ],
+              "length": 0.9777427097416602
+            }
+          },
+          {
+            "a": {
+              "tileId": "s1",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "p5",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "l2",
+              "edgeId": "e1"
+            },
+            "b": {
+              "tileId": "l1",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "r2",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "r1",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "p5",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "p4",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0.04940712876918946,
+                1
+              ],
+              "bRange": [
+                0.04940712876918946,
+                1
+              ],
+              "start": [
+                3.501224956988919,
+                -2.9014953002125434
+              ],
+              "end": [
+                3.0259285213735136,
+                -3.724732875354815
+              ],
+              "length": 0.9505928712308104
+            }
+          },
+          {
+            "a": {
+              "tileId": "p5",
+              "edgeId": "e1"
+            },
+            "b": {
+              "tileId": "p6",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0,
+                0.9609876388084801
+              ],
+              "bRange": [
+                0,
+                0.9609876388084797
+              ],
+              "start": [
+                4.025928521373514,
+                -3.724732875354815
+              ],
+              "end": [
+                3.5454347019692736,
+                -2.8924931674238468
+              ],
+              "length": 0.9609876388084799
+            }
+          },
+          {
+            "a": {
+              "tileId": "p4",
+              "edgeId": "e1"
+            },
+            "b": {
+              "tileId": "p1",
+              "edgeId": "e0"
+            }
+          },
+          {
+            "a": {
+              "tileId": "p4",
+              "edgeId": "e1"
+            },
+            "b": {
+              "tileId": "p2",
+              "edgeId": "e0"
+            },
+            "contact": {
+              "aRange": [
+                0,
+                0.9884942865848054
+              ],
+              "bRange": [
+                0,
+                0.4942471432924026
+              ],
+              "start": [
+                3.501224956988919,
+                -2.9014953002125434
+              ],
+              "end": [
+                2.5127306704041135,
+                -2.901495300212543
+              ],
+              "length": 0.9884942865848054
+            }
+          },
+          {
+            "a": {
+              "tileId": "p6",
+              "edgeId": "e2"
+            },
+            "b": {
+              "tileId": "p3",
+              "edgeId": "e0"
+            }
+          }
+        ],
+        "components": [
+          [
+            "l1",
+            "l2",
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "r1",
+            "r2",
+            "s1",
+            "s2",
+            "s3",
+            "s4"
+          ]
+        ]
+      }
+    },
+    "reason": "OVERLAP: 零件内部重叠; EDGE_OCCUPIED: 同一边上的连接区间被重复占用; OVERLAP: 零件内部重叠; EDGE_CONTACT: 正长度边接触必须启用连接边，且两块内部位于接触线的相反侧; OVERLAP: 零件内部重叠; OVERLAP: 零件内部重叠",
+    "failureStage": "geometry"
+  },
+  "current": {
+    "connectionModel": "segmented-edge-v1",
+    "eps": 1e-7,
+    "savedReportMatchesCurrent": true,
+    "report": {
+      "draftValid": false,
+      "valid": false,
+      "issues": [
+        {
+          "code": "OVERLAP",
+          "message": "零件内部重叠",
+          "tileIds": [
+            "p5",
+            "p2"
+          ]
+        },
+        {
+          "code": "EDGE_OCCUPIED",
+          "message": "同一边上的连接区间被重复占用",
+          "tileIds": [
+            "p4",
+            "p2"
+          ]
+        },
+        {
+          "code": "OVERLAP",
+          "message": "零件内部重叠",
+          "tileIds": [
+            "p1",
+            "p2"
+          ]
+        },
+        {
+          "code": "EDGE_CONTACT",
+          "message": "正长度边接触必须启用连接边，且两块内部位于接触线的相反侧",
+          "tileIds": [
+            "p1",
+            "p2"
+          ]
+        },
+        {
+          "code": "OVERLAP",
+          "message": "零件内部重叠",
+          "tileIds": [
+            "p6",
+            "p2"
+          ]
+        },
+        {
+          "code": "OVERLAP",
+          "message": "零件内部重叠",
+          "tileIds": [
+            "p3",
+            "p2"
+          ]
+        }
+      ],
+      "connections": [
+        {
+          "a": {
+            "tileId": "s4",
+            "edgeId": "e0"
+          },
+          "b": {
+            "tileId": "s3",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "s4",
+            "edgeId": "e3"
+          },
+          "b": {
+            "tileId": "r2",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0.981019167380417,
+              1
+            ],
+            "bRange": [
+              0.981019167380417,
+              1
+            ],
+            "start": [
+              4.025928521373514,
+              -6.743713707974398
+            ],
+            "end": [
+              4.025928521373514,
+              -6.724732875354815
+            ],
+            "length": 0.018980832619583055
+          }
+        },
+        {
+          "a": {
+            "tileId": "s3",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "s2",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "s3",
+            "edgeId": "e3"
+          },
+          "b": {
+            "tileId": "l2",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0,
+              0.02225729025833978
+            ],
+            "bRange": [
+              0,
+              0.02225729025833978
+            ],
+            "start": [
+              3.0259285213735136,
+              -5.724732875354815
+            ],
+            "end": [
+              3.0259285213735136,
+              -5.746990165613155
+            ],
+            "length": 0.02225729025833978
+          }
+        },
+        {
+          "a": {
+            "tileId": "s3",
+            "edgeId": "e1"
+          },
+          "b": {
+            "tileId": "r2",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0,
+              0.981019167380417
+            ],
+            "bRange": [
+              0,
+              0.981019167380417
+            ],
+            "start": [
+              4.025928521373514,
+              -6.724732875354815
+            ],
+            "end": [
+              4.025928521373514,
+              -5.743713707974398
+            ],
+            "length": 0.981019167380417
+          }
+        },
+        {
+          "a": {
+            "tileId": "s2",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "s1",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "s2",
+            "edgeId": "e3"
+          },
+          "b": {
+            "tileId": "l2",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0.02225729025833978,
+              1
+            ],
+            "bRange": [
+              0.02225729025833978,
+              1
+            ],
+            "start": [
+              3.0259285213735136,
+              -4.746990165613155
+            ],
+            "end": [
+              3.0259285213735136,
+              -5.724732875354815
+            ],
+            "length": 0.9777427097416602
+          }
+        },
+        {
+          "a": {
+            "tileId": "s1",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "p5",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "l2",
+            "edgeId": "e1"
+          },
+          "b": {
+            "tileId": "l1",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "r2",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "r1",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "p5",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "p4",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0.04940712876918946,
+              1
+            ],
+            "bRange": [
+              0.04940712876918946,
+              1
+            ],
+            "start": [
+              3.501224956988919,
+              -2.9014953002125434
+            ],
+            "end": [
+              3.0259285213735136,
+              -3.724732875354815
+            ],
+            "length": 0.9505928712308104
+          }
+        },
+        {
+          "a": {
+            "tileId": "p5",
+            "edgeId": "e1"
+          },
+          "b": {
+            "tileId": "p6",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0,
+              0.9609876388084801
+            ],
+            "bRange": [
+              0,
+              0.9609876388084797
+            ],
+            "start": [
+              4.025928521373514,
+              -3.724732875354815
+            ],
+            "end": [
+              3.5454347019692736,
+              -2.8924931674238468
+            ],
+            "length": 0.9609876388084799
+          }
+        },
+        {
+          "a": {
+            "tileId": "p4",
+            "edgeId": "e1"
+          },
+          "b": {
+            "tileId": "p1",
+            "edgeId": "e0"
+          }
+        },
+        {
+          "a": {
+            "tileId": "p4",
+            "edgeId": "e1"
+          },
+          "b": {
+            "tileId": "p2",
+            "edgeId": "e0"
+          },
+          "contact": {
+            "aRange": [
+              0,
+              0.9884942865848054
+            ],
+            "bRange": [
+              0,
+              0.4942471432924026
+            ],
+            "start": [
+              3.501224956988919,
+              -2.9014953002125434
+            ],
+            "end": [
+              2.5127306704041135,
+              -2.901495300212543
+            ],
+            "length": 0.9884942865848054
+          }
+        },
+        {
+          "a": {
+            "tileId": "p6",
+            "edgeId": "e2"
+          },
+          "b": {
+            "tileId": "p3",
+            "edgeId": "e0"
+          }
+        }
+      ],
+      "components": [
+        [
+          "l1",
+          "l2",
+          "p1",
+          "p2",
+          "p3",
+          "p4",
+          "p5",
+          "p6",
+          "r1",
+          "r2",
+          "s1",
+          "s2",
+          "s3",
+          "s4"
+        ]
+      ]
+    },
+    "overlaps": [
+      {
+        "id": "overlap-0",
+        "code": "OVERLAP",
+        "tileIds": [
+          "p5",
+          "p2"
+        ],
+        "area": 0.001057011879739278,
+        "polygon": [
+          [
+            3.5506320857581084,
+            -2.9014953002125434
+          ],
+          [
+            3.5259285213735136,
+            -2.8587074715703764
+          ],
+          [
+            3.501224956988919,
+            -2.9014953002125434
+          ]
+        ],
+        "areaUnit": "standard-square-units",
+        "bounds": {
+          "min": [
+            3.501224956988919,
+            -2.9014953002125434
+          ],
+          "max": [
+            3.5506320857581084,
+            -2.8587074715703764
+          ]
+        }
+      },
+      {
+        "id": "overlap-1",
+        "code": "OVERLAP",
+        "tileIds": [
+          "p1",
+          "p2"
+        ],
+        "area": 0.45348341321981867,
+        "polygon": [
+          [
+            3.501224956988919,
+            -2.9014953002125434
+          ],
+          [
+            3.0424631620304687,
+            -1.9839717102956418
+          ],
+          [
+            2.5127306704041135,
+            -2.901495300212543
+          ]
+        ],
+        "areaUnit": "standard-square-units",
+        "bounds": {
+          "min": [
+            2.5127306704041135,
+            -2.9014953002125434
+          ],
+          "max": [
+            3.501224956988919,
+            -1.9839717102956418
+          ]
+        }
+      },
+      {
+        "id": "overlap-2",
+        "code": "OVERLAP",
+        "tileIds": [
+          "p6",
+          "p2"
+        ],
+        "area": 0.008660939214799157,
+        "polygon": [
+          [
+            3.5454347019692736,
+            -2.8924931674238468
+          ],
+          [
+            3.5506320857581084,
+            -2.9014953002125434
+          ],
+          [
+            4.512730670404114,
+            -2.901495300212544
+          ],
+          [
+            4.507533286615279,
+            -2.8924931674238468
+          ]
+        ],
+        "areaUnit": "standard-square-units",
+        "bounds": {
+          "min": [
+            3.5454347019692736,
+            -2.901495300212544
+          ],
+          "max": [
+            4.512730670404114,
+            -2.8924931674238468
+          ]
+        }
+      },
+      {
+        "id": "overlap-3",
+        "code": "OVERLAP",
+        "tileIds": [
+          "p3",
+          "p2"
+        ],
+        "area": 0.42958808896669254,
+        "polygon": [
+          [
+            3.9919462090252327,
+            -1.9994701533119295
+          ],
+          [
+            3.545434701969274,
+            -2.8924931674238468
+          ],
+          [
+            4.507533286615279,
+            -2.8924931674238468
+          ]
+        ],
+        "areaUnit": "standard-square-units",
+        "bounds": {
+          "min": [
+            3.545434701969274,
+            -2.8924931674238468
+          ],
+          "max": [
+            4.507533286615279,
+            -1.9994701533119295
+          ]
+        }
+      }
+    ],
+    "occupancy": [
+      {
+        "id": "occupied-0",
+        "code": "EDGE_OCCUPIED",
+        "tileIds": [
+          "p4",
+          "p1",
+          "p2"
+        ],
+        "sharedEdge": {
+          "tileId": "p4",
+          "edgeId": "e1"
+        },
+        "range": [
+          0,
+          0.9884942865848054
+        ],
+        "length": 0.9884942865848054,
+        "start": [
+          3.501224956988919,
+          -2.9014953002125434
+        ],
+        "end": [
+          2.5127306704041135,
+          -2.901495300212543
+        ],
+        "owners": [
+          {
+            "other": {
+              "tileId": "p1",
+              "edgeId": "e0"
+            },
+            "range": [
+              0,
+              1
+            ]
+          },
+          {
+            "other": {
+              "tileId": "p2",
+              "edgeId": "e0"
+            },
+            "range": [
+              0,
+              0.9884942865848054
+            ]
+          }
+        ]
+      }
+    ],
+    "edgeContacts": [
+      {
+        "id": "edge-contact-0",
+        "code": "EDGE_CONTACT",
+        "tileIds": [
+          "p1",
+          "p2"
+        ],
+        "a": {
+          "tileId": "p1",
+          "edgeId": "e0",
+          "enabled": true
+        },
+        "b": {
+          "tileId": "p2",
+          "edgeId": "e0",
+          "enabled": true
+        },
+        "contact": {
+          "aRange": [
+            0.011505713415194574,
+            1
+          ],
+          "bRange": [
+            0,
+            0.4942471432924026
+          ],
+          "start": [
+            2.5127306704041135,
+            -2.901495300212543
+          ],
+          "end": [
+            3.501224956988919,
+            -2.9014953002125434
+          ],
+          "length": 0.9884942865848054
+        },
+        "opposing": false,
+        "reason": "same-side-interiors",
+        "directionRadians": [
+          -4.440892098500626e-16,
+          -4.440892098500625e-16
+        ]
+      }
+    ],
+    "byPair": [
+      {
+        "pair": "p2/p5",
+        "validatorErrors": [
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p5",
+              "p2"
+            ]
+          }
+        ],
+        "overlapArea": 0.001057011879739278
+      },
+      {
+        "pair": "p2/p4",
+        "validatorErrors": [
+          {
+            "code": "EDGE_OCCUPIED",
+            "message": "同一边上的连接区间被重复占用",
+            "tileIds": [
+              "p4",
+              "p2"
+            ]
+          }
+        ],
+        "overlapArea": 0
+      },
+      {
+        "pair": "p1/p2",
+        "validatorErrors": [
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p1",
+              "p2"
+            ]
+          },
+          {
+            "code": "EDGE_CONTACT",
+            "message": "正长度边接触必须启用连接边，且两块内部位于接触线的相反侧",
+            "tileIds": [
+              "p1",
+              "p2"
+            ]
+          }
+        ],
+        "overlapArea": 0.45348341321981867
+      },
+      {
+        "pair": "p2/p6",
+        "validatorErrors": [
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p6",
+              "p2"
+            ]
+          }
+        ],
+        "overlapArea": 0.008660939214799157
+      },
+      {
+        "pair": "p2/p3",
+        "validatorErrors": [
+          {
+            "code": "OVERLAP",
+            "message": "零件内部重叠",
+            "tileIds": [
+              "p3",
+              "p2"
+            ]
+          }
+        ],
+        "overlapArea": 0.42958808896669254
+      }
+    ],
+    "structuralIssues": [],
+    "relations": [
+      {
+        "from": "p1",
+        "to": "p2",
+        "intent": "uncertain",
+        "evidence": "p1 appears to obscure the lower-left portion of the large central triangle; this is overlap rather than an established shared edge.",
+        "connected": false,
+        "satisfied": true
+      },
+      {
+        "from": "p2",
+        "to": "p3",
+        "intent": "uncertain",
+        "evidence": "p3 appears to obscure the lower-right portion of p2. The hidden boundary cannot be established directly.",
+        "connected": false,
+        "satisfied": true
+      },
+      {
+        "from": "p1",
+        "to": "p3",
+        "intent": "uncertain",
+        "evidence": "The two tall triangles converge only near their lower inner tips, not along a full edge.",
+        "connected": false,
+        "satisfied": true
+      },
+      {
+        "from": "p1",
+        "to": "p4",
+        "intent": "connect",
+        "evidence": "Their horizontal rims face each other across essentially the full bottom edge of p1 and top edge of p4.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "p3",
+        "to": "p6",
+        "intent": "connect",
+        "evidence": "The horizontal bottom rim of p3 aligns with the full upper rim of p6.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "p4",
+        "to": "p5",
+        "intent": "connect",
+        "evidence": "The lower pink tiles have matching adjacent diagonal rims from the central upper junction to the lower-left junction.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "p5",
+        "to": "p6",
+        "intent": "connect",
+        "evidence": "Matching diagonal rims run between the central upper junction and the lower-right junction.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "p5",
+        "to": "s1",
+        "intent": "uncertain",
+        "evidence": "The square sits beneath p5, but its upper edge is shorter than the triangle's lower edge; only partial-edge alignment is evident.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "s1",
+        "to": "s2",
+        "intent": "connect",
+        "evidence": "Full horizontal square edges align in the vertical column.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "s2",
+        "to": "s3",
+        "intent": "connect",
+        "evidence": "The lower edge of s2 and upper edge of s3 align across their full widths.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "s3",
+        "to": "s4",
+        "intent": "connect",
+        "evidence": "Full horizontal square rims align between the two bottom squares.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "l1",
+        "to": "l2",
+        "intent": "connect",
+        "evidence": "The left leaf consists of two triangles with matching diagonal boundary rims.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "l2",
+        "to": "s2",
+        "intent": "connect",
+        "evidence": "The vertical right edge of l2 aligns with the full left edge of s2.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "l1",
+        "to": "s1",
+        "intent": "uncertain",
+        "evidence": "The right tip of l1 approaches the lower-left corner of s1; this is point adjacency, not a shared edge.",
+        "connected": false,
+        "satisfied": true
+      },
+      {
+        "from": "r1",
+        "to": "r2",
+        "intent": "connect",
+        "evidence": "The two right leaf triangles have matching diagonal rims.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "r2",
+        "to": "s3",
+        "intent": "connect",
+        "evidence": "The vertical left edge of r2 aligns with the full right edge of s3.",
+        "connected": true,
+        "satisfied": true
+      },
+      {
+        "from": "r1",
+        "to": "s2",
+        "intent": "uncertain",
+        "evidence": "The left tip of r1 approaches the lower-right corner of s2, giving only point adjacency.",
+        "connected": false,
+        "satisfied": true
+      }
+    ],
+    "relationViolations": [],
+    "relationNote": "Relations below are a separate recheck; the saved execution stopped at geometry before relation acceptance."
+  },
+  "independentReviewFit": {
+    "scope": "separate-input-context-not-current-diagnostic",
+    "available": true,
+    "overlapPairs": [
+      "l1/l2",
+      "l1/s2",
+      "l2/s2",
+      "l2/s3",
+      "p1/p2",
+      "p1/p3",
+      "p1/p4",
+      "p1/p5",
+      "p2/p3",
+      "p2/p4",
+      "p2/p5",
+      "p2/p6",
+      "p3/p4",
+      "p3/p5",
+      "p3/p6",
+      "p4/p5",
+      "p4/s1",
+      "p5/p6",
+      "p5/s1",
+      "p6/s1",
+      "r1/r2",
+      "r1/s3",
+      "r2/s3",
+      "r2/s4",
+      "s2/s3"
+    ],
+    "overlapCount": 25,
+    "onlyInIndependentFit": [
+      "l1/l2",
+      "l1/s2",
+      "l2/s2",
+      "l2/s3",
+      "p1/p3",
+      "p1/p4",
+      "p1/p5",
+      "p2/p4",
+      "p3/p4",
+      "p3/p5",
+      "p3/p6",
+      "p4/p5",
+      "p4/s1",
+      "p5/p6",
+      "p5/s1",
+      "p6/s1",
+      "r1/r2",
+      "r1/s3",
+      "r2/s3",
+      "r2/s4",
+      "s2/s3"
+    ],
+    "note": "These independently fitted poses are NOT used for the Candidate overlay or its conflict list."
+  }
+}

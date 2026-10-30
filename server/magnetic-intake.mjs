@@ -1,3 +1,4 @@
+import {inspectDiagnosticConflicts} from '../src/magnetic-tiles/intake/candidate-conflicts.ts'
 import {alignmentInspection} from '../src/magnetic-tiles/intake/alignment-inspection.ts'
 import {shareText} from './llm-traces.mjs'
 import {spatialEvidence} from '../src/magnetic-tiles/intake/execution-trace.ts'
@@ -59,7 +60,7 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
    if(kind==='reconstructions'){
     const {reconstruction:r,review,source}=await result(value),analysis=await read('analyses',review.analysisId)
     const references={source:{id:source.id,hash:source.hash},analysis:{id:analysis.id,hash:analysis.hash},review:{id:review.id,hash:review.hash},reconstruction:{id:r.id,hash:r.hash}}
-    payload=section==='alignment'?{references,alignment:alignmentInspection(r,route.split('/')[4])}:section==='planning'?{references,available:!!r.trace,planning:r.trace?.planning??null,note:r.trace?'Persisted deterministic execution input, not a model-generated Spatial Plan':'Historical planning trace unavailable; no reconstruction of missing execution evidence'}:{references,available:!!r.trace,execution:r,note:r.trace?'Saved execution trace and actual search attempts':'Historical execution trace unavailable; diagnostic poses were not recorded and are not fabricated'}
+    payload=section==='conflicts'?{references,conflicts:inspectDiagnosticConflicts(r,route.split('/')[4])}:section==='alignment'?{references,alignment:alignmentInspection(r,route.split('/')[4])}:section==='planning'?{references,available:!!r.trace,planning:r.trace?.planning??null,note:r.trace?'Persisted deterministic execution input, not a model-generated Spatial Plan':'Historical planning trace unavailable; no reconstruction of missing execution evidence'}:{references,available:!!r.trace,execution:r,note:r.trace?'Saved execution trace and actual search attempts':'Historical execution trace unavailable; diagnostic poses were not recorded and are not fabricated'}
    }else if(kind==='analyses'||kind==='reviews'){
     const review=kind==='reviews'?await read('reviews',value):null,analysis=await read('analyses',review?review.analysisId:value),source=await read('sources',analysis.sourceId)
     if(source.hash!==analysis.sourceHash||(review&&analysis.hash!==review.analysisHash))fail('Trace 来源不一致')

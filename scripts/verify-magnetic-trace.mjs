@@ -22,7 +22,7 @@ async function openTrace(p=page){await p.getByRole('button',{name:'Trace / Raw',
 async function closeTrace(p=page){await p.getByRole('button',{name:'关闭 Trace',exact:true}).click()}
 async function json(p,field){await p.waitForFunction(field=>{try{const d=JSON.parse(document.querySelector('textarea[aria-label="Trace JSON"]').value);return field.split('.').reduce((v,k)=>v?.[k],d)!==undefined}catch{return false}},field);return JSON.parse(await p.getByLabel('Trace JSON',{exact:true}).inputValue())}
 async function tab(name,p=page){await p.getByRole('button',{name,exact:true}).click()}
-async function assertPreview(p,entry){const svg=p.getByRole('img',{name:'Diagnostic 几何摆放',exact:true});const drawn=p.getByLabel('Diagnostic 几何摆放',{exact:true});assert.equal(await drawn.locator('polygon').count(),entry.tiles.length);for(const tile of entry.tiles){const points=(await drawn.locator(`[data-preview-piece="${tile.id}"]`).getAttribute('points')).split(' ').map(v=>v.split(',').map(Number));const expected=vertices(tile,profiles);assert.equal(points.length,expected.length);points.forEach((p,i)=>p.forEach((n,j)=>assert.ok(Math.abs(n-expected[i][j])<1e-12)))};assert.equal(await p.getByRole('button',{name:'在作品编辑器中打开',exact:true}).count(),0)}
+async function assertPreview(p,entry){const svg=p.getByRole('img',{name:'Diagnostic 几何摆放',exact:true});const drawn=p.getByLabel('Diagnostic 几何摆放',{exact:true});assert.equal(await drawn.locator('[data-preview-piece]').count(),entry.tiles.length);for(const tile of entry.tiles){const points=(await drawn.locator(`[data-preview-piece="${tile.id}"]`).getAttribute('points')).split(' ').map(v=>v.split(',').map(Number));const expected=vertices(tile,profiles);assert.equal(points.length,expected.length);points.forEach((p,i)=>p.forEach((n,j)=>assert.ok(Math.abs(n-expected[i][j])<1e-12)))};assert.equal(await p.getByRole('button',{name:'在作品编辑器中打开',exact:true}).count(),0)}
 const runs={}
 try{
  await mkdir(out,{recursive:true});await page.goto(url);await idle(page)
@@ -42,7 +42,7 @@ try{
   assert.match(await page.locator('.diagnostic-label').innerText(),new RegExp(r.diagnosticCandidates[0].layout==='partial'?'Partial.*Invalid':'Complete.*Invalid'))
   await page.screenshot({path:out+'/'+mode+'.png'})
   const layouts=new Set()
-  for(const entry of r.diagnosticCandidates){await selector.selectOption(entry.id);await assertPreview(page,entry);layouts.add(await page.getByLabel('Diagnostic 几何摆放',{exact:true}).locator('polygon').evaluateAll(es=>es.map(e=>e.dataset.previewPiece+':'+e.getAttribute('points')).sort().join('|')))}
+  for(const entry of r.diagnosticCandidates){await selector.selectOption(entry.id);await assertPreview(page,entry);layouts.add(await page.getByLabel('Diagnostic 几何摆放',{exact:true}).locator('[data-preview-piece]').evaluateAll(es=>es.map(e=>e.dataset.previewPiece+':'+e.getAttribute('points')).sort().join('|')))}
   assert.equal(layouts.size,10);await selector.selectOption('diagnostic-1')
   await openTrace();await tab('Geometry Execution');const execution=await json(page,'execution');assert.equal(execution.references.reconstruction.hash,r.hash);assert.deepEqual(execution.execution.trace.input.evidence,review.evidence);assert.deepEqual(execution.execution.diagnosticCandidates,r.diagnosticCandidates)
   await tab('Spatial Planning');const savedPlanning=await json(page,'planning');assert.equal(savedPlanning.references.reconstruction.id,r.id);assert.equal(savedPlanning.planning.fittedSeeds.length,14);assert.equal(savedPlanning.planning.modelGenerated,false);await closeTrace()
