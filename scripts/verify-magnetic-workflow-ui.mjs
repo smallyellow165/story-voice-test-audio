@@ -6,7 +6,7 @@ import {stage,rightTab,reviewDetails} from './magnetic-studio-browser.mjs'
 const base=process.env.MAGNETIC_ORIGIN||'http://127.0.0.1:5173',path=base+'/story-voice-test-audio/magnetic-tiles.html',out='/tmp/magnetic-workflow-ui'
 const sourceId='5fc64c5cfbbd7e39e1abe7198ee373cf3f60f268698a7e7b87302a5c494e6e7f'
 const get=async route=>{const r=await fetch(base+'/api/magnetic-intake/'+route);assert.equal(r.status,200);return r.json()}
-const refs=await get('selected/'+sourceId),selected=kind=>refs.find(r=>r.stage===kind&&r.valid)?.snapshotId
+const catalog=await get('profiles'),refs=await get('selected/'+sourceId),selected=kind=>refs.find(r=>r.stage===kind&&r.valid)?.snapshotId
 assert.ok(selected('analysis')&&selected('review'),'rose needs existing Selected snapshots')
 const review=await get('reviews/'+selected('review')),analysis=await get('analyses/'+review.analysisId)
 const link=path+`?stage=review&sourceId=${sourceId}&analysisId=${analysis.id}&reviewId=${review.id}&observationId=p1&rightTab=inspector`
@@ -44,7 +44,7 @@ try{
  await page.waitForFunction(()=>document.querySelector('select[aria-label="历史 Review"]').value==='')
  for(const id of ['source','review','reconstruction','assembly','build','review']){
   await stage(page,id,'inspector');await owns(id)
-  await rightTab(page,'catalog');assert.equal(await page.locator('[data-catalog-profile]').count(),5);await rightTab(page,'inspector')
+  await rightTab(page,'catalog');assert.equal(await page.locator('[data-catalog-profile]').count(),catalog.profiles.length);await rightTab(page,'inspector')
   assert.equal(await page.locator('main').getAttribute('data-active-stage'),id)
   if(id==='build'){assert.equal(await page.getByRole('region',{name:'搭建教程播放器',exact:true}).count(),0,'view switch must not generate a tutorial');assert.equal(await page.getByRole('button',{name:'保存教程',exact:true}).isDisabled(),true);await page.screenshot({path:out+'/build.png'})}
   if(id==='reconstruction')assert.equal(await page.getByRole('button',{name:'生成几何重建',exact:true}).isDisabled(),true,'unsaved draft cannot reconstruct')

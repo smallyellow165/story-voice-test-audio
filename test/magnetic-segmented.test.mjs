@@ -8,7 +8,7 @@ import {profiles} from '../src/magnetic-tiles/profiles.ts'
 import {edgeContact,edges,validate,vertices,findSnap,segmentAlignments,EPS,connectionSegment} from '../src/magnetic-tiles/geometry.ts'
 import {generateBuild,validateBuild,contentHash} from '../src/magnetic-tiles/build-plan.ts'
 import {parseAssembly,saveWorkspace,loadWorkspace} from '../src/magnetic-tiles/storage.ts'
-import {reconstruct} from '../src/magnetic-tiles/intake/reconstruct.ts'
+import {reconstruct,reconstructionVersion} from '../src/magnetic-tiles/intake/reconstruct.ts'
 import {polygonArea,intersectionPolygon} from '../src/magnetic-tiles/intake/segment-audit.ts'
 import {tile,evidenceFor} from './fixtures/magnetic-intake/cases.mjs'
 const scene=()=>[tile('long','large-equilateral-triangle'),tile('left','square',0,-1),tile('right','square',1,-1)]
@@ -50,8 +50,8 @@ test('actual Reconstruction generates partial connections from observations, for
   const memory=new Map(),store={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v)};saveWorkspace(store,{schemaVersion:1,current:a,saved:[a]},profiles);assert.deepEqual(loadWorkspace(store,profiles).current,a);assert.deepEqual(parseAssembly(a,profiles),a)
  }
 })
-test('rose searches real segmented placements; one-to-many candidates retain actual intervals and collisions, not old whole-edge impossibility claims',async()=>{
- const historical=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-connected-v3.json',import.meta.url),'utf8')),i=historical.trace.input,r=reconstruct(i.evidence,i.width,i.height,profiles,'rose-segment')
+test('saved V4 rose segmented placements remain immutable; one-to-many candidates retain actual intervals and collisions, not old whole-edge impossibility claims',async()=>{
+ const historical=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-connected-v3.json',import.meta.url),'utf8')),r=JSON.parse(await readFile(new URL('./fixtures/magnetic-intake/rose-connected-v4.json',import.meta.url),'utf8'))
  assert.ok(r.diagnostics.some(s=>s.includes('p2 对已尝试连接邻居')&&s.includes('最小轮廓 RMS 0.018')));assert.equal(r.candidates.length,0);assert.equal(r.truncated,false);assert.equal(r.explored,132);assert.equal(r.trials,23422)
  const first=r.diagnosticCandidates[0];assert.equal(first.failureStage,'geometry');assert.equal(first.tiles.length,14);near(first.attemptedTileRms,.01799719681493965);assert.ok(first.validator.report.issues.some(i=>i.code==='OVERLAP'&&i.tileIds.includes('p2')))
  const multi=r.diagnosticCandidates.find(d=>d.attemptedConnection?.from==='p2'&&d.validator.report.connections.filter(c=>c.a.tileId==='p2'||c.b.tileId==='p2').length===2);assert.ok(multi);near(multi.attemptedTileRms,.06076446526555705);assert.ok(multi.validator.report.issues.some(i=>i.code==='EDGE_OCCUPIED'))
@@ -66,7 +66,7 @@ test('segmented valid candidate persists and passes actual Origin adoption plus 
  try{
   const api=createMagneticIntake(dir),f=evidenceFor(scene(),profiles,vertices,validate),seed=async(kind,payload)=>{const r={...payload,hash:await contentHash(payload)};await mkdir(path.join(dir,kind),{recursive:true});await writeFile(path.join(dir,kind,r.id+'.json'),JSON.stringify(r));return r}
   const source=await seed('sources',{schemaVersion:1,id:crypto.randomUUID(),view:{width:f.width,height:f.height},createdAt:new Date().toISOString()}),analysis=await seed('analyses',{schemaVersion:1,id:crypto.randomUUID(),sourceId:source.id,sourceHash:source.hash,status:'complete',evidence:f.evidence,createdAt:new Date().toISOString()}),review=await api.dispatch('POST','reviews',{analysisId:analysis.id,analysisHash:analysis.hash,evidence:f.evidence}),r=await api.dispatch('POST','reconstruct',{reviewId:review.id,reviewHash:review.hash,mode:'connected-construction'}),c=r.candidates[0]
-  assert.ok(c);assert.equal(r.algorithm,'planar-outline-v4');const assembly={...c.assembly,revision:1},origin=await api.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:c.id,visualChecked:true,assembly})
+  assert.ok(c);assert.equal(r.algorithm,reconstructionVersion);const assembly={...c.assembly,revision:1},origin=await api.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:c.id,visualChecked:true,assembly})
   assert.deepEqual(origin.assembly,assembly);const next=createMagneticIntake(dir);assert.deepEqual(await next.read('origins',origin.id),origin);assert.deepEqual((await next.result(r.id)).reconstruction,r);const bundle=await generateBuild(origin.assembly,profiles);assert.deepEqual(await validateBuild(bundle,profiles),bundle)
   const forged=structuredClone(assembly);forged.instances[0].pose.x+=.1;await assert.rejects(api.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:c.id,visualChecked:true,assembly:forged}))
  }finally{await rm(dir,{recursive:true,force:true})}
