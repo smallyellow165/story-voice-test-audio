@@ -29,7 +29,7 @@ import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin,
 type ReviewUndo={evidence:Evidence;review:Review|null;selected:string;label:string}
 type Config={models:{id:string;label:string;provider:string}[];providers:Record<string,boolean>}
 const emptyHistory=():IntakeHistory=>({selectedSnapshots:[],sources:[],analyses:[],reviews:[],reconstructions:[],origins:[],warnings:[]})
-export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candidate:Assembly,bind:(actual:Assembly)=>Promise<Origin>)=>Promise<void>}){
+export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly;onApply:(candidate:Assembly,bind:(actual:Assembly)=>Promise<Origin>)=>Promise<void>;onSourceChange?:(id:string|null)=>void}){
  const {registry:{profiles}}=useProfileRegistry()
  const {stage,navigate}=useStudio()
  const urlRequest=useUrlRequest(), currentRequest=useRef<typeof urlRequest>(urlRequest), restored=useRef<typeof urlRequest|null>(null)
@@ -37,6 +37,7 @@ export function ImageIntake({assembly,onApply}:{assembly:Assembly;onApply:(candi
  const [urlReady,setUrlReady]=useState(false),[draftAvailable,setDraftAvailable]=useState(false)
  const [confirmedProfiles,setConfirmedProfiles]=useState<Set<string>>(()=>new Set())
  const [config,setConfig]=useState<Config|null>(null),[history,setHistory]=useState<IntakeHistory>(emptyHistory),[source,setSource]=useState<Source|null>(null),[image,setImage]=useState('')
+ useEffect(()=>{if(urlReady)onSourceChange?.(source?.id??null)},[source?.id,urlReady,onSourceChange])
  const [analysis,setAnalysis]=useState<Analysis|null>(null),[draft,setDraft]=useState<Evidence|null>(null),[review,setReview]=useState<Review|null>(null),[result,setResult]=useState<Reconstruction|null>(null)
  const [reviewUndo,setReviewUndo]=useState<ReviewUndo|null>(null)
  const [selected,setSelected]=useState(''),[model,setModel]=useState(''),[candidateId,setCandidateId]=useState(''),[checked,setChecked]=useState(false)

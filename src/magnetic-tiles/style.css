@@ -204,3 +204,21 @@
 .snap-mode-switch{display:inline-flex;align-items:center;gap:5px;min-width:0}
 .snap-mode-switch select{width:auto;max-width:125px;min-width:0;padding:7px;font-size:12px}
 .tiles-workspace[data-snap-mode=click] .tile{cursor:pointer}
+
+/* Build keeps step copy in its own scroll area; transport cells never reflow. */
+.build-heading{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.build-heading h2{margin:0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.build-heading button{flex-shrink:0;padding:4px 8px;font-size:12px;min-height:30px;white-space:nowrap}
+.build-start-actions{display:flex;gap:6px;margin:4px 0 8px}.build-start-actions button{width:100%}
+.build-playback-controls{min-width:0;display:grid;gap:8px}
+.build-playing-source{height:36px;line-height:18px;font-size:12px;margin:0;overflow:hidden;overflow-wrap:anywhere}
+.build-step-heading{height:26px;line-height:26px;font-weight:650;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.build-instruction{height:clamp(88px,18dvh,140px);min-height:0;overflow:auto;overscroll-behavior:contain;font-size:14px;padding:4px 2px}
+.build-instruction p{margin:0 0 6px}.build-instruction .hint{font-size:12px;margin:0}
+.build-transport{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:42px 42px;gap:6px;min-width:0}
+.build-transport button{width:100%;min-width:0;height:42px;min-height:42px;padding:4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.build-management{display:grid;gap:8px;min-width:0}.build-save-row{display:flex;align-items:center;gap:8px;min-height:42px;margin-top:2px}
+.build-save-row button{flex:0 0 auto;padding:5px 8px;font-size:12px}.build-save-row span{font-size:11px;line-height:16px}
+.build-file-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.build-file-actions button{min-width:0;padding:4px;font-size:11px;white-space:nowrap}
+.build-saved{margin-top:2px;gap:6px}.build-saved label{font-size:12px;gap:4px}.build-saved select{font-size:12px;padding:7px}.build-saved button{padding:5px 8px;font-size:12px;min-height:32px}
+.build-notice{font-size:12px;margin:0;min-height:0}
+.build-player>h3{height:28px;line-height:28px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}

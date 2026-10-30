@@ -21,7 +21,7 @@ const button=name=>studioButton(page,name)
 const report={live,calls:0,cases:[]}
 async function idle(){await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='上传磁力片图片'&&!b.disabled),{},{timeout:240000})}
 async function getHistory(){const response=await page.request.get(base+'/api/magnetic-intake/history');assert.equal(response.status(),200);return response.json()}
-async function exportBuild(){await stage(page,'build');if(await page.getByRole('button',{name:'继续上次教程',exact:true}).isVisible())await page.getByRole('button',{name:'继续上次教程',exact:true}).click();const event=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await event).path(),'utf8'))}
+async function exportBuild(){await stage(page,'build');if(await page.getByRole('button',{name:'继续当前教程',exact:true}).isVisible())await page.getByRole('button',{name:'继续当前教程',exact:true}).click();const event=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await event).path(),'utf8'))}
 try{
  // Draw independent benchmark inputs; they are test images, never application recognition results.
  const draw=await browser.newPage()

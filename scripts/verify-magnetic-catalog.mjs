@@ -52,7 +52,7 @@ try{
  await rightTab(page,'catalog');assert.equal(await page.locator('[data-build-tile]').count(),buildCount);await rightTab(page,'inspector');assert.equal(await page.locator('[data-build-tile]').count(),buildCount);await rightTab(page,'catalog')
  for(const id of ['source','review','reconstruction','assembly','build']){await stage(page,id);assert.equal(await page.locator('main').getAttribute('data-active-stage'),id);assert.equal(await catalogActive(page),'true');assert.equal(await rows.count(),5);assert.equal(await page.locator('.studio-workspace .tiles-catalog').count(),0)}
  // Existing Assembly → Build navigation deliberately returns to the source preview.
- await rightTab(page,'inspector');await page.getByRole('button',{name:'继续上次教程',exact:true}).click();assert.equal(await page.locator('[data-build-tile]').count(),buildCount)
+ await rightTab(page,'inspector');await page.getByRole('button',{name:'继续当前教程',exact:true}).click();assert.equal(await page.locator('[data-build-tile]').count(),buildCount)
  // Matching UI and unsaved edits remain mounted across auxiliary tab switches.
  await page.goto(rose+'&rightTab=inspector');await idle(page)
  const matcher=page.getByRole('region',{name:'Find Matching Profile',exact:true})

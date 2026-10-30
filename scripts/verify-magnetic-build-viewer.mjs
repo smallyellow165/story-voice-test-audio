@@ -33,7 +33,7 @@ try{
  await openPlan(five.plan.id);assert.equal(await player.locator('[data-build-tile]').count(),5);assert.match(await player.innerText(),/手动五块作品.*已完成/)
  await source.selectOption('saved:'+duck.id);await assertPreview(17)
  await mkdir('/tmp/magnetic-build-viewer',{recursive:true});await page.screenshot({path:'/tmp/magnetic-build-viewer/duck-preview-after-five.png'})
- await page.getByRole('button',{name:'继续上次教程',exact:true}).click();assert.equal(await player.locator('[data-build-tile]').count(),5);assert.deepEqual(await exportJson('导出教程 JSON'),five)
+ await page.getByRole('button',{name:'继续当前教程',exact:true}).click();await ready();assert.equal(await player.locator('[data-build-tile]').count(),2);assert.deepEqual(await exportJson('导出教程 JSON'),seventeen)
  await openPlan(seventeen.plan.id);assert.equal(await player.locator('[data-build-tile]').count(),2);assert.deepEqual(await exportJson('导出教程 JSON'),seventeen)
  assert.deepEqual(await exportJson('导出 JSON'),draft,'source and tutorial switches must not change the editor')
  await stage(page,'build');await assertPreview(17);await openPlan(five.plan.id)

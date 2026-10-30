@@ -39,6 +39,7 @@ function Playground() {
   const dragRef = useRef<Drag | null>(null)
   const clickPointer=useRef<{pointerId:number;id:string;x:number;y:number;moved:boolean}|null>(null)
   const [color, setColor] = useState(palette[0])
+  const [imageSourceContext,setImageSourceContext]=useState<string|null>(readStudioUrl(location.href).values.sourceId??null)
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag')
   const [message, setMessage] = useState(boot.error || '选一种形状，开始拼搭。')
   const [storageError, setStorageError] = useState(boot.error)
@@ -184,7 +185,7 @@ function Playground() {
   }
   const height = view.width * .7
   return <StudioLayout dragging={!!drag}>
-    <ImageIntake assembly={current} onApply={applyImage}/>
+    <ImageIntake assembly={current} onApply={applyImage} onSourceChange={setImageSourceContext}/>
     <StudioSlot column="inspector" stages={['assembly']}>
       <aside className="tiles-panel"><h2>{workflowTerms.assembly.label}</h2><div className="tiles-palette">{profiles.map(p => <button key={`${p.id}@${p.version}`} onClick={() => add(p.id, p.version)} disabled={!!drag} className="shape-button" title={`${p.id}@${p.version}`} data-palette-profile={`${p.id}@${p.version}`} aria-label={`添加${p.name}`}>
         <svg viewBox={profileViewBox(p)} aria-hidden="true"><g transform="scale(1 -1)"><polygon points={p.vertices.map(v => v.join(',')).join(' ')} fill={color}/></g></svg><span>{p.name} · v{p.version}</span><small>{profileSizeLabel(p)}</small></button>)}</div>
@@ -233,7 +234,7 @@ function Playground() {
         <h2>几何检查</h2><p>零件规格、位姿、重叠、共线接触段、区间占用与连通性。</p><ul className="issues">{(drag ? preview : report).issues.filter(i=>workMode(current)!=='flat-mosaic'||i.code!=='DISCONNECTED').map((i, index) => <li key={index}>{i.message}</li>)}</ul>{checkArtwork(current, profiles).ready && !drag && <p className="success">所有检查通过。</p>}
         <details open><summary>连接关系（自动推导，含拖动预览）</summary>{preview.connections.length ? <ul className="connections">{preview.connections.map((c, i) => <li key={i}>#{current.instances.findIndex(t => t.id === c.a.tileId) + 1}.{c.a.edgeId} ↔ #{current.instances.findIndex(t => t.id === c.b.tileId) + 1}.{c.b.edgeId}{c.contact?` · 接触段 ${c.contact.length.toFixed(3)}`:''}</li>)}</ul> : <p className="hint">尚无正长度边连接。</p>}</details>
       </aside>
-    </StudioSlot><BuildPanel assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
+    </StudioSlot><BuildPanel sourceContextId={imageSourceContext} assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
   </StudioLayout>
 }
 createRoot(document.getElementById('root')!).render(<ProfileRegistryProvider><Playground/></ProfileRegistryProvider>)

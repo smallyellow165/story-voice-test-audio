@@ -17,7 +17,7 @@ async function dragLast(x,y){
  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:12});await page.mouse.up()
 }
 async function add(name,x,y,rotations=0){await button('添加'+name).click();for(let i=0;i<rotations;i++)await button('旋转 90°').click();await dragLast(x,y)}
-async function exportBuild(){await stage(page,'build');if(await page.getByRole('button',{name:'继续上次教程',exact:true}).isVisible())await page.getByRole('button',{name:'继续上次教程',exact:true}).click();const dl=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await dl).path(),'utf8'))}
+async function exportBuild(){await stage(page,'build');if(await page.getByRole('button',{name:'继续当前教程',exact:true}).isVisible())await page.getByRole('button',{name:'继续当前教程',exact:true}).click();const dl=page.waitForEvent('download');await button('导出教程 JSON').click();return JSON.parse(await readFile(await (await dl).path(),'utf8'))}
 async function waitReady(){await button('导入教程 JSON').waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='导入教程 JSON'&&!b.disabled))}
 try{
  await page.goto(process.env.MAGNETIC_URL||'http://127.0.0.1:5173/story-voice-test-audio/magnetic-tiles.html');await waitReady()
@@ -27,7 +27,7 @@ try{
  await add('等边三角形',.5,-.30,2)
  assert.match(await page.getByTestId('validation').innerText(),/正式有效/)
  await button('生成搭建步骤').click();await waitReady();assert.equal(await count(),1)
- assert.equal(await page.locator('.build-saved select').locator('option').count(),1)
+ assert.equal(await page.locator('.build-saved select').locator('option').count(),2)
  const bundle=await exportBuild();assert.equal(bundle.plan.steps.length,7)
  const view=await player.locator('svg').getAttribute('viewBox')
  await button('下一步').click();await waitReady();assert.equal(await count(),2)
@@ -44,7 +44,7 @@ try{
  await button('完成搭建').click();await waitReady();await page.reload();await waitReady();assert.match(await player.locator('h3').innerText(),/已完成/)
  // Changing the source cannot alter the saved tutorial.
  await button('新建').click();assert.equal(await page.locator('polygon[data-tile-id]').count(),0)
- assert.deepEqual(await exportBuild(),bundle)
+ await stage(page,'build');assert.equal(await player.count(),0);await page.locator('.build-saved select').selectOption(bundle.plan.id);await button('打开教程').click();await waitReady();assert.deepEqual(await exportBuild(),bundle)
  await button('添加正方形').click();await button('生成搭建步骤').click();await waitReady();await button('保存教程').click();await waitReady()
  assert.equal(await page.locator('.build-saved select').locator('option').count(),3)
  await page.locator('.build-saved select').selectOption(bundle.plan.id);await button('打开教程').click();await waitReady();assert.equal(await count(),7)
