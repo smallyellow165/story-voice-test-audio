@@ -1,0 +1,79 @@
+diff --git a/src/magnetic-tiles/three-d/vendor/components/tutorial/TutorialPlayer.tsx b/src/magnetic-tiles/three-d/vendor/components/tutorial/TutorialPlayer.tsx
+index b5d738e..3a4f60c 100644
+--- a/src/magnetic-tiles/three-d/vendor/components/tutorial/TutorialPlayer.tsx
++++ b/src/magnetic-tiles/three-d/vendor/components/tutorial/TutorialPlayer.tsx
+@@ -1,5 +1,6 @@
+ // Adapted MIT upstream TutorialPlayer; preserves AnimatedPiece, CameraRig and orchestration.
+ import { useRef, useMemo, useEffect, useCallback, useState } from 'react'
++import { createPortal } from 'react-dom'
+ import { Canvas, useThree, useFrame } from '@react-three/fiber'
+ import { OrbitControls } from '@react-three/drei'
+ import * as THREE from 'three'
+@@ -186,7 +187,8 @@ function SceneContent({ pieces, visibleIds, newIds, step, state, transitionKey,
+       onStart={()=>{cancelled.current=true}} onChange={report}/>
+   </>
+ }
+-export function TutorialPlayer({tutorial,initialStep=0,seekRequest,onStepChange,onCameraChange}:{
++export function TutorialPlayer({tutorial,initialStep=0,seekRequest,onStepChange,onCameraChange,controlsHost,detailsHost}:{
++  controlsHost:HTMLElement|null;detailsHost:HTMLElement|null
+   tutorial:Tutorial3D;initialStep?:number;seekRequest:{index:number;sequence:number}|null
+   onStepChange:(index:number)=>void;onCameraChange:(camera:TutorialCamera)=>void
+ }) {
+@@ -208,26 +210,22 @@ export function TutorialPlayer({tutorial,initialStep=0,seekRequest,onStepChange,
+   const [fitRequest,requestFit]=useState(0),[resetRequest,requestReset]=useState(0),[camera,setCamera]=useState<TutorialCamera|null>(null)
+   const report=useCallback((c:TutorialCamera)=>{setCamera(c);onCameraChange(c)},[onCameraChange])
+   function navigate(fn:()=>void){setAuto(false);setEpoch(n=>n+1);fn()}
+-  return <section className="magnetic-tutorial-player" data-testid="tutorial-player" data-step-index={currentStep} data-play-state={orch.state.playState} data-auto={auto}>
+-    <div className="button-row magnetic-tutorial-controls">
+-      <button onClick={()=>requestFit(n=>n+1)}>Fit to View</button><button onClick={()=>requestReset(n=>n+1)}>Reset Camera</button>
++  const playbackControls=<section className="magnetic-tutorial-playback" aria-label="3D 教程播放控制">
++    <p role="status" data-testid="tutorial-progress">{steps.length?`${currentStep+1} / ${steps.length} · ${step?.title}`:'尚无步骤'}{complete?' · 播放完成':''}</p>
++    <p>本步新增：{step?.addedPieceIds.join('、')||'无'}</p><p>{step?.description}</p>
++    <div className="magnetic-tutorial-navigation">
+       <button onClick={()=>navigate(orch.prev)} disabled={!steps.length||currentStep===0}>上一步</button>
+       <button disabled={!steps.length} onClick={()=>{
+         if(auto||orch.state.playState==='playing'){setAuto(false);orch.pause()}
+         else{setAuto(true);if(complete){orch.seek(0);setEpoch(n=>n+1)}else{orch.play();if(orch.state.playState!=='paused')setEpoch(n=>n+1)}}
+       }}>{auto||orch.state.playState==='playing'?'暂停':'自动播放'}</button>
+       <button onClick={()=>navigate(orch.next)} disabled={!steps.length||currentStep>=steps.length-1}>下一步</button>
+-      <button disabled={!steps.length} onClick={()=>navigate(orch.replayStep)}>重播本步</button>
+-      <button disabled={!steps.length} onClick={()=>{setAuto(true);orch.seek(0);setEpoch(n=>n+1)}}>重新播放</button>
+-      <button onClick={orch.toggleLockView} aria-pressed={orch.state.lockedView}>{orch.state.lockedView?'解锁视角':'锁定视角'}</button>
++      <button disabled={!steps.length} onClick={()=>navigate(()=>orch.seek(0))}>重新开始</button>
+     </div>
+-    <p role="status" data-testid="tutorial-progress">{steps.length?`${currentStep+1} / ${steps.length} · ${step?.title}`:'尚无步骤'}{complete?' · 播放完成':''}</p>
+-    <div className="magnetic-3d-canvas magnetic-tutorial-canvas"><ViewerErrorBoundary>
+-      <Canvas orthographic camera={{position:[5,5,5],zoom:50,near:.001,far:100}} dpr={[1,2]} gl={defaultGLProps}>
+-        <SceneContent pieces={pieces} visibleIds={visibleIds} newIds={newIds} step={step} state={orch.state}
+-          transitionKey={`${currentStep}-${epoch}`} fitRequest={fitRequest} resetRequest={resetRequest} onCamera={report}/>
+-      </Canvas>
+-    </ViewerErrorBoundary></div>
++    <label>查看步骤<select aria-label="3D 教程查看步骤" disabled={!steps.length} value={currentStep} onChange={e=>navigate(()=>orch.seek(Number(e.target.value)))}>{steps.map((s,i)=><option key={s.id} value={i}>第 {i+1} 步 · {s.title} · {s.addedPieceIds.length} 片</option>)}</select></label>
++  </section>
++  const displayDetails=<>
++    <button disabled={!steps.length} onClick={()=>navigate(orch.replayStep)}>重播本步</button>
+     <p>{step?.description}</p>{step?.hint&&<p>{step.hint}</p>}
+     {step?.parentGuide&&<p>{step.parentGuide}</p>}
+     {!!step?.focusPoints?.length&&<ul>{step.focusPoints.map((point,i)=><li key={i}>{point}</li>)}</ul>}
+@@ -238,5 +236,21 @@ export function TutorialPlayer({tutorial,initialStep=0,seekRequest,onStepChange,
+       <output aria-label="3D Tutorial 播放状态">{JSON.stringify(orch.state)}</output>
+       <ul>{pieces.filter(p=>visibleIds.includes(p.id)).map(p=><li key={p.id} data-tutorial-piece={p.id} data-new={newIds.has(p.id)} data-pose={JSON.stringify(p.piece.pose)}>{p.id} · {p.shape.id} · {newIds.has(p.id)?'本步新增':'已完成'}</li>)}</ul>
+     </details>
++  </>
++  return <section className="magnetic-tutorial-player" data-testid="tutorial-player" data-step-index={currentStep} data-play-state={orch.state.playState} data-auto={auto}>
++    <div className="button-row magnetic-tutorial-controls">
++      <button onClick={()=>requestFit(n=>n+1)}>Fit to View</button><button onClick={()=>requestReset(n=>n+1)}>Reset Camera</button>
++      <button onClick={orch.toggleLockView} aria-pressed={orch.state.lockedView}>{orch.state.lockedView?'解锁视角':'锁定视角'}</button>
++    </div>
++    <p className="magnetic-tutorial-view-progress">{steps.length?`第 ${currentStep+1} / ${steps.length} 步 · 新增 ${step?.addedPieceIds.join('、')}`:'尚无步骤，请在右侧生成搭建教程或展开高级编辑手动编排。'}</p>
++    <div className="magnetic-3d-canvas magnetic-tutorial-canvas"><ViewerErrorBoundary>
++      <Canvas orthographic camera={{position:[5,5,5],zoom:50,near:.001,far:100}} dpr={[1,2]} gl={defaultGLProps}>
++        <SceneContent pieces={pieces} visibleIds={visibleIds} newIds={newIds} step={step} state={orch.state}
++          transitionKey={`${currentStep}-${epoch}`} fitRequest={fitRequest} resetRequest={resetRequest} onCamera={report}/>
++      </Canvas>
++    </ViewerErrorBoundary></div>
++    <p className="hint">亮色轮廓为本步新增片；此前零件保持原色。拖动旋转、右键平移、滚轮缩放。</p>
++    {controlsHost&&createPortal(playbackControls,controlsHost)}
++    {detailsHost&&createPortal(displayDetails,detailsHost)}
+   </section>
+ }

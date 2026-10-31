@@ -36,3 +36,26 @@ Local correctness patches:
 No phase-one Engine, LEGO or 2D Build business code was modified. Host integration is in StudioLayout, ThreeDWorkspace's read-only committed-source bridge, ThreeDBuildWorkspace, tutorial.ts, tutorial-storage.ts and tutorial.css. Full behavior, validation evidence and manual acceptance are in `doc/magnetic-3d-phase4.md`.
 
 Phase 5A adds host-only `build-order.ts`, its Worker and candidate-review UI, reusing all imported modules above. No automatic ordering implementation was found in this archive; graph search/scoring is new host application code, not claimed as upstream code. No vendored files, engine algorithms or dependencies changed. The host also remounts TutorialPlayer after explicit load/adoption of the same document ID so camera capture and playback reset correctly. Existing MIT notices, checksums and tutorial.patch remain applicable. See `doc/magnetic-3d-phase5a.md` for budgets, heuristic limitations and acceptance evidence.
+
+## Build UI refinement (2026-10-31)
+
+`tutorial-ui.patch` is an additional local patch after `tutorial.patch` (paths
+relative to this host repository). It moves the existing playback controls and
+step/debug information into Studio Inspector portal hosts, adds a step selector,
+and separates restart from autoplay. AnimatedPiece, SceneContent, CameraRig,
+useTutorialOrchestrator, entrance/easing and final-pose handling are retained.
+There is no new player, solver, physics simulation or dependency.
+
+Host changes prepare empty documents in memory only, preview complete checked
+Worker results directly, and guard regeneration against user edits/source
+changes. Normal saving requires complete geometry/connected steps; incomplete
+or invalid drafts remain explicitly saveable in advanced controls. Saving never
+marks human review or Physical Stability as verified.
+
+The existing `magnetic-tiles.tutorial3d-draft.v1` key now accepts both the original
+Tutorial3D document and a small `{schemaVersion:1,current,saved}` workspace.
+Reading legacy bytes performs no migration/write. Explicit save/open uses the
+existing compare-before-write protection; saves retain other tutorial IDs (up
+to 50) and update the explicitly saved ID. No additional history key/version
+system is introduced. Individual Tutorial3D JSON, Assembly3D and playback data
+contracts are unchanged; playback progress stays in memory.

@@ -7,3 +7,24 @@
 .magnetic-tutorial-timeline>div:nth-child(2){max-height:320px;overflow-y:auto}
 .magnetic-build-order{border:1px solid #cbdcd5;border-radius:8px;padding:9px;margin:10px 0}.magnetic-build-order h4{margin:6px 0}.magnetic-build-order [data-testid=build-order-stats]{font-size:11px;overflow-wrap:anywhere}
 .magnetic-tutorial-panel section{border:1px solid #cbdcd5;border-radius:8px;padding:8px;margin:12px 0}.magnetic-tutorial-panel section>header{display:flex;align-items:center;gap:5px;background:#eef4f0;padding:5px}.magnetic-tutorial-panel h3{margin:0}.magnetic-tutorial-panel .flex{display:flex;gap:5px}.magnetic-tutorial-panel .flex-col{flex-direction:column}.magnetic-tutorial-panel .flex-wrap{flex-wrap:wrap}.magnetic-tutorial-panel .flex-1{flex:1;min-width:0}.magnetic-tutorial-panel .items-center{align-items:center}.magnetic-tutorial-panel .justify-between{justify-content:space-between}.magnetic-tutorial-panel .grid{display:grid;gap:5px}.magnetic-tutorial-panel .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.magnetic-tutorial-panel .grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.magnetic-tutorial-panel .col-span-2{grid-column:span 2}.magnetic-tutorial-panel .block{display:block}.magnetic-tutorial-panel .border{border:1px solid #dce6df;padding:5px}.magnetic-tutorial-panel .rounded-lg{border-radius:6px}.magnetic-tutorial-panel .font-mono{font-family:monospace;font-size:11px}.magnetic-tutorial-panel .truncate{overflow-wrap:anywhere}.magnetic-tutorial-panel .w-3{min-width:12px;height:12px}.magnetic-tutorial-panel .max-h-40{max-height:180px;overflow-y:auto}.magnetic-tutorial-panel .space-y-1>*{margin-top:5px}
+/* Ordinary playback follows the 2D Build inspector; upstream orchestration and
+   the canvas stay mounted while advanced panels are opened or closed. */
+.magnetic-3d-build{min-width:0}.magnetic-3d-build>h3{font-size:15px;margin:0 0 6px}
+.magnetic-3d-build .magnetic-tutorial-canvas{height:clamp(320px,64vh,760px)}
+.magnetic-tutorial-view-progress{font-size:13px;margin:8px 0}
+.magnetic-tutorial-inspector>h3{margin-top:0}.magnetic-tutorial-inspector p{overflow-wrap:anywhere}
+.magnetic-tutorial-inspector .magnetic-build-order{border:0;padding:0;margin:12px 0}
+.magnetic-tutorial-inspector button{max-width:100%;white-space:normal}
+.magnetic-tutorial-inspector .button-row{display:flex;flex-wrap:wrap;gap:5px}
+.magnetic-tutorial-inspector .button-row>button{flex:1}
+.magnetic-tutorial-playback{border-block:1px solid #d9e3dc;padding:12px 0;margin:12px 0}
+.magnetic-tutorial-playback>p{margin:0 0 8px}.magnetic-tutorial-navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.magnetic-tutorial-navigation button{margin:0}.magnetic-tutorial-summary{font-size:12px}
+.magnetic-tutorial-inspector .build-save-row{display:flex;align-items:center;gap:8px;margin:12px 0}
+.magnetic-tutorial-inspector .build-saved{margin:12px 0;gap:6px}.magnetic-tutorial-inspector .build-saved label{margin:0}
+.magnetic-tutorial-advanced{padding-top:12px;border-top:1px solid #d9e3dc;margin-top:12px}
+.magnetic-tutorial-advanced>summary{cursor:pointer;font-weight:600}.magnetic-tutorial-advanced details{margin:10px 0}
+.magnetic-tutorial-advanced pre,.magnetic-tutorial-advanced output{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto}
+.magnetic-tutorial-inspector [role=alert]{border-left:3px solid #b14e36;padding-left:8px}
+.magnetic-tutorial-advanced input[type=checkbox]{width:auto}
+@media(max-width:760px){.magnetic-3d-build .magnetic-tutorial-canvas{height:60vh}}
