@@ -31,7 +31,7 @@ const examples = [
 const initial = JSON.stringify(rightAngle, null, 2)
 const format = (n: number) => Number(n.toFixed(6)).toString()
 export default function ThreeDWorkspace() {
-  const { stage, viewMode } = useStudio()
+  const { stage, viewMode, setAssembly3D } = useStudio()
   const active = stage === 'assembly' && viewMode === '3d'
   const { registry: { profiles } } = useProfileRegistry()
   const [boot] = useState(() => {
@@ -48,6 +48,7 @@ export default function ThreeDWorkspace() {
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
   const current = history.current
+  useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const selected = selection.kind === 'piece' ? selection.id : null

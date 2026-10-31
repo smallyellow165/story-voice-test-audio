@@ -1,5 +1,7 @@
 # Magnetic Tiles Studio — Phase 3：3D Assembly Editor
 
+后续已完成的 Build Tutorial、来源快照隔离与最新验收记录见 [阶段四文档](magnetic-3d-phase4.md)；本文保留阶段三交付时的范围说明。
+
 2026-10-30。阶段三已实现；停在 Editor，不包含 Tutorial、Gallery、V4 或照片重建。
 
 ## 实际复用与边界

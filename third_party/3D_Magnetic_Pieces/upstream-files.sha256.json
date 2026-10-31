@@ -16,5 +16,11 @@
   "src/editor/id.ts": "5cf390a588fd6fb64a69a318a57f479a7da16c032447c1dc939738a4f7572028",
   "src/components/editor/EditorCanvas.tsx": "695e2038a289617f976f2c27722cd7d9faab5b2f8517790f5e4465640eb5de40",
   "src/components/editor/PropertyPanel.tsx": "1dfddd03a49dee200e8f0ac21ee020bed6323781399624eb2c7035fd7d5e8c6e",
-  "src/test/editor.test.ts": "4c0bf5b16ffdef883f81f083cc01b98334aaff51e17024e3df5b1f54de181157"
+  "src/test/editor.test.ts": "4c0bf5b16ffdef883f81f083cc01b98334aaff51e17024e3df5b1f54de181157",
+  "src/components/tutorial/orchestrator.ts": "e2177565cb2977c8bca9f425f366e0d454d496ab573bb48ab6320d4271f78325",
+  "src/components/tutorial/easing.ts": "aeb7cc9469be22fa461921a46809ded97e3a0256a6ad0a9cc38c7ec81ade6643",
+  "src/components/tutorial/useTutorialOrchestrator.ts": "7ac0fd3ab07284d11ba709708ecba04ed6c569f8a8b756ae8202c2460ef94094",
+  "src/components/tutorial/TutorialPlayer.tsx": "8392f595671e9f2f85c51ecc417149c9e89716213685138bf63b43cc8fa29950",
+  "src/components/editor/StepTimeline.tsx": "8cf3973f8a00cce3059b634cee7d1cb684f590001c97b48df6e64a7b3f1e0a9b",
+  "src/components/editor/TutorialOrchestrationPanel.tsx": "8a41905960aa819d8c4a41132eb3431a2d920db704629bb894c51e238abc6cec"
 }

@@ -24,3 +24,5 @@ All 50 imported test assertions are retained. Test filenames, import targets, ex
 The only dependency added in phase one was dev-only `vitest@5.0.5` (MIT). It runs the same assertion API with the existing Vite 8 / Node 24 environment. Existing Three.js 0.180.0 (MIT) and other runtime dependency versions are retained. No physics engine or React Three Fiber dependency was added in phase one. Installed packages retain their own license files; distribution of dependencies must retain applicable notices as usual.
 
 Phase-three Editor imports, Assembly3D boundary adaptations and local interaction fixes are recorded in [EDITOR.md](EDITOR.md) and [editor.patch](editor.patch). Phase three adds no dependencies or engine algorithm changes. The source checksum manifest includes the Editor files and the original history/ID test source.
+
+Phase-four Tutorial Player, timeline, orchestration panel/state, source snapshot adapter and timing/camera patches are recorded in [TUTORIAL.md](TUTORIAL.md) and [tutorial.patch](tutorial.patch). This phase adds no dependencies or Engine algorithm changes; it retains the existing Assembly3D and 2D storage formats.

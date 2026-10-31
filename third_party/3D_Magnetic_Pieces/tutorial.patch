@@ -1,0 +1,1738 @@
+--- a/src/components/tutorial/TutorialPlayer.tsx
++++ b/src/components/tutorial/TutorialPlayer.tsx
+@@ -1,58 +1,25 @@
+-/**
+- * P1: 教学编排型播放器
+- *
+- * 这是用户端和编辑器预览共用的同一组件、同一份数据。
+- * - 用户端：通过 TutorialPage 渲染，桌面端使用沉浸式 TutorialShell
+- * - 编辑器：通过 EditorWorkspace 的预览面板渲染
+- *
+- * 功能：
+- * - 按步骤播放零件入场动画（drop/side/fold/fade/none）
+- * - 镜头平滑过渡到作者保存的位置
+- * - 播放/暂停/重播本步/上一步/下一步/重置视角/锁定视角
+- * - 支持 prefers-reduced-motion
+- * - 动画期间防止连续点击造成状态错乱
+- */
+-import { useRef, useMemo, useEffect, useCallback } from 'react';
+-import { Canvas, useThree, useFrame } from '@react-three/fiber';
+-import { OrbitControls } from '@react-three/drei';
+-import * as THREE from 'three';
+-import {
+-  Play, Pause, RotateCcw, ArrowLeft, ArrowRight,
+-  Maximize2, Lock, Unlock, Package, Sparkles,
+-} from 'lucide-react';
+-import type { Model, MagnetColor } from '../../data/types';
+-import { magnetColorMap } from '../../data/models';
+-import { solveConnections } from '../../engine/solver';
+-import { getShapeDef } from '../../engine/shapes';
+-import type { PieceTransform, BuildStepV2, StepCamera } from '../../engine/types';
+-import { MagnetPieceMesh } from '../magnet3d/primitives';
+-import { SceneLighting, defaultGLProps } from '../magnet3d/SceneLighting';
+-import { useTutorialOrchestrator } from './useTutorialOrchestrator';
+-import { getEntranceOffset } from './orchestrator';
+-
+-export interface TutorialPlayerProps {
+-  /** 模型数据（用户端从 models 读取，编辑器从 EditorProject 派生） */
+-  model: Model;
+-  /** 初始步骤索引 */
+-  initialStep?: number;
+-  /** 步骤变化回调 */
+-  onStepChange?: (step: number) => void;
+-  /** 是否显示侧栏信息（操作说明/家长引导/材料清单），默认 true */
+-  showSidebar?: boolean;
+-  /** 是否显示控制条，默认 true */
+-  showControls?: boolean;
+-  /** 是否沉浸式（隐藏边距，占满容器），默认 false */
+-  immersive?: boolean;
+-  /** 容器高度（CSS 字符串），默认 '100%' */
+-  height?: string;
+-}
+-
+-/* ----------------- 3D 场景内部组件 ----------------- */
+-
++// Adapted MIT upstream TutorialPlayer; preserves AnimatedPiece, CameraRig and orchestration.
++import { useRef, useMemo, useEffect, useCallback, useState } from 'react'
++import { Canvas, useThree, useFrame } from '@react-three/fiber'
++import { OrbitControls } from '@react-three/drei'
++import * as THREE from 'three'
++import type { ShapeDef, PieceTransform } from '../../engine/types.ts'
++import type { BuildStepV2, StepCamera } from './types.ts'
++import type { Tutorial3D } from '../../../tutorial.ts'
++import { createViewerModel } from '../../../viewer-model.ts'
++import type { ViewerPiece } from '../../../viewer-model.ts'
++import { MagnetPieceMesh, disposeShapeResources } from '../magnet3d/primitives.tsx'
++import { SceneLighting, defaultGLProps } from '../magnet3d/SceneLighting.tsx'
++import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils.ts'
++import { useTutorialOrchestrator } from './useTutorialOrchestrator.ts'
++import { getEntranceOffset } from './orchestrator.ts'
++import { ViewerErrorBoundary } from '../MagnetScene3D.tsx'
++import { canonical } from '../../../../build-plan.ts'
++export type TutorialCamera = Omit<StepCamera,'transitionMs'>
+ interface AnimatedPieceProps {
+-  shape: ReturnType<typeof getShapeDef>;
++  shape: ShapeDef;
+   transform: PieceTransform;
+-  color: MagnetColor;
++  color: string;
+   /** 入场偏移：[px, py, pz] */
+   positionOffset: [number, number, number];
+   /** 旋转偏移（欧拉角弧度）：[rx, ry, rz] */
+@@ -105,7 +72,8 @@
+           quaternion: new THREE.Quaternion(),
+         } as PieceTransform}
+         color={color}
+-        isNew={isNew}
++        isNew={false}
++        selected={isNew}
+         highlighted={highlighted}
+         opacity={opacity}
+       />
+@@ -120,31 +88,36 @@
+   transitionProgress: number;
+   /** 是否锁定视角（锁定后不应用步骤镜头） */
+   locked: boolean;
++  transitionKey: string;
++  cancelled: React.MutableRefObject<boolean>;
++  onCamera: () => void;
+   /** 默认相机状态 ref */
+   defaultCameraRef: React.MutableRefObject<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null>;
+   /** OrbitControls ref */
+   controlsRef: React.MutableRefObject<any>;
+ }
+ 
+-function CameraRig({ targetCamera, transitionProgress, locked, defaultCameraRef, controlsRef }: CameraRigProps) {
++function CameraRig({ targetCamera, transitionProgress, locked, transitionKey, cancelled, onCamera, defaultCameraRef, controlsRef }: CameraRigProps) {
+   const { camera } = useThree();
+   const startStateRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null>(null);
+ 
++  const done = useRef(false);
+   useEffect(() => {
++    done.current=false; cancelled.current=false;
+     if (locked) return;
+     if (!targetCamera) return;
+     // 记录起始状态:优先用 defaultCameraRef 作为起点,实现"从默认视角平滑过渡到本步镜头"
+     const ortho = camera as THREE.OrthographicCamera;
+     const fallbackTarget = controlsRef.current ? controlsRef.current.target.clone() : new THREE.Vector3(0, 0, 0);
+     startStateRef.current = {
+-      position: defaultCameraRef.current?.position.clone() ?? ortho.position.clone(),
+-      target: defaultCameraRef.current?.target.clone() ?? fallbackTarget,
+-      zoom: defaultCameraRef.current?.zoom ?? ortho.zoom,
++      position: ortho.position.clone(),
++      target: fallbackTarget,
++      zoom: ortho.zoom,
+     };
+-  }, [targetCamera, locked, camera, controlsRef, defaultCameraRef]);
++  }, [targetCamera, locked, camera, controlsRef, defaultCameraRef, transitionKey, cancelled]);
+ 
+   useFrame(() => {
+-    if (locked || !targetCamera || !startStateRef.current) return;
++    if (locked || cancelled.current || done.current || !targetCamera || !startStateRef.current) return;
+     const ortho = camera as THREE.OrthographicCamera;
+     if (!ortho.isOrthographicCamera) return;
+ 
+@@ -153,507 +126,117 @@
+     const startTarget = startStateRef.current.target;
+     const startZoom = startStateRef.current.zoom;
+ 
+-    // 球面插值位置 + 线性插值 target + 线性插值 zoom
++    // 沿用上游实现：线性插值 position、target 和 zoom。
+     ortho.position.lerpVectors(startPos, new THREE.Vector3(...targetCamera.position), t);
+     if (controlsRef.current) {
+       controlsRef.current.target.lerpVectors(startTarget, new THREE.Vector3(...targetCamera.target), t);
+       controlsRef.current.update();
+     }
+     ortho.zoom = startZoom + (targetCamera.zoom - startZoom) * t;
++    ortho.lookAt(controlsRef.current?.target ?? new THREE.Vector3(...targetCamera.target));
+     ortho.updateProjectionMatrix();
++    onCamera();
++    if(t>=1)done.current=true;
+   });
+ 
+   return null;
+ }
+ 
+-interface SceneContentProps {
+-  model: Model;
+-  visibleIds: string[];
+-  newIds: Set<string>;
+-  step: BuildStepV2 | undefined;
+-  orchestratorState: ReturnType<typeof useTutorialOrchestrator>['state'];
+-  interactive: boolean;
+-  defaultCameraRef: React.MutableRefObject<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null>;
+-  controlsRef: React.MutableRefObject<any>;
+-}
+-
+-function SceneContent({
+-  model,
+-  visibleIds,
+-  newIds,
+-  step,
+-  orchestratorState,
+-  interactive,
+-  defaultCameraRef,
+-  controlsRef,
+-}: SceneContentProps) {
+-  const { camera, size } = useThree();
+-
+-  const partMap = useMemo(() => {
+-    const m: Record<string, Model['parts'][number]> = {};
+-    model.parts.forEach((p) => (m[p.id] = p));
+-    return m;
+-  }, [model]);
+-
+-  const pieceMap = useMemo(() => {
+-    const m: Record<string, NonNullable<Model['pieces']>[number]> = {};
+-    model.pieces?.forEach((p) => (m[p.id] = p));
+-    return m;
+-  }, [model]);
+-
+-  const transforms = useMemo(() => {
+-    if (!model.pieces || !model.connections) return {} as Record<string, PieceTransform>;
+-    const rootPiece = model.pieces.find((p) => p.isRoot) || model.pieces[0];
+-    const res = solveConnections({
+-      pieces: model.pieces,
+-      connections: model.connections,
+-      rootPieceId: rootPiece.id,
+-      getShapeForPiece: (pid) => {
+-        const piece = pieceMap[pid];
+-        if (!piece) return undefined;
+-        const part = partMap[piece.partId];
+-        if (!part) return undefined;
+-        return getShapeDef(part.shape);
+-      },
+-    });
+-    return res.transforms;
+-  }, [model, partMap, pieceMap]);
+-
+-  // 自动 fit camera 到模型（首次或尺寸变化时）
+-  const fitCameraToModel = useCallback(() => {
+-    if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
+-    const ortho = camera as THREE.OrthographicCamera;
+-    const worldVertices: THREE.Vector3[] = [];
+-    let hasVisible = false;
+-    for (const pid of visibleIds) {
+-      const tf = transforms[pid];
+-      if (!tf) continue;
+-      const piece = pieceMap[pid];
+-      if (!piece) continue;
+-      const part = partMap[piece.partId];
+-      if (!part) continue;
+-      const shape = getShapeDef(part.shape);
+-      if (!shape) continue;
+-      const matrix = new THREE.Matrix4().compose(tf.position, tf.quaternion, new THREE.Vector3(1, 1, 1));
+-      const halfThick = shape.thickness / 2;
+-      for (const v of shape.vertices) {
+-        for (const z of [-halfThick, halfThick]) {
+-          worldVertices.push(new THREE.Vector3(v.x, v.y, z).applyMatrix4(matrix));
+-          hasVisible = true;
+-        }
+-      }
+-    }
+-    if (!hasVisible) return;
+-    const box = new THREE.Box3();
+-    for (const v of worldVertices) box.expandByPoint(v);
+-    const center = box.getCenter(new THREE.Vector3());
+-    const sz = box.getSize(new THREE.Vector3());
+-    const buildMode = model.buildMode || 'solid';
+-    let cameraPosition: THREE.Vector3;
+-    if (buildMode === 'flat') {
+-      const maxDim = Math.max(sz.x, sz.z);
+-      const distance = maxDim * 1.5 + 10;
+-      cameraPosition = new THREE.Vector3(center.x, center.y + distance, center.z);
+-    } else {
+-      const maxDim = Math.max(sz.x, sz.y, sz.z);
+-      const distance = maxDim * 1.2 + 5;
+-      cameraPosition = new THREE.Vector3(
+-        center.x + distance * 0.7,
+-        center.y + distance * 0.7,
+-        center.z + distance * 0.7,
+-      );
+-    }
+-    ortho.position.copy(cameraPosition);
+-    ortho.lookAt(center);
+-    ortho.updateMatrixWorld(true);
+-    const cameraSpaceVertices = worldVertices.map((v) => v.clone().applyMatrix4(ortho.matrixWorldInverse));
+-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+-    for (const v of cameraSpaceVertices) {
+-      if (v.x < minX) minX = v.x;
+-      if (v.x > maxX) maxX = v.x;
+-      if (v.y < minY) minY = v.y;
+-      if (v.y > maxY) maxY = v.y;
+-    }
+-    const projectedWidth = maxX - minX;
+-    const projectedHeight = maxY - minY;
+-    const fillRatio = 0.76;
+-    const frustumWidth = ortho.right - ortho.left;
+-    const frustumHeight = ortho.top - ortho.bottom;
+-    const targetZoom = Math.min(
+-      (frustumWidth * fillRatio) / (projectedWidth || 1),
+-      (frustumHeight * fillRatio) / (projectedHeight || 1),
+-    );
+-    ortho.zoom = targetZoom;
+-    ortho.updateProjectionMatrix();
+-    if (controlsRef.current) {
+-      controlsRef.current.target.copy(center);
+-      controlsRef.current.update();
+-    }
+-    defaultCameraRef.current = {
+-      position: ortho.position.clone(),
+-      target: center.clone(),
+-      zoom: ortho.zoom,
+-    };
+-  }, [camera, visibleIds, transforms, pieceMap, partMap, model, defaultCameraRef, controlsRef, size]);
+-
+-  // 首次渲染时 fit
+-  useEffect(() => {
+-    const id = setTimeout(() => {
+-      if (!defaultCameraRef.current) fitCameraToModel();
+-    }, 50);
+-    return () => clearTimeout(id);
+-  }, [fitCameraToModel, defaultCameraRef]);
+-
+-  const targetCamera = step?.camera ?? null;
+-
+-  return (
+-    <>
+-      <SceneLighting shadowScale={10} shadowOpacity={0.4}>
+-        <CameraRig
+-          targetCamera={targetCamera}
+-          transitionProgress={orchestratorState.cameraTransitionProgress}
+-          locked={orchestratorState.lockedView}
+-          defaultCameraRef={defaultCameraRef}
+-          controlsRef={controlsRef}
+-        />
+-
+-        {visibleIds.map((pid) => {
+-          const piece = pieceMap[pid];
+-          const tf = transforms[pid];
+-          if (!piece || !tf) return null;
+-          const part = partMap[piece.partId];
+-          if (!part) return null;
+-          const shape = getShapeDef(part.shape);
+-          if (!shape) return null;
+-
+-          const isNew = newIds.has(pid);
+-          const offset = isNew && step
+-            ? getEntranceOffset(pid, orchestratorState, step)
+-            : { positionOffset: [0, 0, 0] as [number, number, number], rotationOffset: [0, 0, 0] as [number, number, number], opacity: 1 };
+-
+-          const pieceState = orchestratorState.pieceStates[pid];
+-          const isHighlight = pieceState?.phase === 'highlight';
+-
+-          return (
+-            <AnimatedPiece
+-              key={pid}
+-              shape={shape}
+-              transform={tf}
+-              color={part.color as MagnetColor}
+-              positionOffset={offset.positionOffset}
+-              rotationOffset={offset.rotationOffset}
+-              opacity={offset.opacity}
+-              highlighted={isHighlight}
+-              isNew={isNew}
+-            />
+-          );
+-        })}
+-      </SceneLighting>
+-
+-      <OrbitControls
+-        ref={controlsRef}
+-        makeDefault
+-        enablePan={false}
+-        enabled={interactive}
+-        minDistance={2}
+-        maxDistance={20}
+-      />
+-    </>
+-  );
+-}
+-
+-/* ----------------- 主组件 ----------------- */
+-
+-export function TutorialPlayer({
+-  model,
+-  initialStep = 0,
+-  onStepChange,
+-  showSidebar = true,
+-  showControls = true,
+-  immersive = false,
+-  height = '100%',
+-}: TutorialPlayerProps) {
+-  const steps = model.steps as BuildStepV2[];
+-  const totalSteps = steps.length;
+-
+-  const orch = useTutorialOrchestrator(steps, {
+-    initialStep,
+-    totalSteps,
+-  });
+-
+-  const currentStep = orch.state.currentStep;
+-  const step = steps[currentStep];
+-
+-  // 通知外部步骤变化
+-  // P1-六: 使用 ref 存储 onStepChange,避免因父组件每次 render 传入新函数引用
+-  // 导致 useEffect 反复触发 → setState → 重渲染 → 无限循环(Maximum update depth)
+-  const onStepChangeRef = useRef(onStepChange);
+-  onStepChangeRef.current = onStepChange;
+-  useEffect(() => {
+-    onStepChangeRef.current?.(currentStep);
+-  }, [currentStep]);
+-
+-  // 计算可见零件（累积到当前步骤）
+-  const visibleIds = useMemo(() => {
+-    const ids: string[] = [];
+-    for (let i = 0; i <= currentStep; i++) {
+-      const s = steps[i];
+-      if (s?.addedPieceIds) ids.push(...s.addedPieceIds);
+-    }
+-    return ids;
+-  }, [steps, currentStep]);
+-
+-  const newIds = useMemo(() => {
+-    const s = steps[currentStep];
+-    return new Set<string>(s?.addedPieceIds ?? []);
+-  }, [steps, currentStep]);
+-
+-  // 同步 step 到 orchestrator（用于 tick 时获取 step 数据）
+-  useEffect(() => {
+-    orch.setStep(step);
+-  }, [step, orch]);
+-
+-  const controlsRef = useRef<any>(null);
+-  const defaultCameraRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null>(null);
+-
+-  // 重置视角
+-  const handleResetView = useCallback(() => {
+-    if (defaultCameraRef.current && controlsRef.current) {
+-      const ortho = (controlsRef.current.object as THREE.OrthographicCamera);
+-      const state = defaultCameraRef.current;
+-      ortho.position.copy(state.position);
+-      ortho.zoom = state.zoom;
+-      ortho.updateProjectionMatrix();
+-      controlsRef.current.target.copy(state.target);
+-      controlsRef.current.update();
+-    }
+-  }, []);
+-
+-  // 动画期间防止连续点击
+-  const isAnimating = orch.state.playState === 'playing' && orch.state.elapsedInStepMs < orch.state.stepTotalMs;
+-  const buttonDisabled = (disabled: boolean) => disabled || isAnimating ? 'opacity-50 cursor-not-allowed' : '';
+-
+-  // 当前步骤材料
+-  const partDetails = useMemo(() => {
+-    if (!step?.addedPieceIds) return [];
+-    const counts: Record<string, number> = {};
+-    for (const pid of step.addedPieceIds) {
+-      const piece = model.pieces?.find((p) => p.id === pid);
+-      if (!piece) continue;
+-      counts[piece.partId] = (counts[piece.partId] ?? 0) + 1;
+-    }
+-    return Object.entries(counts).map(([partId, count]) => {
+-      const part = model.parts.find((p) => p.id === partId);
+-      return part ? { ...part, stepCount: count } : null;
+-    }).filter(Boolean);
+-  }, [step, model]);
+-
+-  return (
+-    <div className={`flex flex-col ${immersive ? 'h-full' : ''}`} style={{ height }} data-testid="tutorial-player">
+-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+-        {/* 3D 画布区 */}
+-        <div className={`relative bg-gray-900 ${immersive ? 'flex-1' : 'w-full h-72 md:flex-1 md:h-auto'}`}>
+-          <Canvas
+-            orthographic
+-            camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
+-            shadows="percentage"
+-            dpr={[1, 2]}
+-            style={{ width: '100%', height: '100%' }}
+-            gl={{ ...defaultGLProps }}
+-          >
+-            <SceneContent
+-              model={model}
+-              visibleIds={visibleIds}
+-              newIds={newIds}
+-              step={step}
+-              orchestratorState={orch.state}
+-              interactive
+-              defaultCameraRef={defaultCameraRef}
+-              controlsRef={controlsRef}
+-            />
+-          </Canvas>
+-
+-          {/* 步骤标签 */}
+-          {step && (
+-            <div className="absolute top-3 left-3 pointer-events-none">
+-              <span className="bg-primary-500 text-white text-xs md:text-sm font-medium px-3 py-1.5 rounded-full shadow-lg">
+-                {step.title}
+-              </span>
+-            </div>
+-          )}
+-
+-          {/* 进度指示器 */}
+-          <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs md:text-sm">
+-            {currentStep + 1} / {totalSteps}
+-          </div>
+-
+-          {/* 控制条 */}
+-          {showControls && (
+-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 md:gap-2 bg-black/70 backdrop-blur-md text-white rounded-full px-2 md:px-3 py-1.5 md:py-2 shadow-lg">
+-              <button
+-                onClick={handleResetView}
+-                className="p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors"
+-                aria-label="重置视角"
+-                title="重置视角"
+-              >
+-                <Maximize2 className="w-4 h-4 md:w-5 md:h-5" />
+-              </button>
+-              <button
+-                onClick={() => orch.toggleLockView()}
+-                className={`p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors ${orch.state.lockedView ? 'bg-white/20' : ''}`}
+-                aria-label={orch.state.lockedView ? '解锁视角' : '锁定视角'}
+-                title={orch.state.lockedView ? '解锁视角' : '锁定视角'}
+-              >
+-                {orch.state.lockedView ? <Lock className="w-4 h-4 md:w-5 md:h-5" /> : <Unlock className="w-4 h-4 md:w-5 md:h-5" />}
+-              </button>
+-              <div className="w-px h-5 bg-white/20 mx-0.5" />
+-              <button
+-                onClick={() => orch.prev()}
+-                disabled={currentStep === 0}
+-                className={`p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors ${buttonDisabled(currentStep === 0)}`}
+-                aria-label="上一步"
+-                title="上一步"
+-              >
+-                <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
+-              </button>
+-              {orch.state.playState === 'playing' ? (
+-                <button
+-                  onClick={() => orch.pause()}
+-                  className="p-2 md:p-2.5 rounded-full bg-white text-gray-900 hover:bg-white/90 transition-colors"
+-                  aria-label="暂停"
+-                  title="暂停"
+-                >
+-                  <Pause className="w-4 h-4 md:w-5 md:h-5" />
+-                </button>
+-              ) : (
+-                <button
+-                  onClick={() => orch.play()}
+-                  className="p-2 md:p-2.5 rounded-full bg-white text-gray-900 hover:bg-white/90 transition-colors"
+-                  aria-label="播放"
+-                  title="播放"
+-                >
+-                  <Play className="w-4 h-4 md:w-5 md:h-5" />
+-                </button>
+-              )}
+-              <button
+-                onClick={() => orch.replayStep()}
+-                className="p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors"
+-                aria-label="重播本步"
+-                title="重播本步"
+-              >
+-                <RotateCcw className="w-4 h-4 md:w-5 md:h-5" />
+-              </button>
+-              <button
+-                onClick={() => orch.next()}
+-                disabled={currentStep === totalSteps - 1}
+-                className={`p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors ${buttonDisabled(currentStep === totalSteps - 1)}`}
+-                aria-label="下一步"
+-                title="下一步"
+-              >
+-                <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
+-              </button>
+-            </div>
+-          )}
+-        </div>
+-
+-        {/* 侧栏 */}
+-        {showSidebar && step && (
+-          <div className="md:w-[360px] lg:w-[400px] bg-white md:border-l border-gray-200 flex flex-col overflow-y-auto">
+-            {/* 进度时间轴 */}
+-            <div className="px-4 py-3 border-b border-gray-100">
+-              <div className="flex items-center justify-between mb-2">
+-                <h3 className="font-bold text-gray-800 text-sm">{step.title}</h3>
+-                <span className="text-xs text-gray-500">第 {currentStep + 1} / {totalSteps} 步</span>
+-              </div>
+-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+-                <div
+-                  className="h-full bg-primary-500 transition-all duration-300 rounded-full"
+-                  style={{ width: `${((currentStep + 1) / totalSteps) * 100}%` }}
+-                />
+-              </div>
+-              <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
+-                {steps.map((_, idx) => (
+-                  <button
+-                    key={idx}
+-                    onClick={() => orch.seek(idx)}
+-                    className={`flex-shrink-0 w-6 h-6 rounded-md text-xs font-medium transition-all ${
+-                      idx === currentStep
+-                        ? 'bg-primary-500 text-white'
+-                        : idx < currentStep
+-                          ? 'bg-green-100 text-green-600'
+-                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+-                    }`}
+-                  >
+-                    {idx + 1}
+-                  </button>
+-                ))}
+-              </div>
+-            </div>
+-
+-            <div className="flex-1 px-4 py-3 space-y-3">
+-              {/* 本步新增零件 */}
+-              {partDetails.length > 0 && (
+-                <div className="bg-primary-50 rounded-xl p-3">
+-                  <div className="flex items-center gap-2 mb-2">
+-                    <Package className="w-4 h-4 text-primary-500" />
+-                    <h4 className="font-bold text-gray-800 text-sm">本步新增零件</h4>
+-                  </div>
+-                  <div className="flex flex-wrap gap-2">
+-                    {partDetails.map((part) => (
+-                      <div key={part!.id} className="flex items-center gap-2 bg-white rounded-lg px-2 py-1">
+-                        <div
+-                          className="w-5 h-5 rounded border border-white/60"
+-                          style={{ backgroundColor: part ? magnetColorMap[part.color] : '#ccc' }}
+-                        />
+-                        <div>
+-                          <p className="text-xs font-medium text-gray-800">{part!.name}</p>
+-                          <p className="text-[10px] text-gray-500">x{part!.stepCount}</p>
+-                        </div>
+-                      </div>
+-                    ))}
+-                  </div>
+-                </div>
+-              )}
+-
+-              {/* 操作说明 */}
+-              <div className="bg-blue-50 rounded-xl p-3">
+-                <h4 className="font-bold text-gray-800 text-sm mb-1">操作说明</h4>
+-                <p className="text-gray-600 text-sm leading-relaxed">{step.description}</p>
+-              </div>
+-
+-              {/* 提示文字（编排字段） */}
+-              {step.hint && (
+-                <div className="bg-purple-50 rounded-xl p-3">
+-                  <h4 className="font-bold text-gray-800 text-sm mb-1">提示</h4>
+-                  <p className="text-gray-600 text-sm leading-relaxed">{step.hint}</p>
+-                </div>
+-              )}
+-
+-              {/* 观察重点 */}
+-              {step.focusPoints && step.focusPoints.length > 0 && (
+-                <div className="bg-teal-50 rounded-xl p-3">
+-                  <div className="flex items-center gap-2 mb-1">
+-                    <Sparkles className="w-4 h-4 text-teal-500" />
+-                    <h4 className="font-bold text-gray-800 text-sm">观察重点</h4>
+-                  </div>
+-                  <ul className="text-gray-600 text-sm leading-relaxed list-disc list-inside space-y-0.5">
+-                    {step.focusPoints.map((fp, i) => <li key={i}>{fp}</li>)}
+-                  </ul>
+-                </div>
+-              )}
+-
+-              {/* 家长引导 */}
+-              <div className="bg-yellow-50 rounded-xl p-3">
+-                <div className="flex items-center gap-2 mb-1">
+-                  <Sparkles className="w-4 h-4 text-yellow-500" />
+-                  <h4 className="font-bold text-gray-800 text-sm">家长引导话术</h4>
+-                </div>
+-                <p className="text-gray-600 text-sm leading-relaxed italic">{step.parentGuide}</p>
+-              </div>
+-            </div>
+-          </div>
+-        )}
+-      </div>
++interface SceneProps {
++  pieces: ViewerPiece[]; visibleIds: string[]; newIds: Set<string>; step: BuildStepV2 | undefined
++  state: ReturnType<typeof useTutorialOrchestrator>['state']; transitionKey: string
++  fitRequest: number; resetRequest: number; onCamera: (camera: TutorialCamera) => void
++}
++function SceneContent({ pieces, visibleIds, newIds, step, state, transitionKey, fitRequest, resetRequest, onCamera }: SceneProps) {
++  const {camera,size}=useThree(), controlsRef=useRef<any>(null)
++  const defaultCameraRef=useRef<{position:THREE.Vector3;target:THREE.Vector3;zoom:number}|null>(null)
++  const cancelled=useRef(false), [ready,setReady]=useState(false)
++  const visible=useMemo(()=>new Set(visibleIds),[visibleIds])
++  const report=useCallback(()=>{
++    if(camera instanceof THREE.OrthographicCamera && controlsRef.current)onCamera({position:camera.position.toArray(),target:controlsRef.current.target.toArray(),zoom:camera.zoom})
++  },[camera,onCamera])
++  const fit=useCallback((all:boolean,reset:boolean)=>{
++    if(!(camera instanceof THREE.OrthographicCamera))return
++    const vertices=pieces.filter(p=>all||visible.has(p.id)).flatMap(p=>pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion))
++    const result=computeFitCamera({worldVertices:vertices,camera,size,preferredView:reset?'threeQuarter':'current'})
++    if(result){applyFitResult(camera,result,controlsRef.current);report();return result}
++  },[pieces,visible,camera,size,report])
++  // Initialize the default full-assembly frame. Resize never rewrites the saved document.
++  useEffect(()=>{
++    const timer=setTimeout(()=>{
++      const result=fit(true,true)
++      if(result){defaultCameraRef.current={position:result.position.clone(),target:result.target.clone(),zoom:result.zoom};setReady(true)}
++    },50)
++    return ()=>clearTimeout(timer)
++  },[pieces,size.width,size.height])
++  const priorFit=useRef(fitRequest),priorReset=useRef(resetRequest)
++  useEffect(()=>{if(priorFit.current!==fitRequest){priorFit.current=fitRequest;cancelled.current=true;fit(false,false)}},[fitRequest,fit])
++  useEffect(()=>{if(priorReset.current!==resetRequest){priorReset.current=resetRequest;cancelled.current=true;fit(true,true)}},[resetRequest,fit])
++  useEffect(()=>()=>disposeShapeResources([...new Set(pieces.map(p=>p.shape))]),[pieces])
++  return <>
++    <SceneLighting shadowOpacity={0}>
++      {ready&&<CameraRig targetCamera={step?.camera??null} transitionProgress={state.cameraTransitionProgress}
++        locked={state.lockedView} transitionKey={transitionKey} cancelled={cancelled} onCamera={report} defaultCameraRef={defaultCameraRef} controlsRef={controlsRef}/>}
++      {pieces.filter(p=>visible.has(p.id)).map(p=>{
++        const isNew=newIds.has(p.id),offset=isNew&&step?getEntranceOffset(p.id,state,step):{positionOffset:[0,0,0] as [number,number,number],rotationOffset:[0,0,0] as [number,number,number],opacity:1}
++        return <AnimatedPiece key={p.id} shape={p.shape} transform={p.transform} color={p.color} {...offset} highlighted={state.pieceStates[p.id]?.phase==='highlight'} isNew={isNew}/>
++      })}
++    </SceneLighting>
++    <OrbitControls ref={controlsRef} makeDefault enablePan enableDamping={false} minZoom={.01} maxZoom={100000}
++      onStart={()=>{cancelled.current=true}} onChange={report}/>
++  </>
++}
++export function TutorialPlayer({tutorial,initialStep=0,seekRequest,onStepChange,onCameraChange}:{
++  tutorial:Tutorial3D;initialStep?:number;seekRequest:{index:number;sequence:number}|null
++  onStepChange:(index:number)=>void;onCameraChange:(camera:TutorialCamera)=>void
++}) {
++  const steps=tutorial.steps, [auto,setAuto]=useState(false), [epoch,setEpoch]=useState(0)
++  const orch=useTutorialOrchestrator(steps,{initialStep,totalSteps:steps.length,autoNextMs:auto?400:0})
++  const currentStep=orch.state.currentStep,step=steps[currentStep]
++  const callback=useRef(onStepChange);callback.current=onStepChange
++  // Match upstream: author edits must not report a stale playback index back to selection.
++  useEffect(()=>{callback.current(currentStep)},[currentStep])
++  const seek=orch.seek
++  useEffect(()=>{if(seekRequest){setAuto(false);seek(seekRequest.index);setEpoch(n=>n+1)}},[seekRequest])
++  useEffect(()=>{setAuto(false)},[steps])
++  const complete=currentStep===steps.length-1&&orch.state.elapsedInStepMs>=orch.state.stepTotalMs&&orch.state.playState==='idle'
++  useEffect(()=>{if(complete)setAuto(false)},[complete])
++  const visibleIds=useMemo(()=>[...new Set(steps.slice(0,currentStep+1).flatMap(s=>s.addedPieceIds))],[steps,currentStep])
++  const newIds=useMemo(()=>new Set(step?.addedPieceIds??[]),[step])
++  const assemblyKey=canonical(tutorial.assembly)
++  const pieces=useMemo(()=>createViewerModel(tutorial.assembly),[assemblyKey])
++  const [fitRequest,requestFit]=useState(0),[resetRequest,requestReset]=useState(0),[camera,setCamera]=useState<TutorialCamera|null>(null)
++  const report=useCallback((c:TutorialCamera)=>{setCamera(c);onCameraChange(c)},[onCameraChange])
++  function navigate(fn:()=>void){setAuto(false);setEpoch(n=>n+1);fn()}
++  return <section className="magnetic-tutorial-player" data-testid="tutorial-player" data-step-index={currentStep} data-play-state={orch.state.playState} data-auto={auto}>
++    <div className="button-row magnetic-tutorial-controls">
++      <button onClick={()=>requestFit(n=>n+1)}>Fit to View</button><button onClick={()=>requestReset(n=>n+1)}>Reset Camera</button>
++      <button onClick={()=>navigate(orch.prev)} disabled={!steps.length||currentStep===0}>上一步</button>
++      <button disabled={!steps.length} onClick={()=>{
++        if(auto||orch.state.playState==='playing'){setAuto(false);orch.pause()}
++        else{setAuto(true);if(complete){orch.seek(0);setEpoch(n=>n+1)}else{orch.play();if(orch.state.playState!=='paused')setEpoch(n=>n+1)}}
++      }}>{auto||orch.state.playState==='playing'?'暂停':'自动播放'}</button>
++      <button onClick={()=>navigate(orch.next)} disabled={!steps.length||currentStep>=steps.length-1}>下一步</button>
++      <button disabled={!steps.length} onClick={()=>navigate(orch.replayStep)}>重播本步</button>
++      <button disabled={!steps.length} onClick={()=>{setAuto(true);orch.seek(0);setEpoch(n=>n+1)}}>重新播放</button>
++      <button onClick={orch.toggleLockView} aria-pressed={orch.state.lockedView}>{orch.state.lockedView?'解锁视角':'锁定视角'}</button>
+     </div>
+-  );
+-}
++    <p role="status" data-testid="tutorial-progress">{steps.length?`${currentStep+1} / ${steps.length} · ${step?.title}`:'尚无步骤'}{complete?' · 播放完成':''}</p>
++    <div className="magnetic-3d-canvas magnetic-tutorial-canvas"><ViewerErrorBoundary>
++      <Canvas orthographic camera={{position:[5,5,5],zoom:50,near:.001,far:100}} dpr={[1,2]} gl={defaultGLProps}>
++        <SceneContent pieces={pieces} visibleIds={visibleIds} newIds={newIds} step={step} state={orch.state}
++          transitionKey={`${currentStep}-${epoch}`} fitRequest={fitRequest} resetRequest={resetRequest} onCamera={report}/>
++      </Canvas>
++    </ViewerErrorBoundary></div>
++    <p>{step?.description}</p>{step?.hint&&<p>{step.hint}</p>}
++    {step?.parentGuide&&<p>{step.parentGuide}</p>}
++    {!!step?.focusPoints?.length&&<ul>{step.focusPoints.map((point,i)=><li key={i}>{point}</li>)}</ul>}
++    {!!step?.annotations&&<ul>{Object.entries(step.annotations).map(([id,text])=><li key={id}>{id}：{text}</li>)}</ul>}
++    <p className="hint">亮色轮廓为本步新增片；此前零件保持原色。左键旋转、右键平移、滚轮缩放。入场偏移仅用于呈现，最终 Pose 不变；不表示真实铰链折叠。</p>
++    <details><summary>当前显示与相机</summary><output aria-label="3D Tutorial 可见零件">{JSON.stringify({visibleIds,newIds:[...newIds]})}</output>
++      <output aria-label="3D Tutorial 相机">{JSON.stringify(camera)}</output>
++      <output aria-label="3D Tutorial 播放状态">{JSON.stringify(orch.state)}</output>
++      <ul>{pieces.filter(p=>visibleIds.includes(p.id)).map(p=><li key={p.id} data-tutorial-piece={p.id} data-new={newIds.has(p.id)} data-pose={JSON.stringify(p.piece.pose)}>{p.id} · {p.shape.id} · {newIds.has(p.id)?'本步新增':'已完成'}</li>)}</ul>
++    </details>
++  </section>
++}
+--- a/src/components/tutorial/useTutorialOrchestrator.ts
++++ b/src/components/tutorial/useTutorialOrchestrator.ts
+@@ -5,14 +5,14 @@
+  * 通过 requestAnimationFrame 驱动每帧 tick。
+  */
+ import { useState, useEffect, useCallback, useRef } from 'react';
+-import type { BuildStepV2 } from '../../engine/types';
++import type { BuildStepV2 } from './types.ts';
+ import {
+-  OrchestratorState,
+-  OrchestratorAction,
++  type OrchestratorState,
++  type OrchestratorAction,
+   createOrchestratorState,
+   tick,
+   reduce,
+-} from './orchestrator';
++} from './orchestrator.ts';
+ 
+ export interface UseOrchestratorOptions {
+   /** 初始步骤索引 */
+@@ -65,11 +65,11 @@
+     setStepRef(step);
+   }, []);
+ 
+-  // 当 steps 或 initialStep 变化时重置
++  // 作者修改 steps 时重置到选中步；单纯回报播放位置不重置动画。
+   useEffect(() => {
+     setState(createOrchestratorState(initialStep, steps[initialStep], reducedMotion));
+     setStepRef(steps[initialStep]);
+-  }, [steps, initialStep, reducedMotion]);
++  }, [steps, reducedMotion]);
+ 
+   // RAF 循环
+   const lastTimeRef = useRef<number | null>(null);
+@@ -83,12 +83,12 @@
+       if (lastTimeRef.current === null) lastTimeRef.current = now;
+       const dt = now - lastTimeRef.current;
+       lastTimeRef.current = now;
+-      setState((s) => tick(s, dt, stepRef, totalSteps));
++      setState((s) => tick(s, dt, steps[s.currentStep], totalSteps));
+       rafId = requestAnimationFrame(loop);
+     };
+     rafId = requestAnimationFrame(loop);
+     return () => cancelAnimationFrame(rafId);
+-  }, [state.playState, stepRef, totalSteps]);
++  }, [state.playState, steps, totalSteps]);
+ 
+   // 自动播放下一步（仅当 autoNextMs > 0 且当前步骤完成）
+   useEffect(() => {
+@@ -98,19 +98,23 @@
+     if (state.currentStep >= totalSteps - 1) return;
+     const timer = setTimeout(() => {
+       setState((s) =>
+-        reduce(s, { type: 'next' }, totalSteps, stepRef),
++        reduce(s, { type: 'next' }, totalSteps, steps[Math.min(s.currentStep+1,totalSteps-1)]),
+       );
+     }, autoNextMs);
+     return () => clearTimeout(timer);
+-  }, [state.playState, state.elapsedInStepMs, state.stepTotalMs, state.currentStep, autoNextMs, totalSteps, stepRef]);
++  }, [state.playState, state.elapsedInStepMs, state.stepTotalMs, state.currentStep, autoNextMs, totalSteps, steps]);
+ 
+   const dispatch = useCallback((action: OrchestratorAction) => {
+-    setState((s) => reduce(s, action, totalSteps, stepRef));
+-  }, [totalSteps, stepRef]);
+-
+-  const seek = useCallback((stepIndex: number) => {
+-    setState((s) => reduce(s, { type: 'seek', stepIndex }, totalSteps, stepRef));
+-  }, [totalSteps, stepRef]);
++    setState((s) => {
++      const index = action.type === 'seek' ? Math.max(0,Math.min(action.stepIndex,totalSteps-1))
++        : action.type === 'next' ? Math.min(s.currentStep+1,totalSteps-1)
++        : action.type === 'prev' ? Math.max(s.currentStep-1,0) : s.currentStep;
++      const step=steps[index];
++      if(action.type==='play' && s.elapsedInStepMs>=s.stepTotalMs) return reduce(s,{type:'replay-step'},totalSteps,step);
++      return reduce(s,action,totalSteps,step);
++    });
++  }, [totalSteps, steps]);
++  const seek = useCallback((stepIndex:number) => dispatch({type:'seek',stepIndex}),[dispatch]);
+ 
+   const play = useCallback(() => dispatch({ type: 'play' }), [dispatch]);
+   const pause = useCallback(() => dispatch({ type: 'pause' }), [dispatch]);
+@@ -119,7 +123,7 @@
+   const prev = useCallback(() => dispatch({ type: 'prev' }), [dispatch]);
+   const toggleLockView = useCallback(() => {
+     setState((s) => reduce(s, { type: 'lock-view', locked: !s.lockedView }, totalSteps, stepRef));
+-  }, [totalSteps, stepRef]);
++  }, [totalSteps, steps]);
+ 
+   // 当 currentStep 变化时，更新 stepRef
+   useEffect(() => {
+--- a/src/components/tutorial/orchestrator.ts
++++ b/src/components/tutorial/orchestrator.ts
+@@ -13,8 +13,8 @@
+  * - 宿主（React Hook）负责调用 tick(state, dtMs) 推进时间
+  * - 入场参数从 BuildStepV2.entrance 读取，缺失则使用默认值
+  */
+-import type { BuildStepV2, PieceEntranceConfig, EntranceType } from '../../engine/types';
+-import { getEasing, clamp01 } from './easing';
++import type { BuildStepV2, PieceEntranceConfig, EntranceType } from './types.ts';
++import { getEasing, clamp01 } from './easing.ts';
+ 
+ /** 默认入场参数 */
+ export const DEFAULT_ENTRANCE: PieceEntranceConfig = {
+@@ -97,7 +97,7 @@
+     return {
+       type: cfg.type,
+       delayMs: cfg.delayMs ?? 0,
+-      durationMs: clamp(cfg.durationMs, DEFAULT_DURATION_MIN_MS, DEFAULT_DURATION_MAX_MS),
++      durationMs: clamp(cfg.durationMs, 0, 10000),
+       easing: cfg.easing,
+       startOffset: cfg.startOffset,
+       startRotation: cfg.startRotation,
+@@ -114,7 +114,7 @@
+ /** 计算步骤总时长（最后一片零件动画结束 + 高亮时间） */
+ export function computeStepDuration(step: BuildStepV2): number {
+   if (step.addedPieceIds.length === 0) {
+-    return DEFAULT_CAMERA_TRANSITION_MS + 100;
++    return Math.max(step.camera?.transitionMs ?? DEFAULT_CAMERA_TRANSITION_MS, 0) + 100;
+   }
+   let maxEnd = 0;
+   step.addedPieceIds.forEach((pid, idx) => {
+@@ -123,7 +123,7 @@
+     if (end > maxEnd) maxEnd = end;
+   });
+   const highlightMs = step.highlightMs ?? DEFAULT_HIGHLIGHT_MS;
+-  return maxEnd + highlightMs + 200; // 留 200ms 余量
++  return Math.max(maxEnd + highlightMs + 200, step.camera?.transitionMs ?? DEFAULT_CAMERA_TRANSITION_MS); // 留 200ms 余量
+ }
+ 
+ /** 计算零件在某时刻的相位与进度 */
+@@ -203,7 +203,7 @@
+   // 镜头过渡推进
+   const cameraProgress = state.reducedMotion
+     ? 1
+-    : clamp01(newElapsed / DEFAULT_CAMERA_TRANSITION_MS);
++    : clamp01((step.camera?.transitionMs === 0 ? 1 : newElapsed / (step.camera?.transitionMs ?? DEFAULT_CAMERA_TRANSITION_MS)));
+ 
+   // 计算每片零件状态
+   const pieceStates: Record<string, PieceAnimationState> = {};
+@@ -249,6 +249,7 @@
+       return {
+         ...createOrchestratorState(state.currentStep, step, state.reducedMotion),
+         playState: 'playing',
++        cameraTransitionProgress: state.reducedMotion ? 1 : 0,
+         lockedView: state.lockedView,
+       };
+     case 'next': {
+@@ -256,6 +257,7 @@
+       return {
+         ...createOrchestratorState(next, step, state.reducedMotion),
+         playState: 'playing',
++        cameraTransitionProgress: state.reducedMotion ? 1 : 0,
+         lockedView: state.lockedView,
+       };
+     }
+@@ -264,13 +266,15 @@
+       return {
+         ...createOrchestratorState(prev, step, state.reducedMotion),
+         playState: 'playing',
++        cameraTransitionProgress: state.reducedMotion ? 1 : 0,
+         lockedView: state.lockedView,
+       };
+     }
+     case 'seek':
+       return {
+-        ...createOrchestratorState(action.stepIndex, step, state.reducedMotion),
++        ...createOrchestratorState(Math.max(0, Math.min(action.stepIndex, Math.max(0,totalSteps-1))), step, state.reducedMotion),
+         playState: 'playing',
++        cameraTransitionProgress: state.reducedMotion ? 1 : 0,
+         lockedView: state.lockedView,
+       };
+     case 'lock-view':
+@@ -289,7 +293,7 @@
+   step: BuildStepV2,
+ ): { positionOffset: [number, number, number]; rotationOffset: [number, number, number]; opacity: number } {
+   const ps = state.pieceStates[pieceId];
+-  if (!ps || ps.phase === 'done') {
++  if (!ps || ps.phase === 'done' || ps.phase === 'highlight') {
+     return { positionOffset: [0, 0, 0], rotationOffset: [0, 0, 0], opacity: 1 };
+   }
+   if (ps.phase === 'pending') {
+--- a/src/components/tutorial/easing.ts
++++ b/src/components/tutorial/easing.ts
+@@ -2,7 +2,7 @@
+  * P1: 缓动函数库 — 用于教学播放器的入场动画与镜头过渡。
+  * 纯函数，无 React/Three.js 依赖，便于单元测试。
+  */
+-import type { EasingName } from '../../engine/types';
++import type { EasingName } from './types.ts';
+ 
+ /** 单变量缓动函数：t ∈ [0, 1] → 输出值（通常 ∈ [0, 1]） */
+ export type EasingFn = (t: number) => number;
+--- a/src/components/editor/StepTimeline.tsx
++++ b/src/components/editor/StepTimeline.tsx
+@@ -1,3 +1,4 @@
++// Adapted MIT upstream component; see third_party/3D_Magnetic_Pieces/TUTORIAL.md.
+ /**
+  * P1: 拼装步骤时间轴
+  *
+@@ -14,20 +15,20 @@
+ import {
+   Camera, Sparkles, AlertCircle, CheckCircle, AlertTriangle,
+   Plus, ChevronLeft, ChevronRight, Trash2, Eye,
+-} from 'lucide-react';
+-import type { EditorProject } from '../../editor/types';
+-import type { BuildStepV2 } from '../../engine/types';
+-import type { EditorValidationResult } from '../../editor/validate';
++} from '../tutorial/icons.tsx';
++import type { TutorialProject } from '../../../tutorial.ts';
++import type { BuildStepV2 } from '../tutorial/types.ts';
++import type { TutorialDiagnostics } from '../../../tutorial.ts';
+ 
+ interface Props {
+-  project: EditorProject;
++  project: TutorialProject;
+   currentStepId: number | null;
+   onSelectStep: (id: number) => void;
+   onAddStep: () => void;
+   onDeleteStep: (id: number) => void;
+   onMoveStep: (from: number, to: number) => void;
+   /** 校验结果(用于显示每步校验状态),可选 */
+-  validation?: EditorValidationResult | null;
++  validation?: TutorialDiagnostics | null;
+   /** 录制模式下的当前步骤(显示录制中标记) */
+   recordingStepId?: number | null;
+ }
+@@ -49,7 +50,7 @@
+   };
+ 
+   return (
+-    <div className="flex flex-col h-full" data-testid="step-timeline">
++    <div className="magnetic-tutorial-timeline" data-testid="step-timeline">
+       <div className="flex items-center justify-between px-3 py-1 border-b">
+         <div className="flex items-center gap-2">
+           <span className="text-xs font-semibold text-gray-700">拼装步骤时间轴</span>
+@@ -89,7 +90,7 @@
+                         : 'border-gray-200 bg-white hover:bg-gray-50'
+                   }`}
+                   onClick={() => onSelectStep(step.id)}
+-                  data-testid={`step-card-${step.id}`}
++                  data-testid={`step-card-${step.id}`} data-active={active} role="button" tabIndex={0} onKeyDown={e => { if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelectStep(step.id)} }}
+                 >
+                   {/* 标题行 */}
+                   <div className="flex items-center justify-between gap-1">
+--- a/src/components/editor/TutorialOrchestrationPanel.tsx
++++ b/src/components/editor/TutorialOrchestrationPanel.tsx
+@@ -1,3 +1,4 @@
++// Adapted MIT upstream component; see third_party/3D_Magnetic_Pieces/TUTORIAL.md.
+ /**
+  * P1: 教学编排面板
+  *
+@@ -10,26 +11,25 @@
+  * - 零件标注
+  *
+  * 数据通过 EditorWorkspace 的 callbacks 写入 history(支持撤销/重做)。
+- * 面板本身是无状态受控组件,所有真值来自 EditorProject。
++ * 面板本身是无状态受控组件,所有真值来自 TutorialProject。
+  */
+ import { useMemo, useState } from 'react';
+ import {
+   Camera, Video, Trash2, Plus, X, Sparkles,
+   Package, Zap, Eye, MessageSquare, Settings2,
+-} from 'lucide-react';
+-import type { EditorProject } from '../../editor/types';
++} from '../tutorial/icons.tsx';
++import type { TutorialProject } from '../../../tutorial.ts';
+ import type {
+   BuildStepV2, StepCamera, PieceEntranceConfig,
+   EntranceType, EasingName,
+-} from '../../engine/types';
+-import { magnetColorMap } from '../../data/models';
++} from '../tutorial/types.ts';
++
+ 
+ /* ----------------- 选项常量 ----------------- */
+ 
+ const ENTRANCE_OPTIONS: { value: EntranceType; label: string; desc: string }[] = [
+   { value: 'drop', label: '上方飞入', desc: '从上方下落到目标位置' },
+   { value: 'side', label: '侧面飞入', desc: '从右侧滑入到目标位置' },
+-  { value: 'fold', label: '折叠展开', desc: '原地展开,配合旋转' },
+   { value: 'fade', label: '原位淡入', desc: '原地透明度渐变显现' },
+   { value: 'none', label: '无动画', desc: '直接显示在目标位置' },
+ ];
+@@ -43,23 +43,18 @@
+   { value: 'easeOutElastic', label: '弹性(Elastic)' },
+ ];
+ 
+-const SNAP_FEEDBACK_OPTIONS: { value: 'none' | 'pulse' | 'glow'; label: string }[] = [
+-  { value: 'none', label: '无反馈' },
+-  { value: 'pulse', label: '轻微缩放' },
+-  { value: 'glow', label: '发光' },
+-];
+-
+ /* ----------------- 工具函数 ----------------- */
+ 
+ function formatVec(v: [number, number, number] | undefined): string {
+   if (!v) return '—';
+   return `(${v[0].toFixed(1)}, ${v[1].toFixed(1)}, ${v[2].toFixed(1)})`;
+ }
++function shortPieceId(id: string): string { return id.length > 22 ? `${id.slice(0,6)}…${id.slice(-8)}` : id; }
+ 
+ /* ----------------- 面板 Props ----------------- */
+ 
+ export interface TutorialOrchestrationPanelProps {
+-  project: EditorProject;
++  project: TutorialProject;
+   /** 当前选中的步骤 id */
+   currentStepId: number | null;
+   /** 当前编辑器视图(由 EditorCanvas 透传,用于"设为本步镜头") */
+@@ -94,7 +89,6 @@
+   onSetStepHint,
+   onSetStepFocusPoints,
+   onSetStepHighlightMs,
+-  onSetStepSnapFeedback,
+   onSetPieceAnnotation,
+   onRemovePieceFromStep,
+   onAddPieceToStep,
+@@ -106,13 +100,13 @@
+   );
+ 
+   const partMap = useMemo(() => {
+-    const m: Record<string, EditorProject['parts'][number]> = {};
++    const m: Record<string, TutorialProject['parts'][number]> = {};
+     project.parts.forEach((p) => (m[p.id] = p));
+     return m;
+   }, [project.parts]);
+ 
+   const pieceMap = useMemo(() => {
+-    const m: Record<string, EditorProject['pieces'][number]> = {};
++    const m: Record<string, TutorialProject['pieces'][number]> = {};
+     project.pieces.forEach((p) => (m[p.id] = p));
+     return m;
+   }, [project.pieces]);
+@@ -159,10 +153,8 @@
+                   <span className="text-gray-500">缩放</span>
+                   <span className="font-mono text-gray-800">{step.camera.zoom.toFixed(1)}</span>
+                 </div>
+-                <div className="flex justify-between">
+-                  <span className="text-gray-500">过渡</span>
+-                  <span className="font-mono text-gray-800">{step.camera.transitionMs}ms</span>
+-                </div>
++                <label>过渡（毫秒）<input aria-label="本步相机过渡毫秒" type="number" min={0} max={10000} step={100}
++                  value={step.camera.transitionMs} onChange={e=>onSetStepCamera(step.id,{...step.camera!,transitionMs:Number(e.target.value)})}/></label>
+               </div>
+               <div className="flex gap-2">
+                 <button
+@@ -274,24 +266,7 @@
+               />
+               <p className="text-[10px] text-gray-400 mt-0.5">设为 0 表示不高亮</p>
+             </div>
+-            <div>
+-              <label className="text-xs text-gray-500 block mb-1">吸附完成反馈</label>
+-              <div className="flex gap-1">
+-                {SNAP_FEEDBACK_OPTIONS.map((opt) => (
+-                  <button
+-                    key={opt.value}
+-                    onClick={() => onSetStepSnapFeedback(step.id, opt.value)}
+-                    className={`flex-1 px-2 py-1 text-[10px] rounded border ${
+-                      (step.snapFeedback ?? 'none') === opt.value
+-                        ? 'bg-blue-500 text-white border-blue-500'
+-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+-                    }`}
+-                  >
+-                    {opt.label}
+-                  </button>
+-                ))}
+-              </div>
+-            </div>
++
+           </div>
+         </Section>
+ 
+@@ -334,7 +309,7 @@
+                   <div key={pid} className="flex items-center gap-2">
+                     <div
+                       className="w-3 h-3 rounded-sm flex-shrink-0"
+-                      style={{ backgroundColor: magnetColorMap[part.color] }}
++                      style={{ backgroundColor: part.color }}
+                     />
+                     <span className="text-[10px] text-gray-500 flex-shrink-0 w-16 truncate">{part.name}</span>
+                     <input
+@@ -413,12 +388,12 @@
+         <button
+           onClick={onSelect}
+           className="w-3 h-3 rounded-sm flex-shrink-0"
+-          style={{ backgroundColor: magnetColorMap[color as keyof typeof magnetColorMap] ?? '#ccc' }}
+-          title="在画布中选中此零件"
++          style={{ backgroundColor: color }}
++          title="此零件颜色"
+         />
+         <span className="text-[10px] text-gray-600 flex-shrink-0">#{index + 1}</span>
+         <span className="text-xs font-medium text-gray-800 flex-shrink-0 truncate flex-1">{partName}</span>
+-        <span className="text-[9px] font-mono text-gray-400 flex-shrink-0">{pieceId.slice(0, 6)}</span>
++        <span title={pieceId} className="text-[9px] font-mono text-gray-400 flex-shrink-0">{shortPieceId(pieceId)}</span>
+         <button
+           onClick={() => setExpanded(!expanded)}
+           className="text-[10px] px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-500"
+@@ -461,6 +436,7 @@
+             <label className="text-[9px] text-gray-500 block">延迟(ms)</label>
+             <input
+               type="number"
++              aria-label={`${pieceId} 入场延迟`}
+               min={0}
+               max={5000}
+               step={50}
+@@ -473,6 +449,7 @@
+             <label className="text-[9px] text-gray-500 block">时长(ms)</label>
+             <input
+               type="number"
++              aria-label={`${pieceId} 入场时长`}
+               min={200}
+               max={3000}
+               step={50}
+@@ -609,7 +586,7 @@
+   step,
+   onAddPieceToStep,
+ }: {
+-  project: EditorProject;
++  project: TutorialProject;
+   step: BuildStepV2;
+   onAddPieceToStep: (stepId: number, pieceId: string) => void;
+ }) {
+@@ -622,7 +599,7 @@
+   }, [project.pieces, step.addedPieceIds]);
+ 
+   const partMap = useMemo(() => {
+-    const m: Record<string, EditorProject['parts'][number]> = {};
++    const m: Record<string, TutorialProject['parts'][number]> = {};
+     project.parts.forEach((p) => (m[p.id] = p));
+     return m;
+   }, [project.parts]);
+@@ -653,15 +630,16 @@
+                   <div key={piece.id} className="flex items-center gap-2 text-xs">
+                     <div
+                       className="w-3 h-3 rounded-sm flex-shrink-0"
+-                      style={{ backgroundColor: magnetColorMap[part.color] }}
++                      style={{ backgroundColor: part.color }}
+                     />
+-                    <span className="flex-1 truncate text-gray-700">{part.name}</span>
+-                    <span className="text-[9px] font-mono text-gray-400">{piece.id.slice(0, 6)}</span>
++                    <span className="flex-1 truncate text-gray-700">{part.name} · {part.shape}</span>
++                    <span title={piece.id} className="text-[9px] font-mono text-gray-400">{shortPieceId(piece.id)}</span>
+                     <button
++                      aria-label={`加入零件 ${piece.id}`}
+                       onClick={() => onAddPieceToStep(step.id, piece.id)}
+                       className="px-1.5 py-0.5 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600"
+                     >
+-                      加入
++                      加入（从原步骤移入）
+                     </button>
+                   </div>
+                 );
+--- a/src/editor/tutorial-state.ts
++++ b/src/editor/tutorial-state.ts
+@@ -1,65 +1,18 @@
+-import { EditorProject } from './types';
+-import { SCHEMA_VERSION } from './types';
+-import { defaultMetadata } from './types';
+-import { uid, uniqueId } from './id';
+-import { PartDef, MagnetColor, MagnetShape } from '../data/types';
+-import {
+-  PieceRef, Connection, BuildStepV2,
+-  StepCamera, PieceEntranceConfig, EasingName, EntranceType,
+-} from '../engine/types';
+-import { resnapshotTransforms, resnapshotTransformsForConnection } from './serialization';
+-
+-/**
+- * 编辑器状态模型 + 撤销/重做。
+- * 纯数据逻辑,无 React / DOM 依赖,便于未来小程序复用。
+- *
+- * 设计:
+- * - history 是 EditorProject 快照栈(深拷贝);
+- * - 每次"原子操作"产生新快照,push 到 past,清空 future;
+- * - undo 把 current 推入 future,pop past -> current;
+- * - redo 反之。
+- */
+-
+-export interface EditorHistory {
+-  past: EditorProject[];
+-  current: EditorProject;
+-  future: EditorProject[];
+-}
+-
+-export const MAX_HISTORY = 100;
+-
+-export function createEmptyProject(): EditorProject {
+-  const now = new Date().toISOString();
+-  const coverCamId = uid('cam');
+-  return {
+-    schemaVersion: SCHEMA_VERSION,
+-    id: uid('proj'),
+-    metadata: defaultMetadata(),
+-    parts: [],
+-    pieces: [],
+-    connections: [],
+-    steps: [],
+-    cameraPresets: [
+-      { id: coverCamId, label: '封面镜头', position: [5, 5, 5], target: [0, 0, 0], zoom: 50 },
+-    ],
+-    transforms: {},
+-    thumbnail: { source: 'auto', cameraPresetId: coverCamId },
+-    createdAt: now,
+-    updatedAt: now,
+-  };
+-}
+-
+-export function createInitialHistory(): EditorHistory {
+-  return { past: [], current: createEmptyProject(), future: [] };
+-}
+-
+-function cloneProject(p: EditorProject): EditorProject {
++// MIT upstream editor/state history + step mutations, adapted to Tutorial3D.
++import type { Tutorial3D } from "../../tutorial.ts"
++import { assertTutorial3D, syncStepConnections } from "../../tutorial.ts"
++import { canonical } from "../../../build-plan.ts"
++import type { BuildStepV2, StepCamera, PieceEntranceConfig, EntranceType, EasingName } from "../components/tutorial/types.ts"
++export type EditorHistory = { past: Tutorial3D[]; current: Tutorial3D; future: Tutorial3D[] }
++export const MAX_HISTORY = 100
++export function createInitialHistory(current: Tutorial3D): EditorHistory { assertTutorial3D(current); return { past: [], current: structuredClone(current), future: [] } }
++function cloneProject(p: Tutorial3D): Tutorial3D {
+   // P0-4: structuredClone 比 JSON 往返快 5-10x,且不丢 Date/Map 等结构(此处数据全可序列化,但保留语义更稳)。
+   // 老旧环境(无 structuredClone,如非现代浏览器)降级到 JSON 方式。
+   if (typeof structuredClone === 'function') {
+     return structuredClone(p);
+   }
+-  return JSON.parse(JSON.stringify(p)) as EditorProject;
++  return JSON.parse(JSON.stringify(p)) as Tutorial3D;
+ }
+ 
+ /** 在执行 mutation 前调用:把当前快照压栈。 */
+@@ -69,20 +22,26 @@
+ }
+ 
+ /** 修改 current 但不入栈(用于自动同步 transforms / updatedAt 等派生字段)。 */
+-export function updateCurrent(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
++export function updateCurrent(h: EditorHistory, updater: (p: Tutorial3D) => Tutorial3D): EditorHistory {
+   // P0-四.7: 克隆 current 后再传给 updater,避免 updater 中的 in-place mutation
+   // 在 React Strict Mode(double-invocation)下污染原始状态。
+-  return { ...h, current: updater(cloneProject(h.current)) };
++  const current=updater(cloneProject(h.current));
++  if(canonical(current.assembly)!==canonical(h.current.assembly))throw Error('Source snapshot is immutable');
++  syncStepConnections(current);assertTutorial3D(current);
++  return { ...h, current };
+ }
+ 
+ /** 修改 current 并入栈(用于用户主动操作)。 */
+-export function commit(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
++export function commit(h: EditorHistory, updater: (p: Tutorial3D) => Tutorial3D): EditorHistory {
+   const next = pushHistory(h);
+   // P0-四.7: 克隆 current 后再传给 updater,避免 in-place mutation 污染 h.current。
+   // React Strict Mode 下 updater 会被调用两次:第一次 mutation 会改变 h.current,
+   // 第二次 pushHistory 会 clone 已被污染的 h.current → past 条目值错误,撤销无效。
+   const current = updater(cloneProject(next.current));
+-  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
++  if (canonical(current.assembly) !== canonical(h.current.assembly)) throw Error('Source snapshot is immutable');
++  syncStepConnections(current); assertTutorial3D(current);
++  if(canonical(current) === canonical(h.current)) return h;
++  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+ }
+ 
+ /**
+@@ -90,13 +49,16 @@
+  * 用于一次用户操作需要多步 mutation 的场景(如断开连接+移动零件+移出步骤),
+  * 避免每个 updater 各 push 一条历史,导致撤销需要按多次。
+  */
+-export function commitBatch(h: EditorHistory, updaters: ((p: EditorProject) => EditorProject)[]): EditorHistory {
++export function commitBatch(h: EditorHistory, updaters: ((p: Tutorial3D) => Tutorial3D)[]): EditorHistory {
+   const next = pushHistory(h);
+   let current = cloneProject(next.current);
+   for (const u of updaters) {
+     current = u(current);
+   }
+-  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
++  if (canonical(current.assembly) !== canonical(h.current.assembly)) throw Error('Source snapshot is immutable');
++  syncStepConnections(current); assertTutorial3D(current);
++  if(canonical(current) === canonical(h.current)) return h;
++  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+ }
+ 
+ export function undo(h: EditorHistory): EditorHistory {
+@@ -130,212 +92,10 @@
+ }
+ 
+ /** 替换整个 current(用于新建 / 打开 / 导入)。清空历史。 */
+-export function replaceProject(_h: EditorHistory, project: EditorProject): EditorHistory {
++export function replaceProject(_h: EditorHistory, project: Tutorial3D): EditorHistory {
+   return { past: [], current: cloneProject(project), future: [] };
+ }
+ 
+-/* ----------------- 零件与连接操作 ----------------- */
+-
+-/** 找到或创建一个 partId(同形状同颜色复用)。 */
+-function findOrCreatePart(project: EditorProject, shape: MagnetShape, color: MagnetColor): PartDef {
+-  const existing = project.parts.find((p) => p.shape === shape && p.color === color);
+-  if (existing) return existing;
+-  const labels: Record<MagnetShape, string> = {
+-    square: '正方形', rectangle: '长方形', 'equilateral-triangle': '等边三角形',
+-    'isosceles-triangle': '等腰三角形', 'right-triangle': '直角三角形',
+-    'long-right-triangle': '长直角三角形', trapezoid: '梯形', hexagon: '六边形',
+-    pentagon: '五边形', sector: '扇形', semicircle: '半圆形', rhombus: '菱形',
+-  };
+-  const part: PartDef = {
+-    id: uniqueId('part', project.parts.map((p) => p.id)),
+-    name: labels[shape],
+-    shape, color, count: 0,
+-  };
+-  project.parts.push(part);
+-  return part;
+-}
+-
+-/**
+- * 添加一个零件到方案。
+- * @param placePosition 可选放置位置(世界坐标)。不传时根零件放原点,其他零件放视野中心附近(由调用方计算)。
+- */
+-export function addPieceAction(
+-  h: EditorHistory,
+-  shape: MagnetShape,
+-  color: MagnetColor,
+-  placePosition?: [number, number, number],
+-): { history: EditorHistory; pieceId: string } {
+-  let pieceId = '';
+-  const history = commit(h, (p) => {
+-    const part = findOrCreatePart(p, shape, color);
+-    pieceId = uniqueId('piece', p.pieces.map((pp) => pp.id));
+-    const isRoot = p.pieces.length === 0;
+-    const piece: PieceRef = { id: pieceId, partId: part.id, isRoot };
+-    p.pieces.push(piece);
+-    if (isRoot) {
+-      // 根零件放原点(或指定位置)
+-      p.transforms[pieceId] = {
+-        position: placePosition ?? [0, 0, 0],
+-        quaternion: [0, 0, 0, 1],
+-      };
+-    } else {
+-      // 非根零件:使用指定位置,或默认放在原点附近(不再用 pieces.length*2 远距离偏移)
+-      p.transforms[pieceId] = {
+-        position: placePosition ?? [0.5, 0, 0.5],
+-        quaternion: [0, 0, 0, 1],
+-      };
+-    }
+-    // 自动同步 parts.count
+-    part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    return p;
+-  });
+-  return { history, pieceId };
+-}
+-
+-/** 删除零件(级联清理连接和步骤引用)。 */
+-export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
+-  return commit(h, (p) => {
+-    p.pieces = p.pieces.filter((pp) => pp.id !== pieceId);
+-    p.connections = p.connections.filter((c) => c.pieceA !== pieceId && c.pieceB !== pieceId);
+-    for (const step of p.steps) {
+-      step.addedPieceIds = step.addedPieceIds.filter((id) => id !== pieceId);
+-    }
+-    delete p.transforms[pieceId];
+-    // 重新同步 parts.count
+-    for (const part of p.parts) {
+-      part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    }
+-    // 移除空 part
+-    p.parts = p.parts.filter((part) => part.count > 0);
+-    return p;
+-  });
+-}
+-
+-/** 复制一个零件(同 part,新 piece ID)。 */
+-export function duplicatePieceAction(h: EditorHistory, pieceId: string): { history: EditorHistory; newId: string } {
+-  let newId = '';
+-  const history = commit(h, (p) => {
+-    const src = p.pieces.find((pp) => pp.id === pieceId);
+-    if (!src) return p;
+-    newId = uniqueId('piece', p.pieces.map((pp) => pp.id));
+-    const copy: PieceRef = { id: newId, partId: src.partId, isRoot: false };
+-    p.pieces.push(copy);
+-    const srcTf = p.transforms[pieceId];
+-    if (srcTf) {
+-      p.transforms[newId] = {
+-        position: [srcTf.position[0] + 1, srcTf.position[1], srcTf.position[2]],
+-        quaternion: [...srcTf.quaternion] as [number, number, number, number],
+-      };
+-    }
+-    const part = p.parts.find((pp) => pp.id === src.partId);
+-    if (part) part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    return p;
+-  });
+-  return { history, newId };
+-}
+-
+-/** 修改零件颜色(改 partId 指向,或新建 part)。 */
+-export function setPieceColorAction(h: EditorHistory, pieceId: string, color: MagnetColor): EditorHistory {
+-  return commit(h, (p) => {
+-    const piece = p.pieces.find((pp) => pp.id === pieceId);
+-    if (!piece) return p;
+-    const oldPart = p.parts.find((pp) => pp.id === piece.partId);
+-    if (!oldPart) return p;
+-    const newPart = findOrCreatePart(p, oldPart.shape, color);
+-    piece.partId = newPart.id;
+-    // 同步 count
+-    for (const part of p.parts) {
+-      part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    }
+-    p.parts = p.parts.filter((part) => part.count > 0);
+-    return p;
+-  });
+-}
+-
+-/** 直接设置零件的 editor transform(自由移动 / 旋转,不创建连接)。 */
+-export function setPieceTransformAction(
+-  h: EditorHistory,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorHistory {
+-  return commit(h, (p) => setPieceTransformMutation(p, pieceId, transform));
+-}
+-
+-/** P0-2: setPieceTransform 的纯 mutation,供 commitBatch 组合。 */
+-export function setPieceTransformMutation(
+-  p: EditorProject,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorProject {
+-  p.transforms[pieceId] = transform;
+-  return p;
+-}
+-
+-/**
+- * P0-四.7: 合并提交 — 更新 transform 但不入栈(用于长按按键合并)。
+- * 首次按键用 setPieceTransformAction(入栈),后续按键用此函数(只更新 current)。
+- * 这样一次"按键序列"只产生一条历史记录,撤销一次即可回退。
+- */
+-export function setPieceTransformMergedAction(
+-  h: EditorHistory,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorHistory {
+-  return updateCurrent(h, (p) => {
+-    p.transforms[pieceId] = transform;
+-    return p;
+-  });
+-}
+-
+-/* ----------------- 连接操作 ----------------- */
+-
+-/** 创建连接并立即重新求解 transforms。 */
+-export function createConnectionAction(
+-  h: EditorHistory,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => createConnectionMutation(p, connection));
+-}
+-
+-/** P0-2: createConnection 的纯 mutation,供 commitBatch 组合。 */
+-export function createConnectionMutation(p: EditorProject, connection: Connection): EditorProject {
+-  p.connections.push(connection);
+-  p.transforms = resnapshotTransforms(p);
+-  return p;
+-}
+-
+-/** 断开连接。 */
+-export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
+-  return commit(h, (p) => removeConnectionMutation(p, index));
+-}
+-
+-/** P0-2: removeConnection 的纯 mutation,供 commitBatch 组合。 */
+-export function removeConnectionMutation(p: EditorProject, index: number): EditorProject {
+-  p.connections.splice(index, 1);
+-  p.transforms = resnapshotTransforms(p);
+-  return p;
+-}
+-
+-/** 更新连接的二面角 / flip。 */
+-export function updateConnectionAction(
+-  h: EditorHistory,
+-  index: number,
+-  patch: Partial<Pick<Connection, 'dihedralDeg' | 'flip'>>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const c = p.connections[index];
+-    if (!c) return p;
+-    if (patch.dihedralDeg !== undefined) c.dihedralDeg = patch.dihedralDeg;
+-    if (patch.flip !== undefined) c.flip = patch.flip;
+-    // P1-5: 增量求解 — 只重算受影响连接的子树,避免全量 BFS
+-    p.transforms = resnapshotTransformsForConnection(p, index);
+-    return p;
+-  });
+-}
+-
+-/* ----------------- 步骤操作 ----------------- */
+-
+-/** 新增步骤(默认标题和描述非空)。 */
+ export function addStepAction(h: EditorHistory): { history: EditorHistory; stepId: number } {
+   let stepId = 1;
+   const history = commit(h, (p) => {
+@@ -369,8 +129,6 @@
+     const clamped = Math.max(0, Math.min(p.steps.length - 1, toIndex));
+     const [moved] = p.steps.splice(fromIndex, 1);
+     p.steps.splice(clamped, 0, moved);
+-    // 重新编号(保持 id 单调递增,便于引用稳定)
+-    p.steps.forEach((s, i) => (s.id = i + 1));
+     return p;
+   });
+ }
+@@ -405,6 +163,7 @@
+   return commit(h, (p) => {
+     const step = p.steps.find((s) => s.id === stepId);
+     if (!step) return p;
++    for (const other of p.steps) if (other.id !== stepId) { other.addedPieceIds = other.addedPieceIds.filter(id => id !== pieceId); if(other.entrance) delete other.entrance[pieceId]; if(other.annotations) delete other.annotations[pieceId]; }
+     if (!step.addedPieceIds.includes(pieceId)) step.addedPieceIds.push(pieceId);
+     return p;
+   });
+@@ -440,47 +199,6 @@
+   });
+ }
+ 
+-/** 把连接加入指定步骤。 */
+-export function addConnectionToStepAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => addConnectionToStepMutation(p, stepId, connection));
+-}
+-
+-/** P0-2: addConnectionToStep 的纯 mutation,供 commitBatch 组合。 */
+-export function addConnectionToStepMutation(p: EditorProject, stepId: number, connection: Connection): EditorProject {
+-  const step = p.steps.find((s) => s.id === stepId);
+-  if (!step) return p;
+-  step.addedConnections.push(connection);
+-  return p;
+-}
+-
+-/** P1-七: 录制期间断开连接时,把对应连接从步骤的 addedConnections 中移除。 */
+-export function removeConnectionFromStepAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => removeConnectionFromStepMutation(p, stepId, connection));
+-}
+-
+-/** P0-2: removeConnectionFromStep 的纯 mutation,供 commitBatch 组合。 */
+-export function removeConnectionFromStepMutation(p: EditorProject, stepId: number, connection: Connection): EditorProject {
+-  const step = p.steps.find((s) => s.id === stepId);
+-  if (!step) return p;
+-  step.addedConnections = step.addedConnections.filter(
+-    (c) =>
+-      !(c.pieceA === connection.pieceA && c.portA === connection.portA &&
+-        c.pieceB === connection.pieceB && c.portB === connection.portB),
+-  );
+-  return p;
+-}
+-
+-/* ----------------- P1: 教学编排字段操作 ----------------- */
+-
+-/** 设置步骤镜头(作者保存的本步视角)。传 null 清除镜头。 */
+ export function setStepCameraAction(
+   h: EditorHistory,
+   stepId: number,
+@@ -637,50 +355,3 @@
+   });
+ }
+ 
+-/* ----------------- 镜头预设 ----------------- */
+-
+-export function saveCameraPresetAction(
+-  h: EditorHistory,
+-  preset: { label: string; position: [number, number, number]; target: [number, number, number]; zoom: number; stepId?: number },
+-): { history: EditorHistory; presetId: string } {
+-  let presetId = '';
+-  const history = commit(h, (p) => {
+-    presetId = uniqueId('cam', p.cameraPresets.map((c) => c.id));
+-    p.cameraPresets.push({ id: presetId, ...preset });
+-    return p;
+-  });
+-  return { history, presetId };
+-}
+-
+-/* ----------------- 元数据 ----------------- */
+-
+-export function updateMetadataAction(
+-  h: EditorHistory,
+-  patch: Partial<EditorProject['metadata']>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    p.metadata = { ...p.metadata, ...patch };
+-    return p;
+-  });
+-}
+-
+-/* ----------------- P2: 缩略图/封面 ----------------- */
+-
+-/**
+- * P2: 设置封面 dataURL(由 coverRenderer 生成)。
+- * source 设为 'manual',dataUrl 内嵌到方案数据中。
+- */
+-export function setThumbnailDataUrlAction(
+-  h: EditorHistory,
+-  dataUrl: string,
+-  cameraPresetId?: string,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    p.thumbnail = {
+-      source: 'manual',
+-      dataUrl,
+-      ...(cameraPresetId ? { cameraPresetId } : {}),
+-    };
+-    return p;
+-  });
+-}
+--- /dev/null
++++ b/src/components/tutorial/types.ts
+@@ -0,0 +1,75 @@
++// MIT upstream BuildStepV2, camera and animation types, extracted unchanged.
++import type { Connection } from "../../engine/types.ts";
++
++/** 新版搭建步骤 */
++export interface BuildStepV2 {
++  id: number;
++  title: string;
++  description: string;
++  parentGuide: string;
++  /** 本步骤新增的 piece id 列表 */
++  addedPieceIds: string[];
++  /** 本步骤新增的连接关系 */
++  addedConnections: Connection[];
++  /* ----------------- P1: 教学编排字段（全部可选，旧数据自动获得默认值） ----------------- */
++  /** 本步镜头（若未设置，播放器保持上一镜头或使用默认镜头） */
++  camera?: StepCamera;
++  /** 每片零件的入场配置（按 pieceId 索引） */
++  entrance?: Record<string, PieceEntranceConfig>;
++  /** 新零件的短暂高亮时间（毫秒，0 = 不高亮），默认 600ms */
++  highlightMs?: number;
++  /** 吸附完成时的反馈类型 */
++  snapFeedback?: 'none' | 'pulse' | 'glow';
++  /** 可选的零件标注（按 pieceId 索引，文本内容） */
++  annotations?: Record<string, string>;
++  /** 本步提示文字（显示在播放器侧栏） */
++  hint?: string;
++  /** 本步观察重点（显示在播放器侧栏） */
++  focusPoints?: string[];
++}
++
++/** 步骤镜头：作者保存的本步视角 */
++export interface StepCamera {
++  /** 镜头位置 */
++  position: [number, number, number];
++  /** 镜头看向的目标点 */
++  target: [number, number, number];
++  /** 缩放（OrthographicCamera zoom，或透视相机的 dolly 距离参考） */
++  zoom: number;
++  /** 镜头过渡时长（毫秒，0 = 瞬切） */
++  transitionMs: number;
++}
++
++/** 入场类型 */
++export type EntranceType =
++  | 'drop'      // 上方飞入
++  | 'side'      // 侧面飞入
++  | 'fold'      // 折叠
++  | 'fade'      // 原位淡入
++  | 'none';     // 无动画（直接显示）
++
++/** 单片零件的入场动画配置 */
++export interface PieceEntranceConfig {
++  /** 入场类型，默认 'drop' */
++  type: EntranceType;
++  /** 相对步骤开始的延迟（毫秒），默认 0 */
++  delayMs: number;
++  /** 动画时长（毫秒），默认 800 */
++  durationMs: number;
++  /** 缓动函数名称，默认 'easeOutCubic' */
++  easing: EasingName;
++  /** 起始位移偏移（局部坐标，相对最终位置） */
++  startOffset?: [number, number, number];
++  /** 起始旋转偏移（欧拉角弧度，相对最终旋转） */
++  startRotation?: [number, number, number];
++}
++
++/** 支持的缓动函数名称 */
++export type EasingName =
++  | 'linear'
++  | 'easeOutCubic'
++  | 'easeInOutCubic'
++  | 'easeOutBack'
++  | 'easeOutBounce'
++  | 'easeOutElastic';
++
+--- /dev/null
++++ b/src/components/tutorial/icons.tsx
+@@ -0,0 +1,3 @@
++import type { HTMLAttributes } from 'react'
++const icon=(text:string)=>(props:HTMLAttributes<HTMLSpanElement>)=><span {...props} aria-hidden="true">{text}</span>
++export const Camera=icon('◉'), Sparkles=icon('✦'), AlertCircle=icon('!'), CheckCircle=icon('✓'), AlertTriangle=icon('⚠'), Plus=icon('+'), ChevronLeft=icon('←'), ChevronRight=icon('→'), Trash2=icon('×'), Eye=icon('◎'), Video=icon('▸'), X=icon('×'), Package=icon('▣'), Zap=icon('ϟ'), MessageSquare=icon('…'), Settings2=icon('⋮')
