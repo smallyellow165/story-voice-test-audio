@@ -1,3 +1,5 @@
+import {fields,assertShapeAssessment,assertShapeReview,assertSpatialUnderstanding,assertInterpretationReview} from './spatial-understanding.ts';
+import type {ShapeFamily3D,ShapeAssessment3D,SpatialUnderstanding3D} from './spatial-understanding.ts';
 import { adaptProfile, profileKey3D } from '../profile-adapter.ts';
 import type { ProfileSnapshot3D } from '../profile-adapter.ts';
 export type Feature3D = {
@@ -22,6 +24,7 @@ export type VisibleObservation3D = {
     occlusion: string;
     evidence: string;
     uncertainty: string;
+    shapeAssessment?: ShapeAssessment3D;
     profileCandidates: {
         profileId: string;
         profileVersion: number;
@@ -29,11 +32,14 @@ export type VisibleObservation3D = {
     }[];
 };
 export type VisibleEvidence3D = {
-    version: 1;
+    version: 1 | 2;
+    spatialInterpretation?: SpatialUnderstanding3D;
     observations: VisibleObservation3D[];
     unknowns: string[];
 };
 export type ReviewedPiece3D = {
+    shapeFamily?: ShapeFamily3D;
+    shapeNote?: string;
     id: string;
     confirmed: boolean;
     excluded: boolean;
@@ -58,11 +64,13 @@ export type ConnectionHypothesis3D = {
     uncertainty: string;
 };
 export type VisibleReview3D = {
+    interpretationReview?: {status: "unreviewed"|"accepted"|"corrected"|"rejected"; note:string};
     pieces: ReviewedPiece3D[];
     constraints: ConnectionHypothesis3D[];
 };
 export type SpatialHypothesis3D = {
-    version: 1;
+    version: 1 | 2;
+    spatialInterpretation?: SpatialUnderstanding3D;
     parts: {
         id: string;
         profileId: string | null;
@@ -106,14 +114,15 @@ const color = (x: unknown): void => { if (typeof x !== 'string' || !/^#[a-fA-F0-
 function strings(x: unknown): void { list(x); (x as unknown[]).forEach(text); }
 export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
     const v = value as VisibleEvidence3D;
-    obj(v, ['version', 'observations', 'unknowns']);
-    if (v.version !== 1)
+    fields(v, ['version', 'observations', 'unknowns'],v.version === 2 ? ['spatialInterpretation'] : []);
+    if (![1,2].includes(v.version))
         fail('Visible Evidence 版本错误');
     list(v.observations, 12);
     strings(v.unknowns);
     const ids = new Set<string>();
     for (const o of v.observations) {
-        obj(o, ['id', 'color', 'bbox', 'features', 'occlusion', 'evidence', 'uncertainty', 'profileCandidates']);
+        fields(o, ['id', 'color', 'bbox', 'features', 'occlusion', 'evidence', 'uncertainty', 'profileCandidates'],v.version === 2 ? ['shapeAssessment'] : []);
+        if(v.version === 2)assertShapeAssessment(o.shapeAssessment!);
         if (!visibleId(o.id) || ids.has(o.id))
             fail('Observation ID 重复或无效');
         ids.add(o.id);
@@ -149,6 +158,7 @@ export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
             text(p.reason);
         }
     }
+    if(v.version === 2)assertSpatialUnderstanding(v.spatialInterpretation!,v.observations);
     return structuredClone(v);
 }
 function connections(values: ConnectionHypothesis3D[], input: VisibleInput3D): void {
@@ -192,7 +202,8 @@ function connections(values: ConnectionHypothesis3D[], input: VisibleInput3D): v
 export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
     obj(input, ['evidence', 'review', 'profiles']);
     parseVisibleEvidence(input.evidence);
-    obj(input.review, ['pieces', 'constraints']);
+    fields(input.review, ['pieces', 'constraints'], ['interpretationReview']);
+    if(input.review.interpretationReview!==undefined)assertInterpretationReview(input.review.interpretationReview);
     list(input.review.pieces, 12);
     list(input.profiles, 12);
     const ids = new Set<string>(), keys = new Set<string>();
@@ -204,7 +215,8 @@ export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
         keys.add(key);
     }
     for (const p of input.review.pieces) {
-        obj(p, ['id', 'confirmed', 'excluded', 'profileId', 'profileVersion', 'color']);
+        fields(p, ['id', 'confirmed', 'excluded', 'profileId', 'profileVersion', 'color'],['shapeFamily','shapeNote']);
+        if(p.shapeFamily!==undefined||p.shapeNote!==undefined)assertShapeReview(p.shapeFamily,p.shapeNote);
         if (!input.evidence.observations.some(o => o.id === p.id) || ids.has(p.id))
             fail('Review 不能增加或重复 Observation');
         ids.add(p.id);
@@ -223,8 +235,8 @@ export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
 export function parseSpatialHypothesis(value: unknown, input: VisibleInput3D): SpatialHypothesis3D {
     validateVisibleInput(input);
     const v = value as SpatialHypothesis3D;
-    obj(v, ['version', 'parts', 'connections', 'alternatives', 'relations', 'unknowns']);
-    if (v.version !== 1)
+    fields(v, ['version', 'parts', 'connections', 'alternatives', 'relations', 'unknowns'],v.version === 2 ? ['spatialInterpretation'] : []);
+    if (![1,2].includes(v.version))
         fail('Spatial Hypothesis 版本错误');
     list(v.parts, 12);
     const confirmed = input.review.pieces.filter(p => p.confirmed && !p.excluded), ids = new Set<string>();
@@ -253,5 +265,6 @@ export function parseSpatialHypothesis(value: unknown, input: VisibleInput3D): S
         text(r.evidence);
     }
     strings(v.unknowns);
+    if(v.version === 2)assertSpatialUnderstanding(v.spatialInterpretation!,input.evidence.observations.filter(o=>ids.has(o.id)));
     return structuredClone(v);
 }

@@ -83,7 +83,8 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
   }
   if(route==='manual-plan'){
    const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409)
-   return put('plans',{sourceId:l.source.id,sourceHash:l.source.hash,reviewId:l.review.id,reviewHash:l.review.hash,plan:parseSpatialHypothesis(body.plan,l.review.input),origin:'human-hypothesis',traceId:null})
+   let base=null;if(body.basedOnPlanId){const b=await lineage('plans',body.basedOnPlanId);if(b.outdated||b.review.id!==l.review.id)fail('人工计划的来源 Plan 已过期或不属于当前 Review',409);base=b.record}
+   return put('plans',{sourceId:l.source.id,sourceHash:l.source.hash,reviewId:l.review.id,reviewHash:l.review.hash,plan:parseSpatialHypothesis(body.plan,l.review.input),origin:'human-hypothesis',traceId:null,...(base?{basedOnPlanId:base.id,basedOnPlanHash:base.hash}:{})})
   }
   if(route==='execute')return operation(body,route,async()=>{
    const l=await lineage('plans',body.planId);if(l.outdated)fail('Review 已改变，旧 Plan 不可执行',409)

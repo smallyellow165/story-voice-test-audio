@@ -1,5 +1,7 @@
 # Phase 5B V1 — Visible 3D Reconstruction
 
+后续 Vision Spatial Understanding V2 的实现、真实照片结果和 Usage 见 [magnetic-visible3d-v2.md](./magnetic-visible3d-v2.md)。本页保留 V1 阶段历史验收记录。
+
 本阶段已实现可操作闭环：照片/人工可见证据 → 独立 3D Vision Analysis → 人工 Review → Spatial Hypothesis → 确定性几何执行 → 多个局部或完整 Candidates → 明确采用 → 原有 Assembly3D Editor。采用后可继续 Phase 5A Build Order 与 Phase 4 Tutorial。
 
 实现不补全不可见零件，不调用模型直接生成最终 XYZ/Quaternion，不修改原有 2D Prompt、2D 几何、LEGO Viewer 或 Phase 1–4 Schema。本次没有真实 Vision/LLM 调用，没有真实照片准确率结论。

@@ -6,6 +6,7 @@ import path from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {createMagneticIntake} from '../server/magnetic-intake.mjs'
 import {createVisible3DWorkflow} from '../server/magnetic-visible3d.mjs'
+import {upgradeVisibleFixture} from './magnetic-visible3d-v2-fixtures.mjs'
 import {visibleFixture,png} from './magnetic-visible3d-fixtures.mjs'
 import {buildVisibleRequest,observationPrompt,planningPrompt} from '../server/magnetic-visible3d-vision.mjs'
 import {runStructuredSpatialModel} from '../server/spatial-model-run.mjs'
@@ -60,14 +61,14 @@ test('DUPLO shared runner records an actual mocked HTTP wire once; incomplete re
  assert.equal(calls.length,1);assert.equal(r.status,'plan_ready_for_review');assert.equal(r.wireStatus,'response_saved');assert.deepEqual(r.plan,f.plan)
  assert.match(await readFile(r.rawRequestPath,'utf8'),/input_image/);assert.match(await readFile(r.rawResponsePath,'utf8'),/mock-response/)
  const workflow=createVisible3DWorkflow(path.join(directory,'whole-workflow'),{readSource:id=>f.api.read('sources',id),readImage:async()=>png,getRegistry:()=>f.api.dispatch('GET','profiles')})
- responseOutput=f.evidence
+ const v2=upgradeVisibleFixture(f);responseOutput=v2.evidence
  const analyzed=await workflow.dispatch('POST','analyze',{sourceId:f.source.id,model:'gpt-4.1',requestId:randomUUID()});assert.equal(analyzed.usable,true)
  const reviewed=await workflow.dispatch('POST','reviews',{analysisId:analyzed.record.id,review:f.review,expectedRevision:0})
- responseOutput=f.plan
+ responseOutput=v2.plan
  const planned=await workflow.dispatch('POST','plan',{reviewId:reviewed.record.id,model:'gpt-4.1',requestId:randomUUID()});assert.equal(planned.usable,true)
  const executed=await workflow.dispatch('POST','execute',{planId:planned.record.id,requestId:randomUUID()});assert.equal(executed.record.candidates.length,1);assert.equal(calls.length,3)
  responseStatus='incomplete'
- const incomplete=await workflow.dispatch('POST','analyze',{sourceId:f.source.id,model:'gpt-4.1',requestId:randomUUID()});assert.equal(incomplete.usable,false);assert.equal(incomplete.trace.finishReason,'incomplete');assert.equal(incomplete.trace.wireStatus,'response_saved');assert.deepEqual(incomplete.trace.plan,f.plan)
+ const incomplete=await workflow.dispatch('POST','analyze',{sourceId:f.source.id,model:'gpt-4.1',requestId:randomUUID()});assert.equal(incomplete.usable,false);assert.equal(incomplete.trace.finishReason,'incomplete');assert.equal(incomplete.trace.wireStatus,'response_saved');assert.deepEqual(incomplete.trace.plan,v2.plan)
 
 })
 test('analysis and planning service adapter preserve input and reject parsed output without captured wire',async t=>{
