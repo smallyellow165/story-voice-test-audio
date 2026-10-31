@@ -72,6 +72,7 @@
     "test:magnetic-3d": "vitest run --config vitest.magnetic-3d.config.ts",
     "typecheck:magnetic-3d": "tsc -p tsconfig.magnetic-3d.json",
     "test:magnetic-3d:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-viewer.mjs",
+    "test:magnetic-3d:collision:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-collisions.mjs",
     "test:magnetic-3d:inspector:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-inspector.mjs",
     "test:magnetic-3d:snap:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-snap.mjs",
     "test:magnetic-3d:editor:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-editor.mjs",

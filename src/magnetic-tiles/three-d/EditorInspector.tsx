@@ -60,7 +60,7 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
   }
   return <>
     <section className="magnetic-3d-selection-detail" aria-label="Selection Detail"><h4>Selection Detail</h4>{selectionInfo}
-    {editing && selection.kind!=='none' && <fieldset className="magnetic-3d-edit-inspector" disabled={busy}><legend className="sr-only">当前选择编辑</legend>
+    {editing && (selection.kind==='piece'||selection.kind==='connection') && <fieldset className="magnetic-3d-edit-inspector" disabled={busy}><legend className="sr-only">当前选择编辑</legend>
     <PropertyPanel project={project} selection={selection}
       onSetPieceTransform={(id, pose) => apply(h => actions.setPieceTransformAction(h, id, pose))}
       onSetPieceColor={(id, c) => apply(h => actions.setPieceColorAction(h, id, c))}

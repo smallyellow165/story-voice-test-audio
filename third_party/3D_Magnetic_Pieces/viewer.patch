@@ -1,6 +1,6 @@
 --- a/src/components/MagnetScene3D.tsx
 +++ b/src/components/MagnetScene3D.tsx
-@@ -1,72 +1,29 @@
+@@ -1,72 +1,31 @@
 -import { useRef, useMemo, useEffect, useCallback } from 'react';
 -import { Canvas, useThree } from '@react-three/fiber';
 -import { OrbitControls } from '@react-three/drei';
@@ -89,6 +89,8 @@
 +import type {Connection} from '../engine/types.ts'
 +import {AssemblyTileLabels,AssemblyConnectionHighlight,TileLabelLayer} from '../../AssemblyAnnotations.tsx'
 +import type {TileLabelElements} from '../../AssemblyAnnotations.tsx'
++import {CollisionOverlay,CollisionLabel} from '../../CollisionOverlay.tsx'
++import type {CollisionDisplayProps} from '../../CollisionOverlay.tsx'
 +import type { Assembly3D } from '../../assembly.ts'
 +import { createViewerModel } from '../../viewer-model.ts'
 +import type { ViewerPiece } from '../../viewer-model.ts'
@@ -97,12 +99,12 @@
 +import { computeFitCamera, applyFitResult, pieceWorldVertices } from './magnet3d/cameraUtils.ts'
 +
 +export type CameraState = CameraView3D
-+type Props = { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void; showTileIds?:boolean;selectedConnection?:Connection;inspectionTools?:boolean;initialCameraView?:CameraView3D;onSaveCameraView?:(view:CameraView3D)=>void }
-+function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange, preset,initialCameraView,showTileIds,selectedConnection,labelElements }: {
-+  labelElements:TileLabelElements;
++type Props = CollisionDisplayProps & { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void; showTileIds?:boolean;selectedConnection?:Connection;inspectionTools?:boolean;initialCameraView?:CameraView3D;onSaveCameraView?:(view:CameraView3D)=>void }
++function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange, preset,initialCameraView,showTileIds,selectedConnection,labelElements,collision,collisionFocus,collisionLabel }: CollisionDisplayProps & {
++  labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;
 +  showTileIds?:boolean;selectedConnection?:Connection;pieces: ViewerPiece[]; selected: string | null; onSelect: Props['onSelect']; fitRequest: number; resetRequest: number;
 +  initialCameraView?:CameraView3D;onCameraChange: (state: CameraState) => void; preset:{up:[number,number,number];direction:[number,number,number]}|null
-@@ -74,129 +31,16 @@
+@@ -74,129 +33,16 @@
 -  const buildMode = model.buildMode || 'solid';
 -  const partMap = useMemo(() => getPartMap(model), [model]);
 -  const pieceMap = useMemo(() => getPieceMap(model), [model]);
@@ -233,7 +235,7 @@
 -  const controlsReadyRef = useRef(false);
 -
 +  const solids=useRef<Group>(null)
-+  const selectedIds=selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
++  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
 +  const controls = useRef<OrbitControlsImpl | null>(null)
 +  const { camera, size } = useThree()
 +  const vertices = useMemo(() => pieces.flatMap(p => pieceWorldVertices(p.shape, p.transform.position, p.transform.quaternion)), [pieces])
@@ -248,7 +250,7 @@
 +    if (result) { applyFitResult(camera, result, controls.current); report() }
 +  }, [camera, vertices, size.width, size.height, report])
 +  // Document load, container resize and explicit Fit/Reset affect the CAMERA only.
-@@ -204,118 +48,46 @@
+@@ -204,118 +50,48 @@
 -    if (!controlsRef.current) {
 -      const interval = setInterval(() => {
 -        if (controlsRef.current) {
@@ -380,8 +382,8 @@
 +  useEffect(() => () => disposeShapeResources([...new Set(pieces.map(p => p.shape))]), [pieces])
 +  return <>
 +    <SceneLighting shadowOpacity={0}><group ref={solids}>{pieces.map(p => <group key={p.id} userData={{tileId:p.id}}><MagnetPieceMesh shape={p.shape}
-+      transform={p.transform} color={p.color} selected={selectedIds.includes(p.id)}
-+      onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/></group>)}</group><AssemblyConnectionHighlight pieces={pieces} connection={selectedConnection}/>{showTileIds&&<AssemblyTileLabels pieces={pieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}</SceneLighting>
++      transform={p.transform} color={p.color} selected={selectedIds.includes(p.id)} dimmed={!!collision&&!selectedIds.includes(p.id)} inspectionMuted={!!collision&&!selectedIds.includes(p.id)} opacity={collision&&!selectedIds.includes(p.id)?.14:1}
++      onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/></group>)}</group><AssemblyConnectionHighlight pieces={pieces} connection={selectedConnection}/>{(showTileIds||collision)&&<AssemblyTileLabels pieces={pieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}<CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/></SceneLighting>
 +    <OrbitControls ref={controls} makeDefault enablePan enableZoom enableRotate enableDamping={false}
 +      minZoom={.01} maxZoom={100000} onChange={report}/>
 +  </>
@@ -391,9 +393,10 @@
 +  static getDerivedStateFromError(error: Error) { return { error: error.message } }
 +  render() { return this.state.error ? <p role="alert">3D 画布无法启动：{this.state.error}。请确认浏览器支持 WebGL；可继续使用 2D 查看。</p> : this.props.children }
 +}
-+export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=false,initialCameraView,onSaveCameraView,showTileIds,selectedConnection }: Props) {
++export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=false,initialCameraView,onSaveCameraView,showTileIds,selectedConnection,collision,collisionFocus }: Props) {
++  const collisionLabel=useRef<HTMLOutputElement>(null)
 +  const labelElements=useRef(new Map<string,HTMLSpanElement>())
-+  const selectedIds=selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
++  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
 +  const pieces = useMemo(() => createViewerModel(assembly), [assembly])
 +  const [preset,setPreset]=useState<ReturnType<typeof pieceViewPreset>|null>(null)
 +  const [fitRequest, requestFit] = useState(0), [resetRequest, requestReset] = useState(0)
@@ -408,18 +411,19 @@
 +        <Canvas orthographic camera={{ position: [5, 5, 5], zoom: 50, near: .001, far: 100 }}
 +          dpr={[1, 2]} gl={defaultGLProps} fallback={<p role="alert">浏览器不支持 WebGL，无法显示 3D。可切回 2D 查看。</p>}
 +          onPointerMissed={() => onSelect(null)}>
-+          <SceneContent pieces={pieces} labelElements={labelElements} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
++          <SceneContent pieces={pieces} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel} labelElements={labelElements} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
 +            resetRequest={resetRequest} onCameraChange={report} preset={preset} showTileIds={showTileIds} selectedConnection={selectedConnection} initialCameraView={initialCameraView}/>
 +        </Canvas>
 +      </ViewerErrorBoundary>
-+      {showTileIds&&<TileLabelLayer ids={pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
-@@ -323 +95,4 @@
++      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
++      <CollisionLabel collision={collision} label={collisionLabel}/>
+@@ -323 +99,4 @@
 -  );
 +    <p className="hint">左键拖动旋转 · 滚轮缩放 · 右键拖动平移 · 点击零件查看详情</p>
 +    <details className="magnetic-3d-camera-state"><summary>相机状态</summary>
 +      <output aria-label="3D 相机状态">{JSON.stringify(cameraState)}</output></details>
 +  </section>
-@@ -325,3 +99,0 @@
+@@ -325,3 +103,0 @@
 -
 -// 保留 debugFlags 引用以避免 tree-shaking 移除全局调试开关副作用
 -void debugFlags;
@@ -532,41 +536,53 @@
 -    dummy.position.set(mp.x, mp.y, shape.thickness / 2 + MAGNET_STRIP_HEIGHT / 2);
 +    const r = Math.min(MAGNET_STRIP_RADIUS, shape.thickness * .4);
 +    dummy.position.set(mp.x - Math.sin(mp.angle) * r * 1.5, mp.y + Math.cos(mp.angle) * r * 1.5, 0);
-@@ -439 +426 @@
+@@ -395,0 +383,2 @@
++  /** Host Assembly collision inspection only; no shared material mutation. */
++  inspectionMuted?: boolean;
+@@ -421,0 +411 @@
++  inspectionMuted = false,
+@@ -439 +429,6 @@
 -  }, [color, size.width, size.height]);
 +  }, [color]);
-@@ -497 +484 @@
++
++  const inspectionMaterials = useMemo(() => [frameMat,centerMat,edgeLineMat].map(material=>({material,opacity:material.opacity,transparent:material.transparent,depthWrite:material.depthWrite})),[frameMat,centerMat,edgeLineMat]);
++  useEffect(()=>{
++    for(const saved of inspectionMaterials){const {material}=saved;material.opacity=inspectionMuted?.12:saved.opacity;material.transparent=inspectionMuted||saved.transparent;material.depthWrite=inspectionMuted?false:saved.depthWrite;material.needsUpdate=true}
++  },[inspectionMuted,inspectionMaterials]);
+@@ -497 +492 @@
 -    const fill = parseRgbaString(magnetColorMap[color]);
 +    const fill = fillColor(color, 0.58);
-@@ -530 +517,3 @@
+@@ -530 +525,3 @@
 -      lineSegments2.geometry.dispose();
 +      frameMat.dispose();
 +      centerMat.dispose();
 +      edgeLineMat.dispose();
-@@ -532 +521 @@
+@@ -532 +529 @@
 -  }, [highlightMat, lineSegments2]);
 +  }, [highlightMat, frameMat, centerMat, edgeLineMat]);
-@@ -541,0 +531 @@
+@@ -541,0 +539 @@
 +      dispose={null}
-@@ -577 +567,3 @@
+@@ -576,2 +574,4 @@
+-      {debugFlags.showFrame && magnetStripGeom && (
 -        <mesh geometry={magnetStripGeom} castShadow={debugFlags.showShadows}>
++      {debugFlags.showFrame && magnetStripGeom && !inspectionMuted && (
 +        <instancedMesh args={[magnetStripGeom, magnetStripMat, magnetStripGeom.instanceCount]}
 +          onUpdate={mesh => { mesh.instanceMatrix.array.set(magnetStripGeom.getAttribute('instanceMatrix').array); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); }}
 +          castShadow={debugFlags.showShadows}>
-@@ -579 +571 @@
+@@ -579 +579 @@
 -        </mesh>
 +        </instancedMesh>
-@@ -589,2 +580,0 @@
+@@ -589,2 +588,0 @@
 -  for (const m of frameMatCache.values()) m.dispose();
 -  for (const m of centerMatCache.values()) m.dispose();
-@@ -592 +581,0 @@
+@@ -592 +589,0 @@
 -  for (const m of edgeLineMatCache.values()) m.dispose();
-@@ -598,2 +586,0 @@
+@@ -598,2 +594,0 @@
 -  frameMatCache.clear();
 -  centerMatCache.clear();
-@@ -601 +587,0 @@
+@@ -601 +595,0 @@
 -  edgeLineMatCache.clear();
-@@ -602,0 +589,9 @@
+@@ -602,0 +597,9 @@
 +}
 +
 +/** Release only the outgoing document's shape identities; other viewers stay intact. */

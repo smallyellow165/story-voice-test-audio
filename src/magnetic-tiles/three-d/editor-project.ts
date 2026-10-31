@@ -12,7 +12,9 @@ export type EditorProject = {
   transforms: Record<string, Pose3D>
   shapes: ReadonlyMap<string, ShapeDef>
 }
+// Collision is transient UI selection bound to an exact current snapshot, never history.
 export type Selection = { kind: 'none' } | { kind: 'piece'; id: string } | { kind: 'connection'; index: number }
+  | { kind: 'collision'; key: string; sourceKey: string }
 export type SerializableTransform = Pose3D
 export function editorProject(a: Assembly3D, catalog: ReadonlyMap<string, AdaptedProfile> = createShapeCatalog(a.profiles)): EditorProject {
   return {

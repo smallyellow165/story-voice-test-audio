@@ -380,6 +380,8 @@ export interface MagnetPieceMeshProps {
   selected?: boolean;
   highlighted?: boolean;
   dimmed?: boolean;
+  /** Host Assembly collision inspection only; no shared material mutation. */
+  inspectionMuted?: boolean;
   opacity?: number;
   onClick?: (e: any) => void;
   onPointerDown?: (e: any) => void;
@@ -406,6 +408,7 @@ export function MagnetPieceMesh({
   selected = false,
   highlighted = false,
   dimmed = false,
+  inspectionMuted = false,
   opacity = 1,
   onClick,
   onPointerDown,
@@ -424,6 +427,11 @@ export function MagnetPieceMesh({
   const edgeLineMat = useMemo(() => {
     return getEdgeLineMaterial(color, { width: size.width || 800, height: size.height || 600 });
   }, [color]);
+
+  const inspectionMaterials = useMemo(() => [frameMat,centerMat,edgeLineMat].map(material=>({material,opacity:material.opacity,transparent:material.transparent,depthWrite:material.depthWrite})),[frameMat,centerMat,edgeLineMat]);
+  useEffect(()=>{
+    for(const saved of inspectionMaterials){const {material}=saved;material.opacity=inspectionMuted?.12:saved.opacity;material.transparent=inspectionMuted||saved.transparent;material.depthWrite=inspectionMuted?false:saved.depthWrite;material.needsUpdate=true}
+  },[inspectionMuted,inspectionMaterials]);
 
   // P2-4: memoize LineSegments2 实例,避免每次渲染重建
   const lineSegments2 = useMemo(() => {
@@ -563,7 +571,7 @@ export function MagnetPieceMesh({
         />
       )}
       {/* P2-5: 边缘磁铁条 */}
-      {debugFlags.showFrame && magnetStripGeom && (
+      {debugFlags.showFrame && magnetStripGeom && !inspectionMuted && (
         <instancedMesh args={[magnetStripGeom, magnetStripMat, magnetStripGeom.instanceCount]}
           onUpdate={mesh => { mesh.instanceMatrix.array.set(magnetStripGeom.getAttribute('instanceMatrix').array); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); }}
           castShadow={debugFlags.showShadows}>

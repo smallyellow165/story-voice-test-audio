@@ -2,8 +2,8 @@ import type { Assembly3D } from './assembly.ts'
 import type { Selection } from './editor-project.ts'
 
 /** Connection indexes refer to the one current Assembly snapshot, never copied edges. */
-export function AssemblySelectionTable({ assembly, selection, select, busy }: {
-  assembly: Assembly3D; selection: Selection; select: (selection: Selection) => void; busy: boolean
+export function AssemblySelectionTable({ assembly, selection, select, busy, collisionIds=[] }: {
+  assembly: Assembly3D; selection: Selection; select: (selection: Selection) => void; busy: boolean; collisionIds?: readonly string[]
 }) {
   return <section className="magnetic-3d-selection-table" aria-label="Tiles & Connections">
     <h4>Tiles &amp; Connections</h4>
@@ -12,7 +12,7 @@ export function AssemblySelectionTable({ assembly, selection, select, busy }: {
       <tbody>{assembly.pieces.map(piece => {
         const selected = selection.kind === 'piece' && selection.id === piece.id
         const profile = assembly.profiles.find(s => s.profile.id === piece.profileId && s.profile.version === piece.profileVersion)
-        return <tr key={piece.id} data-tile-row={piece.id} data-selected={selected} onClick={() => { if (!busy) select({ kind: 'piece', id: piece.id }) }}>
+        return <tr key={piece.id} data-tile-row={piece.id} data-selected={selected} data-collision-participant={collisionIds.includes(piece.id)} onClick={() => { if (!busy) select({ kind: 'piece', id: piece.id }) }}>
           <th scope="row"><button data-3d-piece={piece.id} disabled={busy} aria-pressed={selected}
             onClick={e => { e.stopPropagation(); select({ kind: 'piece', id: piece.id }) }}>{piece.id}</button></th>
           <td title={`${piece.profileId}@${piece.profileVersion}`}><span className="magnetic-3d-swatch" style={{ background: piece.color ?? '#55b8ac' }}/>{profile?.profile.name ?? piece.profileId}<small>{piece.profileId}@{piece.profileVersion}</small></td>
