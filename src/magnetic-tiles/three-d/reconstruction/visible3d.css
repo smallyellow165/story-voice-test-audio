@@ -1,3 +1,31 @@
 .visible3d-workspace,.visible3d-inspector{min-width:0;padding:10px;overflow:auto}.visible3d-workspace label,.visible3d-inspector label{display:block;margin:8px 0}.visible3d-workspace textarea{box-sizing:border-box;width:100%;min-height:200px;font-family:monospace}.visible3d-image{max-width:100%;max-height:540px;overflow:auto;background:#f4f7f4}.visible3d-image svg{width:100%;height:auto;display:block}.visible3d-budget{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.visible3d-budget input{width:100px}.visible3d-inspector pre,.visible3d-workspace pre,.visible3d-origin pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto}.visible3d-inspector select,.visible3d-workspace select{max-width:100%}.visible3d-inspector li{margin:8px 0}.visible3d-origin{margin:8px 0;padding:10px;background:#edf4ee}.visible3d-workspace details{margin:12px 0}.visible3d-workspace button,.visible3d-inspector button{margin:4px 3px 4px 0}
 .visible3d-understanding article,.visible3d-shape article{padding:8px;margin:8px 0;border:1px solid #cbdcd5;border-radius:8px}.visible3d-understanding details{margin:10px 0}.visible3d-hidden{border-left:3px solid #9a8053;padding-left:8px}.visible3d-inspector textarea{box-sizing:border-box;width:100%;min-height:70px}
 .visible3d-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}.visible3d-compare>section{min-width:0}.visible3d-compare .magnetic-3d-canvas{height:clamp(320px,44vh,520px)}.visible3d-compare .visible3d-image{max-height:520px}.visible3d-compare .magnetic-3d-camera-tools{display:flex;gap:4px;flex-wrap:wrap}.visible3d-compare h4{margin:8px 0}.visible3d-image [data-observation]{cursor:pointer}.visible3d-image [data-observation]:focus{outline:2px solid #e43c38}@media(max-width:1000px){.visible3d-compare{grid-template-columns:1fr}}
+/* Reconstruction follows the existing Studio Inspector controls. Keep the
+   canvas independent of the inspector's length and responsive to its own pane. */
+.visible3d-reconstruction{container-type:inline-size;padding:0;overflow:visible}
+.visible3d-comparison-heading{margin:0 0 12px}
+.visible3d-comparison-heading h3{font-size:15px;margin:0 0 6px}
+.visible3d-comparison-heading p{font-size:12px;margin:0;overflow-wrap:anywhere}
+.visible3d-reconstruction .visible3d-compare{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.visible3d-reconstruction .magnetic-3d-canvas{height:clamp(320px,55vh,640px)}
+.visible3d-reconstruction .visible3d-image{max-height:clamp(360px,65vh,740px);border:1px solid #cbdcd5;border-radius:8px}
+.visible3d-reconstruction [aria-label="Observation 与 Piece 对应"]{display:flex;flex-wrap:wrap;gap:4px}
+.visible3d-reconstruction [aria-label="Observation 与 Piece 对应"] button{font-size:12px;overflow-wrap:anywhere}
+.visible3d-inspector .visible3d-control-section{gap:8px;padding:14px 0;border-top:1px solid #d9e3dc}
+.visible3d-control-section h3{font-size:15px;margin:0}
+.visible3d-control-section h4{font-size:13px;margin:0 0 6px}
+.visible3d-control-section label{margin:0}
+.visible3d-control-section select{display:block;width:100%;min-width:0}
+.visible3d-control-section button{max-width:100%;white-space:normal;overflow-wrap:anywhere;margin:0}
+.visible3d-control-section details{font-size:12px;min-width:0}
+.visible3d-control-section details[open]>summary{margin-bottom:8px}
+.visible3d-control-section summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}
+.visible3d-control-section p,.visible3d-control-section li{overflow-wrap:anywhere}
+.visible3d-control-section .visible3d-budget{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.visible3d-control-section .visible3d-budget input{width:100%;min-width:0;box-sizing:border-box}
+.visible3d-control-section .visible3d-budget button{grid-column:1/-1}
+.visible3d-control-section [role="alert"]{border-left:3px solid #b14e36;padding-left:8px;color:#843b29}
+.visible3d-control-section .visible3d-candidate-interpretation{font-size:12px;color:#53695d}
+@container(max-width:560px){.visible3d-reconstruction .visible3d-compare{grid-template-columns:minmax(0,1fr)}}
+.visible3d-control-section label.intake-check{display:flex;font-size:13px}

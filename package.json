@@ -72,6 +72,7 @@
     "test:magnetic-3d:build-order:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-build-order.mjs",
     "test:magnetic-visible3d": "node --experimental-strip-types --test test/magnetic-visible3d.test.mjs",
     "test:magnetic-visible3d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs",
+    "test:magnetic-visible3d:layout:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d-layout.mjs",
     "test:magnetic-visible3d:2d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d-2d.mjs",
     "test:magnetic-visible3d:v2": "node --experimental-strip-types --test test/magnetic-visible3d-v2.test.mjs",
     "test:magnetic-visible3d:v2:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs --v2",
