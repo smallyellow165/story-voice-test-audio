@@ -4,23 +4,28 @@ import type { Assembly3D } from './assembly.ts'
 import type { Tutorial3D } from './tutorial.ts'
 import type { BuildOrderResult } from './build-order.ts'
 import { DEFAULT_BUILD_ORDER_OPTIONS } from './build-order.ts'
+import {generateHumanTutorial} from './human-collision-client.ts'
+import type {HumanCollisionGrant} from './human-collision-policy.ts'
 import { canonical } from '../build-plan.ts'
 
 type Candidate={signature:string;source:string;result:BuildOrderResult}
-export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,onAdopt,onBeforeGenerate,onGenerated,advancedHost}:{assembly:Assembly3D|null;active:boolean;geometryValid:boolean;hasTutorial:boolean;onAdopt:(t:Tutorial3D)=>void;onBeforeGenerate:()=>boolean;onGenerated:(result:BuildOrderResult)=>void;advancedHost:HTMLElement|null}){
+export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,onAdopt,onBeforeGenerate,onGenerated,advancedHost,humanGrant}:{humanGrant?:HumanCollisionGrant;assembly:Assembly3D|null;active:boolean;geometryValid:boolean;hasTutorial:boolean;onAdopt:(t:Tutorial3D)=>void;onBeforeGenerate:()=>boolean;onGenerated:(result:BuildOrderResult)=>void;advancedHost:HTMLElement|null}){
   const [candidate,setCandidate]=useState<Candidate|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [evaluations,setEvaluations]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxEvaluations)),[beam,setBeam]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.beamWidth))
   const [transitions,setTransitions]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxTransitions)),[connections,setConnections]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxConnectionsPerStep))
   const [grounded,setGrounded]=useState(false),worker=useRef<Worker|null>(null),request=useRef(0)
   const signature=assembly?canonical(assembly):'',currentSignature=useRef(signature);currentSignature.current=signature
   function cancel(){request.current++;worker.current?.terminate();worker.current=null;setBusy(false)}
-  useEffect(()=>{if(!active&&worker.current){cancel();setError('离开 3D Build，生成已取消；当前教程保留。')}},[active])
-  useEffect(()=>{if(worker.current){cancel();setError('来源作品已变化，生成已取消；请重新生成。')}},[signature])
+  useEffect(()=>{if(!active&&busy){cancel();setError('离开 3D Build，生成已取消；当前教程保留。')}},[active])
+  useEffect(()=>{if(busy){cancel();setError('来源作品已变化，生成已取消；请重新生成。')}},[signature])
   useEffect(()=>()=>{worker.current?.terminate();request.current++},[])
   function generate(){
     if(!assembly||!geometryValid||!onBeforeGenerate())return
     cancel();const seq=++request.current,source=signature;setError('');setCandidate(null);setBusy(true)
     try{
+      if(humanGrant){
+        generateHumanTutorial(assembly,{maxEvaluations:Number(evaluations),maxTransitions:Number(transitions),beamWidth:Number(beam),maxConnectionsPerStep:Number(connections),requireGroundedStart:grounded}).then(result=>{if(seq!==request.current||currentSignature.current!==source)return;setBusy(false);setCandidate({signature:source,source:`${assembly.id} @ revision ${assembly.revision}`,result});if(result.status==='complete'&&(result.finalGeometryValid||result.humanApproved)&&result.connectedConstruction)onGenerated(result)}).catch(e=>{if(seq===request.current){setBusy(false);setError(String(e))}});return
+      }
       const task=new Worker(new URL('./build-order.worker.ts',import.meta.url),{type:'module'});worker.current=task
       task.onmessage=(e:MessageEvent<{request:number;result?:BuildOrderResult;error?:string}>)=>{
         if(e.data.request!==request.current||currentSignature.current!==source)return
@@ -47,7 +52,7 @@ export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,o
     </details>
     {result&&<div data-testid="build-order-result">
       <h4>最近一次生成候选 · 独立于当前教程</h4><p>{candidate.source}</p>
-      <p>{result.status} · {result.tutorial?.steps.length??0} 步 · 最终 Geometry {result.finalGeometryValid===null?'未检查':result.finalGeometryValid?'Valid':'Invalid'} · 完整 Connected Construction {result.connectedConstruction?'通过':'未通过'}</p>
+      <p>{result.status} · {result.tutorial?.steps.length??0} 步 · 最终 Geometry {result.finalGeometryValid===null?'未检查':result.finalGeometryValid?'Valid':result.humanApproved?'Invalid + Human Approved':'Invalid'} · 完整 Connected Construction {result.connectedConstruction?'通过':'未通过'}</p>
       <p data-testid="build-order-stats">几何检查 {result.stats.evaluations}/{result.stats.options.maxEvaluations} · 候选展开 {result.stats.transitions}/{result.stats.options.maxTransitions} · 缓存 {result.stats.cacheHits} · 裁剪 {result.stats.beamPruned} · 完整候选 {result.stats.completeCandidates} · 终止 {result.stats.termination} · 评分 {result.stats.bestScore??'—'}</p>
       {result.tutorial&&<button disabled={stale||busy} onClick={()=>{if(candidate.signature!==currentSignature.current){setError('来源已变化，请重新生成。');return}onAdopt(result.tutorial!)}}>{result.status==='complete'?hasTutorial?'采用候选并替换当前 Draft':'采用为 Tutorial Draft':'采用未完成候选 Draft'}</button>}
       <p className="hint">完整结果会自动进入未保存预览；不代表人工审核通过。手动编辑后，原规划评分仅供参考；原始生成结果保留在这里。</p>

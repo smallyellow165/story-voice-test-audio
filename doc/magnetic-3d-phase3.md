@@ -84,3 +84,35 @@
 现有 Solver 是按图遍历放置并报告闭环残差，不是全局闭环优化器；错误闭环不保证通过求解变合法。保持既有薄片碰撞精度/曲线离散化边界，不提供真实物理稳定性、磁力强度或承重模拟。允许多组件/自由片，它们的组件数明确显示，Geometry Valid 不意味着已连接成单体。复杂零件数量下的交互性能、所有端口磁吸及触控编辑未做穷举压力测试。
 
 下一阶段建议复用上游 Tutorial Player、步骤显示、相机插值和播放控制；在边界层将步骤引用映射到 Assembly3D 的零件 ID 和快照 Pose，继续保留显式编辑/求解与播放隔离，不让教程加载或播放覆盖已保存 Draft。先验证同一 Draft 的增量展示、前后步切换与 Pose 不变，再接现有 Build UI。本次没有实施阶段四。
+
+## Human Collision Review V1（2026-10-31）
+
+此增量将“严格几何结果”和“人工工作流授权”分开。Geometry Check 中 Collision Review 改为 Table；点行只选择原有真实交集可视化，Checkbox 只提交该碰撞的人工接受。进度全部完成后，用户明确点击“批准当前作品”，同时沿用现有 CAS 保存当前 3D Draft。Geometry Invalid、原始 Error 和穿透深度均保持原样，新增独立的 `Human Approved` 状态，不代表真实物理稳定。
+
+只有严格 Validator 的错误全部为已识别、正深度、可定位的 `intersection` 时才能批准。Profile、Port、Dihedral、连接、闭环、未知错误或不可定位的碰撞一律阻断。`human-collision-policy.ts` 只判定授权适用性，不改变 Validator、Solver 或碰撞代理。
+
+### 服务端权威记录
+
+沿用 `magnetic-intake` API 和 Profile Registry 的原子独占发布方式。运行时新审核保存在 `generated/magnetic-intake/assembly3d-review/`：
+
+- `heads/<Assembly ID>/<version>.json`：追加式 CAS 版本链，完整 Assembly3D 快照、Revision、SHA-256、严格 Validator 结果/Hash、已接受项及当前批准 ID。
+- `approvals/<id>.json`：不可变人工批准凭据，绑定精确快照及完整碰撞集合；仅当前 head 引用的凭据有效。照片采用来源存在时额外保留原来源 ID/Hash。
+- `tutorials/<id>.json`：经服务端重新校验的原格式 Tutorial3D 保存快照及批准引用。不会剪除既有证据；CAS 冲突时未被 head 引用的文件不授予权限。
+
+API 为 `/api/magnetic-intake/assembly3d-review/` 下的 `session/status/sync/accept/approve/revalidate/generate/saveTutorial`，全部使用 POST。除 session 外，要求内存中的会话 capability；每次仍校验开发环境、直接 loopback、无代理及同源 Origin。当前 Studio 没有用户账户/角色系统，本版授权主体是本机操作员，远程/生产访问关闭，不将其宣称为多用户审批系统。会话有效期八小时，刷新后可重新建立会话，已保存批准由服务端恢复。
+
+浏览器 `magnetic-tiles.human-collision-review.v1` 仅保存服务端记录发现标志、CAS 版本及未完成同步的失效标记，不保存权威批准。批准必须从服务端取得并与当前快照精确匹配。几何变更同步清空接受项和批准；Undo/Redo 回到旧字节也不恢复旧授权。同一快照 Revalidate 重新计算诊断，诊断未变可保留授权，变化则清除。保存/刷新不改几何时可恢复。若崩溃前服务端已记录未保存的几何修改、而浏览器恢复较旧的已保存 Draft，会阻断旧授权；显式 Revalidate 并确认使用当前 Draft 后，CAS 注册为新审核版本，必须重新逐项批准。
+
+### Build 集成
+
+Assembly3D 正式格式不变。Tutorial3D.source 仅增加可选 `humanCollisionApproval` 引用（批准 ID、快照 Hash、诊断 Hash），旧文档继续可读；导入引用本身不授予权限。严格几何合法的正常 Worker 路径不变。人工批准的 Invalid 作品通过服务端调用同一个确定性 Build Order 规划器，每一步仍执行原 Validator，只允许与批准凭据逐项相符的碰撞进入工作流；连接性、完整分配及其他结构错误仍阻断。最终和每步的原始 Geometry Valid 字段保持 false，诊断仍为 Error，另标 `humanAccepted` / `humanApproved`。
+
+正式教程保存前服务端再次检查当前 CAS 版本、授权、几何快照、步骤分配、每步几何和连通性，再沿用现有本地 Tutorial 历史/Player。过期或未批准的 Invalid 教程可保留未完成 Draft，但不能普通播放/正式保存。当前 UI 只为与当前 Assembly 精确匹配的批准作品开放；打开其他作品的旧批准教程，需要先恢复对应的 Assembly 快照。既有本地单 Draft 保存槽和最多 50 个教程的 UI 限制不变。
+
+### 验证与手动验收
+
+- `npm run test:magnetic-human-collision`：本机/同源授权、四项逐项接受、严格 Invalid 保留、六步规划、服务器保存、结构错误/伪造引用拒绝、并发 CAS、编辑/Undo 失效、相同诊断 Revalidate、重启恢复、取消接受及记录完整性。
+- `npm run test:magnetic-human-collision:browser`：隔离临时 API 与真实 Chrome/WebGL，读取现有橙色六片 Pose；四组真实体积选择/聚焦、接受与选择分离、批准、六步 Player、保存刷新/历史打开、编辑/Undo/取消接受失效、较旧存档恢复及 1660/1100/680 布局。不调用模型，不写正式历史。证据在 `/tmp/magnetic-human-collision-browser/`。
+- 用户从 Reconstruction Diagnostic 的既有 Override 进入六片待修复 Draft 后，在 Geometry Check 逐行查看并接受四项碰撞，点击“批准当前作品”。此时仍显示红色 Geometry Invalid 和 Human Approved；进入 Build 点击“生成搭建教程”，检查并保存。回 Assembly 修改 Pose 后旧接受项/批准必须立即失效；Revalidate 仍使用严格 Validator，再逐项审核。
+
+本版没有添加物理规则、自动通过碰撞、磁力、圆角或新的播放器。V1 服务端审核限制为 1–64 片、512 条连接、2 MB Assembly 快照；没有进行大规模性能或多用户角色测试。

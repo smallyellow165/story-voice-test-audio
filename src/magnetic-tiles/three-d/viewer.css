@@ -101,11 +101,11 @@
 .magnetic-3d-display-tools>label{display:inline-flex;align-items:center;gap:5px}
 .magnetic-3d-display-tools>label input[type=checkbox]{width:auto;margin:0}
 .magnetic-3d-collision-review{border-top:1px solid #d8e3dd;margin-top:10px;padding-top:4px}
-.magnetic-3d-collision-list{display:grid;gap:3px}
-.magnetic-3d-collision-list button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;font-size:12px;padding:5px 7px;white-space:normal;overflow-wrap:anywhere;max-width:100%;color:inherit}
-.magnetic-3d-collision-list button small{font-size:11px;color:inherit}
-.magnetic-3d-collision-list button[aria-pressed=true]{border-color:#9b2727;box-shadow:inset 3px 0 #9b2727}
 .magnetic-3d-collision-review .button-row{margin:6px 0;display:flex;gap:5px;flex-wrap:wrap}
 .magnetic-3d-collision-review button{font-size:12px}
 .magnetic-3d-collision-label{position:absolute;top:0;left:0;z-index:4;pointer-events:none!important;visibility:hidden;padding:5px 7px;border:1px solid #9b2727;border-radius:4px;background:#fffef5f2;color:#8e2424;font:12px/1.4 sans-serif;max-width:calc(100% - 16px);overflow-wrap:anywhere}
 .magnetic-3d-selection-table [data-collision-participant=true]{box-shadow:inset 2px 0 #9b2727}
+
+.magnetic-3d-collision-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}.magnetic-3d-collision-heading h4{margin:8px 0}
+.magnetic-3d-collision-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}.magnetic-3d-collision-table th,.magnetic-3d-collision-table td{padding:5px 4px;border-bottom:1px solid #d8e3dd;text-align:left;overflow-wrap:anywhere}.magnetic-3d-collision-table thead{background:#eef3ef}.magnetic-3d-collision-table tr[aria-selected=true]{box-shadow:inset 2px 0 #9b2727}.magnetic-3d-collision-table td button{font-size:11px;padding:3px 4px;white-space:normal}.magnetic-3d-collision-table input{width:auto}
+.magnetic-3d-collision-actions{display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap;margin:7px 0}.magnetic-3d-collision-actions>div{display:flex;gap:4px;flex-wrap:wrap}.magnetic-3d-collision-actions button{padding:5px;font-size:11px;max-width:100%}

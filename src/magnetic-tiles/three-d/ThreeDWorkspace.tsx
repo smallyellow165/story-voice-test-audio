@@ -16,6 +16,9 @@ import type { Selection } from './editor-project.ts'
 import { EditorCanvas } from './vendor/components/editor/EditorCanvas.tsx'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
 import {InfoHint} from '../../brick-vision/InfoHint.tsx'
+import {useHumanCollisionReview} from './useHumanCollisionReview.ts'
+import {hasHumanReview} from './human-collision-client.ts'
+import {collisionReviewPolicy,collisionErrorKey} from './human-collision-policy.ts'
 import {collisionVisual,collisionPairKey,collisionLocality} from './collision-visual.ts'
 import type {CollisionFocus} from './CollisionOverlay.tsx'
 import {AssemblySelectionTable} from './AssemblySelectionTable.tsx'
@@ -77,6 +80,7 @@ export default function ThreeDWorkspace() {
     }catch(e){setError(String(e))}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
+  const humanReview=useHumanCollisionReview(current,active,true)
   const operationBusy=!!live||!!pendingSnap
   const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
@@ -90,6 +94,9 @@ export default function ThreeDWorkspace() {
   const geometryGate=useMemo(()=>photoDraftGeometryGate(assembly,photoOrigin,validation),[assembly,photoOrigin,validation])
   const selectedConnection=selection.kind==='connection'?assembly.connections[selection.index]:undefined
   const geometryErrors=validation.issues.filter(i=>i.severity==='error')
+  const reviewPolicy=useMemo(()=>collisionReviewPolicy(assembly,validation),[assembly,validation])
+  const reviewedCount=reviewPolicy.keys.filter(k=>humanReview.state?.acceptedKeys.includes(k)).length
+  const allReviewed=reviewPolicy.keys.length>0&&reviewedCount===reviewPolicy.keys.length
   const collisionIssues=useMemo(()=>validation.issues.filter(i=>i.severity==='error'&&i.code==='intersection'),[validation])
   const selectedCollision=useMemo(()=>{
     if(!active||operationBusy||selection.kind!=='collision'||selection.sourceKey!==snapshotKey)return undefined
@@ -105,7 +112,7 @@ export default function ThreeDWorkspace() {
   const catalog = useMemo(() => createShapeCatalog(current.profiles), [profileSignature])
   const shapes = useMemo(() => new Map([...catalog].map(([key, item]) => [key, item.shape])), [catalog])
   const project = useMemo(() => ({ ...editorProject(current, catalog), shapes }), [current, catalog, shapes])
-  function accept(next: EditorHistory) { setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { if(next.current.id===historyRef.current.current.id&&canonical(next.current)!==canonical(historyRef.current.current))humanReview.noteMutation(next.current);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
@@ -157,7 +164,8 @@ export default function ThreeDWorkspace() {
     setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null)
     const target=historyRef.current.current,signature=serializeAssembly3D(target);
     try {
-      if(operationBusy)throw Error('请先结束画布操作或吸附预览，再执行 Revalidate Geometry');
+      if(operationBusy||humanReview.busy)throw Error('请先结束当前画布或审核操作，再执行 Revalidate Geometry');
+      if(hasHumanReview(target.id))await humanReview.revalidate();
       const report=validateAssembly3D(target);
       if(photoDraftGeometryGate(target,loadPhotoOrigin(localStorage),report).repair){
         const next=await revalidatePhotoDraft(localStorage,target,expectedRaw.current);
@@ -168,6 +176,9 @@ export default function ThreeDWorkspace() {
       }else setSaveNotice(`Revalidate Geometry：revision ${target.revision} · ${report.valid?'Geometry Valid':'Geometry Invalid；保留 Draft'}`);
       setError(report.valid?'':'严格复验失败：'+report.issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'));
     } catch(e) {setError(String(e))}
+  }
+  async function approveCurrent(){
+    try{if(operationBusy||humanReview.busy)throw Error('请先结束当前操作');if(boot.error)throw Error(boot.error);expectedRaw.current=saveDraft3D(localStorage,historyRef.current.current,expectedRaw.current);setClean(serializeAssembly3D(historyRef.current.current));setLoaded(old=>({...old,isDraft:true}));await humanReview.approve();setError('')}catch(e){setError(String(e))}
   }
   function reloadSaved() {
     if (!allowReplace()) return
@@ -234,25 +245,29 @@ export default function ThreeDWorkspace() {
           <p>{editing ? (snapMode==='drag'?'拖动吸附：选择零件，拖动 Gizmo 靠近兼容边，松手后确认或取消。没有候选时保留原位；自由移动/旋转可使用 Edit Tools。':'点击吸附：选择源零件 B 及其连接边，再点击目标 A 的兼容边或在右栏指定，预览后确认。') : 'View 只读：点击画布或表格查看。'}</p>
           <p>已连接零件需要移动时，请先明确解除连接。手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。WASDQE 移动，RTFGVB 旋转，Shift 大步；Undo / Redo 可恢复编辑。</p>
           <p>连接使用当前 Assembly 中的索引 # 作为身份；两端表格按钮指向同一条连接。标签被其他零件遮挡时隐藏，选中标签仍保留并使用虚线；标签不拦截鼠标。</p>
-          <p>几何校验不代表真实磁力或物理稳定性保证。Invalid Draft 可保存继续编辑，不能作为合法 Assembly 或进入 Build。</p>
+          <p>几何校验不代表真实磁力或物理稳定性保证。Invalid Draft 可保存继续编辑；只有严格通过或当前快照的碰撞获有效人工批准后，才能进入正式 Build。人工批准不代表 Geometry Valid 或物理稳定。</p>
         </InfoHint></header>
         <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
           <p role="status"><b className={!validation.valid?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':geometryGate.repair&&!geometryGate.current?'Needs Revalidation':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
           <button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>
           {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
-          {geometryGate.repair&&<div aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker?'alert':'status'}>{geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></div>}
-          <section className="magnetic-3d-collision-review" aria-label="Collision Review"><h4>Collision Review · {collisionIssues.length}</h4>
-            {!collisionIssues.length?<p className="hint">当前严格 Validator 未报告实体碰撞。</p>:<><div className="magnetic-3d-collision-list">{collisionIssues.map((issue,index)=>{
-              const key=collisionPairKey(issue.relatedPieceIds??[]),selected=selectedCollision?.key===key
-              return <button key={index} disabled={operationBusy||!issue.relatedPieceIds||issue.relatedPieceIds.length!==2} data-collision-key={key} aria-pressed={selected}
-                title={issue.message} onClick={()=>{setSelection(selected?{kind:'none'}:{kind:'collision',key,sourceKey:snapshotKey});setCollisionFocus(null)}}>
-                <span>{issue.relatedPieceIds?.join(' / ')??'未指定零件对'} · depth {typeof issue.penetrationDepth==='number'?depthFormat(issue.penetrationDepth):'—'}</span>
-                <small>{selectedCollision?.key===key?collisionLocality(selectedCollision.evidence.locality):issue.message.includes('完全重叠')?'完全重叠':issue.message.includes('平行面')?'平行板面内部重叠':'完整厚度实体代理穿透'}</small>
-              </button>
-            })}</div>
-            {selectedCollision&&<><div className="button-row"><button disabled={!selectedCollision.center} onClick={()=>setCollisionFocus({target:selectedCollision,sequence:(collisionFocus?.sequence??0)+1})}>聚焦碰撞</button><button onClick={()=>{setSelection({kind:'none'});setCollisionFocus(null)}}>取消碰撞选择</button></div>
-              <p className="hint">{selectedCollision.kind==='volume'?'显示完整厚度碰撞代理的实际交集（透视），与 Viewer 外观网格不同；仍为 Invalid。':selectedCollision.reason}</p></>}
-            </>}
+          {geometryGate.repair&&<div aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker&&!humanReview.grant?'alert':'status'}>{humanReview.grant?'Geometry Invalid + Human Approved：本快照的碰撞已获人工授权，可进入 Build；不代表 Geometry Valid。':geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></div>}
+          <section className="magnetic-3d-collision-review" aria-label="Collision Review"><div className="magnetic-3d-collision-heading"><h4>Collision Review · {collisionIssues.length}</h4><span data-testid="collision-review-progress">{reviewedCount}/{reviewPolicy.keys.length} 已审核</span></div>
+            {!collisionIssues.length?<p className="hint">当前严格 Validator 未报告实体碰撞。</p>:<table className="magnetic-3d-collision-table"><colgroup><col/><col style={{width:'20%'}}/><col style={{width:'18%'}}/></colgroup><thead><tr><th>Tile Pair</th><th>Depth</th><th>接受</th></tr></thead><tbody>{collisionIssues.map((issue,index)=>{
+              const key=collisionPairKey(issue.relatedPieceIds??[]),acceptedKey=collisionErrorKey(issue),selected=selectedCollision?.key===key,select=()=>{if(!operationBusy){setSelection(selected?{kind:'none'}:{kind:'collision',key,sourceKey:snapshotKey});setCollisionFocus(null)}}
+              return <tr key={index} data-collision-key={key} aria-selected={selected} title={issue.message} onClick={select}>
+                <td><button disabled={operationBusy||!issue.relatedPieceIds||issue.relatedPieceIds.length!==2} aria-pressed={selected} onClick={e=>{e.stopPropagation();select()}}>{issue.relatedPieceIds?.join(' / ')??'未指定零件对'}</button></td>
+                <td>{typeof issue.penetrationDepth==='number'?depthFormat(issue.penetrationDepth):'—'}</td>
+                <td><input type="checkbox" aria-label={`接受碰撞 ${issue.relatedPieceIds?.join(' / ')}`} checked={humanReview.state?.acceptedKeys.includes(acceptedKey)??false} disabled={operationBusy||humanReview.busy||!reviewPolicy.eligible} onClick={e=>e.stopPropagation()} onChange={e=>void humanReview.accept(acceptedKey,e.target.checked,photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?String(photoOrigin.origin.id):undefined)}/></td>
+              </tr>
+            })}</tbody></table>}
+            <div className="magnetic-3d-collision-actions"><div><button disabled={!selectedCollision?.center} onClick={()=>selectedCollision&&setCollisionFocus({target:selectedCollision,sequence:(collisionFocus?.sequence??0)+1})}>聚焦碰撞</button><button disabled={!selectedCollision} onClick={()=>{setSelection({kind:'none'});setCollisionFocus(null)}}>取消碰撞选择</button></div>
+              <button disabled={operationBusy||humanReview.busy||!reviewPolicy.eligible||!allReviewed||!!humanReview.grant} onClick={()=>void approveCurrent()}>批准当前作品</button></div>
+            {humanReview.grant&&<p role="status" data-testid="human-collision-approved">Geometry Invalid + Human Approved · 已保存当前 Draft；允许进入 Build。Physical Stability 未验证。</p>}
+            {humanReview.busy&&<p role="status" className="hint">正在提交审核，请稍候。</p>}
+            {humanReview.error&&<p role="alert">{humanReview.error} <button onClick={()=>void humanReview.refresh()}>重新读取审核</button></p>}
+            {!!reviewPolicy.blockers.length&&<p className="magnetic-3d-blocker">存在结构性、未知或不可定位错误，不能批准当前作品。</p>}
+            {selectedCollision&&<p className="hint">{selectedCollision.kind==='volume'?'显示完整厚度碰撞代理的实际交集（透视），与 Viewer 外观网格不同；仍为 Invalid。':selectedCollision.reason}</p>}
           </section>
           <details onToggle={e=>setShowGeometryDetails(e.currentTarget.open)}><summary>详细几何 / Collision Diagnostic · {validation.issues.length}</summary>
             <p>{assembly.id} · revision {assembly.revision}</p>

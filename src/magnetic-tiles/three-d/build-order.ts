@@ -6,6 +6,8 @@ import { createViewerModel, componentCount } from './viewer-model.ts'
 import { pieceWorldVertices, computeFitCamera } from './vendor/components/magnet3d/cameraUtils.ts'
 import { assertTutorial3D, syncStepConnections, assertCamera } from './tutorial.ts'
 import type { Tutorial3D } from './tutorial.ts'
+import {collisionErrorsAccepted,grantMatches,referenceFor} from './human-collision-policy.ts'
+import type {HumanCollisionGrant} from './human-collision-policy.ts'
 import { canonical } from '../build-plan.ts'
 
 export const BUILD_ORDER_VERSION = 'geometry-beam-v1'
@@ -20,13 +22,13 @@ export const DEFAULT_BUILD_ORDER_OPTIONS = {
 export type BuildOrderStatus = 'complete' | 'budget-exhausted' | 'search-limited' | 'no-order' | 'invalid-assembly' | 'input-limit' | 'invalid-options'
 export type BuildOrderDiagnostic = { code: string; severity: 'warning' | 'error'; message: string; stepId?: number; pieceId?: string }
 export type StepEstimate = {
-  stepId: number; pieceId: string; geometryValid: boolean; connected: boolean; groundContact: boolean
+  stepId: number; pieceId: string; geometryValid: boolean; humanApproved?:boolean; connected: boolean; groundContact: boolean
   newConnections: number; loopClosures: number; supportBelow: boolean; overhang: number
   score: number; terms: Record<string, number>; warnings: string[]
 }
 export type BuildOrderResult = {
   version: typeof BUILD_ORDER_VERSION; status: BuildOrderStatus; tutorial: Tutorial3D | null
-  finalGeometryValid: boolean | null; connectedConstruction: boolean
+  humanApproved?:boolean; finalGeometryValid: boolean | null; connectedConstruction: boolean
   buildabilityEstimate: 'review-required' | 'incomplete' | 'not-assessed'; physicalStability: 'not-assessed'
   diagnostics: BuildOrderDiagnostic[]; estimates: StepEstimate[]
   stats: { evaluations: number; transitions: number; cacheHits: number; rejectedGeometry: number; rejectedConstraints: number
@@ -46,7 +48,7 @@ function identity(text: string) {
   return `${(a>>>0).toString(16).padStart(8,'0')}${(b>>>0).toString(16).padStart(8,'0')}`
 }
 /** Bounded, deterministic beam/DP search. No solver, input mutation or installation-path simulation. */
-export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptions = {}): BuildOrderResult {
+export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptions = {},grant?:HumanCollisionGrant): BuildOrderResult {
   const config={...DEFAULT_BUILD_ORDER_OPTIONS,...options}
   const result: BuildOrderResult={version:BUILD_ORDER_VERSION,status:'no-order',tutorial:null,finalGeometryValid:null,
     connectedConstruction:false,buildabilityEstimate:'not-assessed',physicalStability:'not-assessed',diagnostics:[],estimates:[],
@@ -82,10 +84,13 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
   const finalCheck=validateAssembly3D(input,{checkGround:true});result.stats.evaluations++
   const geometryOK=(check:ReturnType<typeof validateAssembly3D>)=>!check.issues.some(i=>i.severity==='error'&&i.code!=='ground')
   result.finalGeometryValid=geometryOK(finalCheck)
-  if(!result.finalGeometryValid){
+  const approved=grantMatches(input,grant)&&collisionErrorsAccepted({...finalCheck,issues:finalCheck.issues.filter(i=>i.code!=='ground')},grant)
+  if(!result.finalGeometryValid&&!approved){
     for(const i of finalCheck.issues)result.diagnostics.push({code:i.code??'FINAL_GEOMETRY',message:i.message,severity:i.severity,pieceId:i.pieceId})
     return stop('invalid-assembly','FINAL_GEOMETRY_INVALID','最终 Assembly Geometry Invalid；未生成教程。')
   }
+  if(!result.finalGeometryValid&&approved){result.humanApproved=true;for(const i of finalCheck.issues.filter(i=>i.severity==='error'&&i.code==='intersection'))result.diagnostics.push({code:'HUMAN_ACCEPTED_COLLISION',severity:'error',message:'人工已接受（严格检查仍为 Error）：'+i.message})}
+  const acceptedGeometry=(check:ReturnType<typeof validateAssembly3D>)=>geometryOK(check)||approved&&collisionErrorsAccepted({...check,issues:check.issues.filter(i=>i.code!=='ground')},grant)
   const components=componentCount(input)
   if(components!==1)return stop('no-order','DISCONNECTED_SOURCE',`最终几何合法，但有 ${components} 个组件；V1 要求从单片开始并保持累计结构连通，无法覆盖全部零件。`)
   const graph=pieces.map(()=>[] as {other:number; midY:number; angle:number}[])
@@ -97,8 +102,8 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
     graph[a].push({other:b,midY:mid.y,angle:Math.abs(c.dihedralDeg)})
     graph[b].push({other:a,midY:mid.y,angle:Math.abs(c.dihedralDeg)})
   }
-  type Checked = { valid:boolean; validationWarnings:string[] }
-  const cache=new Map<bigint,Checked>([[all,{valid:true,validationWarnings:finalCheck.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}]])
+  type Checked = { valid:boolean; strict:boolean; validationWarnings:string[] }
+  const cache=new Map<bigint,Checked>([[all,{valid:true,strict:!!result.finalGeometryValid,validationWarnings:finalCheck.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}]])
   const rejected:BuildOrderDiagnostic[]=[]
   let exhausted=''
   function check(mask:bigint):Checked|null{
@@ -107,7 +112,7 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
     const ids=new Set(pieces.filter((_,i)=>has(mask,i)).map(p=>p.id))
     const check=validateAssembly3D({...input,pieces:input.pieces.filter(p=>ids.has(p.id)),connections:input.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB))},{checkGround:true,requireConnected:true})
     result.stats.evaluations++
-    const value={valid:geometryOK(check),validationWarnings:check.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}
+    const value={valid:acceptedGeometry(check),strict:geometryOK(check),validationWarnings:check.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}
     cache.set(mask,value);if(!value.valid){result.stats.rejectedGeometry++;if(rejected.length<3){const issue=check.issues.find(i=>i.severity==='error'&&i.code!=='ground');if(issue)rejected.push({code:issue.code??'REJECTED_PREFIX',severity:'warning',message:`候选前缀被拒绝：${issue.message}`,pieceId:issue.pieceId})}}
     return value
   }
@@ -153,7 +158,7 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
       if(closures)warnings.push(`本步同时形成 ${links.length} 条连接、闭合 ${closures} 个图环；安装路径与操作空间尚未验证。`)
       if(coveredUnplaced)warnings.push(`其下方投影范围仍有 ${coveredUnplaced} 片未安装，可能遮挡后续操作空间。`)
       warnings.push(...checked.validationWarnings)
-      const estimate:StepEstimate={stepId:depth+1,pieceId:p.id,geometryValid:true,connected:true,groundContact:p.ground,newConnections:links.length,loopClosures:closures,supportBelow,overhang:round(overhang),score:cost,terms,warnings}
+      const estimate:StepEstimate={stepId:depth+1,pieceId:p.id,geometryValid:checked.strict,...(!checked.strict&&approved?{humanApproved:true}:{}),connected:true,groundContact:p.ground,newConnections:links.length,loopClosures:closures,supportBelow,overhang:round(overhang),score:cost,terms,warnings}
       const candidate:State={mask,order:[...state.order,i],score:round(state.score+cost),estimates:[...state.estimates,estimate]}
       if(candidate.order.length>best.order.length||candidate.order.length===best.order.length&&compareState(candidate,best)<0)best=candidate
       if(mask===all){result.stats.completeCandidates++;if(!complete||compareState(candidate,complete)<0)complete=candidate}
@@ -182,7 +187,7 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
   if(!chosen.order.length)return result
   const source=structuredClone(input)
   const tutorial:Tutorial3D={kind:'magnetic-tutorial-3d',schemaVersion:1,id:`auto3d-${identity(canonical({source,config,order:chosen.order.map(i=>pieces[i].id)}))}`,
-    revision:0,title:'自动 3D 搭建顺序 · 待审核',source:{assemblyId:source.id,assemblyRevision:source.revision},assembly:source,steps:[]}
+    revision:0,title:'自动 3D 搭建顺序 · 待审核',source:{assemblyId:source.id,assemblyRevision:source.revision,...(approved&&grant?{humanCollisionApproval:referenceFor(grant)}:{})},assembly:source,steps:[]}
   const visible:typeof pieces=[]
   for(const [stepIndex,i] of chosen.order.entries()){
     const p=pieces[i],e=chosen.estimates[stepIndex];visible.push(p)

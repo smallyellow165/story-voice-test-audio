@@ -50,7 +50,7 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
-const magneticIntake = createMagneticIntake(path.join(generatedDirectory, 'magnetic-intake'))
+const magneticIntake = createMagneticIntake(path.join(generatedDirectory, 'magnetic-intake'),{enableHumanReview:()=>vite.config.command==='serve'&&!vite.config.isProduction&&process.env.NODE_ENV!=='production'})
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const sourceImages = createSourceImageStore(path.join(generatedDirectory, 'brick-source-images'))
@@ -565,7 +565,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 403, {error:'仅接受同源 Magnetic Intake 操作'}); return
       }
       const body = request.method === 'POST' ? await readJsonBody(request, 18 * 1024 * 1024) : {}
-      sendJson(response, 200, await magneticIntake.dispatch(request.method, url.pathname.slice('/api/magnetic-intake/'.length), body))
+      sendJson(response, 200, await magneticIntake.dispatch(request.method, url.pathname.slice('/api/magnetic-intake/'.length), body,{request}))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 422, {error:error.message || 'Magnetic Intake 操作失败，未自动重试'}) }
     return
   }
