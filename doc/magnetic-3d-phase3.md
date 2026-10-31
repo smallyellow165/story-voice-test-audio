@@ -134,3 +134,9 @@ Edit Draft 工具栏的“对称补全”打开 Inspector 工具，并给现有 
 Assembly3D 格式不变。照片来源的原 `origin` 记录完全不改；已有本地照片来源 sidecar 可追加只读 `symmetryFills`（平面、来源/新增 ID、前后 Revision），在“照片来源与快照”折叠区查看。它只作编辑假设追溯，不授予权限或修改 Observation。和原照片来源一致，这份 sidecar 不包含在裸 Assembly3D JSON 中；无照片来源的作品仍可使用工具，但本版没有额外的通用来源档案。模型当前是双面、沿 Z 对称的薄片，不支持有单面装饰或非对称厚度实体的语义镜像。
 
 验证命令：`npm run test:magnetic-3d`（几何/版本/尺寸/任意刚体根位姿、重命名、重复/错误平面/缺失端口、不同作品、原位不变及原全部回归）；`npm run test:magnetic-symmetry-fill`（真实保存案例，六片批准失效、八项重审、九步生成及服务端正式教程保存）；`npm run test:magnetic-symmetry-fill:browser`（临时 API 复制既有来源，真实 Chrome/WebGL，预览三视图、旋转/Fit/Reset、取消/确认、Undo/Redo、保存刷新、九步教程及 1660/1100/680 布局）。浏览器证据在 `/tmp/magnetic-symmetry-browser/`；没有付费模型调用或正式记录写入。
+
+## Assembly 主要操作栏（2026-10-31）
+
+`Revalidate Geometry`、`保存 3D Draft`、`批准当前作品`移到中栏 Viewer 上方的单一操作栏，右栏不再重复。保存仍按原行为仅 Edit Draft 显示；所有事件、disabled 条件、原有错误/成功反馈和审批机制不变。栏内复用当前 Geometry、碰撞数量、审核进度与 Human Approved；右侧仍保留 Geometry Check、Collision Review Table、聚焦/取消、详细诊断、Undo/Redo 和编辑工具。
+
+操作栏在中栏自己的滚动区内 Sticky，沿用列内边距偏移；窄屏自动换行，并仅对 3D Assembly 中栏设置视口高度，确保它仍是滚动容器，不改其他阶段或 2D。Chrome 隔离验收覆盖九片/十二连接、0/8→8/8、严格 Invalid + Human Approved、复验/保存恢复、编辑及 Undo/Redo 后失效、九步 Build，以及 1660/1100/680/430 布局、吸顶和实际点击命中。命令：`npm run test:magnetic-assembly-actions:browser`，证据 `/tmp/magnetic-assembly-actions/`。未调用模型或写入正式历史。

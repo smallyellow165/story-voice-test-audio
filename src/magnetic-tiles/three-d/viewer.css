@@ -117,3 +117,18 @@
 .magnetic-3d-selection-table th>input[type=checkbox]{display:block;width:auto;margin:2px 0 4px}
 .magnetic-symmetry-overlay-evidence{position:absolute;bottom:49px;left:9px;pointer-events:none;background:#fffef5df;border:1px dashed #657c72;padding:3px 5px;font-size:11px;max-width:calc(100% - 18px)}
 .magnetic-3d-tile-label[data-symmetry-preview=true]{border-style:dashed;background:#eef2f0ee;color:#2d423b}
+
+/* The one Assembly action entry point sticks to the workspace's own scroller. */
+.magnetic-3d-assembly-actions{position:sticky;top:-16px;z-index:6;background:#f9fbf5;border-bottom:1px solid #d8e3dd;padding:4px 0;margin-bottom:6px;min-width:0}
+.magnetic-3d-main-actions,.magnetic-3d-main-actions>div{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+.magnetic-3d-main-actions{justify-content:space-between;margin-bottom:4px}
+.magnetic-3d-main-actions>button{margin-left:auto}
+.magnetic-3d-assembly-actions button,.magnetic-3d-assembly-actions select{font-size:12px;padding:6px 8px;min-height:32px;max-width:100%}
+.magnetic-3d-assembly-actions .magnetic-3d-toolbar-row{flex-wrap:wrap;gap:4px 8px}
+.magnetic-3d-assembly-actions .magnetic-3d-summary{margin:0;flex:1 1 230px;font-size:12px;color:inherit;line-height:1.5;overflow-wrap:anywhere}
+.magnetic-3d-assembly-actions .magnetic-3d-display-tools{margin-left:auto;flex-wrap:wrap;min-width:0}
+@media(max-width:1150px){.magnetic-3d-assembly-actions{top:-12px}}
+@media(max-width:760px){.magnetic-3d-assembly-actions{padding-top:4px}.magnetic-3d-assembly-actions .magnetic-3d-summary{flex-basis:100%;font-size:11px}.magnetic-3d-assembly-actions .magnetic-3d-display-tools{margin-left:0}.magnetic-3d-assembly-actions button,.magnetic-3d-assembly-actions select{font-size:11px;padding:5px 7px;min-height:32px}}
+/* Mobile split-panel wrappers have auto height; keep this workspace as the
+   scroll owner so its action bar sticks without changing other Studio stages. */
+@media(max-width:760px){.studio[data-active-stage=assembly][data-view-mode="3d"] .studio-workspace{height:100dvh}}

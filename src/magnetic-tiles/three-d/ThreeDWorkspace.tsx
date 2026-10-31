@@ -228,10 +228,13 @@ export default function ThreeDWorkspace() {
           <header className="magnetic-3d-toolbar-row"><div className="magnetic-3d-toolbar-title"><h2>作品编辑（Assembly）</h2><span className="hint" title={loaded.name}>{photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?`照片 · ${String(photoOrigin.origin.sourceId).slice(0,8)}`:loaded.isDraft?'3D Draft':'3D 查看'}</span></div>
            <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit"><button disabled={operationBusy} aria-pressed={!editing} onClick={()=>{setLive(null);setEditing(false)}}>View</button><button disabled={operationBusy} aria-pressed={editing} onClick={startEdit}>{loaded.isDraft?'Edit Draft':'从当前作品创建 Draft'}</button><button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(loaded.source,loaded.name)}}>重新加载来源</button></div>
           </header>
-          <div className="magnetic-3d-toolbar-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid':'Geometry Invalid'}</span>{loaded.isDraft&&<span> · {dirty?'未保存':'Draft'}</span>}</p>
+        </div>
+        <section className="magnetic-3d-assembly-actions" aria-label="3D Assembly 操作栏" aria-busy={humanReview.busy}>
+          <div className="magnetic-3d-main-actions"><div><button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>{editing&&<button disabled={operationBusy || !!boot.error} onClick={save}>保存 3D Draft</button>}</div><button disabled={operationBusy||humanReview.busy||!reviewPolicy.eligible||!allReviewed||!!humanReview.grant} onClick={()=>void approveCurrent()}>批准当前作品</button></div>
+          <div className="magnetic-3d-toolbar-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid':'Geometry Invalid'}</span>{loaded.isDraft&&<span> · {dirty?'未保存':'Draft'}</span>}<span> · 碰撞 {collisionIssues.length} · {reviewedCount}/{reviewPolicy.keys.length} 已审核</span>{humanReview.grant&&<span> · Human Approved</span>}{humanReview.busy&&<span> · 正在提交审核</span>}{humanReview.error&&<span className="magnetic-3d-blocker"> · 审核未就绪</span>}</p>
            <div className="magnetic-3d-display-tools"><label><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>{editing&&<button disabled={operationBusy} aria-expanded={symmetryOpen} onClick={()=>{setSymmetryOpen(v=>!v);setSymmetrySources([]);setSymmetryPreview(null);setSelection({kind:'none'})}}>对称补全</button>}{editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}</div>
           </div>
-        </div>
+        </section>
         {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} previewPieces={symmetryPieces} selection={selection} toolMode={symmetryPreview?'select':tool} showTileIds={showTileIds} collision={selectedCollision} collisionFocus={collisionFocus}
           onSelectPiece={id => { if (!operationBusy) setSelection({ kind: 'piece', id }) }}
           onSelectConnection={index => { if (!operationBusy) setSelection({ kind: 'connection', index }) }}
@@ -271,7 +274,6 @@ export default function ThreeDWorkspace() {
         </InfoHint></header>
         <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
           <p role="status"><b className={!validation.valid?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':geometryGate.repair&&!geometryGate.current?'Needs Revalidation':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
-          <button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>
           {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
           {geometryGate.repair&&<div aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker&&!humanReview.grant?'alert':'status'}>{humanReview.grant?'Geometry Invalid + Human Approved：本快照的碰撞已获人工授权，可进入 Build；不代表 Geometry Valid。':geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></div>}
           <section className="magnetic-3d-collision-review" aria-label="Collision Review"><div className="magnetic-3d-collision-heading"><h4>Collision Review · {collisionIssues.length}</h4><span data-testid="collision-review-progress">{reviewedCount}/{reviewPolicy.keys.length} 已审核</span></div>
@@ -284,7 +286,7 @@ export default function ThreeDWorkspace() {
               </tr>
             })}</tbody></table>}
             <div className="magnetic-3d-collision-actions"><div><button disabled={!selectedCollision?.center} onClick={()=>selectedCollision&&setCollisionFocus({target:selectedCollision,sequence:(collisionFocus?.sequence??0)+1})}>聚焦碰撞</button><button disabled={!selectedCollision} onClick={()=>{setSelection({kind:'none'});setCollisionFocus(null)}}>取消碰撞选择</button></div>
-              <button disabled={operationBusy||humanReview.busy||!reviewPolicy.eligible||!allReviewed||!!humanReview.grant} onClick={()=>void approveCurrent()}>批准当前作品</button></div>
+            </div>
             {humanReview.grant&&<p role="status" data-testid="human-collision-approved">Geometry Invalid + Human Approved · 已保存当前 Draft；允许进入 Build。Physical Stability 未验证。</p>}
             {humanReview.busy&&<p role="status" className="hint">正在提交审核，请稍候。</p>}
             {humanReview.error&&<p role="alert">{humanReview.error} <button onClick={()=>void humanReview.refresh()}>重新读取审核</button></p>}
@@ -300,8 +302,7 @@ export default function ThreeDWorkspace() {
         {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}
         <div className="magnetic-3d-draft-tools">
           {editing && <><button disabled={operationBusy || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
-            <button disabled={operationBusy || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button>
-            <button disabled={operationBusy || !!boot.error} onClick={save}>保存 3D Draft</button></>}
+            <button disabled={operationBusy || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button></>}
         </div>
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <div><p role="alert">{error.length>200?error.slice(0,200)+'…':error}</p>{error.length>200&&<details><summary>操作错误详情</summary><p>{error}</p></details>}</div>}
