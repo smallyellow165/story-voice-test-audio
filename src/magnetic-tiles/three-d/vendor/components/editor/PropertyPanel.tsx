@@ -30,7 +30,6 @@ function PieceProps(props: Props) {
   if (!piece) return <p className="text-xs text-gray-400 p-4">零件不存在</p>;
   const part = project.parts.find((p) => p.id === piece.partId);
   if (!part) return <p className="text-xs text-red-500 p-4">partId 悬空: {piece.partId}</p>;
-  const shape = part.shape;
   const tf = project.transforms[piece.id];
 
   // 当前位置和旋转(显示用)
@@ -112,14 +111,6 @@ function PieceProps(props: Props) {
 
   return (
     <div className="p-3 space-y-3">
-      <div>
-        <div className="text-xs text-gray-500">ID</div>
-        <div className="text-xs font-mono text-gray-700 break-all">{piece.id}</div>
-      </div>
-      <div>
-        <div className="text-xs text-gray-500">形状</div>
-        <div className="text-xs text-gray-700">{shape}</div>
-      </div>
       <div>
         <span id="piece-color-label" className="text-xs text-gray-500">颜色</span>
         <div className="grid grid-cols-6 gap-1 mt-1" role="group" aria-labelledby="piece-color-label">
@@ -225,10 +216,6 @@ function ConnectionProps(props: Props) {
 
   return (
     <div className="p-3 space-y-3">
-      <div className="text-xs text-gray-500">连接 #{idx}</div>
-      <div className="text-[10px] font-mono text-gray-600 break-all">
-        {conn.pieceA}:{conn.portA} → {conn.pieceB}:{conn.portB}
-      </div>
       <div>
         <label htmlFor={dihedralId} className="text-xs text-gray-500">二面角(deg): {localDihedral}</label>
         <input

@@ -14,6 +14,8 @@ import type { EditorProject, SerializableTransform } from '../../../editor-proje
 import { getDisplayTransforms, findCompatibleTargets, buildPortUsage, findBestSnapCandidate } from '../../editor/snap.ts';
 import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils.ts';
 import type { Selection } from '../../../editor-project.ts';
+import {AssemblyTileLabels,AssemblyConnectionHighlight,TileLabelLayer} from '../../../AssemblyAnnotations.tsx';
+import type {TileLabelElements} from '../../../AssemblyAnnotations.tsx';
 
 export type ToolMode = 'select' | 'move' | 'rotate' | 'snap';
 
@@ -25,6 +27,7 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = {
+  showTileIds?:boolean;
   onSnapProposal?:(connection:Connection)=>void;
   onMovePieceCancel?:()=>void;
   snapCandidates?:{dihedralDeg:number;flip:boolean}[];
@@ -68,8 +71,9 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,
 }: {
+  labelElements:TileLabelElements;
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
@@ -93,6 +97,7 @@ function SceneContent({
   getCurrentViewRef?: React.MutableRefObject<(() => EditorView | null) | null>;
   onViewChange?: (view: EditorView) => void;
 } & SnapInteractionProps) {
+  const solids = useRef<THREE.Group>(null);
   const partMap = useMemo(() => {
     const m: Record<string, EditorProject['parts'][number]> = {};
     project.parts.forEach((p) => (m[p.id] = p));
@@ -560,6 +565,10 @@ function SceneContent({
     }
   }, [selectedPieceId, transforms, dummyObj]);
 
+  const annotationPieces=project.pieces.flatMap(p=>{const shape=project.shapes.get(partMap[p.partId]?.shape),transform=transforms[p.id];return shape&&transform?[{id:p.id,shape,transform}]:[]});
+  const selectedConnection=selection.kind==='connection'?project.connections[selection.index]:undefined;
+  const selectedIds=selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selectedPieceId?[selectedPieceId]:[];
+
   // 连接点击检测
   const handleConnectionClick = useCallback((idx: number, e: any) => {
     e.stopPropagation();
@@ -577,19 +586,18 @@ function SceneContent({
         <primitive object={dummyObj} visible={false} />
 
         {/* 磁力片 */}
-        {project.pieces.map((piece) => {
+        <group ref={solids}>{project.pieces.map((piece) => {
           const tf = transforms[piece.id];
           const part = partMap[piece.partId];
           if (!tf || !part) return null;
           const shape = project.shapes.get(part.shape);
           if (!shape) return null;
-          const isSelected = selection.kind === 'piece' && selection.id === piece.id;
+          const isSelected = selectedIds.includes(piece.id);
           const isDimmed = false;
           const isHovered = hoveredPiece === piece.id;
           const isSnapGhost = !!displayedGhost && piece.id === ghostPieceId;
           return (
-            <MagnetPieceMesh
-              key={piece.id}
+            <group key={piece.id} userData={{tileId:piece.id}}><MagnetPieceMesh
               shape={shape}
               transform={tf}
               color={part.color as MagnetColor}
@@ -603,9 +611,11 @@ function SceneContent({
               }}
               onPointerOver={(e: any) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; setHoveredPiece(piece.id); }}
               onPointerOut={() => { document.body.style.cursor = 'default'; setHoveredPiece(null); }}
-            />
+            /></group>
           );
-        })}
+        })}</group>
+        <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
+        {showTileIds&&<AssemblyTileLabels pieces={annotationPieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
 
         {/* 吸附预览(半透明 ghost) */}
         {displayedGhost && ghostPieceId && (() => {
@@ -663,14 +673,14 @@ function SceneContent({
             <group key={`conn-${idx}`} onClick={(e: any) => handleConnectionClick(idx, e)}>
               <Line
                 points={[tfA.position, tfB.position]}
-                color={isSelected ? '#f59e0b' : '#94a3b8'}
+                color={isSelected ? '#153f39' : '#94a3b8'}
                 lineWidth={isSelected ? 3 : 2}
                 dashed={!isSelected}
               />
               {/* 可点击的透明小球 */}
               <mesh position={mid}>
                 <sphereGeometry args={[0.15, 8, 8]} />
-                <meshBasicMaterial color={isSelected ? '#f59e0b' : '#64748b'} transparent opacity={0.6} />
+                <meshBasicMaterial color={isSelected ? '#153f39' : '#64748b'} transparent opacity={0.6} />
               </mesh>
             </group>
           );
@@ -729,8 +739,11 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,
 }: Props) {
+  const labelElements=useRef(new Map<string,HTMLSpanElement>());
+  const c=selection.kind==='connection'?project.connections[selection.index]:undefined;
+  const selectedIds=c?[c.pieceA,c.pieceB]:selection.kind==='piece'?[selection.id]:[];
   const defaultCameraStateRef = useRef<DefaultCameraState | null>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
   const fitAllRef = useRef<(() => void) | null>(null);
@@ -753,7 +766,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project}
+          project={project} labelElements={labelElements}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
@@ -773,9 +786,10 @@ export function EditorCanvas({
           cameraTargetRef={cameraTargetRef}
           liveTransformOverride={liveTransformOverride}
           getCurrentViewRef={getCurrentViewRef}
-          onViewChange={onViewChange} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
+          onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
+      {showTileIds&&<TileLabelLayer ids={project.pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
 
       {/* Host-scoped layout; upstream Tailwind is not installed. */}
       <div className="magnetic-3d-editor-camera-tools">

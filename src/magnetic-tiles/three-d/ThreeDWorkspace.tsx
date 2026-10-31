@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
 import { parseAssembly3D, serializeAssembly3D } from './assembly.ts'
-import { validateAssembly3D } from './engine-adapter.ts'
+import { validateAssembly3D,inspectAssemblyCollisions } from './engine-adapter.ts'
 import { componentCount, createViewerModel, rotationDegrees } from './viewer-model.ts'
 import { MagnetScene3D, ViewerErrorBoundary } from './vendor/components/MagnetScene3D.tsx'
 import { useProfileRegistry } from '../ProfileRegistry.tsx'
@@ -15,6 +15,8 @@ import { editorProject } from './editor-project.ts'
 import type { Selection } from './editor-project.ts'
 import { EditorCanvas } from './vendor/components/editor/EditorCanvas.tsx'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
+import {InfoHint} from '../../brick-vision/InfoHint.tsx'
+import {AssemblySelectionTable} from './AssemblySelectionTable.tsx'
 import { EditorInspector } from './EditorInspector.tsx'
 import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
 import type {CameraView3D} from './camera-view.ts'
@@ -49,6 +51,8 @@ export default function ThreeDWorkspace() {
   const [loaded, setLoaded] = useState(() => ({ source: boot.raw ?? initial, name: boot.assembly ? '已保存的 3D Draft' : examples[0].name, sequence: 0, isDraft: !!boot.assembly }))
   const [text, setText] = useState(boot.raw ?? initial), [error, setError] = useState(boot.error)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
+  const [showTileIds,setShowTileIds]=useState(true)
+  const [showGeometryDetails,setShowGeometryDetails]=useState(false)
   const [editing, setEditing] = useState(false), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
   const [pendingSnap,setPendingSnap]=useState<EdgeSnapPreview|null>(null)
@@ -79,6 +83,9 @@ export default function ThreeDWorkspace() {
   const items = useMemo(() => createViewerModel(assembly), [assembly])
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const geometryGate=useMemo(()=>photoDraftGeometryGate(assembly,photoOrigin,validation),[assembly,photoOrigin,validation])
+  const selectedConnection=selection.kind==='connection'?assembly.connections[selection.index]:undefined
+  const geometryErrors=validation.issues.filter(i=>i.severity==='error')
+  const collisionDetails=useMemo(()=>showGeometryDetails?inspectAssemblyCollisions(assembly,validation):[],[showGeometryDetails,assembly,validation])
   const chosen = items.find(p => p.id === selected)
   const profileSignature = canonical(current.profiles)
   const catalog = useMemo(() => createShapeCatalog(current.profiles), [profileSignature])
@@ -173,10 +180,10 @@ export default function ThreeDWorkspace() {
            <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit"><button disabled={operationBusy} aria-pressed={!editing} onClick={()=>{setLive(null);setEditing(false)}}>View</button><button disabled={operationBusy} aria-pressed={editing} onClick={startEdit}>{loaded.isDraft?'Edit Draft':'从当前作品创建 Draft'}</button><button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(loaded.source,loaded.name)}}>重新加载来源</button></div>
           </header>
           <div className="magnetic-3d-toolbar-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid':'Geometry Invalid'}</span>{loaded.isDraft&&<span> · {dirty?'未保存':'Draft'}</span>}</p>
-           {editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}
+           <div className="magnetic-3d-display-tools"><label><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>{editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}</div>
           </div>
         </div>
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} selection={selection} toolMode={tool}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} selection={selection} toolMode={tool} showTileIds={showTileIds}
           onSelectPiece={id => { if (!live&&!pendingSnap) setSelection({ kind: 'piece', id }) }}
           onSelectConnection={index => { if (!live&&!pendingSnap) setSelection({ kind: 'connection', index }) }}
           onSelectPort={(id,portId)=>{if(operationBusy)return;if(snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
@@ -185,7 +192,7 @@ export default function ThreeDWorkspace() {
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
           onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={snapMode==='click'} interactionLocked={!!pendingSnap} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
           cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
-          : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} initialCameraView={initialCameraView}/>)}
+          : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
         <details className="magnetic-3d-load"><summary>加载 / 导出 Assembly3D</summary>
           <label>Assembly3D JSON<textarea aria-label="Assembly3D JSON" value={text} spellCheck={false} maxLength={1_000_000}
@@ -207,44 +214,53 @@ export default function ThreeDWorkspace() {
     </StudioSlot>
     <StudioSlot column="inspector" stages={['assembly']} view="3d">
       <section className="magnetic-3d-inspector" aria-label="3D Inspector">
-        <h3>3D Inspector</h3>
-        {editing&&<p className="hint">{snapMode==='drag'?'拖动吸附：选择零件，拖动 Gizmo 靠近兼容边，松手后确认或取消。没有候选时保留原位；自由移动/旋转可使用下方工具。':'点击吸附：选择源零件 B 及其连接边，再点击目标 A 的兼容边或在右栏指定，预览后确认。'} 已连接零件需要移动时，请先明确解除连接。</p>}
-        {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}<p className="hint">{editing ? '手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。' : 'View 只读：点击画布或列表查看。'}</p>
-        {geometryGate.repair&&<section aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker?'alert':'status'}>{geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></section>}
-        <div className="magnetic-3d-draft-tools">
+        <header className="magnetic-3d-inspector-title"><h3>3D Inspector</h3><InfoHint label="3D Inspector">
+          <p>{editing ? (snapMode==='drag'?'拖动吸附：选择零件，拖动 Gizmo 靠近兼容边，松手后确认或取消。没有候选时保留原位；自由移动/旋转可使用 Edit Tools。':'点击吸附：选择源零件 B 及其连接边，再点击目标 A 的兼容边或在右栏指定，预览后确认。') : 'View 只读：点击画布或表格查看。'}</p>
+          <p>已连接零件需要移动时，请先明确解除连接。手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。WASDQE 移动，RTFGVB 旋转，Shift 大步；Undo / Redo 可恢复编辑。</p>
+          <p>连接使用当前 Assembly 中的索引 # 作为身份；两端表格按钮指向同一条连接。标签被其他零件遮挡时隐藏，选中标签仍保留并使用虚线；标签不拦截鼠标。</p>
+          <p>几何校验不代表真实磁力或物理稳定性保证。Invalid Draft 可保存继续编辑，不能作为合法 Assembly 或进入 Build。</p>
+        </InfoHint></header>
+        <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
+          <p role="status"><b className={!validation.valid?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':geometryGate.repair&&!geometryGate.current?'Needs Revalidation':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
           <button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>
-          <button disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button>
-          <button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button>
+          {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
+          {geometryGate.repair&&<div aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker?'alert':'status'}>{geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></div>}
+          <details onToggle={e=>setShowGeometryDetails(e.currentTarget.open)}><summary>详细几何 / Collision Diagnostic · {validation.issues.length}</summary>
+            <p>{assembly.id} · revision {assembly.revision}</p>
+            {validation.issues.length?<ul>{validation.issues.map((issue,i)=><li key={i} className={issue.severity==='error'?'magnetic-3d-blocker':undefined}>{issue.message}</li>)}</ul>:<p>保存位姿满足当前连接与碰撞检查。</p>}
+            {!!collisionDetails.length&&<details><summary>碰撞空间证据 / Raw</summary><pre>{JSON.stringify(collisionDetails,null,2)}</pre></details>}
+          </details>
+        </section>
+        {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}
+        <div className="magnetic-3d-draft-tools">
           {editing && <><button disabled={operationBusy || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
             <button disabled={operationBusy || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button>
             <button disabled={operationBusy || !!boot.error} onClick={save}>保存 3D Draft</button></>}
         </div>
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
-        {error && <p role="alert">{error}</p>}
-        <div className="magnetic-3d-piece-list" role="group" aria-label="3D 零件列表">{items.map(item => <button key={item.id}
-          data-3d-piece={item.id} aria-pressed={item.id === selected} onClick={() => setSelected(item.id)}>
-          <span className="magnetic-3d-swatch" style={{ background: item.color }}/>{item.id}<small>{item.shape.id}</small></button>)}</div>
+        {error && <div><p role="alert">{error.length>200?error.slice(0,200)+'…':error}</p>{error.length>200&&<details><summary>操作错误详情</summary><p>{error}</p></details>}</div>}
+        <AssemblySelectionTable assembly={assembly} selection={selection} select={setSelection} busy={operationBusy}/>
+        <EditorInspector editing={editing} selectionInfo={<>
         {chosen ? <div className="magnetic-3d-piece-info" data-selected-3d-piece={chosen.id}>
           <h4>{chosen.id}</h4><dl><dt>Profile</dt><dd>{chosen.shape.id} · {chosen.profile.profile.name}</dd>
             <dt>颜色</dt><dd><span className="magnetic-3d-swatch" style={{ background: chosen.color }}/>{chosen.color}{!chosen.piece.color && '（默认）'}</dd>
+            <dt>厚度</dt><dd>{format(chosen.shape.thickness)}（世界单位）</dd></dl>
+          <details><summary>保存的 Pose / Profile 规格</summary><dl>
             <dt>位置 XYZ</dt><dd data-3d-position={JSON.stringify(chosen.piece.pose.position)}>{chosen.piece.pose.position.map(format).join(', ')}</dd>
             <dt>旋转 XYZ（度）</dt><dd>{rotationDegrees(chosen.piece.pose.quaternion).map(format).join(', ')}</dd>
             <dt>四元数 XYZW</dt><dd data-3d-quaternion={JSON.stringify(chosen.piece.pose.quaternion)}>{chosen.piece.pose.quaternion.map(format).join(', ')}</dd>
-            <dt>厚度（世界单位）</dt><dd>{format(chosen.shape.thickness)}</dd>
-            <dt>边长（世界单位）</dt><dd>{chosen.shape.edges.map(e => format(e.length)).join(' / ')}</dd>
-            <dt>Profile 缩放</dt><dd>{chosen.profile.scale ?? 1}</dd></dl>
-        </div> : <p>尚未选择零件。</p>}
-        {assembly.connections.length > 0 && <details open={editing}><summary>连接关系</summary><div className="magnetic-3d-connections">{assembly.connections.map((c, index) =>
-          <button key={index} data-3d-connection={index} aria-pressed={selection.kind === 'connection' && selection.index === index}
-            disabled={operationBusy} onClick={() => setSelection({ kind: 'connection', index })}>#{index} · {c.pieceA}:{c.portA} → {c.pieceB}:{c.portB} · {c.dihedralDeg}°</button>)}</div></details>}
-        {editing && <EditorInspector assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
-          setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={operationBusy} tool={tool} setTool={next=>{setTool(next);if(next==='snap')setSnapMode('drag')}} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>}
+            <dt>边长</dt><dd>{chosen.shape.edges.map(e => format(e.length)).join(' / ')}</dd>
+            <dt>Profile 缩放</dt><dd>{chosen.profile.scale ?? 1}</dd></dl></details>
+        </div> : selectedConnection ? <div data-selected-3d-connection={selection.kind==='connection'?selection.index:''}><h4>Connection #{selection.kind==='connection'?selection.index:''}</h4><dl>
+          <dt>A / Port</dt><dd>{selectedConnection.pieceA} · {selectedConnection.portA}</dd><dt>B / Port</dt><dd>{selectedConnection.pieceB} · {selectedConnection.portB}</dd>
+          <dt>Dihedral / Flip</dt><dd>{selectedConnection.dihedralDeg}° · {String(selectedConnection.flip??false)}</dd>
+        </dl></div> : <p className="hint">点击画布或表格选择 Tile / Connection。</p>}
+        {chosen&&<div className="magnetic-3d-related-connections">{assembly.connections.map((c,i)=>c.pieceA===chosen.id||c.pieceB===chosen.id?<button key={i} disabled={operationBusy} onClick={()=>setSelection({kind:'connection',index:i})}>连接 #{i} · {c.pieceA} ↔ {c.pieceB}</button>:null)}</div>}
+        </>} globalTools={<div className="button-row"><button disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button><button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button></div>}
+          assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
+          setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={operationBusy} tool={tool} setTool={next=>{setTool(next);if(next==='snap')setSnapMode('drag')}} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>
         {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源与快照</summary><p>Source {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</p><p>Geometry Valid 与照片匹配独立；来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre></details>}
         <details className="magnetic-3d-examples-debug"><summary>Examples / Debug</summary><p className="hint">开发示例；加载会替换当前查看内容，不属于正式 Tiles Catalog。当前来源：{loaded.name}</p><div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example=><button key={example.id} disabled={operationBusy} data-3d-example={example.id} aria-pressed={assembly.id===example.id} onClick={()=>{fileRequest.current++;load(JSON.stringify(example.data,null,2),example.name)}}>{example.name}</button>)}</div><p>{componentCount(assembly)} 个组件 · revision {assembly.revision}</p></details>
-        <details open={!validation.valid}><summary>几何检查 · {validation.valid ? '通过' : '需检查'}</summary>
-          <p>{assembly.id} · revision {assembly.revision}</p>
-          {validation.issues.length ? <ul>{validation.issues.map((issue, i) => <li key={i} role={issue.severity==='error'?'alert':undefined}>{issue.message}</li>)}</ul> : <p>保存位姿满足当前连接与碰撞检查。</p>}
-          <p className="hint">几何校验不代表真实磁力或物理稳定性保证。</p></details>
       </section>
     </StudioSlot>
   </>

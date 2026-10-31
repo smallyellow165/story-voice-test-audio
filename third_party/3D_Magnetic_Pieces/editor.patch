@@ -1,6 +1,6 @@
 --- a/src/editor/state.ts
 +++ b/src/editor/state.ts
-@@ -1,10 +1,10 @@
+@@ -1,26 +1,19 @@
 -import { EditorProject } from './types';
 -import { SCHEMA_VERSION } from './types';
 -import { defaultMetadata } from './types';
@@ -11,17 +11,7 @@
 -  StepCamera, PieceEntranceConfig, EasingName, EntranceType,
 -} from '../engine/types';
 -import { resnapshotTransforms, resnapshotTransformsForConnection } from './serialization';
-+// Adapted MIT upstream snapshot history and piece/connection mutations.
-+// Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
-+import type { Assembly3D, Pose3D } from '../../assembly.ts'
-+import { assertAssembly3D } from '../../assembly.ts'
-+import { canonical } from '../../../build-plan.ts'
-+import { profileKey3D } from '../../profile-adapter.ts'
-+import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
-+import { solveAssembly3D } from '../../engine-adapter.ts'
-+import type { Connection } from '../engine/types.ts'
-+import { uniqueId, uid } from './id.ts'
-@@ -12,15 +12,4 @@
+-
 -/**
 - * 编辑器状态模型 + 撤销/重做。
 - * 纯数据逻辑,无 React / DOM 依赖,便于未来小程序复用。
@@ -37,11 +27,26 @@
 -  past: EditorProject[];
 -  current: EditorProject;
 -  future: EditorProject[];
++// Adapted MIT upstream snapshot history and piece/connection mutations.
++// Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
++import type { Assembly3D, Pose3D } from '../../assembly.ts'
++import { assertAssembly3D } from '../../assembly.ts'
++import { canonical } from '../../../build-plan.ts'
++import { profileKey3D } from '../../profile-adapter.ts'
++import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
++import { solveAssembly3D } from '../../engine-adapter.ts'
++import type { Connection } from '../engine/types.ts'
++import { uniqueId, uid } from './id.ts'
++
 +export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[] }
 +export const MAX_HISTORY = 100
 +export function createEmptyProject(): Assembly3D {
 +  return { kind: 'magnetic-assembly-3d', schemaVersion: 1, id: uid('draft'), revision: 0, profiles: [], pieces: [], connections: [] }
-@@ -28,22 +17,3 @@
++}
++export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
++  assertAssembly3D(assembly)
++  return { past: [], current: structuredClone(assembly), future: [] }
+@@ -28,29 +21 @@
 -
 -export const MAX_HISTORY = 100;
 -
@@ -64,10 +69,7 @@
 -    createdAt: now,
 -    updatedAt: now,
 -  };
-+export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
-+  assertAssembly3D(assembly)
-+  return { past: [], current: structuredClone(assembly), future: [] }
-@@ -51,6 +21 @@
+-}
 -
 -export function createInitialHistory(): EditorHistory {
 -  return { past: [], current: createEmptyProject(), future: [] };
@@ -105,9 +107,9 @@
 @@ -133 +102 @@
 -export function replaceProject(_h: EditorHistory, project: EditorProject): EditorHistory {
 +export function replaceProject(_h: EditorHistory, project: Assembly3D): EditorHistory {
-@@ -137 +105,0 @@
+@@ -137,20 +105,0 @@
 -/* ----------------- 零件与连接操作 ----------------- */
-@@ -139,17 +107,12 @@
+-
 -/** 找到或创建一个 partId(同形状同颜色复用)。 */
 -function findOrCreatePart(project: EditorProject, shape: MagnetShape, color: MagnetColor): PartDef {
 -  const existing = project.parts.find((p) => p.shape === shape && p.color === color);
@@ -125,20 +127,8 @@
 -  };
 -  project.parts.push(part);
 -  return part;
-+export function addPieceAction(h: EditorHistory, snapshot: ProfileSnapshot3D, color: string, placePosition?: [number, number, number]) {
-+  const pieceId = uniqueId('piece', h.current.pieces.map(p => p.id))
-+  const history = commit(h, p => {
-+    const key = profileKey3D(snapshot.profile), existing = p.profiles.find(s => profileKey3D(s.profile) === key)
-+    if (existing && canonical(existing) !== canonical(snapshot)) throw Error('该 Profile 版本已有不同的快照/厚度配置；请使用原配置或明确修改快照厚度。')
-+    if (!existing) p.profiles.push(structuredClone(snapshot))
-+    p.pieces.push({ id: pieceId, profileId: snapshot.profile.id, profileVersion: snapshot.profile.version, color,
-+      pose: { position: placePosition ?? [0, snapshot.thickness * (snapshot.scale ?? 1) / 2, 0],
-+        quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } })
-+    return p
-+  })
-+  return { history, pieceId }
-@@ -157,30 +120,35 @@
--
+-}
+@@ -158,35 +107,12 @@
 -/**
 - * 添加一个零件到方案。
 - * @param placePosition 可选放置位置(世界坐标)。不传时根零件放原点,其他零件放视野中心附近(由调用方计算)。
@@ -168,55 +158,28 @@
 -        position: placePosition ?? [0.5, 0, 0.5],
 -        quaternion: [0, 0, 0, 1],
 -      };
-+export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
-+  return commit(h, p => {
-+    p.pieces = p.pieces.filter(piece => piece.id !== pieceId)
-+    p.connections = p.connections.filter(c => c.pieceA !== pieceId && c.pieceB !== pieceId)
-+    return p
-+  })
-+}
-+export function duplicatePieceAction(h: EditorHistory, pieceId: string) {
-+  const newId = uniqueId('piece', h.current.pieces.map(p => p.id))
-+  const history = commit(h, p => {
-+    const src = p.pieces.find(piece => piece.id === pieceId)
-+    if (!src) throw Error('找不到要复制的零件')
-+    const copy = structuredClone(src); copy.id = newId; copy.pose.position[0] += 1
-+    p.pieces.push(copy); return p
-+  })
-+  return { history, newId }
-+}
-+export function setPieceColorAction(h: EditorHistory, pieceId: string, color: string): EditorHistory {
-+  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.color = color; return p })
-+}
-+export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
-+  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
-+}
-+export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
-+  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
-+}
-+// Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
-+export function solveComponent(p: Assembly3D, root: string): Assembly3D {
-+  if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
-+  const members = new Set([root]), queue = [root]
-+  while (queue.length) {
-+    const id = queue.shift()!
-+    for (const c of p.connections) {
-+      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
-+      if (next && !members.has(next)) { members.add(next); queue.push(next) }
-@@ -188,5 +156,4 @@
+-    }
 -    // 自动同步 parts.count
 -    part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
 -    return p;
 -  });
 -  return { history, pieceId };
-+  }
-+  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
-+  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
-+  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
-@@ -194,18 +161,2 @@
++export function addPieceAction(h: EditorHistory, snapshot: ProfileSnapshot3D, color: string, placePosition?: [number, number, number]) {
++  const pieceId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const key = profileKey3D(snapshot.profile), existing = p.profiles.find(s => profileKey3D(s.profile) === key)
++    if (existing && canonical(existing) !== canonical(snapshot)) throw Error('该 Profile 版本已有不同的快照/厚度配置；请使用原配置或明确修改快照厚度。')
++    if (!existing) p.profiles.push(structuredClone(snapshot))
++    p.pieces.push({ id: pieceId, profileId: snapshot.profile.id, profileVersion: snapshot.profile.version, color,
++      pose: { position: placePosition ?? [0, snapshot.thickness * (snapshot.scale ?? 1) / 2, 0],
++        quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } })
++    return p
++  })
++  return { history, pieceId }
+@@ -194,2 +119,0 @@
 -
 -/** 删除零件(级联清理连接和步骤引用)。 */
--export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
+@@ -197,299 +121,34 @@
 -  return commit(h, (p) => {
 -    p.pieces = p.pieces.filter((pp) => pp.id !== pieceId);
 -    p.connections = p.connections.filter((c) => c.pieceA !== pieceId && c.pieceB !== pieceId);
@@ -232,9 +195,7 @@
 -    p.parts = p.parts.filter((part) => part.count > 0);
 -    return p;
 -  });
-+export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
-+  return commit(h, p => solveComponent(p, root))
-@@ -213,22 +164,2 @@
+-}
 -
 -/** 复制一个零件(同 part,新 piece ID)。 */
 -export function duplicatePieceAction(h: EditorHistory, pieceId: string): { history: EditorHistory; newId: string } {
@@ -257,9 +218,7 @@
 -    return p;
 -  });
 -  return { history, newId };
-+export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
-+  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
-@@ -236,17 +167,2 @@
+-}
 -
 -/** 修改零件颜色(改 partId 指向,或新建 part)。 */
 -export function setPieceColorAction(h: EditorHistory, pieceId: string, color: MagnetColor): EditorHistory {
@@ -277,9 +236,7 @@
 -    p.parts = p.parts.filter((part) => part.count > 0);
 -    return p;
 -  });
-+export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
-+  return commit(h, p => { p.connections.splice(index, 1); return p })
-@@ -254,8 +170,2 @@
+-}
 -
 -/** 直接设置零件的 editor transform(自由移动 / 旋转,不创建连接)。 */
 -export function setPieceTransformAction(
@@ -288,9 +245,7 @@
 -  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
 -): EditorHistory {
 -  return commit(h, (p) => setPieceTransformMutation(p, pieceId, transform));
-+export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
-+  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
-@@ -263,424 +172,0 @@
+-}
 -
 -/** P0-2: setPieceTransform 的纯 mutation,供 commitBatch 组合。 */
 -export function setPieceTransformMutation(
@@ -524,10 +479,48 @@
 -      delete step.camera;
 -    } else {
 -      step.camera = { ...camera };
--    }
++  return commit(h, p => {
++    p.pieces = p.pieces.filter(piece => piece.id !== pieceId)
++    p.connections = p.connections.filter(c => c.pieceA !== pieceId && c.pieceB !== pieceId)
++    return p
++  })
++}
++export function duplicatePieceAction(h: EditorHistory, pieceId: string) {
++  const newId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const src = p.pieces.find(piece => piece.id === pieceId)
++    if (!src) throw Error('找不到要复制的零件')
++    const copy = structuredClone(src); copy.id = newId; copy.pose.position[0] += 1
++    p.pieces.push(copy); return p
++  })
++  return { history, newId }
++}
++export function setPieceColorAction(h: EditorHistory, pieceId: string, color: string): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.color = color; return p })
++}
++export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
++}
++export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
++  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
++}
++// Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
++export function solveComponent(p: Assembly3D, root: string): Assembly3D {
++  if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
++  const members = new Set([root]), queue = [root]
++  while (queue.length) {
++    const id = queue.shift()!
++    for (const c of p.connections) {
++      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
++      if (next && !members.has(next)) { members.add(next); queue.push(next) }
+@@ -497,2 +156,4 @@
 -    return p;
 -  });
--}
++  }
++  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
++  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
++  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
+@@ -500,37 +161,2 @@
 -
 -/** 把当前编辑器视图(相机位置/target/zoom)保存为本步镜头。 */
 -export function captureCurrentViewAsStepCameraAction(
@@ -565,7 +558,9 @@
 -    }
 -    return p;
 -  });
--}
++export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
++  return commit(h, p => solveComponent(p, root))
+@@ -538,100 +164,2 @@
 -
 -/** 批量设置步骤内多片零件的入场类型(快速给同批零件统一设置 drop/side/fade 等)。 */
 -export function batchSetEntranceTypeAction(
@@ -666,7 +661,9 @@
 -    }
 -    return p;
 -  });
--}
++export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
++  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
+@@ -639,26 +167,2 @@
 -
 -/* ----------------- 镜头预设 ----------------- */
 -
@@ -693,7 +690,9 @@
 -    p.metadata = { ...p.metadata, ...patch };
 -    return p;
 -  });
--}
++export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
++  return commit(h, p => { p.connections.splice(index, 1); return p })
+@@ -666,20 +170,2 @@
 -
 -/* ----------------- P2: 缩略图/封面 ----------------- */
 -
@@ -714,7 +713,8 @@
 -    };
 -    return p;
 -  });
--}
++export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
++  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
 --- a/src/editor/snap.ts
 +++ b/src/editor/snap.ts
 @@ -1,6 +1,7 @@
@@ -842,7 +842,7 @@
 +import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../../camera-view.ts'
 +import type {CameraView3D} from '../../../camera-view.ts'
 +// Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
-@@ -5,9 +8,9 @@
+@@ -5,9 +8,11 @@
 -import { MagnetColor } from '../../data/types';
 -import { getShapeDef } from '../../engine/shapes';
 -import { Connection, PieceTransform } from '../../engine/types';
@@ -861,9 +861,12 @@
 +import { getDisplayTransforms, findCompatibleTargets, buildPortUsage, findBestSnapCandidate } from '../../editor/snap.ts';
 +import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils.ts';
 +import type { Selection } from '../../../editor-project.ts';
-@@ -24 +27,10 @@
++import {AssemblyTileLabels,AssemblyConnectionHighlight,TileLabelLayer} from '../../../AssemblyAnnotations.tsx';
++import type {TileLabelElements} from '../../../AssemblyAnnotations.tsx';
+@@ -24 +29,11 @@
 -interface Props {
 +type SnapInteractionProps = {
++  showTileIds?:boolean;
 +  onSnapProposal?:(connection:Connection)=>void;
 +  onMovePieceCancel?:()=>void;
 +  snapCandidates?:{dihedralDeg:number;flip:boolean}[];
@@ -873,44 +876,45 @@
 +};
 +interface Props extends SnapInteractionProps {
 +  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
-@@ -29,0 +42 @@
+@@ -29,0 +45 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-@@ -55 +68 @@
+@@ -55 +71 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, focusRequest, fitRequest,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
-@@ -58 +71 @@
+@@ -58 +74 @@
 -  onViewChange,
-+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
-@@ -59,0 +73 @@
++  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,
+@@ -59,0 +76,2 @@
++  labelElements:TileLabelElements;
 +  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
-@@ -64,0 +79 @@
+@@ -64,0 +83 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-@@ -80 +95 @@
+@@ -80 +99,2 @@
 -}) {
 +} & SnapInteractionProps) {
-@@ -111 +126 @@
++  const solids = useRef<THREE.Group>(null);
+@@ -111 +131 @@
 -    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: '' }, project)) {
 +    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: snapSourcePort??'' }, project)) {
-@@ -115,2 +130,3 @@
+@@ -115 +135 @@
 -  }, [selection, project]);
--
 +  }, [selection, project,snapSourcePort]);
-+
+@@ -116,0 +137 @@
 +  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked;
-@@ -127,0 +144 @@
+@@ -127,0 +149 @@
 +  const displayedGhost=snapGhost?.tf??snapPreview,ghostPieceId=snapGhost?.pieceId??selectedPieceId;
-@@ -138 +155 @@
+@@ -138 +160 @@
 -      const shape = getShapeDef(part.shape);
 +      const shape = project.shapes.get(part.shape);
-@@ -170 +187 @@
+@@ -170 +192 @@
 -    const shape = getShapeDef(part.shape);
 +    const shape = project.shapes.get(part.shape);
-@@ -185,0 +203 @@
+@@ -185,0 +208 @@
 +  const restoredCamera=useRef(false)
-@@ -187 +205 @@
+@@ -187 +210 @@
 -  const lastFitProjectId = useRef<string>('');
 +  
-@@ -189,6 +207,9 @@
+@@ -189,6 +212,9 @@
 -    if (project.id !== lastFitProjectId.current) {
 -      lastFitProjectId.current = project.id;
 -      const t = setTimeout(() => fitAll(), 100);
@@ -926,31 +930,31 @@
 +    return () => clearTimeout(t);
 +  }, [project.id, !!project.pieces.length, size.width, size.height]);
 +  useEffect(() => () => disposeShapeResources([...project.shapes.values()]), [project.shapes]);
-@@ -277,2 +298,2 @@
+@@ -277,2 +303,2 @@
 -    const needDevWindow = import.meta.env.DEV;
 -    const needNotify = !!onViewChangeRef.current;
 +    const needDevWindow = false; // Do not leak global debug state into the host.
 +    const needNotify = !!onViewChangeRef.current||!!onCameraViewChange;
-@@ -294,0 +316 @@
+@@ -294,0 +321 @@
 +      if(camera instanceof THREE.OrthographicCamera&&controlsRef.current)onCameraViewChange?.(captureCameraView(camera,controlsRef.current));
-@@ -352,0 +375 @@
+@@ -352,0 +380 @@
 +      if (lockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
-@@ -354 +377 @@
+@@ -354 +382 @@
 -      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 +      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-@@ -421 +444 @@
+@@ -421 +449 @@
 -    if (!selectedPieceId || !transformControlsRef.current) return;
 +    if (interactionLocked || !dragStateRef.current || dragStateRef.current.committed || !selectedPieceId || !transformControlsRef.current) return;
-@@ -438 +461 @@
+@@ -438 +466 @@
 -      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
 +      const candidate = findBestSnapCandidate(selectedPieceId, project, snapCandidates, liveTf);
-@@ -443 +466 @@
+@@ -443 +471 @@
 -          const screenPos = worldToScreen(tf.position, camera, size);
 +          const screenPos = worldToScreen(obj.position, camera, size);
-@@ -459 +482 @@
+@@ -459 +487 @@
 -  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece]);
 +  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked]);
-@@ -470,21 +493,9 @@
+@@ -470,21 +498,9 @@
 -    // 磁吸模式:如果有吸附预览,提交吸附结果并创建连接
 -    if (toolMode === 'snap' && snapPreview && selectedPieceId) {
 -      // P0-三.1: 使用 dummyObj 的实时变换计算候选
@@ -981,22 +985,19 @@
 +      if(candidate&&close){if(onSnapProposal)onSnapProposal(candidate.connection);else onCreateConnection(candidate.connection)}
 +      else onMovePieceCancel?.();
 +      return;
-@@ -504,3 +515,3 @@
+@@ -504 +520 @@
 -  }, [toolMode, snapPreview, selectedPieceId, project, onMovePieceCommit, onCreateConnection]);
--
--  // 监听 pointercancel / lostpointercapture
 +  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
-+
+@@ -506 +522 @@
+-  // 监听 pointercancel / lostpointercapture
 +  // Cancellation is rollback, never an implicit mouse-up/connection commit.
-@@ -508,8 +519,12 @@
+@@ -508,6 +524,7 @@
 -    const cancel = () => onTransformMouseUp();
 -    window.addEventListener('pointercancel', cancel);
 -    window.addEventListener('lostpointercapture', cancel);
 -    return () => {
 -      window.removeEventListener('pointercancel', cancel);
 -      window.removeEventListener('lostpointercapture', cancel);
--    };
--  }, [onTransformMouseUp]);
 +    const cancel=()=>{
 +      const drag=dragStateRef.current;
 +      if(!drag&&!keyboardDragStateRef.current)return;
@@ -1004,52 +1005,74 @@
 +      if(drag)drag.committed=true;dragStateRef.current=null;keyboardDragStateRef.current=null;
 +      if(keyboardCommitTimerRef.current)clearTimeout(keyboardCommitTimerRef.current);keyboardCommitTimerRef.current=null;
 +      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;onMovePieceCancel?.();
-+    };
+@@ -515 +532,4 @@
+-  }, [onTransformMouseUp]);
 +    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel()};
 +    window.addEventListener('pointercancel',cancel);window.addEventListener('lostpointercapture',cancel);window.addEventListener('keydown',key);
 +    return()=>{window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
 +  },[onMovePieceCancel]);
-@@ -532,0 +548,5 @@
+@@ -532,0 +553,5 @@
 +  useEffect(() => () => {
 +    if (keyboardCommitTimerRef.current) clearTimeout(keyboardCommitTimerRef.current);
 +    document.body.style.cursor = 'default';
 +  }, []);
 +
-@@ -551 +571 @@
+@@ -542,0 +568,4 @@
++  const annotationPieces=project.pieces.flatMap(p=>{const shape=project.shapes.get(partMap[p.partId]?.shape),transform=transforms[p.id];return shape&&transform?[{id:p.id,shape,transform}]:[]});
++  const selectedConnection=selection.kind==='connection'?project.connections[selection.index]:undefined;
++  const selectedIds=selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selectedPieceId?[selectedPieceId]:[];
++
+@@ -551 +580 @@
 -      <SceneLighting shadowScale={20} shadowOpacity={0.3}>
 +      <SceneLighting shadowScale={20} shadowOpacity={0}>
-@@ -564 +584 @@
+@@ -560 +589 @@
+-        {project.pieces.map((piece) => {
++        <group ref={solids}>{project.pieces.map((piece) => {
+@@ -564 +593 @@
 -          const shape = getShapeDef(part.shape);
 +          const shape = project.shapes.get(part.shape);
-@@ -567 +587 @@
+@@ -566,2 +595,2 @@
+-          const isSelected = selection.kind === 'piece' && selection.id === piece.id;
 -          const isDimmed = selection.kind === 'piece' && selection.id !== piece.id;
++          const isSelected = selectedIds.includes(piece.id);
 +          const isDimmed = false;
-@@ -569 +589 @@
+@@ -569 +598 @@
 -          const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
 +          const isSnapGhost = !!displayedGhost && piece.id === ghostPieceId;
-@@ -574 +594 @@
+@@ -571,2 +600 @@
+-            <MagnetPieceMesh
+-              key={piece.id}
++            <group key={piece.id} userData={{tileId:piece.id}}><MagnetPieceMesh
+@@ -574 +602 @@
 -              transform={isSnapGhost ? { position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) } : tf}
 +              transform={tf}
-@@ -591,2 +611,2 @@
+@@ -586 +614 @@
+-            />
++            /></group>
+@@ -588 +616,3 @@
+-        })}
++        })}</group>
++        <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
++        {showTileIds&&<AssemblyTileLabels pieces={annotationPieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
+@@ -591,2 +621,2 @@
 -        {snapPreview && selectedPieceId && (() => {
 -          const piece = pieceMap[selectedPieceId];
 +        {displayedGhost && ghostPieceId && (() => {
 +          const piece = pieceMap[ghostPieceId];
-@@ -594 +614 @@
+@@ -594 +624 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-@@ -599 +619 @@
+@@ -599 +629 @@
 -              transform={{ position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) }}
 +              transform={{ position: new THREE.Vector3(...displayedGhost.position), quaternion: new THREE.Quaternion(...displayedGhost.quaternion) }}
-@@ -610 +630 @@
+@@ -610 +640 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-@@ -621 +641,2 @@
+@@ -621 +651,2 @@
 -              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4} />
 +              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4}
 +                onClick={e => { e.stopPropagation(); onSelectPort?.(selection.id, port.portId); }}/>
-@@ -624,0 +646,8 @@
-+
+@@ -625,0 +657,8 @@
 +        {showSnapTargets&&selection.kind==='piece'&&project.pieces.filter(p=>p.id!==selection.id).flatMap(piece=>{
 +          const shape=project.shapes.get(partMap[piece.partId]?.shape),tf=transforms[piece.id];if(!shape||!tf)return [];
 +          return shape.ports.filter(p=>compatibleTargets.has(`${piece.id}:${p.portId}`)).map(port=>{
@@ -1057,49 +1080,65 @@
 +            return <Line key={`target-${piece.id}-${port.portId}`} points={[p0,p1]} color="#3b82f6" lineWidth={5} onClick={e=>{e.stopPropagation();onSelectPort?.(piece.id,port.portId)}}/>;
 +          });
 +        })}
-@@ -655,2 +684,3 @@
++
+@@ -637 +676 @@
+-                color={isSelected ? '#f59e0b' : '#94a3b8'}
++                color={isSelected ? '#153f39' : '#94a3b8'}
+@@ -644 +683 @@
+-                <meshBasicMaterial color={isSelected ? '#f59e0b' : '#64748b'} transparent opacity={0.6} />
++                <meshBasicMaterial color={isSelected ? '#153f39' : '#64748b'} transparent opacity={0.6} />
+@@ -655,2 +694,3 @@
 -        minDistance={2}
 -        maxDistance={30}
 +        enableDamping={false}
 +        minZoom={.01}
 +        maxZoom={100000}
-@@ -660 +690 @@
+@@ -660 +700 @@
 -      {selectedPieceId && toolMode !== 'select' && (
 +      {!interactionLocked && selectedPieceId && toolMode !== 'select' && (
-@@ -666 +695,0 @@
+@@ -666 +705,0 @@
 -          onObjectChange={onTransformObjectChange}
-@@ -701 +730 @@
+@@ -701 +740 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, onClearSelection,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
-@@ -703 +732 @@
+@@ -703 +742 @@
 -  liveTransformOverride, getCurrentViewRef, onViewChange,
-+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
-@@ -716 +745 @@
++  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,
+@@ -704,0 +744,3 @@
++  const labelElements=useRef(new Map<string,HTMLSpanElement>());
++  const c=selection.kind==='connection'?project.connections[selection.index]:undefined;
++  const selectedIds=c?[c.pieceA,c.pieceB]:selection.kind==='piece'?[selection.id]:[];
+@@ -716 +758 @@
 -    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
 +    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" tabIndex={0} role="region" aria-label="3D 编辑画布">
-@@ -719 +748 @@
+@@ -719 +761 @@
 -        camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
 +        camera={{ position: [5, 5, 5], zoom: 50, near: 0.001, far: 100 }}
-@@ -731,0 +761 @@
+@@ -727 +769 @@
+-          project={project}
++          project={project} labelElements={labelElements}
+@@ -731,0 +774 @@
 +          onSelectPort={onSelectPort}
-@@ -746 +776 @@
+@@ -746 +789 @@
 -          onViewChange={onViewChange}
-+          onViewChange={onViewChange} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
-@@ -750,2 +780,2 @@
++          onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
+@@ -748,0 +792 @@
++      {showTileIds&&<TileLabelLayer ids={project.pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
+@@ -750,2 +794,2 @@
 -      {/* 右下角按钮组 */}
 -      <div className="absolute bottom-3 right-3 flex flex-col gap-2">
 +      {/* Host-scoped layout; upstream Tailwind is not installed. */}
 +      <div className="magnetic-3d-editor-camera-tools">
-@@ -756 +786 @@
+@@ -756 +800 @@
 -          aria-label="全部入镜"
 +          aria-label="Fit to View"
-@@ -777 +807 @@
+@@ -777 +821 @@
 -          aria-label="重置视角"
 +          aria-label="Reset Camera"
-@@ -786 +816 @@
+@@ -786 +830 @@
 -      <div className="absolute top-3 right-3 flex gap-1">
 +      <div className="magnetic-3d-editor-view-tools">
-@@ -802,2 +832,2 @@
+@@ -802,2 +846,2 @@
 -      <div className="absolute bottom-3 left-3 text-xs text-gray-500 pointer-events-none space-y-0.5">
 -        <div>左键:选中 · {toolMode === 'rotate' ? 'Gizmo 旋转' : toolMode === 'move' ? 'Gizmo 移动' : '拖零件移动'} · 右键:旋转视角 · 滚轮:缩放</div>
 +      <div className="magnetic-3d-editor-help">
@@ -1129,7 +1168,7 @@
 +const colorSwatch = (c: string) => c
 +let fieldIdCounter = 0
 +const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
-@@ -14,23 +12,7 @@
+@@ -14,21 +12,6 @@
 -  project: EditorProject;
 -  selection: Selection;
 -  validation: EditorValidationResult | null;
@@ -1151,16 +1190,15 @@
 -  // P1-10: 大纲列表选择回调(键盘可达)
 -  onSelectPiece?: (id: string) => void;
 -  onSelectConnection?: (index: number) => void;
--}
--
 +  project: EditorProject; selection: Selection
 +  onSetPieceColor: (id: string, color: string) => void
 +  onDuplicatePiece: () => void; onDeleteSelected: () => void
 +  onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
 +  onRemoveConnection: (index: number) => void
 +  onSetPieceTransform: (id:string, pose:SerializableTransform) => void
-+}
-@@ -38,141 +20,4 @@
+@@ -36 +18,0 @@
+-
+@@ -38,59 +20,3 @@
 -  const { project, validation } = props;
 -  const [tab, setTab] = useState<'props' | 'validation' | 'info'>('props');
 -
@@ -1220,7 +1258,10 @@
 -      </div>
 -    </div>
 -  );
--}
++  return <div className="magnetic-3d-editor-properties">
++    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
++  </div>
+@@ -98,81 +23,0 @@
 -
 -/** P1-10: 键盘可达的零件/连接大纲列表。 */
 -function OutlineList({ project, selection, onSelectPiece, onSelectConnection }: Props) {
@@ -1302,28 +1343,35 @@
 -  );
 -}
 -
-+  return <div className="magnetic-3d-editor-properties">
-+    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
-+  </div>
-+}
 @@ -180 +25 @@
 -  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onAddPieceToStep, currentStepId, onSetPieceTransform } = props;
 +  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onSetPieceTransform } = props;
-@@ -207,2 +52,2 @@
+@@ -188 +32,0 @@
+-  const shape = part.shape;
+@@ -207,2 +51,2 @@
 -  const posDisplay = posDraft ?? { x: curPos[0].toFixed(2), y: curPos[1].toFixed(2), z: curPos[2].toFixed(2) };
 -  const rotDisplay = rotDraft ?? { x: curRotDeg[0].toFixed(0), y: curRotDeg[1].toFixed(0), z: curRotDeg[2].toFixed(0) };
 +  const posDisplay = posDraft ?? { x: String(curPos[0]), y: String(curPos[1]), z: String(curPos[2]) };
 +  const rotDisplay = rotDraft ?? { x: String(curRotDeg[0]), y: String(curRotDeg[1]), z: String(curRotDeg[2]) };
-@@ -304,0 +150 @@
+@@ -271,8 +114,0 @@
+-        <div className="text-xs text-gray-500">ID</div>
+-        <div className="text-xs font-mono text-gray-700 break-all">{piece.id}</div>
+-      </div>
+-      <div>
+-        <div className="text-xs text-gray-500">形状</div>
+-        <div className="text-xs text-gray-700">{shape}</div>
+-      </div>
+-      <div>
+@@ -304,0 +141 @@
 +                  aria-label={`3D 位置 ${axis.toUpperCase()}`}
-@@ -331,0 +178 @@
+@@ -331,0 +169 @@
 +                  aria-label={`3D 旋转 ${axis.toUpperCase()}`}
-@@ -353,4 +199,0 @@
+@@ -353,4 +190,0 @@
 -      <div className="text-xs">
 -        <span className="text-gray-500">根零件:</span>
 -        <span className="ml-1">{piece.isRoot ? '是' : '否'}</span>
 -      </div>
-@@ -362,10 +205 @@
+@@ -362,10 +196 @@
 -      {currentStepId !== null && (
 -        <div className="pt-2 border-t">
 -          <button
@@ -1335,27 +1383,32 @@
 -        </div>
 -      )}
 +
-@@ -377 +211 @@
+@@ -377 +202 @@
 -  const { project, selection, onUpdateConnection, onPreviewConnection, onEndPreviewConnection, onRemoveConnection } = props;
 +  const { project, selection, onUpdateConnection, onRemoveConnection } = props;
-@@ -383 +217 @@
+@@ -383 +208 @@
 -  // 本地预览值：拖动滑块时实时显示数值并实时更新3D（不入栈），释放时一次性提交历史
 +  // 本地输入值；明确应用后只更新约束，Pose 由独立的显式求解操作修改。
-@@ -402 +236 @@
+@@ -394,4 +218,0 @@
+-      <div className="text-xs text-gray-500">连接 #{idx}</div>
+-      <div className="text-[10px] font-mono text-gray-600 break-all">
+-        {conn.pieceA}:{conn.portA} → {conn.pieceB}:{conn.portB}
+-      </div>
+@@ -402 +223 @@
 -          type="range"
 +          type="number"
-@@ -405 +239 @@
+@@ -405 +226 @@
 -          step={5}
 +          step={1}
-@@ -410 +244 @@
+@@ -410 +231 @@
 -            onPreviewConnection(idx, { dihedralDeg: v });
 +
-@@ -412 +246 @@
+@@ -412 +233 @@
 -          onPointerUp={() => onEndPreviewConnection()}
 +
-@@ -415,0 +250 @@
+@@ -415,0 +237 @@
 +        <button onClick={() => onUpdateConnection(idx, { dihedralDeg: localDihedral })}>应用约束角度</button>
-@@ -453,305 +287,0 @@
+@@ -453,305 +274,0 @@
 -function StepProps(props: Props) {
 -  const { project, selection, onUpdateStep } = props;
 -  const stepId = (selection as any).id as number;

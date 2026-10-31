@@ -62,3 +62,41 @@
 .magnetic-3d-examples-debug{margin-top:12px;font-size:12px}.magnetic-3d-examples-debug summary{cursor:pointer;font-weight:600}
 @media(max-width:1150px){.magnetic-3d-toolbar-title .hint{display:none}.magnetic-3d-toolbar-title h2{font-size:15px}.magnetic-3d-toolbar button{padding:6px}}
 @media(max-width:760px){.studio[data-active-stage=assembly][data-view-mode="3d"] .studio-workspace>.studio-column-heading{display:flex;justify-content:flex-end;margin-bottom:4px;padding:0;position:static}.magnetic-3d-toolbar-row{flex-wrap:wrap}.magnetic-3d-toolbar-title h2{font-size:16px}}
+/* Assembly Inspector uses the existing selection and Draft; these are display-only. */
+.magnetic-3d-inspector{min-width:0}
+.magnetic-3d-inspector-title{display:flex;align-items:center;gap:8px;margin:4px 0 10px}
+.magnetic-3d-inspector-title h3{margin:0}
+.magnetic-3d-inspector h4{margin:10px 0 7px;font-size:13px}
+.magnetic-3d-geometry-check,.magnetic-3d-selection-table,.magnetic-3d-selection-detail{border-top:1px solid #d8e3dd;padding-top:4px;margin-top:10px;font-size:12px;overflow-wrap:anywhere}
+.magnetic-3d-geometry-check p{margin:7px 0}
+.magnetic-3d-geometry-check details{margin-top:8px}
+.magnetic-3d-selection-table table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}
+.magnetic-3d-selection-table th,.magnetic-3d-selection-table td{padding:6px 4px;border-bottom:1px solid #d8e3dd;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.magnetic-3d-selection-table thead th{font-weight:600;background:#eef3ef}
+.magnetic-3d-selection-table tbody tr{cursor:pointer}
+.magnetic-3d-selection-table [data-selected=true]{background:#e2ece7}
+.magnetic-3d-selection-table button{padding:3px 4px;font-size:11px;line-height:1.4;max-width:100%;overflow-wrap:anywhere;white-space:normal}
+.magnetic-3d-selection-table small{display:block;font-size:10px;color:inherit;font-weight:normal}
+.magnetic-3d-table-connections{display:flex;flex-wrap:wrap;gap:3px}
+.magnetic-3d-table-connections small{display:inline;margin-left:3px}
+.magnetic-3d-selection-table button[aria-pressed=true]{border-color:#254e43;box-shadow:inset 0 0 0 1px #254e43;background:#e2ece7}
+.magnetic-3d-selection-detail dl{display:grid;grid-template-columns:90px minmax(0,1fr);gap:5px;margin:8px 0;font-size:12px}
+.magnetic-3d-selection-detail dt,.magnetic-3d-selection-detail dd{margin:0;color:inherit}
+.magnetic-3d-selection-detail .magnetic-3d-edit-inspector{border:0;border-radius:0;padding:0;margin:8px 0}
+.magnetic-3d-related-connections{display:flex;flex-wrap:wrap;gap:3px}
+.magnetic-3d-related-connections button{font-size:11px;padding:4px}
+.magnetic-3d-edit-tools{border-top:1px solid #d8e3dd;padding-top:10px;margin-top:12px}
+.magnetic-3d-edit-tools>summary{font-size:13px;font-weight:600;cursor:pointer}
+.magnetic-3d-edit-inspector .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.magnetic-3d-display-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}
+.magnetic-3d-display-tools>label{white-space:nowrap}
+.magnetic-3d-label-layer{position:absolute;top:0;left:0;overflow:hidden;pointer-events:none!important}
+.magnetic-3d-tile-label{position:absolute;top:0;left:0;visibility:hidden;padding:3px 7px;border:1px solid #758c84;border-radius:4px;background:#fffef4ed;color:#193f35;font:600 12px/16px sans-serif;white-space:nowrap;pointer-events:none!important;max-width:180px;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+.magnetic-3d-tile-label[data-selected=true]{background:#254e43;color:white;border:2px solid white;box-shadow:0 0 0 1px #254e43}
+.magnetic-3d-tile-label[data-occluded=true]{border-style:dashed}
+.magnetic-3d-editor-camera-tools,.magnetic-3d-editor-view-tools{z-index:5}
+@media(max-width:1100px){.magnetic-3d-selection-table th,.magnetic-3d-selection-table td{padding:5px 2px}.magnetic-3d-selection-table .magnetic-3d-swatch{display:none}}
+.magnetic-3d-label-layer{width:100%;height:100%;z-index:3}
+.magnetic-3d-canvas{position:relative}
+.magnetic-3d-display-tools>label{display:inline-flex;align-items:center;gap:5px}
+.magnetic-3d-display-tools>label input[type=checkbox]{width:auto;margin:0}

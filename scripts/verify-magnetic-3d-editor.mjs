@@ -31,13 +31,14 @@ try {
  async function exported(){const dl=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await dl).path(),'utf8'))}
  async function jsonOpen(){const details=page.locator('.magnetic-3d-load');if(!await details.evaluate(e=>e.open))await details.locator('summary').click()}
  async function setNumber(label,value){await field(label).fill(String(value));await field(label).press('Enter')}
- async function add(profile='square@1'){await field('3D Catalog Profile').selectOption(profile);await button('添加 3D 零件').click();return page.locator('[data-selected-3d-piece]').getAttribute('data-selected-3d-piece')}
+ async function tools(){const d=page.locator('.magnetic-3d-edit-tools');if(!await d.evaluate(e=>e.open))await d.locator(':scope>summary').click()}
+ async function add(profile='square@1'){await tools();const d=page.locator('.magnetic-3d-edit-tools details').filter({has:page.getByLabel('3D Catalog Profile',{exact:true})});if(!await d.evaluate(e=>e.open))await d.locator(':scope>summary').click();await field('3D Catalog Profile').selectOption(profile);await button('添加 3D 零件').click();return page.locator('[data-selected-3d-piece]').getAttribute('data-selected-3d-piece')}
  async function valid(){await page.waitForFunction(()=>document.querySelector('.magnetic-3d-summary')?.textContent.includes('Geometry Valid'))}
  await page.goto(url);await button('添加正方形').click()
  const twoD=await page.locator('[data-tile-id]').evaluateAll(els=>els.map(e=>({id:e.dataset.tileId,points:e.getAttribute('points'),color:e.getAttribute('fill')})))
- await button('3D').click();await button('新建空白 3D Draft').click();await add();await ready()
+ await button('3D').click();await tools();await button('新建空白 3D Draft').click();await add();await ready()
  const gizmoPiece=await page.locator('[data-selected-3d-piece]').getAttribute('data-selected-3d-piece')
- await field('3D 编辑工具').selectOption('move')
+ await tools();await field('3D 编辑工具').selectOption('move')
  await page.getByRole('region',{name:'3D 编辑画布',exact:true}).focus();await page.keyboard.press('d');await page.waitForTimeout(500)
  assert.ok(Math.abs(Number(await field('3D 位置 X').inputValue())-.2)<1e-8,'keyboard move updates authoritative pose')
  await button('3D Undo').click();await select(gizmoPiece);assert.equal(Number(await field('3D 位置 X').inputValue()),0)
@@ -52,7 +53,7 @@ try {
  }
  assert.ok(didMove,'real mouse TransformControls drag changes X')
  await button('3D Undo').click();await select(gizmoPiece);assert.ok(Math.abs(Number(await field('3D 位置 X').inputValue())-beforeDrag)<1e-8,'one undo restores one entire gizmo drag')
- await field('3D 编辑工具').selectOption('rotate');await button('Fit to View').click();await button('前').click();await ready()
+ await tools();await field('3D 编辑工具').selectOption('rotate');await button('Fit to View').click();await button('前').click();await ready()
  const beforeRotation=JSON.parse(await page.locator('[data-3d-quaternion]').getAttribute('data-3d-quaternion'));let didRotate=false
  for(const r of [55,75,95,115]){
   const box=await canvas().boundingBox(),cx=box.x+box.width/2,cy=box.y+box.height/2
@@ -76,19 +77,19 @@ try {
  await button('复制').click();assert.match(await summary(),/4 片/);await button('删除').click();assert.match(await summary(),/3 片/)
  await button('3D Undo').click();assert.match(await summary(),/4 片/);await button('3D Redo').click();await select(triangle)
  await field('当前 3D 零件颜色').fill('#123456')
- await page.getByText('修改当前 Profile 快照厚度',{exact:true}).click();await field('当前 Profile 厚度').fill('.08');await button('应用快照厚度').click()
+ await tools();await page.getByText('修改当前 Profile 快照厚度',{exact:true}).click();await field('当前 Profile 厚度').fill('.08');await button('应用快照厚度').click()
  await valid();await jsonOpen();const built=await exported();assert.equal(built.profiles.find(s=>s.profile.id==='right-triangle').thickness,.08)
  assert.equal(built.pieces.find(p=>p.id===triangle).color,'#123456')
  // Wrong angle is a constraint edit, no silent pose update. Explicit solve is separate.
- await page.locator('[data-3d-connection="0"]').click();const beforeAngle=await exported()
+ await page.locator('[data-3d-connection="0"]').first().click();const beforeAngle=await exported()
  await button('-90°').click();assert.match(await summary(),/Geometry Invalid/)
  assert.deepEqual((await exported()).pieces,beforeAngle.pieces)
  await button('3D Undo').click();await valid()
- await page.locator('[data-3d-connection="0"]').click()
+ await page.locator('[data-3d-connection="0"]').first().click()
  await page.getByText('修改连接端口',{exact:true}).click();await field('连接端口 B').selectOption('e1-p0')
  await button('更新连接端口（不移动）').click();assert.match(await summary(),/Geometry Invalid/)
  const changedPorts=await exported();assert.equal(changedPorts.connections[0].portB,'e1-p0');assert.deepEqual(changedPorts.pieces,beforeAngle.pieces)
- await button('3D Undo').click();await valid();await page.locator('[data-3d-connection="0"]').click()
+ await button('3D Undo').click();await valid();await page.locator('[data-3d-connection="0"]').first().click()
  await button('断开连接').click();assert.match(await summary(),/3 片 · 1 条连接/)
  assert.deepEqual((await exported()).pieces,beforeAngle.pieces)
  await button('3D Undo').click();await valid();assert.match(await summary(),/3 片 · 2 条连接/)
@@ -102,7 +103,7 @@ try {
  await button('Fit to View').click();await button('Reset Camera').click();await page.locator('[data-3d-piece]').first().click()
  assert.deepEqual(await exported(),invalid,'view selection/camera/export preserve all poses and constraints')
  await button('Edit Draft').click();await select(base);await button('显式求解（固定选中片）').click();await valid()
- await button('保存 3D Draft').click();const repaired=await exported();await button('重新加载已保存 Draft').click();assert.deepEqual(await exported(),repaired)
+ await button('保存 3D Draft').click();const repaired=await exported();await tools();await button('重新加载已保存 Draft').click();assert.deepEqual(await exported(),repaired)
  console.log('PASS Catalog, edge snap, three-piece structure, color/thickness, invalid draft save/refresh, read-only view')
  // Existing cube becomes an editable Draft without losing any of its twelve constraints.
  await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click();await button('从当前作品创建 Draft').click();await select('top')
