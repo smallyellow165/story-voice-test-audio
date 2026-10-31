@@ -31,12 +31,14 @@ export function planningDisplay(plan:Ref|null,request:OperationRecord|undefined,
  if(failure)return {tone:'error',label:'Spatial Planning Failed',message:failure}
  return plan?{tone:'review',label:'Plan Ready / Review Required',message:'空间假设已生成，需人工审核与 Geometry Execution；照片语义正确性尚未验证。'}:{tone:'neutral',label:'尚未执行 / 尚未生成',message:'请先保存或选择当前 Review，再执行 Spatial Planning。'}
 }
-export function executionDisplay(plan:Ref|null,execution:{status:string;candidates:{geometry:{valid:boolean}}[];diagnostics:string[]}|null,request:OperationRecord|undefined,running:boolean,error?:string):DisplayStatus{
+export function executionDisplay(plan:Ref|null,execution:{status:string;candidates:{geometry:{valid:boolean};coverage?:{reconstructed:string[];totalConfirmed:number}}[];diagnosticCandidates?:unknown[];diagnostics:string[]}|null,request:OperationRecord|undefined,running:boolean,error?:string):DisplayStatus{
  if(running||request?.state==='running')return {tone:'running',label:'Running / Generating',message:'正在执行 Geometry Execution；使用当前 Plan 的几何约束。'}
  const failure=requestFailure(request)||error
  if(failure)return {tone:'error',label:'Geometry Execution Failed',message:failure}
  if(!execution)return {tone:'neutral',label:plan?'尚未运行 Geometry Execution':'等待 Plan',message:plan?'当前 Plan 已就绪，请明确执行 Geometry Execution。':'请先执行 Spatial Planning 或选择已保存的 Plan。'}
  const count=execution.candidates.filter(c=>c.geometry.valid).length
- if(execution.status!=='candidates_found'||!count)return {tone:'error',label:execution.status==='budget_exhausted'?'搜索预算已耗尽':'无合法 Candidate',message:execution.status==='budget_exhausted'?'搜索尚未完成；本次结果不能作为完成搜索的正式候选采用。':'未找到合法候选，请检查约束或回到 Review 修正。'}
+ if(execution.status!=='candidates_found'||!count)return {tone:'error',label:execution.status==='budget_exhausted'?'搜索预算已耗尽':'无合法 Candidate',message:execution.status==='budget_exhausted'?'搜索尚未完成；本次结果不能作为完成搜索的正式候选采用。':`未找到实体碰撞合法的候选；${execution.diagnosticCandidates?.length??0} 个 Diagnostic 可供检查，不能采用。`}
+ const coverage=execution.candidates.filter(c=>c.geometry.valid&&c.coverage).map(c=>c.coverage!).sort((a,b)=>b.reconstructed.length-a.reconstructed.length)[0];
+ if(coverage&&coverage.reconstructed.length<coverage.totalConfirmed)return {tone:'error',label:`重建不完整：${coverage.reconstructed.length}/${coverage.totalConfirmed}，未覆盖 ${coverage.totalConfirmed-coverage.reconstructed.length} 个已确认实例`,message:`${count} 个合法局部 Candidate；完整重建不可用。Diagnostic 仅供观察，Photo Match 未验证；局部采用不代表完成重建。`};
  return {tone:'valid',label:`${count} 个合法 Candidate · Geometry Valid`,message:'几何验证通过；Photo Match 未验证，仍需人工照片审核。'}
 }

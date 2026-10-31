@@ -107,7 +107,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
   }
   if(route==='execute')return operation(body,route,async()=>{
    const l=await lineage('plans',body.planId);if(l.outdated)fail('Review 已改变，旧 Plan 不可执行',409)
-   const execution=executeVisible3D(l.record.plan,l.review.input,body.options)
+   const execution=executeVisible3D(l.record.plan,l.review.input,{...body.options,algorithmVersion:3})
    return {record:await put('executions',{...execution,options:body.options??{},planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash})}
   })
   if(route==='adopt'){
@@ -115,7 +115,9 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
    return locked(initial.source.id,async()=>{
     const l=await lineage('executions',body.executionId);if(l.outdated)fail('Review 已改变：Candidate 过期，禁止采用',409)
     if(body.visualChecked!==true)fail('请先对照原图，确认候选及未验证项')
-    const r=l.record,p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,r.options)
+    const r=l.record;
+    if(r.diagnosticCandidates?.some(c=>c.id===body.candidateId))fail('Diagnostic Candidate 未通过严格 Validator，仅供观察，禁止普通采用',422)
+    const p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version>=3?3:2})
     const c=r.candidates.find(c=>c.id===body.candidateId),actual=verified.candidates.find(c=>c.id===body.candidateId)
     const {observationMap:_mapping,spatialConsistency:_spatial,...legacyActual}=actual??{}
     const matches=c&&actual&&hash(c)===hash(r.version===1?legacyActual:actual)

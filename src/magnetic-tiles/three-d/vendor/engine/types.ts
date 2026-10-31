@@ -219,6 +219,9 @@ export interface SolverResult {
 
 /** 校验器发现的单个问题 */
 export interface ValidationIssue {
+  /** Optional structured collision provenance; does not change validity. */
+  relatedPieceIds?: [string, string];
+  penetrationDepth?: number;
   modelId: string;
   pieceId?: string;
   edgeId?: string;

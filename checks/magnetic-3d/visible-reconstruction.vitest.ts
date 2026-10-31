@@ -55,9 +55,9 @@ describe('Visible 3D deterministic magnetic execution',()=>{
  })
  it('wrong loop residual, illegal overlapping connection and invalid port cannot become valid candidates',()=>{
   const {input,plan}=fixture('closed-cube');plan.connections[11].angles=[45]
-  const r=executeVisible3D(plan,input);expect(r.candidates).toEqual([]);expect(r.diagnostics.join()).toContain('GEOMETRY_REJECTED')
+  const r=executeVisible3D(plan,input);expect(r.candidates.length).toBeGreaterThan(0);expect(r.candidates.every(c=>c.geometry.valid&&c.coverage.reconstructed.length<6)).toBe(true);expect(r.diagnosticCandidates?.[0].validation?.idealGeometry.valid).toBe(false);expect(r.diagnostics.join()).toContain('GEOMETRY_REJECTED');expect(executeVisible3D(plan,input,{algorithmVersion:2}).candidates).toEqual([])
   const f=fixture();f.plan.connections[0].angles=[0];f.plan.connections[0].flip=false
-  const overlap=executeVisible3D(f.plan,f.input);expect(overlap.candidates).toEqual([])
+  const overlap=executeVisible3D(f.plan,f.input);expect(overlap.candidates.every(c=>c.geometry.valid&&c.assembly.pieces.length===1)).toBe(true);expect(overlap.diagnosticCandidates?.[0].validation?.solidCollision.valid).toBe(false);expect(executeVisible3D(f.plan,f.input,{algorithmVersion:2}).candidates).toEqual([])
   f.plan.connections[0].portA='imagined-port';expect(()=>executeVisible3D(f.plan,f.input)).toThrow(/Port/)
  })
  it('Unknown profile/angle/port are unresolved without hidden pieces or default angles',()=>{

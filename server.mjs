@@ -1,4 +1,5 @@
 import {createMagneticIntake} from './server/magnetic-intake.mjs'
+import {createMagneticTraceFiles} from './server/magnetic-trace-files.mjs'
 import {createGalleryStore} from './server/brick-gallery.mjs'
 import {createPartsInputStore} from './server/brick-parts-input.mjs'
 import { createPartsGeometryService } from './server/brick-parts-geometry.mjs'
@@ -85,6 +86,7 @@ const vite = await createViteServer({
   server: { middlewareMode: true },
   appType: 'spa',
 })
+const magneticTraceFiles=createMagneticTraceFiles({projectRoot,directory:path.join(generatedDirectory,'magnetic-intake'),intake:magneticIntake,enabled:vite.config.command==='serve'&&!vite.config.isProduction&&process.env.NODE_ENV!=='production'})
 
 const sendJson = (response, statusCode, payload) => {
   response.writeHead(statusCode, {
@@ -550,6 +552,11 @@ const server = createServer(async (request, response) => {
       }
       sendJson(response, 200, await brickSpatial.dispatch(request.method, url.pathname.slice('/api/brick-spatial/'.length), body, url.searchParams))
     } catch (error) { sendJson(response, error.code === 'ENOENT' ? 404 : error.statusCode || 500, { error: error.statusCode ? error.message : 'Spatial 记录读取或执行失败；未自动重试。' }) }
+    return
+  }
+  if (url.pathname.startsWith('/api/magnetic-trace-files/')) {
+    try {const body=request.method==='POST'?await readJsonBody(request,8192):{};sendJson(response,200,await magneticTraceFiles.dispatch(request,url.pathname.slice('/api/magnetic-trace-files/'.length),body))}
+    catch(error){sendJson(response,error.statusCode||500,{error:error.statusCode?error.message:'本地 Trace 文件定位失败；未打开其他文件。'})}
     return
   }
   if (url.pathname.startsWith('/api/magnetic-intake/')) {

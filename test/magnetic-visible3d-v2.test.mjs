@@ -39,7 +39,7 @@ test('hidden hypotheses are non-executable; three actual panels and the closing 
 test('V2 alternatives use existing engine; wrong closure remains rejected without modifying source',async()=>{
  const f=upgradeVisibleFixture(await visibleFixture()),before=JSON.stringify(f);f.plan.connections[0].angles=[90,-90]
  const r=executeVisible3D(f.plan,f.input);assert.equal(r.candidates.length,2);assert.ok(r.candidates.every(c=>c.geometry.valid));assert.notEqual(JSON.stringify(f),before)
- const three=await visibleV2Fixture();three.plan.connections[2].angles=[45];assert.deepEqual(executeVisible3D(three.plan,three.input).candidates,[])
+ const three=await visibleV2Fixture();three.plan.connections[2].angles=[45];const wrong=executeVisible3D(three.plan,three.input);assert.ok(wrong.candidates.every(c=>c.geometry.valid&&c.assembly.pieces.length<3));assert.equal(wrong.diagnosticCandidates[0].validation.idealGeometry.valid,false);assert.deepEqual(executeVisible3D(three.plan,three.input,{algorithmVersion:2}).candidates,[])
 })
 test('V2 requests use existing two model tasks and explicit bounded features, legacy 2D prompt untouched',async()=>{
  const f=await visibleV2Fixture(),prepared={image:png,input:{geometryInput:f.input,catalog:f.assembly.profiles}}

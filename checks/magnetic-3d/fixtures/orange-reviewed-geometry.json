@@ -1,0 +1,1578 @@
+{
+  "provenance": {
+    "reviewId": "66ec23c3-b08c-41f9-aa90-a4f2ab9450f6",
+    "reviewHash": "cb34e5f14872fb59c00c31235232206ec5dff7027f28e031b8b3431520caedfd",
+    "planId": "edb975b9-c57c-4dd6-8ee1-03a379303c1a",
+    "planHash": "b303a4600af5b782cbcc94bb4938a3f7648ab11728412415c759a6f2dbdaec1a",
+    "note": "Immutable geometry regression input from the reviewed real case; no Vision accuracy assertion."
+  },
+  "input": {
+    "evidence": {
+      "version": 2,
+      "observations": [
+        {
+          "id": "tile1",
+          "color": "#DDA52C",
+          "bbox": [
+            0.373,
+            0.323,
+            0.686,
+            0.514
+          ],
+          "features": [
+            {
+              "id": "back_edge",
+              "points": [
+                [
+                  0.387,
+                  0.337
+                ],
+                [
+                  0.622,
+                  0.334
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Approximately horizontal rear rim of the upper panel."
+            },
+            {
+              "id": "left_edge",
+              "points": [
+                [
+                  0.384,
+                  0.351
+                ],
+                [
+                  0.391,
+                  0.471
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Short projected left rim; neighboring amber rims partly overlap it."
+            },
+            {
+              "id": "right_edge",
+              "points": [
+                [
+                  0.627,
+                  0.343
+                ],
+                [
+                  0.669,
+                  0.474
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Receding right boundary of the upper panel."
+            },
+            {
+              "id": "front_edge",
+              "points": [
+                [
+                  0.399,
+                  0.497
+                ],
+                [
+                  0.671,
+                  0.494
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Front rim above the central inverted triangular panel."
+            }
+          ],
+          "occlusion": "Mostly visible; its front and side rims overlap neighboring panel borders.",
+          "evidence": "One amber upper face has four perimeter runs and a continuous patterned interior. Interior rectangular bars and faceting are not separate panels.",
+          "uncertainty": "The thick transparent rims make exact boundary locations approximate.",
+          "shapeAssessment": {
+            "family": "square",
+            "alternativeFamilies": [
+              "rectangle"
+            ],
+            "evidence": "The four-sided upper face is consistent with a square viewed obliquely from above. Its short projected depth is not evidence of an intrinsically short side.",
+            "perspectiveUncertainty": "Depth foreshortening is substantial; equal physical edges cannot be checked directly in the image.",
+            "exactProfileUncertainty": "Physical size is unmeasured. The catalog square is a plausible conditional match, not a certified assignment."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "square",
+              "profileVersion": 1,
+              "reason": "Fits if the four intrinsic sides are equal and the shortened image depth is perspective foreshortening."
+            }
+          ]
+        },
+        {
+          "id": "tile2",
+          "color": "#D89A24",
+          "bbox": [
+            0.234,
+            0.491,
+            0.533,
+            0.831
+          ],
+          "features": [
+            {
+              "id": "upper_corner",
+              "points": [
+                [
+                  0.389,
+                  0.514
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Upper vertex of the left front triangle."
+            },
+            {
+              "id": "left_edge",
+              "points": [
+                [
+                  0.382,
+                  0.526
+                ],
+                [
+                  0.253,
+                  0.777
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Sloping left perimeter adjacent to the narrow left side face."
+            },
+            {
+              "id": "right_edge",
+              "points": [
+                [
+                  0.399,
+                  0.531
+                ],
+                [
+                  0.516,
+                  0.783
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Diagonal rim alongside the central inverted triangle."
+            },
+            {
+              "id": "bottom_edge",
+              "points": [
+                [
+                  0.269,
+                  0.807
+                ],
+                [
+                  0.508,
+                  0.803
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Lower rim; the doubled border is part of this tile, not another panel."
+            }
+          ],
+          "occlusion": "Nearly all of the triangular face is exposed; thick borders obscure the precise shared seams.",
+          "evidence": "Three enclosing rim directions surround a distinct amber triangular interior on the front left.",
+          "uncertainty": "The lower-left corner blends with the side panel and thick base rims.",
+          "shapeAssessment": {
+            "family": "triangle",
+            "alternativeFamilies": [],
+            "evidence": "An upper vertex and two lower vertices are supported by three straight perimeter runs. The neighboring inverted triangle reinforces the triangular subdivision.",
+            "perspectiveUncertainty": "The front plane is oblique, so image side lengths and angles are not intrinsic measurements.",
+            "exactProfileUncertainty": "An equilateral profile is favored by the repeated front tessellation. Absolute size cannot distinguish the two catalog equilateral sizes."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Plausible if the repeated front triangles have equal intrinsic sides at the catalog unit scale."
+            },
+            {
+              "profileId": "large-equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "The same equilateral geometry fits at the larger catalog scale if relative dimensions are confirmed; image size alone cannot establish that scale."
+            }
+          ]
+        },
+        {
+          "id": "tile3",
+          "color": "#E1AB35",
+          "bbox": [
+            0.389,
+            0.497,
+            0.688,
+            0.806
+          ],
+          "features": [
+            {
+              "id": "top_edge",
+              "points": [
+                [
+                  0.401,
+                  0.514
+                ],
+                [
+                  0.668,
+                  0.509
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Upper horizontal rim beneath the upper square."
+            },
+            {
+              "id": "left_edge",
+              "points": [
+                [
+                  0.406,
+                  0.54
+                ],
+                [
+                  0.529,
+                  0.786
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Descending diagonal beside the left front triangle."
+            },
+            {
+              "id": "right_edge",
+              "points": [
+                [
+                  0.662,
+                  0.537
+                ],
+                [
+                  0.547,
+                  0.783
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Descending diagonal beside the right front triangle."
+            },
+            {
+              "id": "lower_corner",
+              "points": [
+                [
+                  0.536,
+                  0.794
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Downward-pointing vertex at the central lower junction."
+            }
+          ],
+          "occlusion": "Interior is visible; surrounding thick rims partly merge at the lower vertex.",
+          "evidence": "A separate downward-pointing triangular patterned region is enclosed between the upper rim and two diagonal borders.",
+          "uncertainty": "At the bottom junction, the exact corner position is less clear than the triangular face itself.",
+          "shapeAssessment": {
+            "family": "triangle",
+            "alternativeFamilies": [],
+            "evidence": "One upper edge and two converging diagonal edges establish an inverted triangular panel.",
+            "perspectiveUncertainty": "Foreshortening changes its apparent height; the shared front plane provides stronger evidence than raw image aspect ratio.",
+            "exactProfileUncertainty": "Equilateral geometry is plausible from the coherent three-triangle front face; catalog size remains unverified."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Fits the repeated front tessellation if the three intrinsic sides are equal at unit scale."
+            },
+            {
+              "profileId": "large-equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Also fits the triangular shape at the larger catalog scale, conditional on confirming relative edge lengths."
+            }
+          ]
+        },
+        {
+          "id": "tile4",
+          "color": "#DCA02A",
+          "bbox": [
+            0.533,
+            0.491,
+            0.817,
+            0.817
+          ],
+          "features": [
+            {
+              "id": "upper_corner",
+              "points": [
+                [
+                  0.681,
+                  0.514
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Upper vertex of the right front triangle."
+            },
+            {
+              "id": "left_edge",
+              "points": [
+                [
+                  0.671,
+                  0.54
+                ],
+                [
+                  0.551,
+                  0.783
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Diagonal boundary alongside the central inverted triangle."
+            },
+            {
+              "id": "right_edge",
+              "points": [
+                [
+                  0.692,
+                  0.54
+                ],
+                [
+                  0.796,
+                  0.771
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Outer front-face slope next to the narrow right-side amber strip."
+            },
+            {
+              "id": "bottom_edge",
+              "points": [
+                [
+                  0.568,
+                  0.8
+                ],
+                [
+                  0.796,
+                  0.794
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Lower front rim of the right triangle."
+            }
+          ],
+          "occlusion": "Most of the face is exposed; its right border overlaps the narrow side-face evidence.",
+          "evidence": "A distinct upward-pointing triangular interior occupies the front right and has its own three enclosing rim runs.",
+          "uncertainty": "The front and side borders nearly coincide toward the lower-right corner.",
+          "shapeAssessment": {
+            "family": "triangle",
+            "alternativeFamilies": [],
+            "evidence": "The upper vertex, two lower corners, and three perimeter directions support a triangular tile matching the front-left subdivision.",
+            "perspectiveUncertainty": "Perspective and a slightly unequal projected outline prevent direct angle measurement.",
+            "exactProfileUncertainty": "Equilateral geometry is favored, but neither absolute scale nor an exact catalog size is established."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Plausible equal-sided triangle consistent with the neighboring front panels."
+            },
+            {
+              "profileId": "large-equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "A larger equal-sided triangle remains geometrically possible until relative scale is confirmed."
+            }
+          ]
+        },
+        {
+          "id": "tile5",
+          "color": "#C58D26",
+          "bbox": [
+            0.225,
+            0.354,
+            0.4,
+            0.817
+          ],
+          "features": [
+            {
+              "id": "upper_corner",
+              "points": [
+                [
+                  0.365,
+                  0.371
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Upper end of the narrow left-side face."
+            },
+            {
+              "id": "outer_edge",
+              "points": [
+                [
+                  0.357,
+                  0.389
+                ],
+                [
+                  0.237,
+                  0.751
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Long outer-left perimeter segment."
+            },
+            {
+              "id": "front_edge",
+              "points": [
+                [
+                  0.378,
+                  0.537
+                ],
+                [
+                  0.247,
+                  0.783
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Inner sloping boundary beside the front-left triangle."
+            },
+            {
+              "id": "upper_edge",
+              "points": [
+                [
+                  0.365,
+                  0.383
+                ],
+                [
+                  0.38,
+                  0.483
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Short, strongly foreshortened upper boundary beside the upper panel."
+            },
+            {
+              "id": "lower_corner",
+              "points": [
+                [
+                  0.242,
+                  0.786
+                ]
+              ],
+              "visibility": "estimated",
+              "note": "Approximate convergence of side rims within the thick lower-left border."
+            }
+          ],
+          "occlusion": "Seen nearly edge-on; the front triangle overlaps part of its inner rim.",
+          "evidence": "A narrow patterned amber face lies between the outer-left silhouette and the front-left triangle. It has its own upper rim and interior, rather than only a doubled front border.",
+          "uncertainty": "The lower termination is obscured by thick rims. A small fourth boundary could be unresolved.",
+          "shapeAssessment": {
+            "family": "triangle",
+            "alternativeFamilies": [
+              "square",
+              "polygon"
+            ],
+            "evidence": "Two long boundary runs appear to converge near the lower-left end, with a short upper run closing a strongly foreshortened triangular face.",
+            "perspectiveUncertainty": "Severe edge-on projection prevents reliable intrinsic angle or side-ratio recovery. A quadrilateral with an unresolved lower edge remains possible.",
+            "exactProfileUncertainty": "No unique triangular profile is established. Equal-sided and right-triangular geometries are conditional possibilities; a square is relevant only if a fourth boundary is confirmed."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Possible if the narrow appearance is mainly edge-on foreshortening and its front edge matches a unit equilateral front tile."
+            },
+            {
+              "profileId": "large-equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Possible under the same equal-sided interpretation at the larger catalog scale."
+            },
+            {
+              "profileId": "right-triangle",
+              "profileVersion": 1,
+              "reason": "Possible if an intrinsic right angle is strongly distorted by the side-on view; the image does not resolve that angle."
+            },
+            {
+              "profileId": "square",
+              "profileVersion": 1,
+              "reason": "Conditional alternative only if the obscured lower termination contains a fourth edge and the face is a foreshortened square."
+            }
+          ]
+        },
+        {
+          "id": "tile6",
+          "color": "#BC8D29",
+          "bbox": [
+            0.636,
+            0.343,
+            0.829,
+            0.797
+          ],
+          "features": [
+            {
+              "id": "upper_corner",
+              "points": [
+                [
+                  0.651,
+                  0.351
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Upper tip of the narrow amber side strip beyond the upper square's right rim."
+            },
+            {
+              "id": "outer_edge",
+              "points": [
+                [
+                  0.657,
+                  0.374
+                ],
+                [
+                  0.822,
+                  0.754
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Outer-right silhouette, outside the front triangle's sloping rim."
+            },
+            {
+              "id": "front_edge",
+              "points": [
+                [
+                  0.695,
+                  0.531
+                ],
+                [
+                  0.807,
+                  0.771
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Inner border adjoining the front-right triangular face."
+            },
+            {
+              "id": "upper_edge",
+              "points": [
+                [
+                  0.654,
+                  0.371
+                ],
+                [
+                  0.687,
+                  0.489
+                ]
+              ],
+              "visibility": "visible",
+              "note": "Short projected upper side boundary."
+            }
+          ],
+          "occlusion": "Extremely foreshortened and partly covered by the front-right panel's thick rim.",
+          "evidence": "A narrow amber region with separated outer and inner boundaries extends from beside the upper panel toward the lower-right corner.",
+          "uncertainty": "This is the least secure distinct-panel observation: some of the strip may be rim thickness. Its continuation beside both upper and front panels supports a separate side face, but confirmation is needed.",
+          "shapeAssessment": {
+            "family": "triangle",
+            "alternativeFamilies": [
+              "square",
+              "unknown"
+            ],
+            "evidence": "The visible strip resembles the opposite side face, with a short upper boundary and long sides approaching a lower termination.",
+            "perspectiveUncertainty": "The face is almost edge-on; its lower corner and possible fourth edge cannot be resolved.",
+            "exactProfileUncertainty": "Neither intrinsic triangular proportions nor a possible quadrilateral outline can be securely recovered."
+          },
+          "profileCandidates": [
+            {
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Possible if this is an edge-on triangular side face sharing a unit-length edge with the front triangle."
+            },
+            {
+              "profileId": "large-equilateral-triangle",
+              "profileVersion": 1,
+              "reason": "Possible under the corresponding larger equal-sided interpretation; size is unverified."
+            },
+            {
+              "profileId": "right-triangle",
+              "profileVersion": 1,
+              "reason": "A right-triangular side face cannot be excluded under this strong foreshortening."
+            },
+            {
+              "profileId": "square",
+              "profileVersion": 1,
+              "reason": "Conditional on confirming a fourth boundary hidden by overlapping rims."
+            }
+          ]
+        }
+      ],
+      "spatialInterpretation": {
+        "camera": {
+          "viewpoint": "above",
+          "evidence": "tile1 exposes a substantial upper surface while tile2, tile3, and tile4 form the broad front-facing region; tile5 and tile6 are seen much more edge-on.",
+          "uncertainty": "The view is also oblique. Exact camera elevation and alignment with the supporting surface are not measured."
+        },
+        "faces": [
+          {
+            "pieceId": "tile1",
+            "orientation": "horizontal",
+            "evidenceRefs": [
+              "tile1:back_edge",
+              "tile1:front_edge",
+              "tile1:right_edge"
+            ],
+            "reasoning": "The upper face appears approximately parallel to the supporting surface and is viewed from above.",
+            "uncertainty": "A modest tilt relative to the surface remains possible."
+          },
+          {
+            "pieceId": "tile2",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "tile2:left_edge",
+              "tile2:right_edge",
+              "tile2:bottom_edge",
+              "tile3"
+            ],
+            "reasoning": "Its lower edge lies near the support while its apex joins the elevated upper region. Together with the other front triangles it suggests an outward-sloping front face.",
+            "uncertainty": "A near-vertical face under perspective is an alternative."
+          },
+          {
+            "pieceId": "tile3",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "tile3:top_edge",
+              "tile3:lower_corner",
+              "tile2",
+              "tile4"
+            ],
+            "reasoning": "The inverted triangle appears to occupy the same sloping front plane as the two upward-pointing neighbors.",
+            "uncertainty": "Small folds between the three front tiles cannot be excluded."
+          },
+          {
+            "pieceId": "tile4",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "tile4:upper_corner",
+              "tile4:bottom_edge",
+              "tile3"
+            ],
+            "reasoning": "It mirrors the front-left triangle and completes the likely trapezoidal front face.",
+            "uncertainty": "Its precise tilt relative to gravity is not recoverable."
+          },
+          {
+            "pieceId": "tile5",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "tile5:outer_edge",
+              "tile5:front_edge",
+              "tile5:upper_edge"
+            ],
+            "reasoning": "The narrow left face turns away from the front region and connects the elevated upper area toward the supporting surface.",
+            "uncertainty": "A vertical side face is also plausible; edge-on viewing obscures its slope."
+          },
+          {
+            "pieceId": "tile6",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "tile6:outer_edge",
+              "tile6:front_edge",
+              "tile6:upper_edge"
+            ],
+            "reasoning": "If distinct, this strip is a right side face turned away from the front plane.",
+            "uncertainty": "Both its orientation and its separation from neighboring thick rims are less secure."
+          }
+        ],
+        "connections": [
+          {
+            "pieceA": "tile2",
+            "pieceB": "tile3",
+            "featureA": "right_edge",
+            "featureB": "left_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              0
+            ],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile2:right_edge",
+              "tile3:left_edge"
+            ],
+            "reasoning": "The paired diagonal rims follow the same seam between the upper-left junction and central bottom junction. The continuous front tessellation favors coplanarity.",
+            "uncertainty": "Zero denotes a coplanar visual suggestion, not an engine port angle. A small fold is possible."
+          },
+          {
+            "pieceA": "tile3",
+            "pieceB": "tile4",
+            "featureA": "right_edge",
+            "featureB": "left_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              0
+            ],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile3:right_edge",
+              "tile4:left_edge"
+            ],
+            "reasoning": "The diagonal boundaries align between matching upper and lower junctions, favoring a shared edge within the front plane.",
+            "uncertainty": "Rim thickness hides the exact contact; a shallow fold is not excluded."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile3",
+            "featureA": "front_edge",
+            "featureB": "top_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile1:front_edge",
+              "tile3:top_edge"
+            ],
+            "reasoning": "The upper square's front rim and the central triangle's top rim span the same two front junctions. The faces visibly turn across this boundary.",
+            "uncertainty": "An oblique or approximately orthogonal fold is possible; its magnitude and sign are not resolved."
+          },
+          {
+            "pieceA": "tile2",
+            "pieceB": "tile5",
+            "featureA": "left_edge",
+            "featureB": "front_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile2:left_edge",
+              "tile5:front_edge",
+              "tile5:outer_edge"
+            ],
+            "reasoning": "The left side face meets the front triangle along a common sloping boundary, with the side interior continuing beyond that seam.",
+            "uncertainty": "The seam is partly overlapped; the fold angle is underdetermined."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile5",
+            "featureA": "left_edge",
+            "featureB": "upper_edge",
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile1:left_edge",
+              "tile5:upper_edge"
+            ],
+            "reasoning": "These short projected rims lie at the same upper-left junction and plausibly represent a top-to-side contact.",
+            "uncertainty": "Their endpoints are obscured and do not establish a complete shared edge."
+          },
+          {
+            "pieceA": "tile4",
+            "pieceB": "tile6",
+            "featureA": "right_edge",
+            "featureB": "front_edge",
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile4:right_edge",
+              "tile6:front_edge",
+              "tile6:outer_edge"
+            ],
+            "reasoning": "The narrow right-side region follows the front triangle's outer slope and may share that edge.",
+            "uncertainty": "A separate side face is plausible but less certain than on the left; doubled rims alone would not prove contact."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile6",
+            "featureA": "right_edge",
+            "featureB": "upper_edge",
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [],
+            "angleRange": null,
+            "evidenceRefs": [
+              "tile1:right_edge",
+              "tile6:upper_edge"
+            ],
+            "reasoning": "The upper square's right boundary is adjacent to the upper part of the narrow right-side region.",
+            "uncertainty": "Overlap and foreshortening prevent confirmation of a shared full edge."
+          }
+        ],
+        "overallShapeHypotheses": [
+          {
+            "label": "Low, capped shell with a tessellated trapezoidal front",
+            "visiblePieceIds": [
+              "tile1",
+              "tile2",
+              "tile3",
+              "tile4",
+              "tile5",
+              "tile6"
+            ],
+            "evidenceRefs": [
+              "tile1",
+              "tile2",
+              "tile3",
+              "tile4",
+              "tile5",
+              "tile6"
+            ],
+            "reasoning": "The upper square sits above three alternating front triangles whose combined outline is trapezoidal. Narrow side-face evidence turns away on both sides, giving the assembly depth and an outward-flaring lower silhouette.",
+            "uncertainty": "This describes only the visible shell. A closed enclosure, complete rear, or complete base is not established; the right-side observation is tentative."
+          },
+          {
+            "label": "Approximately coplanar three-triangle front sheet",
+            "visiblePieceIds": [
+              "tile2",
+              "tile3",
+              "tile4"
+            ],
+            "evidenceRefs": [
+              "tile2:right_edge",
+              "tile3:left_edge",
+              "tile3:right_edge",
+              "tile4:left_edge"
+            ],
+            "reasoning": "Two upward triangles flank one downward triangle, with continuous diagonal seams and a nearly continuous lower border.",
+            "uncertainty": "Shallow folds between triangles could produce a similar projection."
+          }
+        ],
+        "hiddenStructureHypotheses": [],
+        "alternatives": [
+          {
+            "label": "Side faces may be quadrilateral",
+            "description": "The narrow side regions could be strongly foreshortened square or other quadrilateral panels if short lower boundaries are concealed by thick rims. Their apparent triangular taper is not decisive.",
+            "evidenceRefs": [
+              "tile5",
+              "tile6"
+            ],
+            "uncertainty": "The photograph does not expose the lower side terminations clearly enough to choose confidently."
+          },
+          {
+            "label": "Right-side strip may partly be border thickness",
+            "description": "Some evidence assigned to tile6 could instead belong to the thick rims of tile1 and tile4. It is retained as a tentative observation rather than silently discarded.",
+            "evidenceRefs": [
+              "tile6",
+              "tile1:right_edge",
+              "tile4:right_edge"
+            ],
+            "uncertainty": "A clearer side view is needed to distinguish a separate face from overlapping borders."
+          },
+          {
+            "label": "Front plane closer to vertical",
+            "description": "Camera elevation and perspective may account for part of the apparent front slope; the front triangles could be nearer vertical than the primary interpretation suggests.",
+            "evidenceRefs": [
+              "tile1",
+              "tile2",
+              "tile3",
+              "tile4"
+            ],
+            "uncertainty": "No calibrated camera or reliable physical angle measurement is available."
+          }
+        ],
+        "unknowns": [
+          "Fold magnitudes and signs are not established.",
+          "The exact intrinsic outlines of the two narrow side observations remain ambiguous.",
+          "The rear and underside are not sufficiently visible to determine enclosure or closure.",
+          "The suggested coplanar fold values describe visual face relationships only, not engine port directions."
+        ]
+      },
+      "unknowns": [
+        "Six panel observations are retained, with tile6 tentative; there is no evidence of overflow beyond the 12-observation limit.",
+        "Absolute physical scale and exact catalog profile assignments are unverified.",
+        "The front triangles favor equilateral geometry, but catalog size must be confirmed using relative edge lengths or additional views.",
+        "Amber body colors are approximate and altered by transparency, overlapping rims, and illumination.",
+        "Internal magnet bars, decorative facets, reflections, and doubled borders were not counted as additional tiles."
+      ]
+    },
+    "review": {
+      "pieces": [
+        {
+          "id": "tile1",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#DDA52C"
+        },
+        {
+          "id": "tile2",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "color": "#D89A24"
+        },
+        {
+          "id": "tile3",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "color": "#E1AB35"
+        },
+        {
+          "id": "tile4",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "color": "#DCA02A"
+        },
+        {
+          "id": "tile5",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#C58D26"
+        },
+        {
+          "id": "tile6",
+          "confirmed": true,
+          "excluded": false,
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#BC8D29"
+        }
+      ],
+      "constraints": []
+    },
+    "profiles": [
+      {
+        "profile": {
+          "id": "square",
+          "version": 1,
+          "name": "正方形",
+          "vertices": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ],
+          "connectableEdges": [
+            "e0",
+            "e1",
+            "e2",
+            "e3"
+          ]
+        },
+        "thickness": 0.06
+      },
+      {
+        "profile": {
+          "id": "equilateral-triangle",
+          "version": 1,
+          "name": "等边三角形",
+          "vertices": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              0.5,
+              0.8660254037844386
+            ]
+          ],
+          "connectableEdges": [
+            "e0",
+            "e1",
+            "e2"
+          ]
+        },
+        "thickness": 0.06
+      }
+    ]
+  },
+  "plan": {
+    "version": 2,
+    "parts": [
+      {
+        "id": "tile1",
+        "profileId": "square",
+        "profileVersion": 1,
+        "orientationEvidence": "Upper quadrilateral with exposed interior. Conventional, unverified local mapping: e0=front_edge directed left-to-right, e1=right_edge toward rear, e2=back_edge right-to-left, e3=left_edge toward front. This basis is retained throughout both graphs."
+      },
+      {
+        "id": "tile2",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "orientationEvidence": "Upward-pointing front-left triangle. Conventional local vertices v0=lower-left, v1=lower-center, v2=upper apex; e0=bottom_edge, e1=right_edge, e2=left_edge. Edge labels are unmarked and unverified."
+      },
+      {
+        "id": "tile3",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "orientationEvidence": "Inverted central triangle. Conventional local vertices v0=upper-right, v1=upper-left, v2=lower-center; e0=top_edge, e1=left_edge, e2=right_edge. This gives a consistent normal with both neighboring front triangles."
+      },
+      {
+        "id": "tile4",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "orientationEvidence": "Upward-pointing front-right triangle. Conventional local vertices v0=lower-center, v1=lower-right, v2=upper apex; e0=bottom_edge, e1=right_edge, e2=left_edge."
+      },
+      {
+        "id": "tile5",
+        "profileId": "square",
+        "profileVersion": 1,
+        "orientationEvidence": "Review confirms a square, superseding Vision's preferred triangular side interpretation. Conventional vertices v0=front-lower, v1=front-upper, v2=rear-upper, v3=rear-lower; e0=front_edge, e1=upper_edge, e2=outer_edge, e3=partly obscured lower boundary. The fourth boundary is inferred from the reviewed profile, not claimed as independently visible."
+      },
+      {
+        "id": "tile6",
+        "profileId": "square",
+        "profileVersion": 1,
+        "orientationEvidence": "Review confirms a distinct square despite Vision's tentative strip interpretation. Conventional vertices v0=front-upper, v1=front-lower, v2=rear-lower, v3=rear-upper; e0=front_edge, e1=obscured lower boundary, e2=outer_edge, e3=upper_edge. The near-edge-on projection leaves these correspondences less secure."
+      }
+    ],
+    "connections": [
+      {
+        "pieceA": "tile2",
+        "pieceB": "tile3",
+        "portA": "e1-p0",
+        "portB": "e1-p0",
+        "intent": "connect",
+        "angles": [
+          0
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile2:right_edge",
+          "tile3:left_edge"
+        ],
+        "evidence": "The diagonal rims share upper-left and lower-center junctions. Reversed endpoint pairing places the two triangle interiors on opposite sides of their common edge with equal normals.",
+        "uncertainty": "Coplanarity is the preferred exact hypothesis, not a measured angle. Shallow folds would require coordinated changes throughout the closed side loops."
+      },
+      {
+        "pieceA": "tile3",
+        "pieceB": "tile4",
+        "portA": "e2-p0",
+        "portB": "e2-p0",
+        "intent": "connect",
+        "angles": [
+          0
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile3:right_edge",
+          "tile4:left_edge"
+        ],
+        "evidence": "Matching diagonal rims join the upper-right and lower-center junctions. The chosen bases give reversed endpoint correspondence and equal normals.",
+        "uncertainty": "Thick borders obscure exact contact; a small coordinated fold remains possible."
+      },
+      {
+        "pieceA": "tile1",
+        "pieceB": "tile3",
+        "portA": "e0-p0",
+        "portB": "e0-p0",
+        "intent": "connect",
+        "angles": [
+          90
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile1:front_edge",
+          "tile3:top_edge"
+        ],
+        "evidence": "Both rims span the same upper front junctions. With the reviewed square side panels and coplanar front tessellation, the complete loops require a perpendicular top/front relationship. The chosen directed bases yield +90 degrees.",
+        "uncertainty": "The photograph alone does not measure 90 degrees. This value follows from the combined profile and closure hypothesis; the reflected full graph reverses its sign."
+      },
+      {
+        "pieceA": "tile2",
+        "pieceB": "tile5",
+        "portA": "e2-p0",
+        "portB": "e0-p0",
+        "intent": "connect",
+        "angles": [
+          90
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile2:left_edge",
+          "tile5:front_edge",
+          "tile5:outer_edge"
+        ],
+        "evidence": "A distinct side interior extends beyond the common sloping front-left rim. Endpoint pairing is upper-to-upper and lower-to-lower under the declared local bases. The square-side loop gives +90 degrees relative to the front triangle.",
+        "uncertainty": "Contact is stronger evidence than the precise angle. The exact value depends on the planar-front and upper-contact hypotheses."
+      },
+      {
+        "pieceA": "tile1",
+        "pieceB": "tile5",
+        "portA": "e3-p0",
+        "portB": "e1-p0",
+        "intent": "uncertain",
+        "angles": [
+          60
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile1:left_edge",
+          "tile5:upper_edge",
+          "tile2:left_edge"
+        ],
+        "evidence": "The short upper-left rims plausibly share their full edge, rather than merely their front endpoint. Retaining this closing edge with the square side and planar equilateral front yields +60 degrees between the selected normals.",
+        "uncertainty": "The rear endpoint is obscured. Full-edge contact is a loop-closing hypothesis, not established by proximity alone; 60 degrees is an engine normal rotation, not an asserted interior fold angle."
+      },
+      {
+        "pieceA": "tile4",
+        "pieceB": "tile6",
+        "portA": "e1-p0",
+        "portB": "e0-p0",
+        "intent": "uncertain",
+        "angles": [
+          90
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile4:right_edge",
+          "tile6:front_edge",
+          "tile6:outer_edge"
+        ],
+        "evidence": "The right-side region follows the front-right slope and has a separated outer silhouette. Reviewed distinct-square status supports testing a full shared front edge. The declared bases and closed-loop hypothesis give +90 degrees.",
+        "uncertainty": "Overlapping transparent rims make this contact less secure than the left-side contact."
+      },
+      {
+        "pieceA": "tile1",
+        "pieceB": "tile6",
+        "portA": "e1-p0",
+        "portB": "e3-p0",
+        "intent": "uncertain",
+        "angles": [
+          60
+        ],
+        "angleRange": null,
+        "flip": true,
+        "evidenceRefs": [
+          "tile1:right_edge",
+          "tile6:upper_edge",
+          "tile4:right_edge"
+        ],
+        "evidence": "Adjacent short rims plausibly connect the same front-upper and rear-upper endpoints. This closing edge is retained; the selected square and equilateral geometry yields +60 degrees.",
+        "uncertainty": "Full-edge correspondence is partially occluded and must be tested against the image as well as geometric closure."
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "Reflected fold branch with identical local edge assignments and complete loops",
+        "connections": [
+          {
+            "pieceA": "tile2",
+            "pieceB": "tile3",
+            "portA": "e1-p0",
+            "portB": "e1-p0",
+            "intent": "connect",
+            "angles": [
+              0
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile2:right_edge",
+              "tile3:left_edge"
+            ],
+            "evidence": "The same coplanar front seam is retained.",
+            "uncertainty": "Exact coplanarity remains conditional."
+          },
+          {
+            "pieceA": "tile3",
+            "pieceB": "tile4",
+            "portA": "e2-p0",
+            "portB": "e2-p0",
+            "intent": "connect",
+            "angles": [
+              0
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile3:right_edge",
+              "tile4:left_edge"
+            ],
+            "evidence": "The same coplanar front seam is retained.",
+            "uncertainty": "Exact coplanarity remains conditional."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile3",
+            "portA": "e0-p0",
+            "portB": "e0-p0",
+            "intent": "connect",
+            "angles": [
+              -90
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile1:front_edge",
+              "tile3:top_edge"
+            ],
+            "evidence": "The cap folds to the opposite side of the conventionally oriented front plane.",
+            "uncertainty": "Unmarked front/back normals and an uncalibrated camera do not independently determine this branch."
+          },
+          {
+            "pieceA": "tile2",
+            "pieceB": "tile5",
+            "portA": "e2-p0",
+            "portB": "e0-p0",
+            "intent": "connect",
+            "angles": [
+              -90
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile2:left_edge",
+              "tile5:front_edge"
+            ],
+            "evidence": "The left square folds with the reflected cap, preserving corresponding front endpoints.",
+            "uncertainty": "This sign is correlated with all other reflected folds, not an independent choice."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile5",
+            "portA": "e3-p0",
+            "portB": "e1-p0",
+            "intent": "uncertain",
+            "angles": [
+              -60
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile1:left_edge",
+              "tile5:upper_edge"
+            ],
+            "evidence": "The left loop retains its closing edge with the reflected signed normal rotation.",
+            "uncertainty": "Full-edge contact remains partly obscured."
+          },
+          {
+            "pieceA": "tile4",
+            "pieceB": "tile6",
+            "portA": "e1-p0",
+            "portB": "e0-p0",
+            "intent": "uncertain",
+            "angles": [
+              -90
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile4:right_edge",
+              "tile6:front_edge"
+            ],
+            "evidence": "The right square follows the same reflected fold branch.",
+            "uncertainty": "The contact is visually less secure; its sign is correlated with the cap and opposite side."
+          },
+          {
+            "pieceA": "tile1",
+            "pieceB": "tile6",
+            "portA": "e1-p0",
+            "portB": "e3-p0",
+            "intent": "uncertain",
+            "angles": [
+              -60
+            ],
+            "angleRange": null,
+            "flip": true,
+            "evidenceRefs": [
+              "tile1:right_edge",
+              "tile6:upper_edge"
+            ],
+            "evidence": "The right closing edge is retained with the reflected normal rotation.",
+            "uncertainty": "Full-edge correspondence remains a hypothesis."
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "tile1",
+        "to": "tile3",
+        "kind": "above_in_image",
+        "evidence": "The upper square interior lies above the central triangle and meets its upper rim."
+      },
+      {
+        "from": "tile2",
+        "to": "tile5",
+        "kind": "occludes",
+        "evidence": "The thick front-left triangular border partly conceals the side square's front boundary."
+      },
+      {
+        "from": "tile4",
+        "to": "tile6",
+        "kind": "occludes",
+        "evidence": "The right front border partly covers the near-edge-on square's inner rim."
+      },
+      {
+        "from": "tile2",
+        "to": "tile4",
+        "kind": "unknown",
+        "evidence": "Their lower-center corners meet near tile3's lower vertex; this is point contact, not a separate shared edge."
+      }
+    ],
+    "spatialInterpretation": {
+      "camera": {
+        "viewpoint": "above",
+        "evidence": "The upper square exposes its interior while the front tessellation is broad and both side squares are strongly foreshortened.",
+        "uncertainty": "The view is also oblique. Elevation, lens calibration and scene alignment are unmeasured."
+      },
+      "faces": [
+        {
+          "pieceId": "tile1",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "tile1:back_edge",
+            "tile1:front_edge",
+            "tile1:right_edge"
+          ],
+          "reasoning": "The exposed cap plausibly lies approximately parallel to the supporting surface.",
+          "uncertainty": "Horizontal is a qualitative scene-frame hypothesis, not an executed pose."
+        },
+        {
+          "pieceId": "tile2",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "tile2:bottom_edge",
+            "tile2:right_edge",
+            "tile3:left_edge"
+          ],
+          "reasoning": "The planar front and reviewed square-side loops favor a front plane perpendicular to the cap. If the cap is horizontal, the front is approximately vertical.",
+          "uncertainty": "This revises Vision's preferred inclined-front interpretation using reviewed geometry; the image alone permits front tilt."
+        },
+        {
+          "pieceId": "tile3",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "tile3:top_edge",
+            "tile3:left_edge",
+            "tile3:right_edge"
+          ],
+          "reasoning": "Its matching diagonal seams favor the same front plane as tile2 and tile4.",
+          "uncertainty": "Near-coplanarity and the inferred scene frame remain unverified."
+        },
+        {
+          "pieceId": "tile4",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "tile4:bottom_edge",
+            "tile4:left_edge",
+            "tile3:right_edge"
+          ],
+          "reasoning": "Its perimeter continues the tessellated front, which the full reviewed-profile loops place perpendicular to the cap.",
+          "uncertainty": "Small front folds or global assembly tilt are not excluded by the photograph."
+        },
+        {
+          "pieceId": "tile5",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "tile5:outer_edge",
+            "tile5:front_edge",
+            "tile5:upper_edge"
+          ],
+          "reasoning": "The confirmed square turns away from the front and follows its outward-sloping left perimeter. Its narrow projection does not imply a triangular intrinsic outline.",
+          "uncertainty": "Lower and rear corners are poorly resolved."
+        },
+        {
+          "pieceId": "tile6",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "tile6:outer_edge",
+            "tile6:front_edge",
+            "tile6:upper_edge"
+          ],
+          "reasoning": "The confirmed right square similarly turns away from the front and is viewed nearly edge-on.",
+          "uncertainty": "Review establishes its inventory and profile, but does not make every apparent rim correspondence certain."
+        }
+      ],
+      "connections": [
+        {
+          "pieceA": "tile2",
+          "pieceB": "tile3",
+          "featureA": "right_edge",
+          "featureB": "left_edge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            0
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile2:right_edge",
+            "tile3:left_edge"
+          ],
+          "reasoning": "The diagonal rims connect matching upper and lower junctions and separate two distinct interiors.",
+          "uncertainty": "A shallow fold could be concealed by rim thickness."
+        },
+        {
+          "pieceA": "tile3",
+          "pieceB": "tile4",
+          "featureA": "right_edge",
+          "featureB": "left_edge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            0
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile3:right_edge",
+            "tile4:left_edge"
+          ],
+          "reasoning": "A continuous diagonal seam and shared endpoints favor coplanar adjacency.",
+          "uncertainty": "Exact coplanarity is not measurable from this image."
+        },
+        {
+          "pieceA": "tile1",
+          "pieceB": "tile3",
+          "featureA": "front_edge",
+          "featureB": "top_edge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile1:front_edge",
+            "tile3:top_edge"
+          ],
+          "reasoning": "The rims share both front upper junctions. A perpendicular relationship is supported jointly by the reviewed square sides and planar-front closure, rather than by image slope.",
+          "uncertainty": "Visual sign is unresolved; executable signs depend on the declared local bases."
+        },
+        {
+          "pieceA": "tile2",
+          "pieceB": "tile5",
+          "featureA": "left_edge",
+          "featureB": "front_edge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile2:left_edge",
+            "tile5:front_edge",
+            "tile5:outer_edge"
+          ],
+          "reasoning": "A separate side interior continues beyond the aligned front-left boundary. Perpendicularity follows conditionally from the complete square-side loop.",
+          "uncertainty": "The shared rim is partly covered."
+        },
+        {
+          "pieceA": "tile1",
+          "pieceB": "tile5",
+          "featureA": "left_edge",
+          "featureB": "upper_edge",
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            60
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile1:left_edge",
+            "tile5:upper_edge"
+          ],
+          "reasoning": "The short runs plausibly describe one upper side edge. The complete loop predicts a 60-degree normal separation.",
+          "uncertainty": "Their rear endpoint correspondence is not independently visible; this is stronger than mere point contact only under the proposed mapping."
+        },
+        {
+          "pieceA": "tile4",
+          "pieceB": "tile6",
+          "featureA": "right_edge",
+          "featureB": "front_edge",
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile4:right_edge",
+            "tile6:front_edge",
+            "tile6:outer_edge"
+          ],
+          "reasoning": "Aligned long rims and the independently reviewed square support a shared-edge hypothesis rather than treating the entire strip as border thickness.",
+          "uncertainty": "Transparency and overlapping rims still obscure actual contact."
+        },
+        {
+          "pieceA": "tile1",
+          "pieceB": "tile6",
+          "featureA": "right_edge",
+          "featureB": "upper_edge",
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            60
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "tile1:right_edge",
+            "tile6:upper_edge"
+          ],
+          "reasoning": "The short upper-right rims plausibly close the right loop; reviewed geometry predicts the same normal separation as on the left.",
+          "uncertainty": "Projected overlap does not independently establish a full shared edge."
+        }
+      ],
+      "overallShapeHypotheses": [
+        {
+          "label": "Capped open shell with square side panels and a tessellated trapezoidal front",
+          "visiblePieceIds": [
+            "tile1",
+            "tile2",
+            "tile3",
+            "tile4",
+            "tile5",
+            "tile6"
+          ],
+          "evidenceRefs": [
+            "tile1",
+            "tile2",
+            "tile3",
+            "tile4",
+            "tile5",
+            "tile6"
+          ],
+          "reasoning": "Three equal triangles form the broad trapezoidal front. The upper square spans its short upper edge, and two reviewed square panels turn away along its outer slopes. Their complete connection loops admit a coherent extrusion-like shell without adding any panels.",
+          "uncertainty": "Rear or underside closure is not established. Geometry consistency would not by itself establish photo agreement, stability or physical buildability."
+        }
+      ],
+      "hiddenStructureHypotheses": [],
+      "alternatives": [
+        {
+          "label": "Reflected fold branch",
+          "description": "All nonzero signed folds can reverse together while retaining the same edge assignments, coplanar front and both closing loops. This is represented by the full alternative connection graph.",
+          "evidenceRefs": [
+            "tile1",
+            "tile2",
+            "tile3",
+            "tile4",
+            "tile5",
+            "tile6"
+          ],
+          "uncertainty": "Unmarked normal directions and qualitative camera orientation do not uniquely select an engine-sign branch."
+        },
+        {
+          "label": "Shallow front folds or imperfect upper contacts",
+          "description": "Small front folds could mimic the apparent planar tessellation. With reviewed square sides, such changes require correlated loop adjustments or reconsideration of an uncertain upper contact; they cannot be introduced as independent angle variations.",
+          "evidenceRefs": [
+            "tile2:right_edge",
+            "tile3:left_edge",
+            "tile3:right_edge",
+            "tile4:left_edge",
+            "tile5:upper_edge",
+            "tile6:upper_edge"
+          ],
+          "uncertainty": "The image does not constrain a specific executable nonplanar alternative sufficiently."
+        }
+      ],
+      "unknowns": [
+        "The inferred horizontal cap and vertical front are qualitative scene-frame assignments, not measured world orientations.",
+        "The rear endpoints of the two upper side contacts are partly obscured.",
+        "Vision's triangular-side and possible non-panel right-strip interpretations are superseded by the confirmed square inventory, but their original boundary uncertainty remains relevant.",
+        "The rear and underside are not sufficiently visible to establish enclosure."
+      ]
+    },
+    "unknowns": [
+      "All selected ports have supplied actual length 1, allowing the stated floating-point rounding on triangle edges.",
+      "Local edge assignments are conventional and unverified because the symmetric panels have no visible edge labels.",
+      "The discrete angles are exact closure hypotheses, not camera-derived measurements; independent angle ranges would incorrectly imply freely variable closed-loop folds.",
+      "Both proposed graphs retain all seven candidate shared edges, including both uncertain upper side closing edges.",
+      "No hidden panels, additional profiles, absolute poses or build sequence are asserted."
+    ]
+  }
+}

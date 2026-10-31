@@ -20,6 +20,8 @@ import {planningScope,executionScope,planningRequest,executionRequest,planningDi
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
+import {assemblyValidationLayers} from '../engine-adapter.ts';
+import {executionPreviews,defaultExecutionPreview} from './execution-preview.ts';
 import {CandidateCameraViewer} from './CandidateCameraViewer.tsx';
 import {loadCandidateCamera} from './camera-view-storage.ts';
 import type { Assembly3D } from '../assembly.ts';
@@ -85,7 +87,7 @@ export default function Visible3DWorkflow() {
     const [source, setSource] = useState<Source | null>(null), [image, setImage] = useState(''), [analysis, setAnalysis] = useState<Analysis | null>(null), [review, setReview] = useState<Review | null>(null), [plan, setPlan] = useState<Plan | null>(null), [execution, setExecution] = useState<Execution | null>(null);
     const [form, setForm] = useState<VisibleReview3D>(emptyReview), [thickness, setThickness] = useState(.06), [head, setHead] = useState({ revision: 0, reviewId: null as string | null }), [selected, setSelected] = useState(''), [candidateId, setCandidateId] = useState(''), [checked, setChecked] = useState(false);
     const [model, setModel] = useState(''), [planningModel, setPlanningModel] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [annotation, setAnnotation] = useState(JSON.stringify(emptyEvidence, null, 2)), [manual, setManual] = useState(''), [trace, setTrace] = useState<unknown>(null);
-    const [maxAssignments, setMaxAssignments] = useState(128), [maxGeometryChecks, setMaxGeometryChecks] = useState(256);
+    const [maxAssignments, setMaxAssignments] = useState(128), [maxGeometryChecks, setMaxGeometryChecks] = useState(256), [maxLocalSubsets,setMaxLocalSubsets]=useState(1024);
     const [edgeA, setEdgeA] = useState(''), [edgeB, setEdgeB] = useState(''), [portA, setPortA] = useState(''), [portB, setPortB] = useState(''), [angles, setAngles] = useState(''), [flip, setFlip] = useState('unknown'), [edgeNote, setEdgeNote] = useState('');
     const [connectionOpen,setConnectionOpen]=useState(false),[edgeRefs,setEdgeRefs]=useState<string[]>([]),[edgeRange,setEdgeRange]=useState<{min:number;max:number}|null>(null);
     const [rebaseId,setRebaseId]=useState(''),[spaceRelation,setSpaceRelation]=useState<ReviewedSpatialCheck3D['relation']>('plane-angle'),[spaceMin,setSpaceMin]=useState(85),[spaceMax,setSpaceMax]=useState(90);
@@ -98,7 +100,10 @@ export default function Visible3DWorkflow() {
     const dirty = !!review && (JSON.stringify(form) !== JSON.stringify(review.input.review) || review.input.profiles.some(s => s.thickness !== thickness));
     const participation=review?planningParticipation(review.input.review):null;
     const outdated = !!execution && (execution.sourceId !== source?.id || execution.reviewId !== review?.id || head.reviewId !== review?.id || dirty || execution.planId !== plan?.id);
-    const candidate = execution?.candidates.find(c => c.id === candidateId) ?? null;
+    const previews=executionPreviews(execution);
+    const candidate = previews.find(c => c.id === candidateId) ?? null;
+    const validation=candidate?(candidate.validation??assemblyValidationLayers(candidate.geometry)):null;
+    const diagnostic=candidate?.kind==='diagnostic'||!!candidate&&!candidate.geometry.valid;
     const executionInput=execution&&review&&execution.reviewId===review.id?review.input:history.reviews.find(r=>r.id===execution?.reviewId)?.input;
     const mapping=useMemo(()=>candidate?(candidate.observationMap??(executionInput?candidateObservationMap(candidate.assembly,executionInput):[])):[],[candidate,executionInput]);
     const selectedPieceId=mapping.find(m=>m.observationId===selected)?.pieceId??null;
@@ -152,7 +157,7 @@ export default function Visible3DWorkflow() {
                             const x = h.executions.find(x => x.id === saved.executionId && x.planId === p.id);
                             if (x) {
                                 setExecution(x);
-                                setCandidateId(x.candidates.some(c=>c.id===saved.candidateId)?saved.candidateId:x.candidates[0]?.id??'');
+                                setCandidateId(executionPreviews(x).some(c=>c.id===saved.candidateId)?saved.candidateId:defaultExecutionPreview(x));
                             }
                         }
                     }
@@ -219,8 +224,8 @@ export default function Visible3DWorkflow() {
     const planOutdated=!!plan&&(plan.sourceId!==source?.id||plan.sourceHash!==source?.hash||plan.reviewId!==review?.id||dirty||head.reviewId!==review?.id);
     const traceSource=useMemo<TraceSource>(()=>{
       const references={sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,planId:plan?.id,planHash:plan?.hash,executionId:execution?.id,executionHash:execution?.hash,candidateId};
-      return {identity:JSON.stringify([references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],load:async tab=>{
-        if(tab==='execution')return {references,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
+      return {identity:JSON.stringify([references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
+        if(tab==='execution')return {references,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,candidateValidation:validation,candidateCollisions:candidate?.collisions??null,candidateConstruction:candidate?.construction??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
         const record=tab==='parts'?analysis:plan,request=tab==='spatial'?planRequest:undefined;
         const traceId=request?.trace?.id??record?.traceId;
         const [savedTrace,wire]=traceId?await Promise.all([api<ModelTrace>('trace/'+traceId),api('trace/'+traceId+'/wire')]):[null,null];
@@ -247,7 +252,7 @@ export default function Visible3DWorkflow() {
    <label>Geometry Execution History<select aria-label="Geometry Execution History" value={execution?.id ?? ''} disabled={busy} onChange={e => { const x = history.executions.find(x => x.id === e.target.value); if (x) {
             setAttempt(null);setError('');setTrace(null);
             setExecution(x);
-            setCandidateId(x.candidates[0]?.id ?? '');setViewRequest(n=>n+1);
+            setCandidateId(defaultExecutionPreview(x));setChecked(false);setViewRequest(n=>n+1);
         } }}><option value="">选择 Execution</option>{history.executions.filter(x => x.planId === plan?.id).map(x => <option key={x.id} value={x.id}>{x.status} · {x.id.slice(0, 8)}</option>)}</select></label></>}
   </StudioSlot>
   <StudioSlot column="workspace" stages={['source']} intake="visible3d"><section className="analysis-image-preview" aria-label="Visible 3D Analysis 原图">
@@ -261,7 +266,9 @@ export default function Visible3DWorkflow() {
     }>('reviews', { analysisId: analysis!.id, review: form, thickness, expectedRevision: head.revision }); setRebaseId(plan?.id??rebaseId); selectReview(r.record); setHead(r.head); setPlan(null); setExecution(null); await refresh(); setNotice('3D Review 已保存，实例集固定；下一步 Spatial Planning'); })}>保存 3D Review</button>} inputControl={<button disabled={!review || dirty} onClick={() => navigate('reconstruction')}>进入 3D Reconstruction</button>} onAdd={() => { }} addDisabled><VisibleEvidenceImage fit source={source} image={image} evidence={analysis?.evidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/></ReviewWorkspace></StudioSlot>
   <StudioSlot column="workspace" stages={['reconstruction']} intake="visible3d">
    <section className="visible3d-workspace visible3d-reconstruction" aria-label="Visible 3D 照片与候选对照">
-    <div className="visible3d-comparison-heading"><h3>照片与 3D Candidate 对照</h3><p className="context-notice">来源 {source?.name??'未选照片'} · {candidate?.id??'尚无候选'}</p></div>
+    <div className="visible3d-comparison-heading"><h3>照片与 3D Candidate 对照</h3><p className="context-notice">来源 {source?.name??'未选照片'} · {candidate?.id??'尚无候选'}</p>
+     {candidate&&<p data-testid="visible3d-preview-validation"><b className={diagnostic?'visible3d-preview-blocker':undefined}>{diagnostic?'Diagnostic · 不可采用':'Geometry Valid'}</b> · Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'} · Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed} · Photo Match Unverified</p>}
+    </div>
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{analysis?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
   </StudioSlot>
@@ -313,40 +320,44 @@ export default function Visible3DWorkflow() {
     </section>
     <section className="intake-controls visible3d-control-section" aria-label="Geometry Execution 操作"><h3>2 · Geometry Execution</h3>
      <ExecutionStatus value={executeStatus} testId="visible3d-execution-state"/>
-   <div className="visible3d-budget"><label>连接组合预算<input aria-label="3D 连接组合预算" type="number" min="0" max="2048" value={maxAssignments} onChange={e => setMaxAssignments(+e.target.value)}/></label><label>几何检查预算<input aria-label="3D 几何检查预算" type="number" min="0" max="4096" value={maxGeometryChecks} onChange={e => setMaxGeometryChecks(+e.target.value)}/></label><button disabled={busy || !plan || plan.reviewId !== review?.id || dirty || head.reviewId !== review?.id} onClick={() => void run(async () => { const r = await api<{
+   <div className="visible3d-budget"><label>连接组合预算<input aria-label="3D 连接组合预算" type="number" min="0" max="2048" value={maxAssignments} onChange={e => setMaxAssignments(+e.target.value)}/></label><label>几何检查预算<input aria-label="3D 几何检查预算" type="number" min="0" max="4096" value={maxGeometryChecks} onChange={e => setMaxGeometryChecks(+e.target.value)}/></label><label>局部子图预算<input aria-label="3D 局部子图预算" type="number" min="0" max="8192" value={maxLocalSubsets} onChange={e=>setMaxLocalSubsets(+e.target.value)}/></label><button disabled={busy || !plan || plan.reviewId !== review?.id || dirty || head.reviewId !== review?.id} onClick={() => void run(async () => { const r = await api<{
         id:string;
         state: string;
         error?: string;
         record: Execution;
-    }>('execute', { planId: plan!.id, requestId: crypto.randomUUID(), options: { maxAssignments, maxGeometryChecks } });setAttempt({id:r.id,kind:'execute',scope:executionScope(plan)});await refreshRequests(); if (r.state !== 'complete')
-        throw Error(r.error); setExecution(r.record); setCandidateId(r.record.candidates[0]?.id ?? ''); setChecked(false); await refresh(); },'execute')}>Geometry Execution（不调用模型）</button></div>
+    }>('execute', { planId: plan!.id, requestId: crypto.randomUUID(), options: { maxAssignments, maxGeometryChecks,maxLocalSubsets } });setAttempt({id:r.id,kind:'execute',scope:executionScope(plan)});await refreshRequests(); if (r.state !== 'complete')
+        throw Error(r.error); setExecution(r.record); setCandidateId(defaultExecutionPreview(r.record)); setChecked(false); await refresh(); },'execute')}>Geometry Execution（不调用模型）</button></div>
 
-     {execution&&<><p role="status" data-testid="visible3d-execution-status">{execution.status} · {execution.candidates.length} Candidates · {execution.search.assignments}/{execution.search.maxAssignments} 组合 · {execution.search.geometryChecks}/{execution.search.maxGeometryChecks} 检查</p>
+     {execution&&<><p role="status" data-testid="visible3d-execution-status">{execution.status} · {execution.candidates.length} 合法 Candidates · {execution.diagnosticCandidates?.length??0} Diagnostic · {execution.search.assignments}/{execution.search.maxAssignments} 组合 · {execution.search.geometryChecks}/{execution.search.maxGeometryChecks} 检查</p>
       {outdated&&<p role="alert">Outdated：来源、Review 或 Plan 已变化，禁止采用旧候选。</p>}
       {execution.status!=='candidates_found'&&execution.diagnostics.length>0&&<ul className="visible3d-failure-diagnostics" aria-label="执行失败原因">{execution.diagnostics.map((d,i)=><li key={i}>{d}</li>)}</ul>}
+      {execution.search.localSearch&&<details><summary>局部搜索预算与终止情况</summary><pre>{JSON.stringify(execution.search.localSearch,null,2)}</pre><p>completeSearch 仅表示预算内离散组合及已选父组件的子图枚举完成，不表示穷尽连续角度或重建完整。</p></details>}
       <details><summary>执行 Diagnostic · {execution.diagnostics.length} 条</summary><pre>{JSON.stringify(execution.diagnostics,null,2)}</pre></details>
      </>}
     </section>
     <section className="intake-controls visible3d-control-section" aria-label="Candidate Selection"><h3>3 · Candidate Selection</h3>
-     <label className="compact-field">候选<select aria-label="3D Reconstruction Candidate" disabled={busy||!execution?.candidates.length} value={candidateId} onChange={e=>{setCandidateId(e.target.value);setViewRequest(n=>n+1);setChecked(false)}}><option value="">选择候选</option>{execution?.candidates.map(c=><option key={c.id} value={c.id} title={c.interpretation}>{c.id} · {c.coverage.reconstructed.length}/{c.coverage.totalConfirmed} 可见实例 · Geometry Valid · {c.interpretation} · Spatial {c.spatialConsistency?.status??'unverified'}</option>)}</select></label>
+     <label className="compact-field">候选<select aria-label="3D Reconstruction Candidate" disabled={busy||!previews.length} value={candidateId} onChange={e=>{setCandidateId(e.target.value);setViewRequest(n=>n+1);setChecked(false)}}><option value="">选择候选</option>{previews.map(c=><option key={c.id} value={c.id} title={c.interpretation}>{c.id} · {c.coverage.reconstructed.length}/{c.coverage.totalConfirmed} 可见实例 · {c.kind==='diagnostic'?'Diagnostic / 不可采用':'Geometry Valid'} · {c.interpretation} · Spatial {c.spatialConsistency?.status??'unverified'}</option>)}</select></label>
      {candidate&&<p className="visible3d-candidate-interpretation">{candidate.interpretation}</p>}
     </section>
    </>}
    {stage==='reconstruction'&&candidate&&<section className="intake-controls visible3d-control-section" aria-label="Candidate Review 与 Assembly"><h3>4 · Candidate Review / Assembly</h3>
-    <p><b>{candidate.id} · Geometry Valid</b> · Evidence Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed}</p>
+    <p data-testid="candidate-validation" data-candidate-kind={diagnostic?'diagnostic':'candidate'}><b>{candidate.id} · {diagnostic?'Diagnostic / Geometry Invalid':'Geometry Valid'}</b><br/>Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'}<br/>Evidence Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed}</p>
+    {diagnostic&&<p role="alert">Diagnostic Candidate：严格几何验证未通过，仅供观察，不能通过普通 Adopt 进入 Assembly。</p>}
+    {candidate.coverage.reconstructed.length<candidate.coverage.totalConfirmed&&<p role="alert">局部重建：未覆盖 {candidate.coverage.totalConfirmed-candidate.coverage.reconstructed.length} 个已确认实例；不能代表完整作品。</p>}
     <p>Photo Match 未验证 · Human Review {checked?'待提交':'Pending'}</p>
     <p data-testid="visible3d-spatial-status">Spatial Interpretation Consistency · {spatial?.status??'unverified'}（仅已审核相对关系）</p>
     {spatial?.status==='contradicted'&&<p role="alert">候选违反已审核空间关系，禁止采用。请回到 Review 修正。</p>}
     <p className="hint">未解决 {candidate.coverage.unresolved.length} 片 · 排除 {candidate.coverage.excluded.length} 片 · {candidate.unverifiedConstraints.length} 项未验证约束；Geometry Valid 不代表照片匹配或物理稳定。</p>
     <details><summary>覆盖与未验证约束 · {candidate.id}</summary><p>已重建：{candidate.coverage.reconstructed.join(', ')}</p><p>未解决：{candidate.coverage.unresolved.join(', ')||'无'}</p><p>排除：{candidate.coverage.excluded.join(', ')||'无'}</p><ul>{candidate.unverifiedConstraints.map((n,i)=><li key={i}>{n}</li>)}</ul></details>
 <details><summary>已审核空间检查</summary><ul>{spatial?.checks.map(c=><li key={c.id} data-spatial-check={c.id}>{c.pieces.join(' ↔ ')} · {c.status} · {c.message}</li>)}</ul>{spatial?.unverified.map((m,i)=><p key={i} className="hint">{m}</p>)}</details><details><summary>Geometry Validator Diagnostic · {candidate.id}</summary><pre>{JSON.stringify(candidate.geometry,null,2)}</pre></details>
+    <details><summary>碰撞空间证据与原连接约束 · {candidate.id}</summary><pre>{JSON.stringify({validation,collisions:candidate.collisions??[],construction:candidate.construction??null},null,2)}</pre><p>接点距离和局部交叠分类仅为诊断证据，不豁免碰撞；穿透深度是 SAT 最小轴重叠，不是现实接点模型。</p></details>
     {selected&&<section aria-label="对应零件 Inspector">
      <h4>Observation {selected} → Piece {selectedPieceId??'未重建'}</h4>
      <p>{executionInput?observationState(selected,executionInput,mapping):'unresolved'}</p>
      <details><summary>零件证据 / Pose / Profile / 法向详情</summary><p>{selectedEvidence?.evidence}</p>{selectedPieceId&&<pre>{JSON.stringify({piece:candidate.assembly.pieces.find(p=>p.id===selectedPieceId),worldNormal:selectedGeometry?.normal.toArray()},null,2)}</pre>}</details>
      <button onClick={()=>navigate('review')}>回到 Review 修正选中零件</button>
     </section>}
-    <label className="intake-check"><input type="checkbox" aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label><button disabled={busy || outdated || !checked || spatial?.status==='contradicted'} onClick={() => void run(async () => { if (!confirm('采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))
+    <label className="intake-check"><input type="checkbox" disabled={diagnostic} aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label><button disabled={diagnostic || busy || outdated || !checked || spatial?.status==='contradicted'} onClick={() => void run(async () => { if(diagnostic)throw Error('Diagnostic Candidate 不可采用'); if (!confirm('采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))
         return; let cameraView;try{cameraView=loadCandidateCamera(localStorage,{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id})??undefined}catch{/* Invalid view metadata does not block the existing geometry adoption. */}const origin = await api<Record<string, unknown> & {
         assembly: Assembly3D;
     }>('adopt', { executionId: execution!.id, candidateId: candidate.id, visualChecked: true }); await refresh(); adopt3D(origin.assembly, origin,cameraView); })}>采用候选到 3D Assembly Editor</button>

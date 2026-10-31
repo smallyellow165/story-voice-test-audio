@@ -14,6 +14,8 @@
 .visible3d-comparison-heading{margin:0 0 12px}
 .visible3d-comparison-heading h3{font-size:15px;margin:0 0 6px}
 .visible3d-comparison-heading p{font-size:12px;margin:0;overflow-wrap:anywhere}
+.visible3d-comparison-heading [data-testid=visible3d-preview-validation]{margin-top:6px}
+.visible3d-preview-blocker{color:#a12626}
 .visible3d-reconstruction .visible3d-compare{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .visible3d-reconstruction .magnetic-3d-canvas{height:clamp(320px,55vh,640px)}
 .visible3d-reconstruction .visible3d-image{max-height:clamp(360px,65vh,740px);border:1px solid #cbdcd5;border-radius:8px}

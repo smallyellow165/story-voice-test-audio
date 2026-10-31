@@ -2,7 +2,7 @@ import { assertAssembly3D, fromEnginePose, toEnginePose } from './assembly.ts'
 import type { Assembly3D } from './assembly.ts'
 import { createShapeCatalog, profileKey3D } from './profile-adapter.ts'
 import { solveConnections } from './vendor/engine/solver.ts'
-import { validatePhysicalModel } from './vendor/engine/validator.ts'
+import { validatePhysicalModel,inspectCollisionPair } from './vendor/engine/validator.ts'
 import type { PhysicalModel } from './vendor/engine/types.ts'
 
 function context(a: Assembly3D) {
@@ -59,4 +59,17 @@ export function validateAssembly3D(assembly: Assembly3D, options: { checkGround?
     checkSteps: false, checkSemantics: false, checkStability: false,
     checkGround: options.checkGround ?? false, requireConnected: options.requireConnected ?? false,
   })
+}
+
+/** Diagnostic projection of the strict report. Full Geometry Valid is unchanged. */
+export function assemblyValidationLayers(report:ReturnType<typeof validateAssembly3D>){
+  const collisionIssues=report.issues.filter(i=>i.code==='intersection'),idealIssues=report.issues.filter(i=>i.code!=='intersection');
+  return {idealGeometry:{valid:!idealIssues.some(i=>i.severity==='error'),issues:idealIssues},solidCollision:{valid:!collisionIssues.some(i=>i.severity==='error'),issues:collisionIssues}};
+}
+export function inspectAssemblyCollisions(assembly:Assembly3D,report=validateAssembly3D(assembly)){
+  const {getShapeForPiece}=context(assembly);
+  return report.issues.filter(i=>i.code==='intersection'&&i.relatedPieceIds).slice(0,24).map(issue=>{
+    const [a,b]=issue.relatedPieceIds!,pa=assembly.pieces.find(p=>p.id===a)!,pb=assembly.pieces.find(p=>p.id===b)!;
+    return {pieceIds:[a,b],...inspectCollisionPair(getShapeForPiece(a)!,toEnginePose(pa.pose),getShapeForPiece(b)!,toEnginePose(pb.pose)),declaredConnection:assembly.connections.some(c=>[c.pieceA,c.pieceB].includes(a)&&[c.pieceA,c.pieceB].includes(b))};
+  });
 }

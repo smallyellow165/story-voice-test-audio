@@ -1053,6 +1053,7 @@ function checkIntersectionsSAT(
         if (inPlaneAxes.length && inPlaneAxes.every(axis => overlapOnAxis(prismA, prismB, axis) > EPS) &&
             result.penetrationDepth > Math.min(PENETRATION_DEPTH_TOLERANCE, Math.min(shapeA.thickness, shapeB.thickness) * 0.1)) {
           issues.push(issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (平行面内部重叠)`, 'error', {
+            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
             pieceId: a, code: ValidationIssueCode.INTERSECTION,
           }));
           continue;
@@ -1067,6 +1068,7 @@ function checkIntersectionsSAT(
         if (posDist < 0.01 && rotDist < 0.01) {
         issues.push(
           issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (完全重叠)`, 'error', {
+            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
             pieceId: a,
             code: ValidationIssueCode.INTERSECTION,
           })
@@ -1097,6 +1099,7 @@ function checkIntersectionsSAT(
       if (result.penetrationDepth > Math.min(PENETRATION_DEPTH_TOLERANCE, Math.min(shapeA.thickness, shapeB.thickness) * 0.1)) {
         issues.push(
           issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (穿透深度 ${result.penetrationDepth.toFixed(4)})`, 'error', {
+            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
             pieceId: a,
             code: ValidationIssueCode.INTERSECTION,
           })
@@ -1104,6 +1107,40 @@ function checkIntersectionsSAT(
       }
     }
   }
+}
+
+/** Read-only evidence from the SAME prism/SAT primitives. Proximity labels never
+ * waive an intersection and are not material or magnetic-joint rules. */
+export function inspectCollisionPair(shapeA:ShapeDef,tfA:PieceTransform,shapeB:ShapeDef,tfB:PieceTransform){
+  const A=buildConvexPrism(shapeA,tfA),B=buildConvexPrism(shapeB,tfB),result=satConvexPrismIntersection(A,B);
+  const V=(p:Vec3)=>new Vector3(p.x,p.y,p.z),center=(p:ConvexPrism)=>p.vertices.reduce<Vector3>((sum,v)=>sum.add(V(v)),new Vector3()).multiplyScalar(1/p.vertices.length);
+  const inside=(point:Vector3,p:ConvexPrism)=>{const c=center(p);return p.faces.every(f=>{const n=V(f.normal),v=V(f.vertices[0]);return n.dot(point.clone().sub(v))*n.dot(c.clone().sub(v))>=-1e-10})};
+  const unique=(xs:Vector3[])=>xs.filter((v,i)=>!xs.slice(0,i).some(w=>w.distanceTo(v)<1e-7));
+  const intersections=[...A.vertices.map(V).filter(p=>inside(p,B)),...B.vertices.map(V).filter(p=>inside(p,A))];
+  for(const [p,q]of [[A,B],[B,A]])for(const edge of p.edges)for(const f of q.faces){
+    const a=V(edge.a),b=V(edge.b),n=V(f.normal),da=n.dot(a.clone().sub(V(f.vertices[0]))),db=n.dot(b.clone().sub(V(f.vertices[0])));
+    if(Math.abs(da-db)<1e-12)continue;const t=da/(da-db);
+    if(t>=-1e-9&&t<=1+1e-9){const pt=a.lerp(b,t);if(inside(pt,p)&&inside(pt,q))intersections.push(pt)}
+  }
+  const points=unique(intersections),world=(shape:ShapeDef,tf:PieceTransform)=>shapeOutline(shape).map(v=>new Vector3(v.x,v.y,0).applyQuaternion(tf.quaternion).add(tf.position)),av=world(shapeA,tfA),bv=world(shapeB,tfB);
+  const sharedVertices=unique(av.filter(v=>bv.some(w=>w.distanceTo(v)<1e-6))),sharedEdges:{p0:number[];p1:number[]}[]=[];
+  for(let i=0;i<av.length;i++)for(let j=0;j<bv.length;j++){
+    const a=av[i],b=av[(i+1)%av.length],c=bv[j],d=bv[(j+1)%bv.length],dir=b.clone().sub(a),len=dir.length();if(len<1e-9)continue;dir.divideScalar(len);
+    if(new Vector3().crossVectors(c.clone().sub(a),dir).length()>1e-6||new Vector3().crossVectors(d.clone().sub(a),dir).length()>1e-6)continue;
+    const u=dir.dot(c.clone().sub(a)),v=dir.dot(d.clone().sub(a)),lo=Math.max(0,Math.min(u,v)),hi=Math.min(len,Math.max(u,v));
+    if(hi-lo>1e-6)sharedEdges.push({p0:a.clone().addScaledVector(dir,lo).toArray(),p1:a.clone().addScaledVector(dir,hi).toArray()});
+  }
+  const thickness=Math.max(shapeA.thickness,shapeB.thickness),radius=2*thickness;
+  const nearVertex=sharedVertices.length>0&&points.length>0&&points.every(v=>sharedVertices.some(c=>v.distanceTo(c)<=radius));
+  const segmentDistance=(p:Vector3,e:{p0:number[];p1:number[]})=>{const a=new Vector3(...e.p0 as [number,number,number]),b=new Vector3(...e.p1 as [number,number,number]),dir=b.clone().sub(a),t=Math.max(0,Math.min(1,p.clone().sub(a).dot(dir)/dir.lengthSq()));return p.distanceTo(a.addScaledVector(dir,t))};
+  const nearEdge=sharedEdges.length>0&&points.length>0&&points.every(v=>sharedEdges.some(e=>segmentDistance(v,e)<=radius));
+  const normalA=new Vector3(0,0,1).applyQuaternion(tfA.quaternion),normalB=new Vector3(0,0,1).applyQuaternion(tfB.quaternion),parallel=Math.abs(normalA.dot(normalB))>1-1e-8;
+  const inPlaneAxes=[...A.edges,...B.edges].map(e=>v3Cross(v3Sub(e.b,e.a),normalA)).filter(axis=>v3Length(axis)>EPS);
+  const interiorOverlap=parallel&&inPlaneAxes.length>0&&inPlaneAxes.every(axis=>overlapOnAxis(A,B,axis)>EPS);
+  const region=points.length?{min:[0,1,2].map(i=>Math.min(...points.map(p=>p.getComponent(i)))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p.getComponent(i))))}:null;
+  return {...result,region,intersectionVertices:points.map(p=>p.toArray()),sharedVertices:sharedVertices.map(v=>v.toArray()),sharedEdges,
+    locality:interiorOverlap?'non-contact-penetration':nearEdge?'near-shared-edge':nearVertex?'near-shared-vertex':points.length?'non-contact-penetration':'unresolved',
+    proximityRadius:radius,note:'接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。'};
 }
 
 function checkGroundPlaneWithThickness(

@@ -219,7 +219,7 @@
    dihedralDeg: number;
    /** 是否翻转 pieceB 的端口方向（p0<->p1） */
    flip?: boolean;
-@@ -209,7 +213,7 @@
+@@ -209,12 +213,15 @@
    error?: string;
    /** 生成树边集合（BFS 中使用的连接） */
    spanningTreeConnectionIndices: Set<number>;
@@ -228,6 +228,14 @@
    loopResiduals: LoopResidual[];
  }
  
+ /** 校验器发现的单个问题 */
+ export interface ValidationIssue {
++  /** Optional structured collision provenance; does not change validity. */
++  relatedPieceIds?: [string, string];
++  penetrationDepth?: number;
+   modelId: string;
+   pieceId?: string;
+   edgeId?: string;
 --- a/src/engine/validator.ts
 +++ b/src/engine/validator.ts
 @@ -1,5 +1,7 @@
@@ -390,7 +398,7 @@
        issues.push(issue(modelId, `连接中 dihedralDeg 超出合理范围 [-180, 180]: ${conn.dihedralDeg}`, 'error', { code: ValidationIssueCode.DIHEDRAL_INVALID }));
      }
    }
-@@ -1011,6 +1040,24 @@
+@@ -1011,6 +1040,25 @@
        if (!result.intersects) continue;
  
        const avgThickness = (shapeA.thickness + shapeB.thickness) / 2;
@@ -407,6 +415,7 @@
 +        if (inPlaneAxes.length && inPlaneAxes.every(axis => overlapOnAxis(prismA, prismB, axis) > EPS) &&
 +            result.penetrationDepth > Math.min(PENETRATION_DEPTH_TOLERANCE, Math.min(shapeA.thickness, shapeB.thickness) * 0.1)) {
 +          issues.push(issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (平行面内部重叠)`, 'error', {
++            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
 +            pieceId: a, code: ValidationIssueCode.INTERSECTION,
 +          }));
 +          continue;
@@ -415,7 +424,15 @@
  
        const tfA = transforms[a];
        const tfB = transforms[b];
-@@ -1047,7 +1094,7 @@
+@@ -1020,6 +1068,7 @@
+         if (posDist < 0.01 && rotDist < 0.01) {
+         issues.push(
+           issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (完全重叠)`, 'error', {
++            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
+             pieceId: a,
+             code: ValidationIssueCode.INTERSECTION,
+           })
+@@ -1047,9 +1096,10 @@
          }
        }
  
@@ -423,8 +440,49 @@
 +      if (result.penetrationDepth > Math.min(PENETRATION_DEPTH_TOLERANCE, Math.min(shapeA.thickness, shapeB.thickness) * 0.1)) {
          issues.push(
            issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (穿透深度 ${result.penetrationDepth.toFixed(4)})`, 'error', {
++            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
              pieceId: a,
-@@ -1077,7 +1124,7 @@
+             code: ValidationIssueCode.INTERSECTION,
+           })
+@@ -1062,3 +1112,37 @@
++/** Read-only evidence from the SAME prism/SAT primitives. Proximity labels never
++ * waive an intersection and are not material or magnetic-joint rules. */
++export function inspectCollisionPair(shapeA:ShapeDef,tfA:PieceTransform,shapeB:ShapeDef,tfB:PieceTransform){
++  const A=buildConvexPrism(shapeA,tfA),B=buildConvexPrism(shapeB,tfB),result=satConvexPrismIntersection(A,B);
++  const V=(p:Vec3)=>new Vector3(p.x,p.y,p.z),center=(p:ConvexPrism)=>p.vertices.reduce<Vector3>((sum,v)=>sum.add(V(v)),new Vector3()).multiplyScalar(1/p.vertices.length);
++  const inside=(point:Vector3,p:ConvexPrism)=>{const c=center(p);return p.faces.every(f=>{const n=V(f.normal),v=V(f.vertices[0]);return n.dot(point.clone().sub(v))*n.dot(c.clone().sub(v))>=-1e-10})};
++  const unique=(xs:Vector3[])=>xs.filter((v,i)=>!xs.slice(0,i).some(w=>w.distanceTo(v)<1e-7));
++  const intersections=[...A.vertices.map(V).filter(p=>inside(p,B)),...B.vertices.map(V).filter(p=>inside(p,A))];
++  for(const [p,q]of [[A,B],[B,A]])for(const edge of p.edges)for(const f of q.faces){
++    const a=V(edge.a),b=V(edge.b),n=V(f.normal),da=n.dot(a.clone().sub(V(f.vertices[0]))),db=n.dot(b.clone().sub(V(f.vertices[0])));
++    if(Math.abs(da-db)<1e-12)continue;const t=da/(da-db);
++    if(t>=-1e-9&&t<=1+1e-9){const pt=a.lerp(b,t);if(inside(pt,p)&&inside(pt,q))intersections.push(pt)}
++  }
++  const points=unique(intersections),world=(shape:ShapeDef,tf:PieceTransform)=>shapeOutline(shape).map(v=>new Vector3(v.x,v.y,0).applyQuaternion(tf.quaternion).add(tf.position)),av=world(shapeA,tfA),bv=world(shapeB,tfB);
++  const sharedVertices=unique(av.filter(v=>bv.some(w=>w.distanceTo(v)<1e-6))),sharedEdges:{p0:number[];p1:number[]}[]=[];
++  for(let i=0;i<av.length;i++)for(let j=0;j<bv.length;j++){
++    const a=av[i],b=av[(i+1)%av.length],c=bv[j],d=bv[(j+1)%bv.length],dir=b.clone().sub(a),len=dir.length();if(len<1e-9)continue;dir.divideScalar(len);
++    if(new Vector3().crossVectors(c.clone().sub(a),dir).length()>1e-6||new Vector3().crossVectors(d.clone().sub(a),dir).length()>1e-6)continue;
++    const u=dir.dot(c.clone().sub(a)),v=dir.dot(d.clone().sub(a)),lo=Math.max(0,Math.min(u,v)),hi=Math.min(len,Math.max(u,v));
++    if(hi-lo>1e-6)sharedEdges.push({p0:a.clone().addScaledVector(dir,lo).toArray(),p1:a.clone().addScaledVector(dir,hi).toArray()});
++  }
++  const thickness=Math.max(shapeA.thickness,shapeB.thickness),radius=2*thickness;
++  const nearVertex=sharedVertices.length>0&&points.length>0&&points.every(v=>sharedVertices.some(c=>v.distanceTo(c)<=radius));
++  const segmentDistance=(p:Vector3,e:{p0:number[];p1:number[]})=>{const a=new Vector3(...e.p0 as [number,number,number]),b=new Vector3(...e.p1 as [number,number,number]),dir=b.clone().sub(a),t=Math.max(0,Math.min(1,p.clone().sub(a).dot(dir)/dir.lengthSq()));return p.distanceTo(a.addScaledVector(dir,t))};
++  const nearEdge=sharedEdges.length>0&&points.length>0&&points.every(v=>sharedEdges.some(e=>segmentDistance(v,e)<=radius));
++  const normalA=new Vector3(0,0,1).applyQuaternion(tfA.quaternion),normalB=new Vector3(0,0,1).applyQuaternion(tfB.quaternion),parallel=Math.abs(normalA.dot(normalB))>1-1e-8;
++  const inPlaneAxes=[...A.edges,...B.edges].map(e=>v3Cross(v3Sub(e.b,e.a),normalA)).filter(axis=>v3Length(axis)>EPS);
++  const interiorOverlap=parallel&&inPlaneAxes.length>0&&inPlaneAxes.every(axis=>overlapOnAxis(A,B,axis)>EPS);
++  const region=points.length?{min:[0,1,2].map(i=>Math.min(...points.map(p=>p.getComponent(i)))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p.getComponent(i))))}:null;
++  return {...result,region,intersectionVertices:points.map(p=>p.toArray()),sharedVertices:sharedVertices.map(v=>v.toArray()),sharedEdges,
++    locality:interiorOverlap?'non-contact-penetration':nearEdge?'near-shared-edge':nearVertex?'near-shared-vertex':points.length?'non-contact-penetration':'unresolved',
++    proximityRadius:radius,note:'接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。'};
++}
++
+ function checkGroundPlaneWithThickness(
+   modelId: string,
+   _buildMode: string,
+@@ -1077,7 +1161,7 @@
      let hasBelowGround = false;
      let lowestY = Infinity;
  
@@ -433,7 +491,7 @@
        for (const z of [-halfThick, 0, halfThick]) {
          const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
          if (world.y < lowestY) lowestY = world.y;
-@@ -1115,7 +1162,7 @@
+@@ -1115,7 +1199,7 @@
      const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
      let touchesGround = false;
      const halfThick = shape.thickness / 2;
@@ -442,7 +500,7 @@
        for (const z of [-halfThick, halfThick]) {
          const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
          if (world.y < GROUND_TOUCH_TOLERANCE) {
-@@ -1189,7 +1236,7 @@
+@@ -1189,7 +1273,7 @@
  
      const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
      const halfThick = shape.thickness / 2;
@@ -451,7 +509,7 @@
        for (const z of [-halfThick, halfThick]) {
          const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
          if (world.y < GROUND_TOUCH_TOLERANCE + 0.05) {
-@@ -1258,7 +1305,7 @@
+@@ -1258,7 +1342,7 @@
      if (!shape || !tf) continue;
  
      const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
@@ -460,7 +518,7 @@
        allPoints.push(new Vector3(v.x, v.y, 0).applyMatrix4(matrix));
      }
    }
-@@ -1304,7 +1351,7 @@
+@@ -1304,7 +1388,7 @@
      const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
      let maxDistance = 0;
  
