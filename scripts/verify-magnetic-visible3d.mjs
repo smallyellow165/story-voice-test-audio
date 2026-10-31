@@ -11,8 +11,8 @@ import {mkdtemp,mkdir,rm,writeFile,readFile,cp} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
-const v21=process.argv.includes('--v21'),v2=v21||process.argv.includes('--v2')
-const root=fileURLToPath(new URL('..',import.meta.url)),directory=await mkdtemp(path.join(tmpdir(),'visible3d-browser-')),out=v21?'/tmp/magnetic-visible-v21-browser':v2?'/tmp/magnetic-visible-v2-browser':'/tmp/magnetic-phase5b-browser'
+const cameraTest=process.argv.includes('--camera'),v21=process.argv.includes('--v21'),v2=cameraTest||v21||process.argv.includes('--v2')
+const root=fileURLToPath(new URL('..',import.meta.url)),directory=await mkdtemp(path.join(tmpdir(),'visible3d-browser-')),out=cameraTest?'/tmp/magnetic-camera-view-browser':v21?'/tmp/magnetic-visible-v21-browser':v2?'/tmp/magnetic-visible-v2-browser':'/tmp/magnetic-phase5b-browser'
 await mkdir(out,{recursive:true});const api=createMagneticIntake(directory),errors=[],consoleErrors=[],calls=[]
 const liveIndex=process.argv.indexOf('--live-evaluation'),liveDirectory=liveIndex>=0?process.argv[liveIndex+1]:null
 let live=null
@@ -26,7 +26,7 @@ if(liveDirectory){
  await cp(path.join(root,'generated/magnetic-intake/profile-registry'),path.join(directory,'profile-registry'),{recursive:true})
  for(const kind of ['analyses','reviews','plans','executions','heads','model-traces'])await cp(path.join(liveDirectory,kind),path.join(directory,'visible3d',kind),{recursive:true})
 }
-const server=await createServer({configFile:false,root,base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-visible3d-api',configureServer(s){s.middlewares.use('/favicon.ico',(req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
+const server=await createServer({configFile:false,root,cacheDir:path.join(directory,'vite-cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-visible3d-api',configureServer(s){s.middlewares.use('/favicon.ico',(req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
  const route=req.url.slice(1).split('?')[0];calls.push({method:req.method,route})
  if(req.method==='POST'&&!['sources','visible3d/annotate','visible3d/reviews','visible3d/manual-plan','visible3d/execute','visible3d/adopt','visible3d/rebase-plan'].includes(route)){res.statusCode=403;res.end(JSON.stringify({error:'Live model calls forbidden in acceptance'}));return}
  try{let raw='';for await(const chunk of req)raw+=chunk;const result=await api.dispatch(req.method,route,raw?JSON.parse(raw):{});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result))}catch(e){res.statusCode=e.statusCode||422;res.end(JSON.stringify({error:e.message}))}
@@ -72,7 +72,38 @@ try{
  async function exported(){await details(page.locator('.magnetic-3d-load'));const dl=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await dl).path(),'utf8'))}
  await page.goto(url);await create('right-angle',2)
  const sourceBefore=await api.dispatch('GET','history');assert.equal(sourceBefore.analyses.length,0)
- const h=await api.dispatch('GET','visible3d/history'),x=h.executions[0];await page.getByRole('button',{name:/candidate-2 ·/}).click();await button('Fit to View').click();await page.getByRole('button',{name:/candidate-1 ·/}).click();await rendered();await page.screenshot({path:out+'/pair-candidate.png'})
+ const h=await api.dispatch('GET','visible3d/history'),x=h.executions[0];
+ if(cameraTest){
+  assert.equal(await field('Spatial Planning History').count(),1);assert.equal(await field('Geometry Execution History').count(),1)
+  const prefix='magnetic-tiles.candidate-camera.v1:',view=async()=>JSON.parse(await page.locator('.visible3d-compare [aria-label="3D 相机状态"]').textContent())
+  const keys=()=>page.evaluate(prefix=>Object.keys(localStorage).filter(k=>k.startsWith(prefix)),prefix)
+  async function settle(){await page.waitForFunction(()=>{const canvas=[...document.querySelectorAll('canvas')].find(c=>c.getBoundingClientRect().width>0&&c.getBoundingClientRect().height>0);if(!canvas)return false;const selector=canvas.closest('.visible3d-compare')?'.visible3d-compare [aria-label="3D 相机状态"]':canvas.closest('.magnetic-3d-editor-canvas')?'[aria-label="3D Editor 相机状态"]':'.magnetic-3d-workspace [aria-label="3D 相机状态"]';const o=document.querySelector(selector);return o&&o.textContent&&o.textContent!=='null'});await page.evaluate(()=>new Promise(resolve=>{let n=0;const frame=()=>++n===12?resolve():requestAnimationFrame(frame);requestAnimationFrame(frame)}))}
+  function closeView(actual,saved){for(const k of ['position','quaternion','target','up'])actual[k].forEach((v,i)=>assert.ok(Math.abs(v-saved[k][i])<1e-7,k+' mismatch'));assert.ok(Math.abs(actual.zoom-saved.zoom)<1e-7);for(const k of ['top','bottom','near','far'])assert.ok(Math.abs(actual.frustum[k]-saved.frustum[k])<1e-7,'projection '+k)}
+  async function stored(candidateId){const entries=await page.evaluate(prefix=>Object.entries(localStorage).filter(([k])=>k.startsWith(prefix)).map(([,v])=>JSON.parse(v)),prefix);return entries.find(r=>r.executionId===x.id&&r.candidateId===candidateId)}
+  const canvas=page.locator('.visible3d-compare canvas');await page.locator('[data-linked-observation]').first().click();await button('以所选面为上方观察').click();await settle()
+  const initial=await view(),box=await canvas.boundingBox();await canvas.hover();await page.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await page.mouse.down();await page.mouse.move(box.x+box.width*.65,box.y+box.height*.57,{steps:10});await page.mouse.up();await page.mouse.wheel(0,120);await settle()
+  const rotated=await view();assert.notDeepEqual(rotated.position,initial.position);assert.notEqual(rotated.zoom,initial.zoom);assert.deepEqual(await keys(),[],'camera changes do not persist anything')
+  await page.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await page.mouse.down({button:'right'});await page.mouse.move(box.x+box.width*.55,box.y+box.height*.55,{steps:5});await page.mouse.up({button:'right'});await settle();const panned=await view();assert.notDeepEqual(panned.target,rotated.target)
+  await button('保存当前视角').click();await page.getByRole('status').filter({hasText:'当前视角已保存'}).waitFor();const first=(await stored('candidate-1')).camera;closeView(first,panned);assert.equal((await keys()).length,1)
+  await canvas.hover();await page.mouse.wheel(0,-100);await settle();await button('保存当前视角').click();const saved=(await stored('candidate-1')).camera;assert.notEqual(saved.zoom,first.zoom);assert.equal((await keys()).length,1,'explicit resave overwrites one record')
+  await page.getByRole('button',{name:/candidate-2 ·/}).click();await settle();assert.notDeepEqual((await view()).up,saved.up,'unsaved candidate uses default, not another candidate view');await button('保存当前视角').click();const saved2=(await stored('candidate-2')).camera;assert.equal((await keys()).length,2)
+  await page.getByRole('button',{name:/candidate-1 ·/}).click();await settle();closeView(await view(),saved)
+  await page.getByRole('button',{name:/candidate-2 ·/}).click();await settle();closeView(await view(),saved2);await page.reload();await page.getByTestId('visible3d-execution-status').waitFor();await settle();assert.equal(await page.getByRole('button',{name:/candidate-2 ·/}).getAttribute('aria-pressed'),'true');closeView(await view(),saved2)
+  // A new explicit Geometry Execution is separate even when Candidate IDs repeat.
+  await button('Geometry Execution（不调用模型）').click();await page.getByTestId('visible3d-execution-status').filter({hasText:'candidates_found'}).waitFor();await settle();assert.notDeepEqual((await view()).up,saved.up)
+  await field('Geometry Execution History').selectOption(x.id);await settle();closeView(await view(),saved)
+  await page.reload();await page.getByTestId('visible3d-execution-status').waitFor();await settle();closeView(await view(),saved)
+  // Unsaved subsequent camera motion is deliberately NOT the view sent on adoption.
+  await canvas.hover();await page.mouse.wheel(0,100);await settle();assert.notEqual((await view()).zoom,saved.zoom);closeView((await stored('candidate-1')).camera,saved)
+  await adopt();await page.waitForFunction(()=>{const o=document.querySelector('[aria-label="3D Editor 相机状态"]');return o&&o.textContent!=='null'});await settle();closeView(JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),saved)
+  assert.deepEqual((await exported()).pieces,x.candidates[0].assembly.pieces);await button('View').click();await settle();closeView(JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent()),saved)
+  await page.screenshot({path:out+'/assembly-saved-camera.png'});await page.reload();await button('3D 查看').click();await settle();closeView(JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent()),saved)
+  await button('Edit Draft').click();await settle();closeView(JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),saved)
+  await step('reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();await settle();closeView(await view(),saved)
+  assert.deepEqual((await api.dispatch('GET','visible3d/executions/'+x.id)).record,x,'camera metadata never changes immutable execution/candidate data')
+  console.log('PASS camera explicit save/overwrite, candidate+execution isolation, history/refresh restoration and Editor/View adoption; geometry unchanged')
+ }
+await page.getByRole('button',{name:/candidate-2 ·/}).click();await button('Fit to View').click();await page.getByRole('button',{name:/candidate-1 ·/}).click();await rendered();await page.screenshot({path:out+'/pair-candidate.png'})
  await adopt();const adopted=await exported();assert.deepEqual(adopted.pieces,x.candidates[0].assembly.pieces);assert.deepEqual(adopted.profiles,x.candidates[0].assembly.profiles)
  await page.reload();await button('3D 查看').click();assert.deepEqual(await exported(),adopted);assert.match(await page.locator('.visible3d-origin').textContent(),/采用时快照一致/)
  await step('reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();assert.match(await page.getByTestId('visible3d-execution-status').textContent(),/candidates_found/)
@@ -88,7 +119,7 @@ try{
   await step('source');await button('Visible 3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
   await button('刷新 3D 历史').click()
   const h=await api.dispatch('GET','visible3d/history'),a=h.analyses.find(a=>a.sourceId===live.sourceId),r=h.reviews.find(r=>r.analysisId===a.id),p=h.plans.find(p=>p.reviewId===r.id),x=h.executions.find(x=>x.planId===p.id)
-  await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('3D Plan 历史').selectOption(p.id);await field('3D Candidates 历史').selectOption(x.id)
+  await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)
   await page.getByTestId('visible3d-execution-status').filter({hasText:'2 Candidates'}).waitFor();
   if(v21){
    const top=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='horizontal').pieceId,side=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='vertical').pieceId
@@ -119,7 +150,7 @@ if(!v21){await rendered();await page.screenshot({path:out+'/real-purple-candidat
   await page.reload();await button('3D 查看').click();assert.deepEqual(await exported(),realAdopted)}
  }
  assert.equal(calls.some(c=>/visible3d\/(analyze|plan)$/.test(c.route)),false);assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[])
- const result={passed:true,version:v21?'V2.1':v2?'V2':'V1',pair:'manual visible evidence → reviewed profiles → spatial hypothesis → real geometry → editor adoption',cube:v2?'only three visible faces/three actual legal connections; no hidden panels; downstream build order complete':'six pieces/twelve actual validated connections; downstream auto build order complete',persistence:'reload exact Pose/ProfileSnapshot and immutable origin; context restoration',protection:'unchecked, dirty Review, changed head and budget exhaustion block adoption',realVisionCalls:0,realPhotographs:live?1:0,linkage:v21?'actual image ↔ WebGL raycast ↔ ID list ↔ Inspector, preserved across candidates':null,spatialChecks:v21?'contradiction blocks adoption; explicit no-model Review/rebase/re-execute; partial/excluded state':null,liveEvaluation:live?{model:live.model,sourceId:live.sourceId,geometry:'two actual 3-piece/3-connection candidates; explicit adoption and reload; Photo Match still unverified'}:null,fixture:'synthetic projected images and human annotations; no recognition accuracy claim',apiCalls:calls.length,errors,consoleErrors}
+ const result={passed:true,cameraMetadata:cameraTest?'explicit overwrite, immutable geometry, scoped restoration, cross-canvas adoption verified':null,version:v21?'V2.1':v2?'V2':'V1',pair:'manual visible evidence → reviewed profiles → spatial hypothesis → real geometry → editor adoption',cube:v2?'only three visible faces/three actual legal connections; no hidden panels; downstream build order complete':'six pieces/twelve actual validated connections; downstream auto build order complete',persistence:'reload exact Pose/ProfileSnapshot and immutable origin; context restoration',protection:'unchecked, dirty Review, changed head and budget exhaustion block adoption',realVisionCalls:0,realPhotographs:live?1:0,linkage:v21?'actual image ↔ WebGL raycast ↔ ID list ↔ Inspector, preserved across candidates':null,spatialChecks:v21?'contradiction blocks adoption; explicit no-model Review/rebase/re-execute; partial/excluded state':null,liveEvaluation:live?{model:live.model,sourceId:live.sourceId,geometry:'two actual 3-piece/3-connection candidates; explicit adoption and reload; Photo Match still unverified'}:null,fixture:'synthetic projected images and human annotations; no recognition accuracy claim',apiCalls:calls.length,errors,consoleErrors}
  await rm(out+'/failure.png',{force:true});await rm(out+'/failure.txt',{force:true});await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
 }catch(e){if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',await page.locator('body').innerText().catch(()=>''))}console.error({errors,consoleErrors});throw e}
 finally{await browser?.close();await server.close();await rm(directory,{recursive:true,force:true})}

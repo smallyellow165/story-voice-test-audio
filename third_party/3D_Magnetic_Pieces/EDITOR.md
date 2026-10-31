@@ -27,3 +27,5 @@ Local changes and reasons:
 8. Host snapshots use the existing Studio localStorage pattern, distinct 3D key and the same Assembly3D JSON, including invalid drafts. No implicit solve on load/save/view/select. Optimistic existing-value check rejects known stale saves; it is not a transactional cross-tab lock.
 
 Validation and manual usage are in `doc/magnetic-3d-phase3.md`. No engine core, 2D workflow, LEGO code, tutorial implementation or upstream archive was modified.
+
+Camera metadata adaptation: optional `initialCameraView` restores an adopted Candidate's saved view and suppresses the first automatic Fit only for that opt-in case. Resize preserves its projection framing; an optional read-only camera callback supports host inspection. Default editor camera behavior, editor state/history and geometry operations are unchanged.

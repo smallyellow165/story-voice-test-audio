@@ -1,3 +1,4 @@
+import type {CameraView3D} from './three-d/camera-view.ts'
 import {useProfileRegistry} from './ProfileRegistry.tsx'
 import { workflowTerms } from './studio-terms.ts'
 import { SupportedTiles } from './SupportedTiles.tsx'
@@ -21,7 +22,7 @@ type ViewMode = '2d' | '3d'
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
-const Context = createContext<{stage:Stage; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: {assembly:Assembly3D;origin:Record<string,unknown>}|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>)=>void; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
+const Context = createContext<{stage:Stage; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>void; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
@@ -32,7 +33,7 @@ export function StudioSlot({column,stages:visible,children,view='2d',intake='2d'
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
   const [viewMode,setViewMode]=useState<ViewMode>('2d'),[opened3D,setOpened3D]=useState(false)
   const [intakeMode,setIntakeMode]=useState<'2d'|'visible3d'>(()=>{try{return localStorage.getItem('magnetic-visible3d-mode')==='visible3d'?'visible3d':'2d'}catch{return '2d'}}),[openedVisible3D,setOpenedVisible3D]=useState(()=>{try{return localStorage.getItem('magnetic-visible3d-mode')==='visible3d'}catch{return false}})
-  const [adoption3D,setAdoption3D]=useState<{assembly:Assembly3D;origin:Record<string,unknown>}|null>(null)
+  const [adoption3D,setAdoption3D]=useState<{assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null>(null)
   const [assembly3D,setAssembly3D]=useState<Assembly3D|null>(null)
   const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
@@ -54,7 +55,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [mobileColumn,setMobileColumn]=useState<Column>(boot.rightTab==='catalog'?'inspector':'workspace')
   const navigate=(s:Stage)=>{if(!dragging){setViewMode('2d');writeStudioUrl({stage:s,...(stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
   const selectTab=(tab:RightTab)=>{if(tab===rightTab)return;if(rightColumn.current)scrollOffsets.current[rightTab]=rightColumn.current.scrollTop;setRightTab(tab);setWarnings([]);setMobileColumn('inspector')}
-  return <Context.Provider value={{stage,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:(assembly,origin)=>{setAdoption3D({assembly,origin});setOpened3D(true);navigate('assembly');setViewMode('3d');setRightTab('inspector')},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+  return <Context.Provider value={{stage,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:(assembly,origin,cameraView)=>{setAdoption3D({assembly,origin,cameraView});setOpened3D(true);navigate('assembly');setViewMode('3d');setRightTab('inspector')},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
     <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">

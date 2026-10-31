@@ -17,7 +17,9 @@ import { EditorCanvas } from './vendor/components/editor/EditorCanvas.tsx'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
 import { EditorInspector } from './EditorInspector.tsx'
 import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
-import {adoptReconstructionDraft} from './reconstruction/adopt-draft.ts'
+import type {CameraView3D} from './camera-view.ts'
+import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
+import {adoptReconstructionDraft,loadPhotoOrigin} from './reconstruction/adopt-draft.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
 import cube from './examples/closed-cube.json' with { type: 'json' }
@@ -48,19 +50,21 @@ export default function ThreeDWorkspace() {
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
-  const [photoOrigin,setPhotoOrigin]=useState<{origin:Record<string,unknown>;assemblyRaw:string}|null>(()=>{try{const value=JSON.parse(localStorage.getItem('magnetic-tiles.assembly3d-origin.v1')||'null');if(!value||typeof value.origin?.id!=='string')return null;parseAssembly3D(value.assemblyRaw);return value}catch{return null}})
+  const [photoOrigin,setPhotoOrigin]=useState<PhotoOrigin3D|null>(()=>loadPhotoOrigin(localStorage))
+  const [editorCamera,setEditorCamera]=useState<CameraView3D|null>(null)
   useEffect(()=>{
     if(!adoption3D)return
     try{
       if(!allowReplace()){clearAdoption3D();return}
       if(boot.error)throw Error(boot.error)
-      const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current)
+      const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current,adoption3D.cameraView)
       expectedRaw.current=raw
       accept(actions.createInitialHistory(assembly));setClean(raw);setText(raw);setPhotoOrigin(sidecar)
       setLoaded(old=>({source:raw,name:'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
     }catch(e){setError(String(e))}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
+  const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
@@ -115,7 +119,7 @@ export default function ThreeDWorkspace() {
     if (!allowReplace()) return
     try {
       const saved = loadDraft3D(localStorage); if (!saved.assembly) throw Error('尚未保存 3D Draft')
-      expectedRaw.current = saved.raw; accept(actions.createInitialHistory(saved.assembly)); setClean(saved.raw!)
+      setPhotoOrigin(loadPhotoOrigin(localStorage));expectedRaw.current = saved.raw; accept(actions.createInitialHistory(saved.assembly)); setClean(saved.raw!)
       setLoaded(old => ({ source: saved.raw!, name: '已保存的 3D Draft', isDraft: true, sequence: old.sequence + 1 }))
       setText(saved.raw!); setSelection({ kind: 'none' }); setEditing(false); setError('')
     } catch (e) { setError(String(e)) }
@@ -152,8 +156,9 @@ export default function ThreeDWorkspace() {
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
           onCreateConnection={connection => apply(h => actions.createConnectionAction(h, connection, true))}
-          cameraTargetRef={cameraTargetRef} liveTransformOverride={live}/></ViewerErrorBoundary>
-          : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected}/>)}
+          cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={initialCameraView?setEditorCamera:undefined}/></ViewerErrorBoundary>
+          : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} initialCameraView={initialCameraView}/>)}
+        {initialCameraView&&editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
         <details className="magnetic-3d-load"><summary>加载 / 导出 Assembly3D</summary>
           <label>Assembly3D JSON<textarea aria-label="Assembly3D JSON" value={text} spellCheck={false} maxLength={1_000_000}
             onChange={e => setText(e.target.value)}/></label>

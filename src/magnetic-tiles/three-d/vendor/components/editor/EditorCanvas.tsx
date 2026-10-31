@@ -1,3 +1,5 @@
+import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../../camera-view.ts'
+import type {CameraView3D} from '../../../camera-view.ts'
 // Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
 import { useRef, useMemo, useEffect, useCallback, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
@@ -23,6 +25,7 @@ export interface EditorView {
 }
 
 interface Props {
+  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
   toolMode: ToolMode;
@@ -57,8 +60,9 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,
+  onViewChange,initialCameraView,onCameraViewChange,
 }: {
+  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
   toolMode: ToolMode;
@@ -186,9 +190,15 @@ function SceneContent({
     }
   }, [camera, selectedPieceId, transforms, pieceMap, partMap, size, fitAll, cameraTargetRef]);
 
+  const restoredCamera=useRef(false)
   // 仅在首次加载或 project.id 变化时自动 fit
   
   useEffect(() => {
+    if(initialCameraView&&camera instanceof THREE.OrthographicCamera&&controlsRef.current){
+      if(!restoredCamera.current){restoreCameraView(camera,controlsRef.current,initialCameraView,size);restoredCamera.current=true;cameraTargetRef.current.fromArray(initialCameraView.target);defaultCameraStateRef.current={position:camera.position.clone(),quaternion:camera.quaternion.clone(),target:controlsRef.current.target.clone(),zoom:camera.zoom}}
+      else resizeSavedCamera(camera,size)
+      onCameraViewChange?.(captureCameraView(camera,controlsRef.current));return
+    }
     const t = setTimeout(() => fitAllRef.current?.(), 80);
     return () => clearTimeout(t);
   }, [project.id, !!project.pieces.length, size.width, size.height]);
@@ -276,7 +286,7 @@ function SceneContent({
   useEffect(() => {
     // DEV 模式需要更新 window 状态;父组件可能需要 onViewChange 通知
     const needDevWindow = false; // Do not leak global debug state into the host.
-    const needNotify = !!onViewChangeRef.current;
+    const needNotify = !!onViewChangeRef.current||!!onCameraViewChange;
     if (!needDevWindow && !needNotify) return;
 
     let disposed = false;
@@ -293,6 +303,7 @@ function SceneContent({
         };
       }
       onViewChangeRef.current?.(view);
+      if(camera instanceof THREE.OrthographicCamera&&controlsRef.current)onCameraViewChange?.(captureCameraView(camera,controlsRef.current));
     };
 
     const register = () => {
@@ -704,7 +715,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,
 }: Props) {
   const defaultCameraStateRef = useRef<DefaultCameraState | null>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
@@ -748,7 +759,7 @@ export function EditorCanvas({
           cameraTargetRef={cameraTargetRef}
           liveTransformOverride={liveTransformOverride}
           getCurrentViewRef={getCurrentViewRef}
-          onViewChange={onViewChange}
+          onViewChange={onViewChange} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
 
