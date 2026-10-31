@@ -68,7 +68,8 @@
     "typecheck:magnetic-3d": "tsc -p tsconfig.magnetic-3d.json",
     "test:magnetic-3d:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-viewer.mjs",
     "test:magnetic-3d:editor:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-editor.mjs",
-    "test:magnetic-3d:tutorial:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-tutorial.mjs"
+    "test:magnetic-3d:tutorial:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-tutorial.mjs",
+    "test:magnetic-3d:build-order:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-build-order.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

@@ -26,3 +26,5 @@ The only dependency added in phase one was dev-only `vitest@5.0.5` (MIT). It run
 Phase-three Editor imports, Assembly3D boundary adaptations and local interaction fixes are recorded in [EDITOR.md](EDITOR.md) and [editor.patch](editor.patch). Phase three adds no dependencies or engine algorithm changes. The source checksum manifest includes the Editor files and the original history/ID test source.
 
 Phase-four Tutorial Player, timeline, orchestration panel/state, source snapshot adapter and timing/camera patches are recorded in [TUTORIAL.md](TUTORIAL.md) and [tutorial.patch](tutorial.patch). This phase adds no dependencies or Engine algorithm changes; it retains the existing Assembly3D and 2D storage formats.
+
+Phase 5A adds a bounded host-side Build Order planner and explicit candidate adoption around that same Tutorial implementation; no additional upstream files or dependencies are imported. The reusable geometry, snapshot, camera, Editor and Player modules and all original notices are retained. Implementation and test evidence: `doc/magnetic-3d-phase5a.md`.

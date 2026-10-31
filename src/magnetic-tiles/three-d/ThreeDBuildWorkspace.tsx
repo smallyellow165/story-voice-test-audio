@@ -9,6 +9,7 @@ import type { EditorHistory } from './vendor/editor/tutorial-state.ts'
 import { StepTimeline } from './vendor/components/editor/StepTimeline.tsx'
 import { TutorialOrchestrationPanel } from './vendor/components/editor/TutorialOrchestrationPanel.tsx'
 import { TutorialPlayer } from './vendor/components/tutorial/TutorialPlayer.tsx'
+import { BuildOrderGenerator } from './BuildOrderGenerator.tsx'
 import type { TutorialCamera } from './vendor/components/tutorial/TutorialPlayer.tsx'
 import './viewer.css'
 import './tutorial.css'
@@ -24,6 +25,7 @@ export default function ThreeDBuildWorkspace(){
   const [clean,setClean]=useState(boot.tutorial?serializeTutorial3D(boot.tutorial):'')
   const expected=useRef(boot.raw),fileRequest=useRef(0),camera=useRef<TutorialCamera|null>(null)
   const [cameraReady,setCameraReady]=useState(false)
+  const [loadEpoch,setLoadEpoch]=useState(0)
   const tutorial=history?.current??null,dirty=!!tutorial&&serializeTutorial3D(tutorial)!==clean
   const validation=useMemo(()=>tutorial?validateTutorial3D(tutorial):null,[tutorial])
   const project=useMemo(()=>tutorial?tutorialProject(tutorial):null,[tutorial])
@@ -35,6 +37,7 @@ export default function ThreeDBuildWorkspace(){
   function accept(t:Tutorial3D,saved=false){
     const next=actions.createInitialHistory(t);historyRef.current=next;setHistory(next);setSelected(t.steps[0]?.id??null);setSeekRequest(null)
     camera.current=null;setCameraReady(false);setError('');setNotice('');setClean(saved?serializeTutorial3D(t):'')
+    setLoadEpoch(n=>n+1)
   }
   function create(){try{if(assembly3D&&allowReplace()){fileRequest.current++;accept(createTutorial3D(assembly3D));setClean('')}}catch(e){setError(String(e))}}
   function apply(fn:(h:EditorHistory)=>EditorHistory){
@@ -55,7 +58,7 @@ export default function ThreeDBuildWorkspace(){
         <h3>3D Build Tutorial · {tutorial?.title??'尚无教程'}</h3>
         {tutorial&&<p className="hint" data-testid="tutorial-source">教程来源 {tutorial.source.assemblyId} @ revision {tutorial.source.assemblyRevision} · {tutorial.assembly.pieces.length} 片 / {tutorial.assembly.connections.length} 条连接 · {dirty?'Draft 未保存':'Draft 无未保存修改'}</p>}
         {tutorial&&!matching&&<p role="alert" className="magnetic-tutorial-warning">教程来源与当前 Assembly 不同。正在播放教程内嵌快照；不会替换、重绑或修改当前作品。需要当前作品的教程时请显式创建新 Draft。</p>}
-        {active&&tutorial&&<TutorialPlayer key={tutorial.id} tutorial={tutorial} initialStep={index} seekRequest={seekRequest}
+        {active&&tutorial&&<TutorialPlayer key={`${tutorial.id}-${loadEpoch}`} tutorial={tutorial} initialStep={index} seekRequest={seekRequest}
           onStepChange={i=>setSelected(tutorial.steps[i]?.id??null)} onCameraChange={reportCamera}/>}
         {!tutorial&&<p>先在 Assembly → 3D 选择作品，再在右栏创建 Tutorial Draft。</p>}
         {tutorial&&<details className="magnetic-tutorial-io"><summary>导入 / 导出 Tutorial3D</summary>
@@ -73,6 +76,8 @@ export default function ThreeDBuildWorkspace(){
     <StudioSlot column="inspector" stages={['build']} view="3d">
       <section className="magnetic-tutorial-inspector" aria-label="3D Tutorial Inspector">
         <h3>Tutorial Draft</h3><p className="hint">当前 Assembly：{assembly3D?`${assembly3D.id} @ ${assembly3D.revision}`:'等待加载'}</p>
+        <BuildOrderGenerator assembly={assembly3D} active={active} geometryValid={sourceValidation?.valid??false} hasTutorial={!!tutorial}
+          onAdopt={t=>{if(tutorial&&!confirm('采用此生成候选并替换当前 Tutorial Draft？已有草稿可先保存或导出。此操作不会自动保存。'))return;fileRequest.current++;accept(t)}}/>
         <button disabled={!assembly3D||!assembly3D.pieces.length} onClick={create}>{sourceValidation?.valid?'从当前 3D Assembly 创建教程':'创建未验证 Tutorial Draft'}</button>
         {sourceValidation&&!sourceValidation.valid&&<p role="alert">当前 Assembly Geometry Invalid；只能保留未验证 Draft。{sourceValidation.issues.map(i=>i.message).join('；')}</p>}
         <div className="button-row"><button onClick={reload}>重新加载已保存教程</button>{tutorial&&<button disabled={!!boot.error} onClick={save}>保存 Tutorial Draft</button>}</div>

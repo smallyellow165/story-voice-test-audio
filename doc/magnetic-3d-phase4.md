@@ -1,5 +1,7 @@
 # Magnetic Tiles Studio — Phase 4：3D Build Tutorial
 
+后续确定性自动规划、候选审核及最新验收见 [Phase 5A 文档](magnetic-3d-phase5a.md)；本文保留阶段四交付范围。
+
 2026-10-30。阶段四完成手动编排、预览、播放及本地 Tutorial Draft 保存。没有实现自动 Build Order、真实共享边折叠、物理模拟、Gallery、V4 或照片 Reconstruction，也没有调用付费 LLM。
 
 ## 复用上游的范围
