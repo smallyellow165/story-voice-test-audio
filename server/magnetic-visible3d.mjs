@@ -6,6 +6,7 @@ import path from 'node:path'
 import {randomUUID,createHash} from 'node:crypto'
 import {recordedSpatialOperation} from './spatial-operation.mjs'
 import {shareText} from './llm-traces.mjs'
+import {planningParticipation} from '../src/magnetic-tiles/three-d/reconstruction/planning-preflight.ts'
 import {modelOptions,providerStatus} from './brick-model-registry.mjs'
 import {runVisibleModel,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
@@ -44,9 +45,9 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
  }
  async function modelRecord(kind,body){
   const source=kind==='analysis'?await readSource(body.sourceId):(await lineage('reviews',body.reviewId)).source
-  const image=await readImage(source),registry=await getRegistry()
   let review=null
-  if(kind==='plan'){const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409);review=l.review}
+  if(kind==='plan'){const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409);review=l.review;const {blocker}=planningParticipation(review.input.review);if(blocker)fail(blocker,422)}
+  const image=await readImage(source),registry=await getRegistry()
   const geometryInput=review?.input
   const prepared={image,input:{source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
   const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true},kind==='analysis'?'analysis':'plan')

@@ -41,8 +41,5 @@
 .visible3d-reconstruction-heading h2{margin:0;flex:1}
 .visible3d-execution-state{padding:9px 10px;border:1px solid #c7d2cb;border-left-width:4px;border-radius:5px;background:#f0f3ef;font-size:12px}
 .visible3d-execution-state p{margin:5px 0 0}
-.visible3d-execution-state[data-tone=running]{background:#edf4ff;border-color:#497cac;color:#254e78}
-.visible3d-execution-state[data-tone=review]{background:#fff6dc;border-color:#b88d32;color:#765717}
-.visible3d-execution-state[data-tone=valid]{background:#eaf5ed;border-color:#3c805a;color:#245c3b}
 .visible3d-execution-state[data-tone=error],.visible3d-reconstruction-inspector [role=alert],.visible3d-failure-diagnostics{color:#a12626;border-color:#bd3838;background:#fff0ed}
 .visible3d-reconstruction-inspector>[role=alert]{padding:8px;border-left:4px solid #bd3838}

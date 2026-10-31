@@ -21,6 +21,9 @@ export function editReviewedPiece(review:VisibleReview3D,id:string,patch:Partial
  const result=structuredClone(review),old=result.pieces.find(p=>p.id===id);if(!old)throw Error('Observation 不存在')
  const geometryChanged=patch.profileId!==undefined&&patch.profileId!==old.profileId||patch.profileVersion!==undefined&&patch.profileVersion!==old.profileVersion
  Object.assign(old,patch)
+ // Exclusion takes precedence over explicit Profile/confirmation edits. Restoring
+ // an excluded instance does not silently restore its previous confirmation.
+ if(old.excluded)old.confirmed=false
  if(!old.confirmed||old.excluded){result.constraints=result.constraints.filter(c=>c.pieceA!==id&&c.pieceB!==id);if(result.spatialChecks)result.spatialChecks=result.spatialChecks.filter(c=>c.pieceA!==id&&c.pieceB!==id)}
  else if(geometryChanged)result.constraints=result.constraints.map(c=>({...c,portA:c.pieceA===id?null:c.portA,portB:c.pieceB===id?null:c.portB}))
  return result
