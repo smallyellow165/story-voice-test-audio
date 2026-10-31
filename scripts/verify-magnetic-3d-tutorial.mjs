@@ -33,13 +33,13 @@ try {
  const camera=async()=>JSON.parse(await field('3D Tutorial 相机').textContent())
  const visible=async()=>{await ready();return JSON.parse(await field('3D Tutorial 可见零件').textContent())}
  async function ready(){await advanced();const details=page.locator('.magnetic-tutorial-advanced details').filter({has:page.getByText('当前显示与相机',{exact:true})});if(!await details.evaluate(e=>e.open))await details.locator('summary').click();await page.waitForFunction(()=>{const c=document.querySelector('.magnetic-tutorial-canvas canvas'),p=document.querySelector('.magnetic-tutorial-canvas');return c&&p&&c.width>=p.clientWidth*.9&&c.height>=p.clientHeight*.9&&p.clientWidth>0});await field('3D Tutorial 相机').filter({hasText:/position/}).waitFor()}
- async function build(){await page.locator('[data-stage="build"]').click();await button('3D 教程').click()}
+ async function build(){await page.locator('[data-stage="build"]').click();await button('3D').click()}
  await page.goto(url);await button('添加正方形').click()
  const twoD=await page.locator('[data-tile-id]').evaluateAll(els=>els.map(e=>({id:e.dataset.tileId,points:e.getAttribute('points'),color:e.getAttribute('fill')})))
  await page.locator('[data-stage="build"]').click();await button('生成搭建步骤').click();await button('保存教程').click();await button('完成搭建').click()
  const dl2d=page.waitForEvent('download');await button('导出教程 JSON').click();const saved2d=JSON.parse(await readFile(await(await dl2d).path(),'utf8'))
  await page.locator('[data-stage="assembly"]').click()
- await button('3D 查看').click();await page.locator('.magnetic-3d-canvas canvas').waitFor()
+ await button('3D').click();await page.locator('.magnetic-3d-canvas canvas').waitFor()
  const pair=JSON.parse(await readFile(path.join(root,'src/magnetic-tiles/three-d/examples/right-angle.json'),'utf8'))
  await build();await advanced();assert.equal(await page.getByTestId('tutorial-player').count(),0,'empty tutorial is prepared without generating an order')
  await addStep(pair.pieces[0].id,'底座');await ready();await field('3D 步骤说明').fill('先放第一片正方形')
@@ -73,9 +73,9 @@ try {
  await button('教程 Undo').click();assert.deepEqual(await exported(),authored)
  await page.getByTestId('step-card-2').getByTitle('删除步骤',{exact:true}).click();assert.match(await validation(),/尚有待检查项/)
  await button('教程 Undo').click();assert.deepEqual(await exported(),authored)
- await page.reload();await button('3D 教程').click();await ready();assert.deepEqual(await exported(),authored)
+ await page.reload();await button('3D').click();await ready();assert.deepEqual(await exported(),authored)
  // Source changes must never rebind the tutorial. Saved Assembly Draft stays independent.
- await page.locator('[data-stage="assembly"]').click();await button('3D 查看').click();await page.locator('[data-3d-example="closed-cube"]').click()
+ await page.locator('[data-stage="assembly"]').click();await button('3D').click();await page.locator('[data-3d-example="closed-cube"]').click()
  await button('从当前作品创建 Draft').click();await button('保存 3D Draft').click()
  await build();assert.match(await page.locator('.magnetic-tutorial-warning').filter({hasText:'与当前 Assembly 不同'}).textContent(),/与当前 Assembly 不同/)
  assert.deepEqual(await exported(),authored)
@@ -90,12 +90,12 @@ try {
  assert.match(await validation(),/几何与顺序检查通过/,'manually moving the top face last makes every cumulative step connected')
  await button('保存未完成草稿').click();await button('重新开始').click();await button('自动播放').click();await page.getByTestId('tutorial-progress').filter({hasText:'播放完成'}).waitFor({timeout:20000})
  assert.equal((await visible()).visibleIds.length,6);assert.equal((await visible()).newIds.length,1)
- await page.reload();await button('3D 教程').click();await ready();assert.deepEqual(await exported(),cubeTutorial)
+ await page.reload();await button('3D').click();await ready();assert.deepEqual(await exported(),cubeTutorial)
  await button('重新加载已保存教程').click();assert.deepEqual(await exported(),cubeTutorial)
  // Invalid geometry remains an explicitly unverified, saveable Tutorial Draft.
  const invalid=structuredClone(cubeTutorial);invalid.id='invalid-tutorial';invalid.assembly.pieces[1].pose=structuredClone(invalid.assembly.pieces[0].pose)
  await advanced();await field('Tutorial3D JSON').fill(JSON.stringify(invalid));await button('导入 Tutorial JSON').click();assert.match(await validation(),/最终 Assembly Geometry Invalid/)
- await button('保存未完成草稿').click();await page.reload();await button('3D 教程').click();await ready();assert.deepEqual(await exported(),invalid);assert.match(await validation(),/最终 Assembly Geometry Invalid/)
+ await button('保存未完成草稿').click();await page.reload();await button('3D').click();await ready();assert.deepEqual(await exported(),invalid);assert.match(await validation(),/最终 Assembly Geometry Invalid/)
  await advanced();await field('打开 Tutorial3D 文件').setInputFiles({name:'restored-valid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(cubeTutorial))});await button('保存未完成草稿').click()
  // Import a modified, incomplete draft, preserve saved source and all geometry.
  const imported=structuredClone(cubeTutorial);imported.id='imported-tutorial';imported.steps[0].title='导入步骤';
@@ -103,14 +103,14 @@ try {
  await advanced();await field('Tutorial3D JSON').fill('{"broken":true}');await button('导入 Tutorial JSON').click();assert.deepEqual(await exported(),imported)
  // Actual file import, using the same tutorial format.
  await advanced();await field('打开 Tutorial3D 文件').setInputFiles({name:'tutorial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(cubeTutorial))});assert.deepEqual(await exported(),cubeTutorial)
- await button('2D 教程').click();if(await button('继续当前教程').isVisible())await button('继续当前教程').click();const dl2dAfter=page.waitForEvent('download');await button('导出教程 JSON').click();assert.deepEqual(JSON.parse(await readFile(await(await dl2dAfter).path(),'utf8')),saved2d);assert.match(await page.locator('.build-step-heading').filter({visible:true}).textContent(),/已完成/);assert.equal(await page.getByTestId('tutorial-player').filter({visible:true}).count(),0)
- await button('3D 教程').click();await ready();assert.deepEqual(await exported(),cubeTutorial)
+ await button('2D').click();if(await button('继续当前教程').isVisible())await button('继续当前教程').click();const dl2dAfter=page.waitForEvent('download');await button('导出教程 JSON').click();assert.deepEqual(JSON.parse(await readFile(await(await dl2dAfter).path(),'utf8')),saved2d);assert.match(await page.locator('.build-step-heading').filter({visible:true}).textContent(),/已完成/);assert.equal(await page.getByTestId('tutorial-player').filter({visible:true}).count(),0)
+ await button('3D').click();await ready();assert.deepEqual(await exported(),cubeTutorial)
  await page.getByTestId('step-card-2').click();await page.waitForTimeout(1700);await page.locator('.magnetic-3d-build>h3').scrollIntoViewIfNeeded();await page.screenshot({path:out+'/cube.png'})
- await page.locator('[data-stage="assembly"]').click();await button('3D 查看').click()
+ await page.locator('[data-stage="assembly"]').click();await button('3D').click()
  const io=page.locator('.magnetic-3d-load');if(!await io.evaluate(e=>e.open))await io.locator('summary').click()
  const download=page.waitForEvent('download');await button('导出 Assembly3D').click();const actualAssembly=JSON.parse(await readFile(await(await download).path(),'utf8'))
  assert.deepEqual(actualAssembly,cubeTutorial.assembly,'Tutorial creation/edit/play never changes saved Assembly Draft')
- await button('2D 查看').click();assert.deepEqual(await page.locator('[data-tile-id]').evaluateAll(els=>els.map(e=>({id:e.dataset.tileId,points:e.getAttribute('points'),color:e.getAttribute('fill')}))),twoD)
+ await button('2D').click();assert.deepEqual(await page.locator('[data-tile-id]').evaluateAll(els=>els.map(e=>({id:e.dataset.tileId,points:e.getAttribute('points'),color:e.getAttribute('fill')}))),twoD)
  assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[])
  const result={pair:'two manually authored steps, pose/camera snapshots, playback/pause/completion',cube:'six manually authored steps, twelve source connections, disconnected intermediate diagnostics',editing:'add, title, description, assign, reorder, delete, undo, camera capture',persistence:'save, refresh, reload, JSON import/export, file import and corrupt-file rejection',isolation:'source mismatch explicit; Assembly/2D remain unchanged',writes,errors,consoleErrors}
  await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))

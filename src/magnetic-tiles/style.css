@@ -224,3 +224,11 @@
 .build-player>h3{height:28px;line-height:28px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
 
 .studio-view-toggle{display:flex;gap:4px;margin:0 0 12px}.studio-view-toggle button[aria-pressed="true"]{background:#dbeee9;border-color:#197b6b;color:#154e45}
+/* One Studio mode selector, shared by all five workflow stages. */
+.studio-mode-switch{margin:12px 0 16px;font-size:12px;font-weight:600}
+.studio-mode-switch>div{display:flex;border:1px solid #9ab9ab;border-radius:8px;overflow:hidden;margin-top:5px}
+.studio-mode-switch button{flex:1;border:0;border-radius:0;background:transparent;padding:8px;min-width:0}
+.studio-mode-switch button+button{border-left:1px solid #9ab9ab}
+.studio-mode-switch button[aria-pressed=true]{background:#276b57;color:#fff;font-weight:700}
+.studio-mode-switch button:focus-visible{outline:2px solid #006aff;outline-offset:-3px}
+.studio-mode-warning{font-size:12px;overflow-wrap:anywhere;color:#843b29}

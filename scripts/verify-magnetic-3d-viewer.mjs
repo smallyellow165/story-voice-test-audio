@@ -26,7 +26,7 @@ try{
  const visible=loc=>loc.filter({visible:true}),button=name=>visible(page.getByRole('button',{name,exact:true}))
  await page.goto(url);await button('添加正方形').click()
  const before2d=await page.locator('svg[aria-label="磁力片二维画布"]').innerHTML()
- await button('3D 查看').click();await page.locator('.magnetic-3d-canvas canvas').waitFor({state:'visible'})
+ await button('3D').click();await page.locator('.magnetic-3d-canvas canvas').waitFor({state:'visible'})
  const camera=async()=>JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent())
  await page.waitForFunction(()=>document.querySelector('[aria-label="3D 相机状态"]')?.textContent!=='null')
  const canvas=page.locator('.magnetic-3d-canvas canvas')
@@ -75,9 +75,9 @@ try{
  assert.deepEqual(JSON.parse(await page.locator('[data-3d-position]').getAttribute('data-3d-position')),[4.123,-.75,2.5])
  await page.getByLabel('Assembly3D JSON',{exact:true}).fill('{invalid');await button('加载 JSON').click()
  assert.match(await page.getByRole('alert').textContent(),/加载失败/);assert.deepEqual(await saved(),fixture)
- await button('2D 查看').click();assert.equal(await page.locator('svg[aria-label="磁力片二维画布"]').innerHTML(),before2d)
+ await button('2D').click();assert.equal(await page.locator('svg[aria-label="磁力片二维画布"]').innerHTML(),before2d)
  for(const stage of ['source','review','reconstruction','build','assembly']){await page.locator(`[data-stage="${stage}"]`).click();assert.equal(await page.locator('main').getAttribute('data-active-stage'),stage)}
- await button('3D 查看').click();await page.locator('[data-3d-piece="free-triangle-v2"]').waitFor({state:'visible'})
+ await button('3D').click();await page.locator('[data-3d-piece="free-triangle-v2"]').waitFor({state:'visible'})
  // Tablet/mobile layouts must still expose the model, example controls and Inspector.
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:out+'/mobile.png'})
  await visible(page.getByRole('button',{name:'检查器',exact:true})).click();await page.locator('[data-3d-piece="free-triangle-v2"]').click()

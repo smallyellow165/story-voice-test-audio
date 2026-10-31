@@ -189,7 +189,7 @@ export default function Visible3DWorkflow() {
     }
     const imageView=<VisibleEvidenceImage source={source} image={image} evidence={analysis?.evidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>;
     return <>
-  <StudioSlot column="workflow" stages={imageStages} intake="visible3d"><p>Visible 3D · {source?.name ?? '未选照片'}</p><button disabled={busy} onClick={() => void run(async () => { await refresh(); if (source)
+  <StudioSlot column="workflow" stages={['source','review','reconstruction','assembly','build']} intake="visible3d" view="3d"><p>Visible 3D · {source?.name ?? '未选照片'}</p><button disabled={busy} onClick={() => void run(async () => { await refresh(); if (source)
         setHead(await api('head/' + source.id)); })}>刷新 3D 历史</button>
    {source && <><label>3D Analysis 历史<select aria-label="3D Analysis 历史" value={analysis?.id ?? ''} disabled={busy} onChange={e => { const a = history.analyses.find(a => a.id === e.target.value); if (a)
             selectAnalysis(a); }}><option value="">选择 Analysis</option>{history.analyses.filter(a => a.sourceId === source.id).map(a => <option key={a.id} value={a.id}>{a.origin} · {a.createdAt}</option>)}</select></label>

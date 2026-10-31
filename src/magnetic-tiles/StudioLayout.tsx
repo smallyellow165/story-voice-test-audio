@@ -1,3 +1,5 @@
+import {loadStudioMode,saveStudioMode} from './studio-mode.ts'
+import type {StudioMode} from './studio-mode.ts'
 import type {CameraView3D} from './three-d/camera-view.ts'
 import {useProfileRegistry} from './ProfileRegistry.tsx'
 import { workflowTerms } from './studio-terms.ts'
@@ -18,11 +20,11 @@ const Visible3DWorkflow = lazy(() => import('./three-d/reconstruction/Visible3DW
 const ThreeDBuildWorkspace = lazy(() => import('./three-d/ThreeDBuildWorkspace.tsx'))
 
 export type Stage = WorkflowStage
-type ViewMode = '2d' | '3d'
+type ViewMode = StudioMode
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
-const Context = createContext<{stage:Stage; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>void; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
+const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>void; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
@@ -31,8 +33,12 @@ export function StudioSlot({column,stages:visible,children,view='2d',intake='2d'
   return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)||(imageStages.includes(stage)&&intakeMode!==intake)||((stage==='assembly'||stage==='build')&&viewMode!==view)}>{children}</div>,host) : null
 }
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
-  const [viewMode,setViewMode]=useState<ViewMode>('2d'),[opened3D,setOpened3D]=useState(false)
-  const [intakeMode,setIntakeMode]=useState<'2d'|'visible3d'>(()=>{try{return localStorage.getItem('magnetic-visible3d-mode')==='visible3d'?'visible3d':'2d'}catch{return '2d'}}),[openedVisible3D,setOpenedVisible3D]=useState(()=>{try{return localStorage.getItem('magnetic-visible3d-mode')==='visible3d'}catch{return false}})
+  const [modeBoot]=useState(()=>loadStudioMode(localStorage))
+  const [mode,setMode]=useState<StudioMode>(modeBoot.mode),[modeWarning,setModeWarning]=useState(modeBoot.warning)
+  // Compatibility aliases for feature controllers; both derive from one state.
+  const viewMode=mode,intakeMode=mode==='3d'?'visible3d':'2d'
+  const modeRef=useRef(mode);modeRef.current=mode
+  const [opened3D,setOpened3D]=useState(modeBoot.mode==='3d'),[openedVisible3D,setOpenedVisible3D]=useState(modeBoot.mode==='3d')
   const [adoption3D,setAdoption3D]=useState<{assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null>(null)
   const [assembly3D,setAssembly3D]=useState<Assembly3D|null>(null)
   const {registry:{profiles}}=useProfileRegistry()
@@ -43,7 +49,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [stage,setStage]=useState<Stage>(boot.stage),[rightTab,setRightTab]=useState<RightTab>(boot.rightTab),[catalogProfile,setCatalogProfile]=useState(boot.catalogProfile)
   const [appliedRequest,setAppliedRequest]=useState(request),[warnings,setWarnings]=useState(boot.warnings),[storageWarning,setStorageWarning]=useState(boot.storageWarning)
   const rightColumn=useRef<HTMLElement>(null),scrollOffsets=useRef({inspector:0,catalog:0})
-  useEffect(()=>{setViewMode('2d');const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
+  useEffect(()=>{const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
   useEffect(()=>{
     if(appliedRequest!==request)return
     writeStudioUrl({stage,rightTab,catalogProfile})
@@ -53,15 +59,27 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [workflow,setWorkflow]=useState<HTMLDivElement|null>(null),[workspace,setWorkspace]=useState<HTMLDivElement|null>(null),[inspector,setInspector]=useState<HTMLDivElement|null>(null)
   useEffect(()=>{if(workspace)workspace.scrollTop=0;if(rightTab==='inspector'&&rightColumn.current){rightColumn.current.scrollTop=0;scrollOffsets.current.inspector=0}},[stage,workspace])
   const [mobileColumn,setMobileColumn]=useState<Column>(boot.rightTab==='catalog'?'inspector':'workspace')
-  const navigate=(s:Stage)=>{if(!dragging){setViewMode('2d');writeStudioUrl({stage:s,...(stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
+  const navigate=(s:Stage)=>{if(!dragging){writeStudioUrl({stage:s,...(mode==='2d'&&stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
   const selectTab=(tab:RightTab)=>{if(tab===rightTab)return;if(rightColumn.current)scrollOffsets.current[rightTab]=rightColumn.current.scrollTop;setRightTab(tab);setWarnings([]);setMobileColumn('inspector')}
-  return <Context.Provider value={{stage,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:(assembly,origin,cameraView)=>{setAdoption3D({assembly,origin,cameraView});setOpened3D(true);navigate('assembly');setViewMode('3d');setRightTab('inspector')},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
-    <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode}>
+  function switchMode(next:StudioMode){
+    if(dragging||next===mode)return
+    setMode(next)
+    if(next==='3d'){setOpened3D(true);setOpenedVisible3D(true)}
+    setMobileColumn('workspace')
+    try{saveStudioMode(localStorage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
+  }
+  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');setAdoption3D({assembly,origin,cameraView});setOpened3D(true);navigate('assembly');setRightTab('inspector')},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+    <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode} data-studio-mode={mode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
         <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1></header>
         <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
+        <div className="studio-mode-switch" role="group" aria-label="Studio 工作模式"><span>工作模式</span><div>
+          <button aria-pressed={mode==='2d'} disabled={dragging} onClick={()=>switchMode('2d')}>2D</button>
+          <button aria-pressed={mode==='3d'} disabled={dragging} onClick={()=>switchMode('3d')}>3D</button>
+        </div></div>
+        {modeWarning&&<p role="status" className="studio-mode-warning">{modeWarning}</p>}
         <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workspace')}>查看工作区</button><button onClick={()=>setMobileColumn('inspector')}>查看检查器</button></div>
         <div ref={setWorkflow}/>{parsed.errors.map(e=><p key={e} role="alert">{e}；未按无效参数恢复。</p>)}
         <p className="hint">{imageStages.includes(stage)&&intakeMode==='visible3d'?'Visible 3D · 仅重建可见证据；几何合法与照片匹配分开审核。':(stage==='assembly'||stage==='build')&&viewMode==='3d'?'3D 快照 · 按保存的位姿查看；几何校验不代表物理稳定性。':'相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。'}</p>
@@ -70,15 +88,6 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       <Panel id="workspace" className="studio-panel studio-panel-workspace" defaultSize="58%" minSize="30%">
       <section className="studio-column studio-workspace" aria-label="Workspace">
         <div className="studio-column-heading">{stage!=='review'&&<h2>{stages.find(s=>s.id===stage)!.label}</h2>}<div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
-        {imageStages.includes(stage)&&<div className="studio-view-toggle" role="group" aria-label="图片重建维度"><button aria-pressed={intakeMode==='2d'} onClick={()=>{setIntakeMode('2d');try{localStorage.setItem('magnetic-visible3d-mode','2d')}catch{}}}>2D 图片</button><button aria-pressed={intakeMode==='visible3d'} onClick={()=>{setIntakeMode('visible3d');setOpenedVisible3D(true);setRightTab('inspector');try{localStorage.setItem('magnetic-visible3d-mode','visible3d')}catch{}}}>Visible 3D</button></div>}
-        {stage==='assembly'&&<div className="studio-view-toggle" role="group" aria-label="作品查看模式">
-          <button aria-pressed={viewMode==='2d'} disabled={dragging} onClick={()=>setViewMode('2d')}>2D 查看</button>
-          <button aria-pressed={viewMode==='3d'} disabled={dragging} onClick={()=>{setOpened3D(true);setViewMode('3d');setRightTab('inspector')}}>3D 查看</button>
-        </div>}
-        {stage==='build'&&<div className="studio-view-toggle" role="group" aria-label="教程维度">
-          <button aria-pressed={viewMode==='2d'} onClick={()=>setViewMode('2d')}>2D 教程</button>
-          <button aria-pressed={viewMode==='3d'} onClick={()=>{setOpened3D(true);setViewMode('3d');setRightTab('inspector')}}>3D 教程</button>
-        </div>}
         <div ref={setWorkspace}/>
       </section></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整中栏与右栏宽度" title="拖动或使用方向键调整中栏与右栏宽度"/>

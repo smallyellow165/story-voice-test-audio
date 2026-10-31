@@ -54,7 +54,7 @@ try{
   throw Error('Viewer canvas exists but no rendered piece pixels were detected')
  }
  async function create(name,expected){
-  const f=v2?(name==='closed-cube'?await visibleV2Fixture():upgradeVisibleFixture(await visibleFixture(name))):await visibleFixture(name);if(name==='right-angle')f.plan.connections[0].angles=[90,-90];await step('source');await button('Visible 3D').click()
+  const f=v2?(name==='closed-cube'?await visibleV2Fixture():upgradeVisibleFixture(await visibleFixture(name))):await visibleFixture(name);if(name==='right-angle')f.plan.connections[0].angles=[90,-90];await step('source');await button('3D').click()
   await field('上传 Visible 3D 照片').setInputFiles({name:name+'-synthetic.png',mimeType:'image/png',buffer:await image(f.assembly)})
   await button('Analyze Visible 3D（调用模型）').waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('p')].some(p=>p.textContent.includes('Visible 3D · '+document.querySelector('input[type=file]')?.files?.[0]?.name)))
   await details(page.locator('.visible3d-workspace details').filter({hasText:'人工标注 / 离线验证'}));await field('Visible 3D 人工标注 JSON').fill(JSON.stringify(f.evidence));await button('保存人工标注并 Review').click();await button('保存 3D Review').waitFor()
@@ -97,7 +97,7 @@ try{
   await canvas.hover();await page.mouse.wheel(0,100);await settle();assert.notEqual((await view()).zoom,saved.zoom);closeView((await stored('candidate-1')).camera,saved)
   await adopt();await page.waitForFunction(()=>{const o=document.querySelector('[aria-label="3D Editor 相机状态"]');return o&&o.textContent!=='null'});await settle();closeView(JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),saved)
   assert.deepEqual((await exported()).pieces,x.candidates[0].assembly.pieces);await button('View').click();await settle();closeView(JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent()),saved)
-  await page.screenshot({path:out+'/assembly-saved-camera.png'});await page.reload();await button('3D 查看').click();await settle();closeView(JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent()),saved)
+  await page.screenshot({path:out+'/assembly-saved-camera.png'});await page.reload();await button('3D').click();await settle();closeView(JSON.parse(await page.getByLabel('3D 相机状态',{exact:true}).textContent()),saved)
   await button('Edit Draft').click();await settle();closeView(JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),saved)
   await step('reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();await settle();closeView(await view(),saved)
   assert.deepEqual((await api.dispatch('GET','visible3d/executions/'+x.id)).record,x,'camera metadata never changes immutable execution/candidate data')
@@ -105,7 +105,7 @@ try{
  }
 await field('3D Reconstruction Candidate').selectOption('candidate-2');await button('Fit to View').click();await field('3D Reconstruction Candidate').selectOption('candidate-1');await rendered();await page.screenshot({path:out+'/pair-candidate.png'})
  await adopt();const adopted=await exported();assert.deepEqual(adopted.pieces,x.candidates[0].assembly.pieces);assert.deepEqual(adopted.profiles,x.candidates[0].assembly.profiles)
- await page.reload();await button('3D 查看').click();assert.deepEqual(await exported(),adopted);assert.match(await page.locator('.visible3d-origin').textContent(),/采用时快照一致/)
+ await page.reload();await button('3D').click();assert.deepEqual(await exported(),adopted);assert.match(await page.locator('.visible3d-origin').textContent(),/采用时快照一致/)
  await step('reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();assert.match(await page.getByTestId('visible3d-execution-status').textContent(),/candidates_found/)
  await step('review');await page.locator('[data-review-id]').filter({visible:true}).first().click();await field('3D Review 颜色').fill('#112233');await step('reconstruction');assert.equal(await button('采用候选到 3D Assembly Editor').isDisabled(),true);assert.match(await page.locator('.visible3d-inspector').filter({visible:true}).innerText(),/Outdated/)
  // A separate page saving a review invalidates the old candidate on refresh and at the API.
@@ -113,10 +113,10 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
  await create('closed-cube',1);const cubeExecution=(await api.dispatch('GET','visible3d/history')).executions[0];assert.equal(cubeExecution.candidates[0].assembly.connections.length,v2?3:12)
  await field('3D 连接组合预算').fill('0');await button('Geometry Execution（不调用模型）').click();await page.getByTestId('visible3d-execution-status').filter({hasText:'budget_exhausted'}).waitFor();assert.equal(await button('采用候选到 3D Assembly Editor').count(),0)
  await field('3D 连接组合预算').fill('128');await button('Geometry Execution（不调用模型）').click();await page.getByTestId('visible3d-execution-status').filter({hasText:'candidates_found'}).waitFor();await rendered();await page.screenshot({path:out+'/cube-candidate.png'});await adopt();const cube=await exported();assert.equal(cube.connections.length,v2?3:12);if(v2)assert.equal(cube.pieces.length,3)
- await step('build');await button('3D 教程').click();await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:v2?'已生成 · 3 步':'已生成 · 6 步'}).waitFor({timeout:20000})
- await step('source');await button('2D 图片').click();assert.equal(await page.locator('.visible3d-workspace').filter({visible:true}).count(),0);assert.equal((await api.dispatch('GET','history')).analyses.length,0)
+ await step('build');await button('3D').click();await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:v2?'已生成 · 3 步':'已生成 · 6 步'}).waitFor({timeout:20000})
+ await step('source');await button('2D').click();assert.equal(await page.locator('.visible3d-workspace').filter({visible:true}).count(),0);assert.equal((await api.dispatch('GET','history')).analyses.length,0)
  if(live){
-  await step('source');await button('Visible 3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
+  await step('source');await button('3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
   await button('刷新 3D 历史').click()
   const h=await api.dispatch('GET','visible3d/history'),a=h.analyses.find(a=>a.sourceId===live.sourceId),r=h.reviews.find(r=>r.analysisId===a.id),p=h.plans.find(p=>p.reviewId===r.id),x=h.executions.find(x=>x.planId===p.id)
   await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)
@@ -139,7 +139,7 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
    await button('回到 Review 修正选中零件').click();await field('已审核面夹角下限').fill('85');await field('已审核面夹角上限').fill('90');await button('加入已审核空间检查').click();await saveAndExecute();await page.getByTestId('visible3d-spatial-status').filter({hasText:'consistent'}).waitFor();await page.screenshot({path:out+'/review-corrected.png'})
    const current=(await api.dispatch('GET','visible3d/history')).executions.find(y=>y.sourceId===live.sourceId&&y.id!==x.id&&y.candidates[0]?.spatialConsistency?.status==='consistent')
    assert.ok(current);assert.deepEqual((await api.dispatch('GET','visible3d/plans/'+p.id)).record,p,'original model plan and Trace remain immutable')
-   await adopt();const accepted=await exported();assert.deepEqual(accepted.pieces,current.candidates[0].assembly.pieces);await page.reload();await button('3D 查看').click();assert.deepEqual(await exported(),accepted)
+   await adopt();const accepted=await exported();assert.deepEqual(accepted.pieces,current.candidates[0].assembly.pieces);await page.reload();await button('3D').click();assert.deepEqual(await exported(),accepted)
    await step('reconstruction');await page.getByTestId('visible3d-spatial-status').filter({hasText:'consistent'}).waitFor();const other=a.evidence.observations.find(o=>![top,side].includes(o.id)).id;await linked(other).click();await button('回到 Review 修正选中零件').click();await field('排除实例（保留证据）').check();await saveAndExecute();await linked(other).click();assert.match(await linked(other).textContent(),/excluded/);assert.equal(await viewer.getAttribute('data-viewer-selected-piece'),'');assert.match(await page.getByRole('region',{name:'对应零件 Inspector'}).textContent(),/未重建/)
    console.log('PASS V2.1 real-photo bidirectional selection/raycast, camera purity, spatial conflicts, no-model correction and partial/excluded state')
   }
@@ -147,7 +147,7 @@ if(!v21){await rendered();await page.screenshot({path:out+'/real-purple-candidat
   await page.locator('.visible3d-workspace .visible3d-image').filter({visible:true}).screenshot({path:out+'/real-purple-evidence.png'})
   await field('3D Reconstruction Candidate').selectOption('candidate-2');await rendered();await page.screenshot({path:out+'/real-purple-candidate-2.png'})
   await adopt();const realAdopted=await exported();assert.deepEqual(realAdopted.pieces,x.candidates[1].assembly.pieces);assert.deepEqual(realAdopted.profiles,x.candidates[1].assembly.profiles);assert.equal(realAdopted.pieces.length,3);assert.equal(realAdopted.connections.length,3)
-  await page.reload();await button('3D 查看').click();assert.deepEqual(await exported(),realAdopted)}
+  await page.reload();await button('3D').click();assert.deepEqual(await exported(),realAdopted)}
  }
  assert.equal(calls.some(c=>/visible3d\/(analyze|plan)$/.test(c.route)),false);assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[])
  const result={passed:true,cameraMetadata:cameraTest?'explicit overwrite, immutable geometry, scoped restoration, cross-canvas adoption verified':null,version:v21?'V2.1':v2?'V2':'V1',pair:'manual visible evidence → reviewed profiles → spatial hypothesis → real geometry → editor adoption',cube:v2?'only three visible faces/three actual legal connections; no hidden panels; downstream build order complete':'six pieces/twelve actual validated connections; downstream auto build order complete',persistence:'reload exact Pose/ProfileSnapshot and immutable origin; context restoration',protection:'unchecked, dirty Review, changed head and budget exhaustion block adoption',realVisionCalls:0,realPhotographs:live?1:0,linkage:v21?'actual image ↔ WebGL raycast ↔ ID list ↔ Inspector, preserved across candidates':null,spatialChecks:v21?'contradiction blocks adoption; explicit no-model Review/rebase/re-execute; partial/excluded state':null,liveEvaluation:live?{model:live.model,sourceId:live.sourceId,geometry:'two actual 3-piece/3-connection candidates; explicit adoption and reload; Photo Match still unverified'}:null,fixture:'synthetic projected images and human annotations; no recognition accuracy claim',apiCalls:calls.length,errors,consoleErrors}

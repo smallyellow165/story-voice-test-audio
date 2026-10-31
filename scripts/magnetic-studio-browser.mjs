@@ -43,3 +43,12 @@ export async function reviewDetails(page,name){
  const summary=page.getByText(name,{exact:true})
  if(!await summary.evaluate(el=>el.parentElement.open))await summary.click()
 }
+
+// The sidebar is the sole mode entry, including on narrow/mobile layouts.
+export async function studioMode(page,mode){
+ const group=page.getByRole('group',{name:'Studio 工作模式',exact:true})
+ if(!await group.isVisible())await page.getByRole('button',{name:'工作阶段',exact:true}).filter({visible:true}).click()
+ const button=group.getByRole('button',{name:mode==='3d'?'3D':'2D',exact:true})
+ if(await button.getAttribute('aria-pressed')!=='true')await button.click()
+ if((page.viewportSize()?.width??1500)<=760&&await page.locator('.studio-workflow').isVisible())await page.getByRole('button',{name:'查看工作区',exact:true}).click()
+}

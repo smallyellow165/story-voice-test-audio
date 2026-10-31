@@ -34,6 +34,8 @@
     "test:magnetic-relative-size": "node --experimental-strip-types --test test/magnetic-relative-size.test.mjs",
     "test:magnetic-relative-size:browser": "node scripts/verify-magnetic-relative-size.mjs",
     "test:magnetic-tiles": "node --experimental-strip-types --test test/magnetic-tiles.test.mjs",
+    "test:magnetic-studio-mode": "node --experimental-strip-types --test test/magnetic-studio-mode.test.mjs",
+    "test:magnetic-studio-mode:browser": "node --experimental-strip-types scripts/verify-magnetic-studio-mode.mjs",
     "test:magnetic-tiles:browser": "node scripts/verify-magnetic-tiles.mjs",
     "test:magnetic-build": "node --experimental-strip-types --test test/magnetic-build.test.mjs",
     "test:magnetic-build:browser": "node scripts/verify-magnetic-build.mjs",

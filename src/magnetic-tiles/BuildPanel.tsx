@@ -15,7 +15,7 @@ import type {Assembly,Profile} from './geometry.ts'
 import {checkArtwork,modeLabel,workMode} from './artwork.ts'
 function download(value:string,name:string){const url=URL.createObjectURL(new Blob([value],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 export function BuildPanel({assembly,savedAssemblies,workspaceError,profiles,dragging,sourceContextId}:{assembly:Assembly;savedAssemblies:readonly Assembly[];workspaceError:string;profiles:readonly Profile[];dragging:boolean;sourceContextId?:string|null}){
- const {stage,navigate}=useStudio(),urlRequest=useUrlRequest()
+ const {stage,navigate,mode}=useStudio(),urlRequest=useUrlRequest(),active=mode==='2d'
  const [sourceId,setSourceId]=useState('current'),[library,setLibrary]=useState<BuildLibrary>(emptyLibrary),[loaded,setLoaded]=useState(false)
  const [busy,setBusy]=useState(true),[restoring,setRestoring]=useState(false),[blocked,setBlocked]=useState(false),[notice,setNotice]=useState('正在读取教程…'),[error,setError]=useState(''),[selectedId,setSelectedId]=useState('')
  const [playback,setPlayback]=useState<{id:string;scope:string;request?:typeof urlRequest}|null>(null)
@@ -24,16 +24,20 @@ export function BuildPanel({assembly,savedAssemblies,workspaceError,profiles,dra
  libraryRef.current=library;scopeRef.current=scope;requestRef.current=urlRequest
  const updateLibrary=(l:BuildLibrary)=>{libraryRef.current=l;setLibrary(l)}
  const clearPlayback=()=>{epoch.current++;setPlayback(null);writeStudioUrl({buildId:undefined})}
- const previousStage=useRef(stage),enteredRequest=useRef<typeof urlRequest|null>(null),previousSource=useRef(sourceContextId),previousScope=useRef(scope)
+ const previousStage=useRef(stage),previousActive=useRef(active),enteredRequest=useRef<typeof urlRequest|null>(null),restoredRequest=useRef<typeof urlRequest|null>(null),previousSource=useRef(sourceContextId),previousScope=useRef(scope)
  useLayoutEffect(()=>{
+  const activating=active&&!previousActive.current;previousActive.current=active
+  if(!active)return
   const entering=stage==='build'&&previousStage.current!=='build',first=stage==='build'&&enteredRequest.current===null
   if(entering||first){
    const requested=readStudioUrl(urlRequest.href).values,explicit=requested.buildId&&requested.stage==='build'&&enteredRequest.current!==urlRequest
    enteredRequest.current=urlRequest
-   if(!explicit){setSourceId('current');clearPlayback();setNotice('先查看当前作品，再生成或继续对应教程。')}
+   // Returning from 3D can resume the existing 2D player, but ordinary 2D
+   // Assembly → Build navigation retains its original source-preview behavior.
+   if(!explicit&&!(activating&&playback?.scope===scopeRef.current)){setSourceId('current');clearPlayback();setNotice('先查看当前作品，再生成或继续对应教程。')}
   }
   previousStage.current=stage
- },[stage,urlRequest])
+ },[stage,urlRequest,active])
  useLayoutEffect(()=>{if(previousScope.current!==scope){previousScope.current=scope;const incoming=readStudioUrl(urlRequest.href).values,actual=readStudioUrl(location.href).values;if(!(incoming.buildId&&incoming.buildId===actual.buildId&&actual.stage==='build')){clearPlayback();setNotice('作品来源或版本已切换；教程和进度仍保留在历史中。')}}},[scope,urlRequest])
  useLayoutEffect(()=>{
   const old=previousSource.current;previousSource.current=sourceContextId
@@ -45,10 +49,10 @@ export function BuildPanel({assembly,savedAssemblies,workspaceError,profiles,dra
  useEffect(()=>{let alive=true;loadLibrary(localStorage,bootProfiles.current).then(l=>{if(alive){updateLibrary(l);setNotice('当前作品的教程可直接继续；其他教程请从历史中主动打开。')}}).catch(e=>{if(alive){setBlocked(true);setError('无法恢复教程，原存档未覆盖：'+String(e))}}).finally(()=>{if(alive){lock.current=false;setBusy(false);setLoaded(true)}});return()=>{alive=false}},[])
  async function activate(l:BuildLibrary,id:string){const b=bundleFor(l,id);if(!b)throw Error('教程不存在');if(!l.progress[id])l.progress[id]={planHash:await contentHash(b.plan),step:0,completed:false};l.activeId=id;return l}
  useEffect(()=>{
-  if(!loaded)return
+  if(!loaded||!active||restoredRequest.current===urlRequest)return
   const {values:v,errors}=readStudioUrl(urlRequest.href)
-  if(errors.length){setRestoring(false);return}
-  if(!v.buildId||v.stage!=='build'){setPlayback(null);setRestoring(false);return}
+  if(errors.length){restoredRequest.current=urlRequest;setRestoring(false);return}
+  if(!v.buildId||v.stage!=='build'){restoredRequest.current=urlRequest;setPlayback(null);setRestoring(false);return}
   let alive=true;setRestoring(true)
   setSourceId('current')
   void(async()=>{
@@ -56,9 +60,9 @@ export function BuildPanel({assembly,savedAssemblies,workspaceError,profiles,dra
    if(!alive)return
    const l=await activate(structuredClone(libraryRef.current),v.buildId!)
    if(alive&&requestRef.current===urlRequest&&readStudioUrl(location.href).values.buildId===v.buildId){updateLibrary(l);setPlayback({id:v.buildId!,scope:scopeRef.current,request:urlRequest});setSelectedId(v.buildId!);setError('');setNotice('已按 URL 恢复指定教程及其进度；固定作品来源见下方。')}
-  })().catch(e=>{if(alive){setPlayback(null);setError('URL 教程恢复失败：'+String(e))}}).finally(()=>{if(alive)setRestoring(false)})
+  })().catch(e=>{if(alive){setPlayback(null);setError('URL 教程恢复失败：'+String(e))}}).finally(()=>{if(alive){restoredRequest.current=urlRequest;setRestoring(false)}})
   return()=>{alive=false}
- },[loaded,urlRequest])
+ },[loaded,urlRequest,active])
  async function run(action:(l:BuildLibrary)=>Promise<BuildLibrary>,message:string,open=false){
   if(lock.current||blocked||restoring)return
   lock.current=true;setBusy(true);setError('')
