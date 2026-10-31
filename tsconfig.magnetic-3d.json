@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/magnetic-tiles/three-d", "checks/magnetic-3d", "vitest.magnetic-3d.config.ts"]
+}

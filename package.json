@@ -63,7 +63,9 @@
     "test:magnetic-click-snap": "node --experimental-strip-types --test test/magnetic-click-snap.test.mjs",
     "test:magnetic-click-snap:browser": "node --experimental-strip-types scripts/verify-magnetic-click-snap.mjs",
     "test:magnetic-build-flow": "node --experimental-strip-types --test test/magnetic-build-flow.test.mjs",
-    "test:magnetic-build-flow:browser": "node --experimental-strip-types scripts/verify-magnetic-build-flow.mjs"
+    "test:magnetic-build-flow:browser": "node --experimental-strip-types scripts/verify-magnetic-build-flow.mjs",
+    "test:magnetic-3d": "vitest run --config vitest.magnetic-3d.config.ts",
+    "typecheck:magnetic-3d": "tsc -p tsconfig.magnetic-3d.json"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
@@ -82,7 +84,8 @@
     "@types/react-dom": "19.2.7",
     "@types/three": "0.180.0",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "5.0.5"
   },
   "exports": {
     "./hopscotch-core": {
