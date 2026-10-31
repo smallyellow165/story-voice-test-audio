@@ -1,9 +1,13 @@
+import {candidateObservationMap,inspectSpatialConsistency} from './spatial-consistency.ts';
+import type {ObservationPieceMap3D,SpatialConsistency3D} from './spatial-consistency.ts';
 import type { Assembly3D } from '../assembly.ts';
 import { solveAssembly3D, validateAssembly3D } from '../engine-adapter.ts';
 import { parseSpatialHypothesis, validateVisibleInput } from './contracts.ts';
 import type { ConnectionHypothesis3D, SpatialHypothesis3D, VisibleInput3D } from './contracts.ts';
 import type { Connection } from '../vendor/engine/types.ts';
 export type VisibleCandidate3D = {
+    observationMap?:ObservationPieceMap3D;
+    spatialConsistency?:SpatialConsistency3D;
     id: string;
     assembly: Assembly3D;
     geometry: ReturnType<typeof validateAssembly3D>;
@@ -24,7 +28,7 @@ export type VisibleCandidate3D = {
     interpretation: string;
 };
 export type VisibleExecution3D = {
-    version: 1;
+    version: 1 | 2;
     status: 'candidates_found' | 'no_valid_candidate' | 'budget_exhausted';
     completeSearch: boolean;
     search: {
@@ -116,7 +120,7 @@ export function executeVisible3D(planValue: SpatialHypothesis3D, inputValue: Vis
                     continue;
                 dedup.add(key);
                 const unresolved = input.review.pieces.filter(p => !p.excluded && !set.has(p.id)).map(p => p.id);
-                candidates.push({ id: 'pending', assembly, geometry, coverage: { reconstructed: group, unresolved, excluded, totalConfirmed: confirmed.length },
+                candidates.push({ id: 'pending', assembly, geometry, observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input), coverage: { reconstructed: group, unresolved, excluded, totalConfirmed: confirmed.length },
                     photoMatch: { status: 'unverified', score: null }, humanReview: 'pending', unverifiedConstraints: [...notes, ...plan.unknowns, ...plan.relations.map(r => `${r.from}/${r.to}: ${r.kind} 图片关系未作重投影验证`),
                         '绝对位置、相机、世界朝向及比例标定未验证；局部坐标系只用于求解', ...input.profiles.filter(s => s.profile.sizeEvidence?.status === 'estimated').map(s => `Profile ${s.profile.id}@${s.profile.version} 的尺寸来源为 estimated，几何合法不证明实物尺寸`), ...(unresolved.length ? ['PARTIAL: 未解决实例未生成；不可把局部候选当作完整作品'] : [])], rank: 0, frame: 'component-local-unregistered', interpretation: label });
             }
@@ -148,10 +152,10 @@ export function executeVisible3D(planValue: SpatialHypothesis3D, inputValue: Vis
         if (exhausted)
             break;
     }
-    candidates.sort((a, b) => b.coverage.reconstructed.length - a.coverage.reconstructed.length || a.unverifiedConstraints.length - b.unverifiedConstraints.length || JSON.stringify(a.assembly).localeCompare(JSON.stringify(b.assembly)));
+    candidates.sort((a, b) => Number(a.spatialConsistency?.status==='contradicted')-Number(b.spatialConsistency?.status==='contradicted') || b.coverage.reconstructed.length - a.coverage.reconstructed.length || a.unverifiedConstraints.length - b.unverifiedConstraints.length || JSON.stringify(a.assembly).localeCompare(JSON.stringify(b.assembly)));
     if (exhausted)
         diagnostics.add('BUDGET_EXHAUSTED: 未完成有限候选枚举；本次结果不提供可采用候选，请缩小假设或增加预算');
     const accepted = exhausted ? [] : candidates.slice(0, topK);
     accepted.forEach((c, i) => { c.id = `candidate-${i + 1}`; c.rank = i + 1; c.assembly.id = `visible-${i + 1}`; });
-    return { version: 1, status: exhausted ? 'budget_exhausted' : accepted.length ? 'candidates_found' : 'no_valid_candidate', completeSearch: !exhausted, search, candidates: accepted, diagnostics: [...diagnostics].slice(0, 50) };
+    return { version: 2, status: exhausted ? 'budget_exhausted' : accepted.length ? 'candidates_found' : 'no_valid_candidate', completeSearch: !exhausted, search, candidates: accepted, diagnostics: [...diagnostics].slice(0, 50) };
 }

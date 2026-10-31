@@ -74,7 +74,9 @@
     "test:magnetic-visible3d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs",
     "test:magnetic-visible3d:2d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d-2d.mjs",
     "test:magnetic-visible3d:v2": "node --experimental-strip-types --test test/magnetic-visible3d-v2.test.mjs",
-    "test:magnetic-visible3d:v2:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs --v2"
+    "test:magnetic-visible3d:v2:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs --v2",
+    "test:magnetic-visible3d:v21": "node --experimental-strip-types --test test/magnetic-visible3d-v21.test.mjs",
+    "test:magnetic-visible3d:v21:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs --v21"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

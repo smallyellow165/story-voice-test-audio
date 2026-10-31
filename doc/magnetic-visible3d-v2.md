@@ -1,5 +1,7 @@
 # Visible 3D Vision Spatial Understanding V2
 
+后续 V2.1 的确定性几何比较、图片联动与已审核空间检查见 [magnetic-visible3d-v21.md](./magnetic-visible3d-v21.md)。本页保留 V2 阶段记录。
+
 已完成：增强原有两个模型阶段的 Prompt、V2 证据/解释契约和 Review UI，继续使用原来的请求、Trace、来源 Hash、Review head、几何执行及 Assembly3D。未增加模型阶段、相机求解、重投影、隐藏零件生成或第二套几何引擎。
 
 ## 先确认的 V1 断点

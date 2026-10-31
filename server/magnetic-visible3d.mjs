@@ -1,3 +1,5 @@
+import {rebaseSpatialPlan} from '../src/magnetic-tiles/three-d/reconstruction/rebase-plan.ts'
+import {candidateObservationMap,inspectSpatialConsistency} from '../src/magnetic-tiles/three-d/reconstruction/spatial-consistency.ts'
 // Shared DUPLO request lifecycle + immutable magnetic evidence records; no brick geometry.
 import {mkdir,readFile,writeFile,link,unlink,readdir,rename} from 'node:fs/promises'
 import path from 'node:path'
@@ -86,6 +88,12 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
    let base=null;if(body.basedOnPlanId){const b=await lineage('plans',body.basedOnPlanId);if(b.outdated||b.review.id!==l.review.id)fail('人工计划的来源 Plan 已过期或不属于当前 Review',409);base=b.record}
    return put('plans',{sourceId:l.source.id,sourceHash:l.source.hash,reviewId:l.review.id,reviewHash:l.review.hash,plan:parseSpatialHypothesis(body.plan,l.review.input),origin:'human-hypothesis',traceId:null,...(base?{basedOnPlanId:base.id,basedOnPlanHash:base.hash}:{})})
   }
+  if(route==='rebase-plan'){
+   const current=await lineage('reviews',body.reviewId),old=await lineage('plans',body.planId)
+   if(current.outdated||current.source.id!==old.source.id||current.analysis.id!==old.analysis.id)fail('只能在同一 Analysis 的当前 Review 中明确沿用旧计划',409)
+   const rebased=rebaseSpatialPlan(old.record.plan,old.review.input,current.review.input)
+   return put('plans',{sourceId:current.source.id,sourceHash:current.source.hash,reviewId:current.review.id,reviewHash:current.review.hash,...rebased,origin:'human-rebased-hypothesis',traceId:null,basedOnPlanId:old.record.id,basedOnPlanHash:old.record.hash,basedOnReviewId:old.review.id,basedOnReviewHash:old.review.hash})
+  }
   if(route==='execute')return operation(body,route,async()=>{
    const l=await lineage('plans',body.planId);if(l.outdated)fail('Review 已改变，旧 Plan 不可执行',409)
    const execution=executeVisible3D(l.record.plan,l.review.input,body.options)
@@ -98,10 +106,14 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
     if(body.visualChecked!==true)fail('请先对照原图，确认候选及未验证项')
     const r=l.record,p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,r.options)
     const c=r.candidates.find(c=>c.id===body.candidateId),actual=verified.candidates.find(c=>c.id===body.candidateId)
-    if(!r.completeSearch||!c||!actual||hash(c)!==hash(actual)||!validateAssembly3D(c.assembly).valid)fail('Candidate 复核失败或不是 Geometry Valid',422)
+    const {observationMap:_mapping,spatialConsistency:_spatial,...legacyActual}=actual??{}
+    const matches=c&&actual&&hash(c)===hash(r.version===1?legacyActual:actual)
+    if(!r.completeSearch||!c||!actual||!matches||!validateAssembly3D(c.assembly).valid)fail('Candidate 复核失败或不是 Geometry Valid',422)
+    const observationMap=c.observationMap??candidateObservationMap(c.assembly,l.review.input),spatialConsistency=inspectSpatialConsistency(c.assembly,l.review.input,observationMap)
+    if(spatialConsistency.status==='contradicted')fail('Geometry Valid 但违反已审核空间关系；请修正 Review 后重新执行',422)
     // Identity is unique per adoption, all authoritative poses/profiles remain exact.
     const assembly={...c.assembly,id:'visible-'+randomUUID(),revision:0}
-    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'accepted',at:new Date().toISOString()},observationMap:c.coverage.reconstructed.map(id=>({observationId:id,pieceId:id}))})
+    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'accepted',at:new Date().toISOString()},observationMap,spatialConsistency})
    })
   }
   fail('未知 Visible 3D 操作',404)

@@ -1,3 +1,5 @@
+import {assertSpatialChecks} from './spatial-consistency.ts';
+import type {ReviewedSpatialCheck3D} from './spatial-consistency.ts';
 import {fields,assertShapeAssessment,assertShapeReview,assertSpatialUnderstanding,assertInterpretationReview} from './spatial-understanding.ts';
 import type {ShapeFamily3D,ShapeAssessment3D,SpatialUnderstanding3D} from './spatial-understanding.ts';
 import { adaptProfile, profileKey3D } from '../profile-adapter.ts';
@@ -64,6 +66,7 @@ export type ConnectionHypothesis3D = {
     uncertainty: string;
 };
 export type VisibleReview3D = {
+    spatialChecks?:ReviewedSpatialCheck3D[];
     interpretationReview?: {status: "unreviewed"|"accepted"|"corrected"|"rejected"; note:string};
     pieces: ReviewedPiece3D[];
     constraints: ConnectionHypothesis3D[];
@@ -202,7 +205,7 @@ function connections(values: ConnectionHypothesis3D[], input: VisibleInput3D): v
 export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
     obj(input, ['evidence', 'review', 'profiles']);
     parseVisibleEvidence(input.evidence);
-    fields(input.review, ['pieces', 'constraints'], ['interpretationReview']);
+    fields(input.review, ['pieces', 'constraints'], ['interpretationReview','spatialChecks']);
     if(input.review.interpretationReview!==undefined)assertInterpretationReview(input.review.interpretationReview);
     list(input.review.pieces, 12);
     list(input.profiles, 12);
@@ -230,6 +233,7 @@ export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
     if (ids.size !== input.evidence.observations.length)
         fail('Review 必须保留全部 Observation，删除请用 excluded');
     connections(input.review.constraints, input);
+    if(input.review.spatialChecks!==undefined)assertSpatialChecks(input.review.spatialChecks,input);
     return structuredClone(input);
 }
 export function parseSpatialHypothesis(value: unknown, input: VisibleInput3D): SpatialHypothesis3D {

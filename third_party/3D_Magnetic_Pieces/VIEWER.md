@@ -32,3 +32,5 @@ Host integration outside vendor:
 - `viewer-model.ts` maps immutable snapshots to meshes and exposes read-only Inspector facts.
 
 Regression evidence: 106 3D tests (including the 97 stage-one tests), 121 existing magnetic tests, TypeScript/build, and actual WebGL browser acceptance. Camera/frame fidelity tests exercise the adapted upstream implementation rather than replacing it with an alternative renderer. Full acceptance instructions are in `doc/magnetic-3d-phase2.md`.
+
+V2.1 inspection adaptation: `MagnetScene3D` exposes optional `inspectionTools` (off by default). Face-on / selected-face-up commands reuse `computeFitCamera` and OrbitControls and change only camera position/up/target. `pose-inspection.ts` derives these commands from the same ProfileSnapshots and saved Poses. Reset restores the original +Y-up three-quarter camera. No photo calibration or geometry repair is performed; the engine, Assembly Editor and LEGO Viewer are unchanged.

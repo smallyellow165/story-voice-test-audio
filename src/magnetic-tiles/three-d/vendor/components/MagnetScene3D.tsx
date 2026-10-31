@@ -1,3 +1,4 @@
+import {pieceViewPreset} from '../../reconstruction/pose-inspection.ts'
 // Adapted from MIT 3D_Magnetic_Pieces MagnetScene3D.
 // Kept: R3F Canvas → SceneContent → SceneLighting/MagnetPieceMesh + OrbitControls.
 // Replaced product Model/step/solver lookup with the host's exact snapshot boundary.
@@ -7,7 +8,7 @@ import type { ReactNode } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { OrthographicCamera } from 'three'
+import { OrthographicCamera,Vector3 } from 'three'
 import type { Assembly3D } from '../../assembly.ts'
 import { createViewerModel } from '../../viewer-model.ts'
 import type { ViewerPiece } from '../../viewer-model.ts'
@@ -15,28 +16,35 @@ import { MagnetPieceMesh, disposeShapeResources } from './magnet3d/primitives.ts
 import { SceneLighting, defaultGLProps } from './magnet3d/SceneLighting.tsx'
 import { computeFitCamera, applyFitResult, pieceWorldVertices } from './magnet3d/cameraUtils.ts'
 
-export type CameraState = { position: number[]; target: number[]; zoom: number }
-type Props = { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void }
-function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange }: {
+export type CameraState = { position: number[]; target: number[]; zoom: number; up: number[] }
+type Props = { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void; inspectionTools?:boolean }
+function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange, preset }: {
   pieces: ViewerPiece[]; selected: string | null; onSelect: Props['onSelect']; fitRequest: number; resetRequest: number;
-  onCameraChange: (state: CameraState) => void
+  onCameraChange: (state: CameraState) => void; preset:{up:[number,number,number];direction:[number,number,number]}|null
 }) {
   const controls = useRef<OrbitControlsImpl | null>(null)
   const { camera, size } = useThree()
   const vertices = useMemo(() => pieces.flatMap(p => pieceWorldVertices(p.shape, p.transform.position, p.transform.quaternion)), [pieces])
   const report = useCallback(() => {
     if (camera instanceof OrthographicCamera && controls.current) onCameraChange({
-      position: camera.position.toArray(), target: controls.current.target.toArray(), zoom: camera.zoom,
+      position: camera.position.toArray(), target: controls.current.target.toArray(), zoom: camera.zoom,up:camera.up.toArray(),
     })
   }, [camera, onCameraChange])
   const lastReset = useRef<number | null>(null)
   const fit = useCallback((preferredView: 'current' | 'threeQuarter') => {
     if (!(camera instanceof OrthographicCamera) || !size.width || !size.height) return
+    if(preferredView==='threeQuarter')camera.up.set(0,1,0)
     const result = computeFitCamera({ worldVertices: vertices, camera, size, preferredView })
     if (result) { applyFitResult(camera, result, controls.current); report() }
   }, [camera, vertices, size.width, size.height, report])
   // Document load, container resize and explicit Fit/Reset affect the CAMERA only.
   useEffect(() => { fit(lastReset.current === resetRequest ? 'current' : 'threeQuarter'); lastReset.current = resetRequest }, [fit, fitRequest, resetRequest])
+  useEffect(()=>{
+    if(!preset||!(camera instanceof OrthographicCamera))return
+    const target=vertices.reduce((s,v)=>s.add(v),new Vector3()).multiplyScalar(1/Math.max(1,vertices.length))
+    camera.up.fromArray(preset.up);camera.position.copy(target).add(new Vector3(...preset.direction).multiplyScalar(8));camera.lookAt(target);camera.updateMatrixWorld(true)
+    const result=computeFitCamera({worldVertices:vertices,camera,size,preferredView:'current'});if(result){applyFitResult(camera,result,controls.current);report()}
+  },[preset])
   useEffect(() => () => disposeShapeResources([...new Set(pieces.map(p => p.shape))]), [pieces])
   return <>
     <SceneLighting shadowOpacity={0}>{pieces.map(p => <MagnetPieceMesh key={p.id} shape={p.shape}
@@ -51,20 +59,21 @@ export class ViewerErrorBoundary extends Component<{ children: ReactNode }, { er
   static getDerivedStateFromError(error: Error) { return { error: error.message } }
   render() { return this.state.error ? <p role="alert">3D 画布无法启动：{this.state.error}。请确认浏览器支持 WebGL；可继续使用 2D 查看。</p> : this.props.children }
 }
-export function MagnetScene3D({ assembly, selected, onSelect }: Props) {
+export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=false }: Props) {
   const pieces = useMemo(() => createViewerModel(assembly), [assembly])
+  const [preset,setPreset]=useState<ReturnType<typeof pieceViewPreset>|null>(null)
   const [fitRequest, requestFit] = useState(0), [resetRequest, requestReset] = useState(0)
   const [cameraState, setCameraState] = useState<CameraState | null>(null)
-  return <section className="magnetic-3d-scene" aria-label="磁力片三维画布">
+  return <section className="magnetic-3d-scene" data-viewer-selected-piece={selected??''} aria-label="磁力片三维画布">
     <div className="magnetic-3d-camera-tools"><button onClick={() => requestFit(n => n + 1)}>Fit to View</button>
-      <button onClick={() => requestReset(n => n + 1)}>Reset Camera</button></div>
+      <button onClick={() => requestReset(n => n + 1)}>Reset Camera</button>{inspectionTools&&<><button disabled={!selected} onClick={()=>selected&&setPreset(pieceViewPreset(assembly,selected,'face'))}>正对所选面</button><button disabled={!selected} onClick={()=>selected&&setPreset(pieceViewPreset(assembly,selected,'up'))}>以所选面为上方观察</button></>}</div>
     <div className="magnetic-3d-canvas" data-testid="magnetic-3d-canvas">
       <ViewerErrorBoundary>
         <Canvas orthographic camera={{ position: [5, 5, 5], zoom: 50, near: .001, far: 100 }}
           dpr={[1, 2]} gl={defaultGLProps} fallback={<p role="alert">浏览器不支持 WebGL，无法显示 3D。可切回 2D 查看。</p>}
           onPointerMissed={() => onSelect(null)}>
           <SceneContent pieces={pieces} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
-            resetRequest={resetRequest} onCameraChange={setCameraState}/>
+            resetRequest={resetRequest} onCameraChange={setCameraState} preset={preset}/>
         </Canvas>
       </ViewerErrorBoundary>
     </div>
