@@ -222,3 +222,5 @@
 .build-saved{margin-top:2px;gap:6px}.build-saved label{font-size:12px;gap:4px}.build-saved select{font-size:12px;padding:7px}.build-saved button{padding:5px 8px;font-size:12px;min-height:32px}
 .build-notice{font-size:12px;margin:0;min-height:0}
 .build-player>h3{height:28px;line-height:28px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+
+.studio-view-toggle{display:flex;gap:4px;margin:0 0 12px}.studio-view-toggle button[aria-pressed="true"]{background:#dbeee9;border-color:#197b6b;color:#154e45}

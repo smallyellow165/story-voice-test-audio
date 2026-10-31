@@ -1,0 +1,89 @@
+{
+  "kind": "magnetic-assembly-3d",
+  "schemaVersion": 1,
+  "id": "right-angle",
+  "revision": 1,
+  "profiles": [
+    {
+      "profile": {
+        "id": "square",
+        "version": 1,
+        "name": "正方形",
+        "vertices": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "connectableEdges": [
+          "e0",
+          "e1",
+          "e2",
+          "e3"
+        ]
+      },
+      "thickness": 0.05
+    }
+  ],
+  "pieces": [
+    {
+      "id": "base",
+      "profileId": "square",
+      "profileVersion": 1,
+      "pose": {
+        "position": [
+          0,
+          0.025,
+          0
+        ],
+        "quaternion": [
+          -0.7071067811865475,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      },
+      "color": "#f5b942"
+    },
+    {
+      "id": "wall",
+      "profileId": "square",
+      "profileVersion": 1,
+      "pose": {
+        "position": [
+          0,
+          0.5249999999999999,
+          0.5000000000000001
+        ],
+        "quaternion": [
+          1.1102230246251565e-16,
+          0,
+          0,
+          1
+        ]
+      },
+      "color": "#ef795d"
+    }
+  ],
+  "connections": [
+    {
+      "pieceA": "base",
+      "portA": "e0-p0",
+      "pieceB": "wall",
+      "portB": "e0-p0",
+      "dihedralDeg": 90
+    }
+  ]
+}

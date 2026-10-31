@@ -1,4 +1,4 @@
-# Upstream provenance
+# Upstream provenance — Phase 1 baseline
 
 - Project: https://github.com/fengyanhao/3D_Magnetic_Pieces
 - Source used: `/home/umi/min-wrk/projects/story-voice-lab/work/3D_Magnetic_Pieces-main` (local archive; no `.git`, no download performed).
@@ -19,6 +19,8 @@ Source mapping:
 
 All 50 imported test assertions are retained. Test filenames, import targets, explicit `.ts` suffixes and erased type imports changed. One upstream flat-adjacency fixture also needs `flip:true`: the original placed its squares on top of one another and passed only because the old seam exception hid that collision. The expected-valid assertion is unchanged; the fixture now represents actual adjacency. The separate `checks/` directory and `.vitest.ts` suffix keep Vitest cases out of the existing `node --test` discovery, without changing that command.
 
-[PATCHES.md](PATCHES.md) explains local engine changes. [engine.patch](engine.patch) records their unified diff against the local archive (including the new outline helper), with paths relative to the upstream project. Keep this record alongside future updates. No upstream Viewer, Editor, Tutorial, data catalog, scheme persistence, router or deployment files were imported.
+[PATCHES.md](PATCHES.md) explains local engine changes. [engine.patch](engine.patch) records their unified diff against the local archive (including the new outline helper), with paths relative to the upstream project. Keep this record alongside future updates. Phase one imported no Viewer, Editor, Tutorial, data catalog, scheme persistence, router or deployment files. Phase-two Viewer imports and runtime dependencies are recorded separately in [VIEWER.md](VIEWER.md).
 
-The only new dependency is dev-only `vitest@5.0.5` (MIT). It runs the same assertion API with the existing Vite 8 / Node 24 environment. Existing Three.js 0.180.0 (MIT) and other runtime dependency versions are retained. No physics engine or React Three Fiber dependency was added. Installed packages retain their own license files; distribution of dependencies must retain applicable notices as usual.
+The only dependency added in phase one was dev-only `vitest@5.0.5` (MIT). It runs the same assertion API with the existing Vite 8 / Node 24 environment. Existing Three.js 0.180.0 (MIT) and other runtime dependency versions are retained. No physics engine or React Three Fiber dependency was added in phase one. Installed packages retain their own license files; distribution of dependencies must retain applicable notices as usual.
+
+Phase-three Editor imports, Assembly3D boundary adaptations and local interaction fixes are recorded in [EDITOR.md](EDITOR.md) and [editor.patch](editor.patch). Phase three adds no dependencies or engine algorithm changes. The source checksum manifest includes the Editor files and the original history/ID test source.

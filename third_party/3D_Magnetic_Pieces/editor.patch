@@ -1,0 +1,1798 @@
+--- a/src/editor/state.ts
++++ b/src/editor/state.ts
+@@ -1,65 +1,30 @@
+-import { EditorProject } from './types';
+-import { SCHEMA_VERSION } from './types';
+-import { defaultMetadata } from './types';
+-import { uid, uniqueId } from './id';
+-import { PartDef, MagnetColor, MagnetShape } from '../data/types';
+-import {
+-  PieceRef, Connection, BuildStepV2,
+-  StepCamera, PieceEntranceConfig, EasingName, EntranceType,
+-} from '../engine/types';
+-import { resnapshotTransforms, resnapshotTransformsForConnection } from './serialization';
++// Adapted MIT upstream snapshot history and piece/connection mutations.
++// Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
++import type { Assembly3D, Pose3D } from '../../assembly.ts'
++import { assertAssembly3D } from '../../assembly.ts'
++import { canonical } from '../../../build-plan.ts'
++import { profileKey3D } from '../../profile-adapter.ts'
++import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
++import { solveAssembly3D } from '../../engine-adapter.ts'
++import type { Connection } from '../engine/types.ts'
++import { uniqueId, uid } from './id.ts'
+ 
+-/**
+- * 编辑器状态模型 + 撤销/重做。
+- * 纯数据逻辑,无 React / DOM 依赖,便于未来小程序复用。
+- *
+- * 设计:
+- * - history 是 EditorProject 快照栈(深拷贝);
+- * - 每次"原子操作"产生新快照,push 到 past,清空 future;
+- * - undo 把 current 推入 future,pop past -> current;
+- * - redo 反之。
+- */
+-
+-export interface EditorHistory {
+-  past: EditorProject[];
+-  current: EditorProject;
+-  future: EditorProject[];
++export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[] }
++export const MAX_HISTORY = 100
++export function createEmptyProject(): Assembly3D {
++  return { kind: 'magnetic-assembly-3d', schemaVersion: 1, id: uid('draft'), revision: 0, profiles: [], pieces: [], connections: [] }
+ }
+-
+-export const MAX_HISTORY = 100;
+-
+-export function createEmptyProject(): EditorProject {
+-  const now = new Date().toISOString();
+-  const coverCamId = uid('cam');
+-  return {
+-    schemaVersion: SCHEMA_VERSION,
+-    id: uid('proj'),
+-    metadata: defaultMetadata(),
+-    parts: [],
+-    pieces: [],
+-    connections: [],
+-    steps: [],
+-    cameraPresets: [
+-      { id: coverCamId, label: '封面镜头', position: [5, 5, 5], target: [0, 0, 0], zoom: 50 },
+-    ],
+-    transforms: {},
+-    thumbnail: { source: 'auto', cameraPresetId: coverCamId },
+-    createdAt: now,
+-    updatedAt: now,
+-  };
++export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
++  assertAssembly3D(assembly)
++  return { past: [], current: structuredClone(assembly), future: [] }
+ }
+-
+-export function createInitialHistory(): EditorHistory {
+-  return { past: [], current: createEmptyProject(), future: [] };
+-}
+-
+-function cloneProject(p: EditorProject): EditorProject {
++function cloneProject(p: Assembly3D): Assembly3D {
+   // P0-4: structuredClone 比 JSON 往返快 5-10x,且不丢 Date/Map 等结构(此处数据全可序列化,但保留语义更稳)。
+   // 老旧环境(无 structuredClone,如非现代浏览器)降级到 JSON 方式。
+   if (typeof structuredClone === 'function') {
+     return structuredClone(p);
+   }
+-  return JSON.parse(JSON.stringify(p)) as EditorProject;
++  return JSON.parse(JSON.stringify(p)) as Assembly3D;
+ }
+ 
+ /** 在执行 mutation 前调用:把当前快照压栈。 */
+@@ -68,35 +33,39 @@
+   return { ...h, past, future: [] };
+ }
+ 
+-/** 修改 current 但不入栈(用于自动同步 transforms / updatedAt 等派生字段)。 */
+-export function updateCurrent(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
++/** 上游保留工具：修改 current 但不入栈；宿主几何编辑使用 commit。 */
++export function updateCurrent(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
+   // P0-四.7: 克隆 current 后再传给 updater,避免 updater 中的 in-place mutation
+   // 在 React Strict Mode(double-invocation)下污染原始状态。
+   return { ...h, current: updater(cloneProject(h.current)) };
+ }
+ 
+ /** 修改 current 并入栈(用于用户主动操作)。 */
+-export function commit(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
++export function commit(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
+   const next = pushHistory(h);
+   // P0-四.7: 克隆 current 后再传给 updater,避免 in-place mutation 污染 h.current。
+   // React Strict Mode 下 updater 会被调用两次:第一次 mutation 会改变 h.current,
+   // 第二次 pushHistory 会 clone 已被污染的 h.current → past 条目值错误,撤销无效。
+   const current = updater(cloneProject(next.current));
+-  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
++  assertAssembly3D(current);
++  if (canonical(current) === canonical(h.current)) return h;
++  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+ }
+ 
+ /**
+  * P0-2: 批量提交 — 只 push 一次历史,依次执行多个 updater。
+- * 用于一次用户操作需要多步 mutation 的场景(如断开连接+移动零件+移出步骤),
++ * 用于一次用户操作需要多步 mutation 的场景，
+  * 避免每个 updater 各 push 一条历史,导致撤销需要按多次。
+  */
+-export function commitBatch(h: EditorHistory, updaters: ((p: EditorProject) => EditorProject)[]): EditorHistory {
++export function commitBatch(h: EditorHistory, updaters: ((p: Assembly3D) => Assembly3D)[]): EditorHistory {
+   const next = pushHistory(h);
+   let current = cloneProject(next.current);
+   for (const u of updaters) {
+     current = u(current);
+   }
+-  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
++  assertAssembly3D(current);
++  if (canonical(current) === canonical(h.current)) return h;
++  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+ }
+ 
+ export function undo(h: EditorHistory): EditorHistory {
+@@ -130,557 +99,74 @@
+ }
+ 
+ /** 替换整个 current(用于新建 / 打开 / 导入)。清空历史。 */
+-export function replaceProject(_h: EditorHistory, project: EditorProject): EditorHistory {
++export function replaceProject(_h: EditorHistory, project: Assembly3D): EditorHistory {
+   return { past: [], current: cloneProject(project), future: [] };
+ }
+ 
+-/* ----------------- 零件与连接操作 ----------------- */
+ 
+-/** 找到或创建一个 partId(同形状同颜色复用)。 */
+-function findOrCreatePart(project: EditorProject, shape: MagnetShape, color: MagnetColor): PartDef {
+-  const existing = project.parts.find((p) => p.shape === shape && p.color === color);
+-  if (existing) return existing;
+-  const labels: Record<MagnetShape, string> = {
+-    square: '正方形', rectangle: '长方形', 'equilateral-triangle': '等边三角形',
+-    'isosceles-triangle': '等腰三角形', 'right-triangle': '直角三角形',
+-    'long-right-triangle': '长直角三角形', trapezoid: '梯形', hexagon: '六边形',
+-    pentagon: '五边形', sector: '扇形', semicircle: '半圆形', rhombus: '菱形',
+-  };
+-  const part: PartDef = {
+-    id: uniqueId('part', project.parts.map((p) => p.id)),
+-    name: labels[shape],
+-    shape, color, count: 0,
+-  };
+-  project.parts.push(part);
+-  return part;
++export function addPieceAction(h: EditorHistory, snapshot: ProfileSnapshot3D, color: string, placePosition?: [number, number, number]) {
++  const pieceId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const key = profileKey3D(snapshot.profile), existing = p.profiles.find(s => profileKey3D(s.profile) === key)
++    if (existing && canonical(existing) !== canonical(snapshot)) throw Error('该 Profile 版本已有不同的快照/厚度配置；请使用原配置或明确修改快照厚度。')
++    if (!existing) p.profiles.push(structuredClone(snapshot))
++    p.pieces.push({ id: pieceId, profileId: snapshot.profile.id, profileVersion: snapshot.profile.version, color,
++      pose: { position: placePosition ?? [0, snapshot.thickness * (snapshot.scale ?? 1) / 2, 0],
++        quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } })
++    return p
++  })
++  return { history, pieceId }
+ }
+-
+-/**
+- * 添加一个零件到方案。
+- * @param placePosition 可选放置位置(世界坐标)。不传时根零件放原点,其他零件放视野中心附近(由调用方计算)。
+- */
+-export function addPieceAction(
+-  h: EditorHistory,
+-  shape: MagnetShape,
+-  color: MagnetColor,
+-  placePosition?: [number, number, number],
+-): { history: EditorHistory; pieceId: string } {
+-  let pieceId = '';
+-  const history = commit(h, (p) => {
+-    const part = findOrCreatePart(p, shape, color);
+-    pieceId = uniqueId('piece', p.pieces.map((pp) => pp.id));
+-    const isRoot = p.pieces.length === 0;
+-    const piece: PieceRef = { id: pieceId, partId: part.id, isRoot };
+-    p.pieces.push(piece);
+-    if (isRoot) {
+-      // 根零件放原点(或指定位置)
+-      p.transforms[pieceId] = {
+-        position: placePosition ?? [0, 0, 0],
+-        quaternion: [0, 0, 0, 1],
+-      };
+-    } else {
+-      // 非根零件:使用指定位置,或默认放在原点附近(不再用 pieces.length*2 远距离偏移)
+-      p.transforms[pieceId] = {
+-        position: placePosition ?? [0.5, 0, 0.5],
+-        quaternion: [0, 0, 0, 1],
+-      };
++export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
++  return commit(h, p => {
++    p.pieces = p.pieces.filter(piece => piece.id !== pieceId)
++    p.connections = p.connections.filter(c => c.pieceA !== pieceId && c.pieceB !== pieceId)
++    return p
++  })
++}
++export function duplicatePieceAction(h: EditorHistory, pieceId: string) {
++  const newId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const src = p.pieces.find(piece => piece.id === pieceId)
++    if (!src) throw Error('找不到要复制的零件')
++    const copy = structuredClone(src); copy.id = newId; copy.pose.position[0] += 1
++    p.pieces.push(copy); return p
++  })
++  return { history, newId }
++}
++export function setPieceColorAction(h: EditorHistory, pieceId: string, color: string): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.color = color; return p })
++}
++export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
++}
++export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
++  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
++}
++// Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
++export function solveComponent(p: Assembly3D, root: string): Assembly3D {
++  if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
++  const members = new Set([root]), queue = [root]
++  while (queue.length) {
++    const id = queue.shift()!
++    for (const c of p.connections) {
++      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
++      if (next && !members.has(next)) { members.add(next); queue.push(next) }
+     }
+-    // 自动同步 parts.count
+-    part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    return p;
+-  });
+-  return { history, pieceId };
++  }
++  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
++  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
++  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
+ }
+-
+-/** 删除零件(级联清理连接和步骤引用)。 */
+-export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
+-  return commit(h, (p) => {
+-    p.pieces = p.pieces.filter((pp) => pp.id !== pieceId);
+-    p.connections = p.connections.filter((c) => c.pieceA !== pieceId && c.pieceB !== pieceId);
+-    for (const step of p.steps) {
+-      step.addedPieceIds = step.addedPieceIds.filter((id) => id !== pieceId);
+-    }
+-    delete p.transforms[pieceId];
+-    // 重新同步 parts.count
+-    for (const part of p.parts) {
+-      part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    }
+-    // 移除空 part
+-    p.parts = p.parts.filter((part) => part.count > 0);
+-    return p;
+-  });
++export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
++  return commit(h, p => solveComponent(p, root))
+ }
+-
+-/** 复制一个零件(同 part,新 piece ID)。 */
+-export function duplicatePieceAction(h: EditorHistory, pieceId: string): { history: EditorHistory; newId: string } {
+-  let newId = '';
+-  const history = commit(h, (p) => {
+-    const src = p.pieces.find((pp) => pp.id === pieceId);
+-    if (!src) return p;
+-    newId = uniqueId('piece', p.pieces.map((pp) => pp.id));
+-    const copy: PieceRef = { id: newId, partId: src.partId, isRoot: false };
+-    p.pieces.push(copy);
+-    const srcTf = p.transforms[pieceId];
+-    if (srcTf) {
+-      p.transforms[newId] = {
+-        position: [srcTf.position[0] + 1, srcTf.position[1], srcTf.position[2]],
+-        quaternion: [...srcTf.quaternion] as [number, number, number, number],
+-      };
+-    }
+-    const part = p.parts.find((pp) => pp.id === src.partId);
+-    if (part) part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    return p;
+-  });
+-  return { history, newId };
++export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
++  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
+ }
+-
+-/** 修改零件颜色(改 partId 指向,或新建 part)。 */
+-export function setPieceColorAction(h: EditorHistory, pieceId: string, color: MagnetColor): EditorHistory {
+-  return commit(h, (p) => {
+-    const piece = p.pieces.find((pp) => pp.id === pieceId);
+-    if (!piece) return p;
+-    const oldPart = p.parts.find((pp) => pp.id === piece.partId);
+-    if (!oldPart) return p;
+-    const newPart = findOrCreatePart(p, oldPart.shape, color);
+-    piece.partId = newPart.id;
+-    // 同步 count
+-    for (const part of p.parts) {
+-      part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
+-    }
+-    p.parts = p.parts.filter((part) => part.count > 0);
+-    return p;
+-  });
++export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
++  return commit(h, p => { p.connections.splice(index, 1); return p })
+ }
+-
+-/** 直接设置零件的 editor transform(自由移动 / 旋转,不创建连接)。 */
+-export function setPieceTransformAction(
+-  h: EditorHistory,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorHistory {
+-  return commit(h, (p) => setPieceTransformMutation(p, pieceId, transform));
++export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
++  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
+ }
+-
+-/** P0-2: setPieceTransform 的纯 mutation,供 commitBatch 组合。 */
+-export function setPieceTransformMutation(
+-  p: EditorProject,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorProject {
+-  p.transforms[pieceId] = transform;
+-  return p;
+-}
+-
+-/**
+- * P0-四.7: 合并提交 — 更新 transform 但不入栈(用于长按按键合并)。
+- * 首次按键用 setPieceTransformAction(入栈),后续按键用此函数(只更新 current)。
+- * 这样一次"按键序列"只产生一条历史记录,撤销一次即可回退。
+- */
+-export function setPieceTransformMergedAction(
+-  h: EditorHistory,
+-  pieceId: string,
+-  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
+-): EditorHistory {
+-  return updateCurrent(h, (p) => {
+-    p.transforms[pieceId] = transform;
+-    return p;
+-  });
+-}
+-
+-/* ----------------- 连接操作 ----------------- */
+-
+-/** 创建连接并立即重新求解 transforms。 */
+-export function createConnectionAction(
+-  h: EditorHistory,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => createConnectionMutation(p, connection));
+-}
+-
+-/** P0-2: createConnection 的纯 mutation,供 commitBatch 组合。 */
+-export function createConnectionMutation(p: EditorProject, connection: Connection): EditorProject {
+-  p.connections.push(connection);
+-  p.transforms = resnapshotTransforms(p);
+-  return p;
+-}
+-
+-/** 断开连接。 */
+-export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
+-  return commit(h, (p) => removeConnectionMutation(p, index));
+-}
+-
+-/** P0-2: removeConnection 的纯 mutation,供 commitBatch 组合。 */
+-export function removeConnectionMutation(p: EditorProject, index: number): EditorProject {
+-  p.connections.splice(index, 1);
+-  p.transforms = resnapshotTransforms(p);
+-  return p;
+-}
+-
+-/** 更新连接的二面角 / flip。 */
+-export function updateConnectionAction(
+-  h: EditorHistory,
+-  index: number,
+-  patch: Partial<Pick<Connection, 'dihedralDeg' | 'flip'>>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const c = p.connections[index];
+-    if (!c) return p;
+-    if (patch.dihedralDeg !== undefined) c.dihedralDeg = patch.dihedralDeg;
+-    if (patch.flip !== undefined) c.flip = patch.flip;
+-    // P1-5: 增量求解 — 只重算受影响连接的子树,避免全量 BFS
+-    p.transforms = resnapshotTransformsForConnection(p, index);
+-    return p;
+-  });
+-}
+-
+-/* ----------------- 步骤操作 ----------------- */
+-
+-/** 新增步骤(默认标题和描述非空)。 */
+-export function addStepAction(h: EditorHistory): { history: EditorHistory; stepId: number } {
+-  let stepId = 1;
+-  const history = commit(h, (p) => {
+-    stepId = p.steps.length > 0 ? Math.max(...p.steps.map((s) => s.id)) + 1 : 1;
+-    const step: BuildStepV2 = {
+-      id: stepId,
+-      title: `步骤 ${stepId}`,
+-      description: '',
+-      parentGuide: '',
+-      addedPieceIds: [],
+-      addedConnections: [],
+-    };
+-    p.steps.push(step);
+-    return p;
+-  });
+-  return { history, stepId };
+-}
+-
+-/** 删除步骤。 */
+-export function deleteStepAction(h: EditorHistory, stepId: number): EditorHistory {
+-  return commit(h, (p) => {
+-    p.steps = p.steps.filter((s) => s.id !== stepId);
+-    return p;
+-  });
+-}
+-
+-/** 调整步骤顺序(把 from 移到 to)。 */
+-export function moveStepAction(h: EditorHistory, fromIndex: number, toIndex: number): EditorHistory {
+-  return commit(h, (p) => {
+-    if (fromIndex < 0 || fromIndex >= p.steps.length) return p;
+-    const clamped = Math.max(0, Math.min(p.steps.length - 1, toIndex));
+-    const [moved] = p.steps.splice(fromIndex, 1);
+-    p.steps.splice(clamped, 0, moved);
+-    // 重新编号(保持 id 单调递增,便于引用稳定)
+-    p.steps.forEach((s, i) => (s.id = i + 1));
+-    return p;
+-  });
+-}
+-
+-/** 更新步骤字段。 */
+-export function updateStepAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  patch: Partial<Pick<BuildStepV2,
+-    'title' | 'description' | 'parentGuide' | 'addedPieceIds'
+-    | 'hint' | 'focusPoints' | 'highlightMs' | 'snapFeedback' | 'annotations'
+-  >>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (patch.title !== undefined) step.title = patch.title;
+-    if (patch.description !== undefined) step.description = patch.description;
+-    if (patch.parentGuide !== undefined) step.parentGuide = patch.parentGuide;
+-    if (patch.addedPieceIds !== undefined) step.addedPieceIds = [...patch.addedPieceIds];
+-    if (patch.hint !== undefined) step.hint = patch.hint;
+-    if (patch.focusPoints !== undefined) step.focusPoints = [...patch.focusPoints];
+-    if (patch.highlightMs !== undefined) step.highlightMs = patch.highlightMs;
+-    if (patch.snapFeedback !== undefined) step.snapFeedback = patch.snapFeedback;
+-    if (patch.annotations !== undefined) step.annotations = { ...patch.annotations };
+-    return p;
+-  });
+-}
+-
+-/** 把零件加入指定步骤的新增列表(去重)。 */
+-export function addPieceToStepAction(h: EditorHistory, stepId: number, pieceId: string): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (!step.addedPieceIds.includes(pieceId)) step.addedPieceIds.push(pieceId);
+-    return p;
+-  });
+-}
+-
+-/** 把多片零件批量加入指定步骤(去重)。P1: 教学编排支持多选统一加入。 */
+-export function addPiecesToStepAction(h: EditorHistory, stepId: number, pieceIds: string[]): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    for (const pid of pieceIds) {
+-      if (!step.addedPieceIds.includes(pid)) step.addedPieceIds.push(pid);
+-    }
+-    return p;
+-  });
+-}
+-
+-/** 把零件从指定步骤移除(同时清理其 entrance 配置)。P1: 教学编排支持移出步骤。 */
+-export function removePieceFromStepAction(h: EditorHistory, stepId: number, pieceId: string): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    step.addedPieceIds = step.addedPieceIds.filter((id) => id !== pieceId);
+-    if (step.entrance && step.entrance[pieceId]) {
+-      delete step.entrance[pieceId];
+-      if (Object.keys(step.entrance).length === 0) delete step.entrance;
+-    }
+-    if (step.annotations && step.annotations[pieceId]) {
+-      delete step.annotations[pieceId];
+-      if (Object.keys(step.annotations).length === 0) delete step.annotations;
+-    }
+-    return p;
+-  });
+-}
+-
+-/** 把连接加入指定步骤。 */
+-export function addConnectionToStepAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => addConnectionToStepMutation(p, stepId, connection));
+-}
+-
+-/** P0-2: addConnectionToStep 的纯 mutation,供 commitBatch 组合。 */
+-export function addConnectionToStepMutation(p: EditorProject, stepId: number, connection: Connection): EditorProject {
+-  const step = p.steps.find((s) => s.id === stepId);
+-  if (!step) return p;
+-  step.addedConnections.push(connection);
+-  return p;
+-}
+-
+-/** P1-七: 录制期间断开连接时,把对应连接从步骤的 addedConnections 中移除。 */
+-export function removeConnectionFromStepAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  connection: Connection,
+-): EditorHistory {
+-  return commit(h, (p) => removeConnectionFromStepMutation(p, stepId, connection));
+-}
+-
+-/** P0-2: removeConnectionFromStep 的纯 mutation,供 commitBatch 组合。 */
+-export function removeConnectionFromStepMutation(p: EditorProject, stepId: number, connection: Connection): EditorProject {
+-  const step = p.steps.find((s) => s.id === stepId);
+-  if (!step) return p;
+-  step.addedConnections = step.addedConnections.filter(
+-    (c) =>
+-      !(c.pieceA === connection.pieceA && c.portA === connection.portA &&
+-        c.pieceB === connection.pieceB && c.portB === connection.portB),
+-  );
+-  return p;
+-}
+-
+-/* ----------------- P1: 教学编排字段操作 ----------------- */
+-
+-/** 设置步骤镜头(作者保存的本步视角)。传 null 清除镜头。 */
+-export function setStepCameraAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  camera: StepCamera | null,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (camera === null) {
+-      delete step.camera;
+-    } else {
+-      step.camera = { ...camera };
+-    }
+-    return p;
+-  });
+-}
+-
+-/** 把当前编辑器视图(相机位置/target/zoom)保存为本步镜头。 */
+-export function captureCurrentViewAsStepCameraAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  view: { position: [number, number, number]; target: [number, number, number]; zoom: number },
+-  transitionMs: number = 800,
+-): EditorHistory {
+-  return setStepCameraAction(h, stepId, {
+-    position: [...view.position],
+-    target: [...view.target],
+-    zoom: view.zoom,
+-    transitionMs,
+-  });
+-}
+-
+-/** 设置步骤内某片零件的入场动画配置。传 null 清除该零件的 entrance(回退到默认)。 */
+-export function setPieceEntranceAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  pieceId: string,
+-  config: PieceEntranceConfig | null,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (config === null) {
+-      if (step.entrance) {
+-        delete step.entrance[pieceId];
+-        if (Object.keys(step.entrance).length === 0) delete step.entrance;
+-      }
+-    } else {
+-      if (!step.entrance) step.entrance = {};
+-      step.entrance[pieceId] = { ...config };
+-    }
+-    return p;
+-  });
+-}
+-
+-/** 批量设置步骤内多片零件的入场类型(快速给同批零件统一设置 drop/side/fade 等)。 */
+-export function batchSetEntranceTypeAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  pieceIds: string[],
+-  type: EntranceType,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (!step.entrance) step.entrance = {};
+-    pieceIds.forEach((pid, idx) => {
+-      const existing = step.entrance![pid];
+-      step.entrance![pid] = {
+-        type,
+-        delayMs: idx * 150,
+-        durationMs: existing?.durationMs ?? 800,
+-        easing: existing?.easing ?? 'easeOutCubic',
+-        startOffset: existing?.startOffset,
+-        startRotation: existing?.startRotation,
+-      };
+-    });
+-    return p;
+-  });
+-}
+-
+-/** 设置步骤内某片零件的入场参数(局部更新,保留其他字段)。 */
+-export function patchPieceEntranceAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  pieceId: string,
+-  patch: Partial<Pick<PieceEntranceConfig, 'type' | 'delayMs' | 'durationMs' | 'easing' | 'startOffset' | 'startRotation'>>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (!step.entrance) step.entrance = {};
+-    const existing = step.entrance[pieceId] ?? {
+-      type: 'drop' as EntranceType,
+-      delayMs: 0,
+-      durationMs: 800,
+-      easing: 'easeOutCubic' as EasingName,
+-    };
+-    step.entrance[pieceId] = {
+-      type: patch.type ?? existing.type,
+-      delayMs: patch.delayMs ?? existing.delayMs,
+-      durationMs: patch.durationMs ?? existing.durationMs,
+-      easing: patch.easing ?? existing.easing,
+-      startOffset: patch.startOffset ?? existing.startOffset,
+-      startRotation: patch.startRotation ?? existing.startRotation,
+-    };
+-    return p;
+-  });
+-}
+-
+-/** 设置步骤的提示文字。 */
+-export function setStepHintAction(h: EditorHistory, stepId: number, hint: string): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (hint.trim() === '') delete step.hint;
+-    else step.hint = hint;
+-    return p;
+-  });
+-}
+-
+-/** 设置步骤的观察重点列表。 */
+-export function setStepFocusPointsAction(h: EditorHistory, stepId: number, points: string[]): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    const filtered = points.map((s) => s.trim()).filter((s) => s.length > 0);
+-    if (filtered.length === 0) delete step.focusPoints;
+-    else step.focusPoints = filtered;
+-    return p;
+-  });
+-}
+-
+-/** 设置步骤内某片零件的标注文字。传空串清除。 */
+-export function setPieceAnnotationAction(
+-  h: EditorHistory,
+-  stepId: number,
+-  pieceId: string,
+-  text: string,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    const step = p.steps.find((s) => s.id === stepId);
+-    if (!step) return p;
+-    if (text.trim() === '') {
+-      if (step.annotations) {
+-        delete step.annotations[pieceId];
+-        if (Object.keys(step.annotations).length === 0) delete step.annotations;
+-      }
+-    } else {
+-      if (!step.annotations) step.annotations = {};
+-      step.annotations[pieceId] = text;
+-    }
+-    return p;
+-  });
+-}
+-
+-/* ----------------- 镜头预设 ----------------- */
+-
+-export function saveCameraPresetAction(
+-  h: EditorHistory,
+-  preset: { label: string; position: [number, number, number]; target: [number, number, number]; zoom: number; stepId?: number },
+-): { history: EditorHistory; presetId: string } {
+-  let presetId = '';
+-  const history = commit(h, (p) => {
+-    presetId = uniqueId('cam', p.cameraPresets.map((c) => c.id));
+-    p.cameraPresets.push({ id: presetId, ...preset });
+-    return p;
+-  });
+-  return { history, presetId };
+-}
+-
+-/* ----------------- 元数据 ----------------- */
+-
+-export function updateMetadataAction(
+-  h: EditorHistory,
+-  patch: Partial<EditorProject['metadata']>,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    p.metadata = { ...p.metadata, ...patch };
+-    return p;
+-  });
+-}
+-
+-/* ----------------- P2: 缩略图/封面 ----------------- */
+-
+-/**
+- * P2: 设置封面 dataURL(由 coverRenderer 生成)。
+- * source 设为 'manual',dataUrl 内嵌到方案数据中。
+- */
+-export function setThumbnailDataUrlAction(
+-  h: EditorHistory,
+-  dataUrl: string,
+-  cameraPresetId?: string,
+-): EditorHistory {
+-  return commit(h, (p) => {
+-    p.thumbnail = {
+-      source: 'manual',
+-      dataUrl,
+-      ...(cameraPresetId ? { cameraPresetId } : {}),
+-    };
+-    return p;
+-  });
+-}
+--- a/src/editor/snap.ts
++++ b/src/editor/snap.ts
+@@ -1,9 +1,10 @@
+-import { Vector3, Quaternion, Matrix4 } from 'three';
+-import { Connection, ShapeDef, PieceTransform } from '../engine/types';
+-import { getPort, getShapeDef } from '../engine/shapes';
+-import { computeTransformFromConnection } from '../engine/solver';
+-import { EditorProject } from './types';
+-import { transformFromSerializable, resnapshotTransforms } from './serialization';
++// Adapted MIT upstream snap implementation. See third_party/3D_Magnetic_Pieces/EDITOR.md.
++import { Vector3, Quaternion } from 'three';
++import type { Connection, ShapeDef, PieceTransform } from '../engine/types.ts';
++import { getPort } from '../engine/shapes.ts';
++import { computeTransformFromConnection } from '../engine/solver.ts';
++import type { EditorProject } from '../../editor-project.ts';
++import { toEnginePose as transformFromSerializable } from '../../assembly.ts';
+ 
+ /**
+  * 端口吸附与连接管理逻辑。
+@@ -11,7 +12,7 @@
+  * 不使用"看起来靠在一起"的视觉吸附,而是创建真实 Connection 数据。
+  */
+ 
+-const PORT_LENGTH_TOLERANCE_RATIO = 0.05;
++const PORT_LENGTH_TOLERANCE_RATIO = 0.01; // Match the shared validator.
+ const SNAP_DISTANCE = 0.6; // 世界单位,吸附触发距离
+ 
+ function makeGetShape(project: EditorProject) {
+@@ -20,7 +21,7 @@
+     const piece = project.pieces.find((pp) => pp.id === pid);
+     if (!piece) return undefined;
+     const part = partMap.get(piece.partId);
+-    return part ? getShapeDef(part.shape) : undefined;
++    return part ? project.shapes.get(part.shape) : undefined;
+   };
+ }
+ 
+@@ -41,11 +42,10 @@
+ }
+ 
+ /**
+- * 计算显示用变换:可由 solver 推导的零件用 solver 结果,
+- * 浮动(未连通到根)的零件用 editor transforms 缓存。
++ * 计算显示用变换：仅转换 Assembly3D 的保存 Pose，不执行求解。
+  */
+ export function getDisplayTransforms(project: EditorProject): Record<string, PieceTransform> {
+-  const solverTfs = resnapshotTransforms(project);
++  const solverTfs = project.transforms; // Stored poses are authoritative; no implicit solve.
+   const out: Record<string, PieceTransform> = {};
+   for (const p of project.pieces) {
+     const s = solverTfs[p.id];
+@@ -64,8 +64,7 @@
+  * P0-1: 轻量级显示变换 — 直接读 project.transforms 缓存,不调用 solver。
+  *
+  * 用于拖拽期间的高频调用(findBestSnapCandidate),避免每帧全量求解。
+- * 拖拽期间 project.connections 不变,project.transforms 是上次 commit 后
+- * resnapshotTransforms 的结果,等价于 solver 输出,可安全复用。
++ * 拖拽期间 project.connections 不变，使用保存 Pose 加实时拖动覆盖。
+  * 缺失 transform 的零件回退到原点(与 getDisplayTransforms 兜底一致)。
+  */
+ function getDisplayTransformsFromCache(project: EditorProject): Record<string, PieceTransform> {
+@@ -263,90 +262,3 @@
+   return used;
+ }
+ 
+-/* ----------------- P0-3: 连接组件语义 ----------------- */
+-
+-/**
+- * 判断某零件是否为已连接组件的非根成员。
+- * 返回将其连到父零件的 connection 索引(若存在)。
+- */
+-export function findConnectionToParent(
+-  pieceId: string,
+-  project: EditorProject,
+-): { index: number; connection: Connection; isPieceA: boolean } | null {
+-  // 找到根零件,用 BFS 确定父子关系
+-  const root = project.pieces.find((p) => p.isRoot) || project.pieces[0];
+-  if (!root || root.id === pieceId) return null;
+-
+-  const adj: Record<string, { conn: Connection; idx: number; neighbor: string }[]> = {};
+-  project.connections.forEach((conn, idx) => {
+-    if (!adj[conn.pieceA]) adj[conn.pieceA] = [];
+-    if (!adj[conn.pieceB]) adj[conn.pieceB] = [];
+-    adj[conn.pieceA].push({ conn, idx, neighbor: conn.pieceB });
+-    adj[conn.pieceB].push({ conn, idx, neighbor: conn.pieceA });
+-  });
+-
+-  const visited = new Set<string>([root.id]);
+-  const queue = [root.id];
+-  while (queue.length > 0) {
+-    const cur = queue.shift()!;
+-    for (const { conn, idx, neighbor } of adj[cur] || []) {
+-      if (visited.has(neighbor)) continue;
+-      visited.add(neighbor);
+-      if (neighbor === pieceId) {
+-        return { index: idx, connection: conn, isPieceA: conn.pieceA === cur };
+-      }
+-      queue.push(neighbor);
+-    }
+-  }
+-  return null;
+-}
+-
+-/**
+- * 根据子零件被拖动后的新变换,推算连接的二面角(P0-3 "调整连接角度")。
+- * 比较子零件新法线与父零件法线在连接轴上的夹角。
+- */
+-export function computeDihedralFromMovedTransform(
+-  pieceId: string,
+-  newTransform: PieceTransform,
+-  project: EditorProject,
+-): { index: number; dihedralDeg: number } | null {
+-  const parent = findConnectionToParent(pieceId, project);
+-  if (!parent) return null;
+-
+-  const getShape = makeGetShape(project);
+-  const display = getDisplayTransforms(project);
+-  const { connection, isPieceA } = parent;
+-
+-  // 父零件 ID 和端口
+-  const parentId = isPieceA ? connection.pieceA : connection.pieceB;
+-  const parentPortId = isPieceA ? connection.portA : connection.portB;
+-  const parentShape = getShape(parentId);
+-  if (!parentShape) return null;
+-  const parentPort = getPort(parentShape, parentPortId);
+-  if (!parentPort) return null;
+-
+-  const parentTf = display[parentId];
+-  if (!parentTf) return null;
+-
+-  // 父端口的世界方向(连接轴)
+-  const parentMatrix = new Matrix4().compose(parentTf.position, parentTf.quaternion, new Vector3(1, 1, 1));
+-  const pA0 = new Vector3(parentPort.p0.x, parentPort.p0.y, 0).applyMatrix4(parentMatrix);
+-  const pA1 = new Vector3(parentPort.p1.x, parentPort.p1.y, 0).applyMatrix4(parentMatrix);
+-  const axis = new Vector3().subVectors(pA1, pA0).normalize();
+-
+-  // 父零件法线
+-  const parentNormal = new Vector3(0, 0, 1).applyQuaternion(parentTf.quaternion).normalize();
+-  // 子零件新法线
+-  const childNormal = new Vector3(0, 0, 1).applyQuaternion(newTransform.quaternion).normalize();
+-
+-  // 二面角 = 子法线相对父法线绕 axis 的旋转
+-  const projParent = parentNormal.clone().projectOnPlane(axis).normalize();
+-  const projChild = childNormal.clone().projectOnPlane(axis).normalize();
+-  const dot = Math.max(-1, Math.min(1, projParent.dot(projChild)));
+-  const cross = new Vector3().crossVectors(projParent, projChild);
+-  const sign = cross.dot(axis) >= 0 ? 1 : -1;
+-  const angle = Math.atan2(sign * cross.length(), dot);
+-  const dihedralDeg = (angle * 180) / Math.PI;
+-
+-  return { index: parent.index, dihedralDeg };
+-}
+--- a/src/components/editor/EditorCanvas.tsx
++++ b/src/components/editor/EditorCanvas.tsx
+@@ -1,16 +1,17 @@
++// Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
+ import { useRef, useMemo, useEffect, useCallback, useState } from 'react';
+ import { Canvas, useThree } from '@react-three/fiber';
+ import { OrbitControls, Line, TransformControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
+ import * as THREE from 'three';
+-import { MagnetColor } from '../../data/types';
+-import { getShapeDef } from '../../engine/shapes';
+-import { Connection, PieceTransform } from '../../engine/types';
+-import { MagnetPieceMesh } from '../magnet3d/primitives';
+-import { SceneLighting, defaultGLProps } from '../magnet3d/SceneLighting';
+-import { EditorProject, SerializableTransform } from '../../editor/types';
+-import { getDisplayTransforms, findCompatibleTargets, buildPortUsage, findBestSnapCandidate } from '../../editor/snap';
+-import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils';
+-import type { Selection } from './EditorWorkspace';
++type MagnetColor = string;
++
++import type { Connection, PieceTransform } from '../../engine/types.ts';
++import { MagnetPieceMesh, disposeShapeResources } from '../magnet3d/primitives.tsx';
++import { SceneLighting, defaultGLProps } from '../magnet3d/SceneLighting.tsx';
++import type { EditorProject, SerializableTransform } from '../../../editor-project.ts';
++import { getDisplayTransforms, findCompatibleTargets, buildPortUsage, findBestSnapCandidate } from '../../editor/snap.ts';
++import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils.ts';
++import type { Selection } from '../../../editor-project.ts';
+ 
+ export type ToolMode = 'select' | 'move' | 'rotate' | 'snap';
+ 
+@@ -27,6 +28,7 @@
+   toolMode: ToolMode;
+   onSelectPiece: (id: string) => void;
+   onSelectConnection: (index: number) => void;
++  onSelectPort?: (pieceId: string, portId: string) => void;
+   onClearSelection: () => void;
+   focusRequest: { pieceId: string; ts: number } | null;
+   fitRequest: { ts: number } | null;
+@@ -52,7 +54,7 @@
+ const SNAP_PIXEL_THRESHOLD = 28; // 屏幕像素阈值
+ 
+ function SceneContent({
+-  project, selection, toolMode, onSelectPiece, onSelectConnection, focusRequest, fitRequest,
++  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
+   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
+   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
+   onViewChange,
+@@ -62,6 +64,7 @@
+   toolMode: ToolMode;
+   onSelectPiece: (id: string) => void;
+   onSelectConnection: (index: number) => void;
++  onSelectPort?: (pieceId: string, portId: string) => void;
+   onClearSelection: () => void;
+   focusRequest: { pieceId: string; ts: number } | null;
+   fitRequest: { ts: number } | null;
+@@ -135,7 +138,7 @@
+       if (!tf || !piece) continue;
+       const part = partMap[piece.partId];
+       if (!part) continue;
+-      const shape = getShapeDef(part.shape);
++      const shape = project.shapes.get(part.shape);
+       if (!shape) continue;
+       out.push(...pieceWorldVertices(shape, tf.position, tf.quaternion));
+     }
+@@ -167,7 +170,7 @@
+     if (!tf || !piece) return;
+     const part = partMap[piece.partId];
+     if (!part) return;
+-    const shape = getShapeDef(part.shape);
++    const shape = project.shapes.get(part.shape);
+     if (!shape) return;
+     const verts = pieceWorldVertices(shape, tf.position, tf.quaternion);
+     const result = computeFitCamera({
+@@ -184,14 +187,12 @@
+   }, [camera, selectedPieceId, transforms, pieceMap, partMap, size, fitAll, cameraTargetRef]);
+ 
+   // 仅在首次加载或 project.id 变化时自动 fit
+-  const lastFitProjectId = useRef<string>('');
++  
+   useEffect(() => {
+-    if (project.id !== lastFitProjectId.current) {
+-      lastFitProjectId.current = project.id;
+-      const t = setTimeout(() => fitAll(), 100);
+-      return () => clearTimeout(t);
+-    }
+-  }, [project.id, fitAll]);
++    const t = setTimeout(() => fitAllRef.current?.(), 80);
++    return () => clearTimeout(t);
++  }, [project.id, !!project.pieces.length, size.width, size.height]);
++  useEffect(() => () => disposeShapeResources([...project.shapes.values()]), [project.shapes]);
+ 
+   // 聚焦请求
+   useEffect(() => {
+@@ -274,7 +275,7 @@
+   onViewChangeRef.current = onViewChange;
+   useEffect(() => {
+     // DEV 模式需要更新 window 状态;父组件可能需要 onViewChange 通知
+-    const needDevWindow = import.meta.env.DEV;
++    const needDevWindow = false; // Do not leak global debug state into the host.
+     const needNotify = !!onViewChangeRef.current;
+     if (!needDevWindow && !needNotify) return;
+ 
+@@ -350,8 +351,9 @@
+   useEffect(() => {
+     const onKey = (e: KeyboardEvent) => {
+       // 操作对象是输入框/textarea/contenteditable 时禁用全局快捷键
++      if (e.ctrlKey || e.metaKey || e.altKey) return;
+       const target = e.target as HTMLElement;
+-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
++      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+ 
+       const sel = selectionRef.current;
+       if (sel.kind !== 'piece') return;
+@@ -476,11 +478,7 @@
+         : undefined;
+       const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
+       if (candidate) {
+-        // 提交吸附位置
+-        onMovePieceCommit(selectedPieceId, {
+-          position: [candidate.resultingTransform.position.x, candidate.resultingTransform.position.y, candidate.resultingTransform.position.z],
+-          quaternion: [candidate.resultingTransform.quaternion.x, candidate.resultingTransform.quaternion.y, candidate.resultingTransform.quaternion.z, candidate.resultingTransform.quaternion.w],
+-        });
++        // Host callback commits the pose/constraint solve atomically in one history entry.
+         // 创建连接
+         onCreateConnection(candidate.connection);
+         drag.committed = true;
+@@ -530,6 +528,11 @@
+     };
+   }, [onTransformMouseDown, onTransformMouseUp, onTransformObjectChange]);
+ 
++  useEffect(() => () => {
++    if (keyboardCommitTimerRef.current) clearTimeout(keyboardCommitTimerRef.current);
++    document.body.style.cursor = 'default';
++  }, []);
++
+   // 临时对象:TransformControls 挂载的 dummy
+   const dummyObj = useMemo(() => new THREE.Object3D(), []);
+   useEffect(() => {
+@@ -548,7 +551,7 @@
+ 
+   return (
+     <>
+-      <SceneLighting shadowScale={20} shadowOpacity={0.3}>
++      <SceneLighting shadowScale={20} shadowOpacity={0}>
+         <gridHelper args={[20, 20, '#cbd5e1', '#e2e8f0']} position={[0, -0.01, 0]} />
+ 
+         {/* P0-二.2: TransformControls 附着的 dummyObj 必须真实存在于 scene graph,
+@@ -561,10 +564,10 @@
+           const tf = transforms[piece.id];
+           const part = partMap[piece.partId];
+           if (!tf || !part) return null;
+-          const shape = getShapeDef(part.shape);
++          const shape = project.shapes.get(part.shape);
+           if (!shape) return null;
+           const isSelected = selection.kind === 'piece' && selection.id === piece.id;
+-          const isDimmed = selection.kind === 'piece' && selection.id !== piece.id;
++          const isDimmed = false;
+           const isHovered = hoveredPiece === piece.id;
+           const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
+           return (
+@@ -591,7 +594,7 @@
+         {snapPreview && selectedPieceId && (() => {
+           const piece = pieceMap[selectedPieceId];
+           const part = piece ? partMap[piece.partId] : null;
+-          const shape = part ? getShapeDef(part.shape) : null;
++          const shape = part ? project.shapes.get(part.shape) : null;
+           if (!shape) return null;
+           return (
+             <MagnetPieceMesh
+@@ -607,7 +610,7 @@
+         {selection.kind === 'piece' && (() => {
+           const piece = pieceMap[selection.id];
+           const part = piece ? partMap[piece.partId] : null;
+-          const shape = part ? getShapeDef(part.shape) : null;
++          const shape = part ? project.shapes.get(part.shape) : null;
+           const tf = transforms[selection.id];
+           if (!shape || !tf) return null;
+           const matrix = new THREE.Matrix4().compose(tf.position, tf.quaternion, new THREE.Vector3(1, 1, 1));
+@@ -618,7 +621,8 @@
+             const p1 = new THREE.Vector3(port.p1.x, port.p1.y, 0).applyMatrix4(matrix);
+             const color = isUsed ? '#ef4444' : isCompatible ? '#22c55e' : '#3b82f6';
+             return (
+-              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4} />
++              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4}
++                onClick={e => { e.stopPropagation(); onSelectPort?.(selection.id, port.portId); }}/>
+             );
+           });
+         })()}
+@@ -652,8 +656,9 @@
+         ref={controlsRef}
+         makeDefault
+         enablePan
+-        minDistance={2}
+-        maxDistance={30}
++        enableDamping={false}
++        minZoom={.01}
++        maxZoom={100000}
+       />
+ 
+       {/* TransformControls:仅在选中零件且非选择模式时启用 */}
+@@ -663,7 +668,6 @@
+           object={dummyObj}
+           mode={toolMode === 'rotate' ? 'rotate' : 'translate'}
+           size={0.8}
+-          onObjectChange={onTransformObjectChange}
+         />
+       )}
+ 
+@@ -698,7 +702,7 @@
+ }
+ 
+ export function EditorCanvas({
+-  project, selection, toolMode, onSelectPiece, onSelectConnection, onClearSelection,
++  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
+   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
+   liveTransformOverride, getCurrentViewRef, onViewChange,
+ }: Props) {
+@@ -713,10 +717,10 @@
+   const fitSelection = () => fitSelectionRef.current?.();
+ 
+   return (
+-    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
++    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" tabIndex={0} role="region" aria-label="3D 编辑画布">
+       <Canvas
+         orthographic
+-        camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
++        camera={{ position: [5, 5, 5], zoom: 50, near: 0.001, far: 100 }}
+         shadows="percentage"
+         dpr={[1, 2]}
+         style={{ width: '100%', height: '100%' }}
+@@ -729,6 +733,7 @@
+           toolMode={toolMode}
+           onSelectPiece={onSelectPiece}
+           onSelectConnection={onSelectConnection}
++          onSelectPort={onSelectPort}
+           onClearSelection={onClearSelection}
+           focusRequest={focusRequest}
+           fitRequest={fitRequest}
+@@ -747,13 +752,13 @@
+         />
+       </Canvas>
+ 
+-      {/* 右下角按钮组 */}
+-      <div className="absolute bottom-3 right-3 flex flex-col gap-2">
++      {/* Host-scoped layout; upstream Tailwind is not installed. */}
++      <div className="magnetic-3d-editor-camera-tools">
+         <button
+           onClick={fitAll}
+           className="p-2 rounded-full bg-white/80 hover:bg-white shadow-sm"
+           title="全部入镜"
+-          aria-label="全部入镜"
++          aria-label="Fit to View"
+         >
+           <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l4 4m8-4h4m0 0v4m0-4l-4 4M4 16v4m0 0h4m-4 0l4-4m8 4l4-4m0 4v-4m0 4h-4" />
+@@ -774,7 +779,7 @@
+           onClick={resetView}
+           className="p-2 rounded-full bg-white/80 hover:bg-white shadow-sm"
+           title="重置视角"
+-          aria-label="重置视角"
++          aria-label="Reset Camera"
+         >
+           <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+@@ -783,7 +788,7 @@
+       </div>
+ 
+       {/* 视图方向按钮 */}
+-      <div className="absolute top-3 right-3 flex gap-1">
++      <div className="magnetic-3d-editor-view-tools">
+         {(['front', 'back', 'left', 'right', 'top'] as const).map((v) => {
+           const labels = { front: '前', back: '后', left: '左', right: '右', top: '顶' };
+           return (
+@@ -799,8 +804,8 @@
+         })}
+       </div>
+ 
+-      <div className="absolute bottom-3 left-3 text-xs text-gray-500 pointer-events-none space-y-0.5">
+-        <div>左键:选中 · {toolMode === 'rotate' ? 'Gizmo 旋转' : toolMode === 'move' ? 'Gizmo 移动' : '拖零件移动'} · 右键:旋转视角 · 滚轮:缩放</div>
++      <div className="magnetic-3d-editor-help">
++        <div>点击选中 · 左键拖空白旋转视角 · 右键平移 · 滚轮缩放 · {toolMode === 'rotate' ? '拖圆环旋转' : toolMode === 'snap' ? '拖轴移动并磁吸' : toolMode === 'move' ? '拖轴移动' : '右栏切换移动/旋转工具'}</div>
+         <div>WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销</div>
+       </div>
+     </div>
+--- a/src/components/editor/PropertyPanel.tsx
++++ b/src/components/editor/PropertyPanel.tsx
+@@ -1,183 +1,28 @@
+-import { useState, useMemo, useEffect } from 'react';
+-import * as THREE from 'three';
+-import { EditorProject } from '../../editor/types';
+-import { EditorValidationResult, categoryLabels, suggestFix, EditorValidationIssue } from '../../editor/validate';
+-import { buildMaterialInventory } from '../../editor/serialization';
+-import { ALL_COLORS, colorLabels } from '../../editor/shapeInfo';
+-import { MagnetColor, Theme, Difficulty } from '../../data/types';
+-import type { Selection } from './EditorWorkspace';
+-
+-let fieldIdCounter = 0;
+-const nextFieldId = () => `pf-${++fieldIdCounter}`;
+-
++// Upstream PieceProps/ConnectionProps retained; host data and field labels adapted.
++// MIT source: third_party/3D_Magnetic_Pieces/EDITOR.md.
++import { useState, useMemo, useEffect } from 'react'
++import * as THREE from 'three'
++import type { EditorProject, Selection, SerializableTransform } from '../../../editor-project.ts'
++const ALL_COLORS = ['#f5b942','#ef795d','#55b8ac','#7e9bda','#b895cf']
++const colorLabels: Record<string,string> = Object.fromEntries(ALL_COLORS.map(c=>[c,c]))
++const colorSwatch = (c: string) => c
++let fieldIdCounter = 0
++const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
+ interface Props {
+-  project: EditorProject;
+-  selection: Selection;
+-  validation: EditorValidationResult | null;
+-  currentStepId: number | null;
+-  onSetPieceColor: (pieceId: string, color: MagnetColor) => void;
+-  onDuplicatePiece: () => void;
+-  onDeleteSelected: () => void;
+-  onUpdateConnection: (index: number, patch: { dihedralDeg?: number; flip?: boolean }) => void;
+-  // 滑块拖动期间的实时预览（不入栈），释放时一次性提交历史
+-  onPreviewConnection: (index: number, patch: { dihedralDeg?: number; flip?: boolean }) => void;
+-  onEndPreviewConnection: () => void;
+-  onRemoveConnection: (index: number) => void;
+-  onUpdateMetadata: (patch: Partial<EditorProject['metadata']>) => void;
+-  onFocusError: (target: { pieceId?: string; connectionIndex?: number }) => void;
+-  onSaveCameraPreset: (preset: { label: string; position: [number, number, number]; target: [number, number, number]; zoom: number; stepId?: number }) => void;
+-  onAddPieceToStep: (stepId: number, pieceId: string) => void;
+-  onUpdateStep: (stepId: number, patch: any) => void;
+-  onSetPieceTransform: (pieceId: string, tf: { position: [number, number, number]; quaternion: [number, number, number, number] }) => void;
+-  // P1-10: 大纲列表选择回调(键盘可达)
+-  onSelectPiece?: (id: string) => void;
+-  onSelectConnection?: (index: number) => void;
+-}
+-
++  project: EditorProject; selection: Selection
++  onSetPieceColor: (id: string, color: string) => void
++  onDuplicatePiece: () => void; onDeleteSelected: () => void
++  onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
++  onRemoveConnection: (index: number) => void
++  onSetPieceTransform: (id:string, pose:SerializableTransform) => void
++}
+ export function PropertyPanel(props: Props) {
+-  const { project, validation } = props;
+-  const [tab, setTab] = useState<'props' | 'validation' | 'info'>('props');
+-
+-  return (
+-    <div className="flex flex-col h-full">
+-      <div className="flex border-b">
+-        <TabBtn active={tab === 'props'} onClick={() => setTab('props')}>属性</TabBtn>
+-        <TabBtn active={tab === 'validation'} onClick={() => setTab('validation')}>
+-          校验{validation && validation.errorCount > 0 && (
+-            <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px]">{validation.errorCount}</span>
+-          )}
+-        </TabBtn>
+-        <TabBtn active={tab === 'info'} onClick={() => setTab('info')}>方案信息</TabBtn>
+-      </div>
+-
+-      <div className="flex-1 overflow-y-auto">
+-        {tab === 'props' && <PropsTab {...props} />}
+-        {tab === 'validation' && <ValidationTab {...props} />}
+-        {tab === 'info' && <InfoTab project={project} onUpdateMetadata={props.onUpdateMetadata} />}
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+-  return (
+-    <button
+-      onClick={onClick}
+-      className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${
+-        active ? 'border-blue-500 text-blue-600 bg-blue-50'
+-        : 'border-transparent text-gray-500 hover:bg-gray-50'
+-      }`}
+-    >
+-      {children}
+-    </button>
+-  );
+-}
+-
+-/* ----------------- 属性 Tab ----------------- */
+-function PropsTab(props: Props) {
+-  const { project, selection } = props;
+-
+-  return (
+-    <div className="flex flex-col h-full">
+-      {/* P1-10: 键盘可达的零件/连接大纲列表 */}
+-      <OutlineList {...props} />
+-      <div className="flex-1 overflow-y-auto">
+-        {selection.kind === 'none' && (
+-          <div className="p-4 space-y-3">
+-            <p className="text-xs text-gray-400">未选中对象。点击上方列表或 3D 画布中的零件/连接来编辑。</p>
+-            <MaterialList project={project} />
+-          </div>
+-        )}
+-        {selection.kind === 'piece' && <PieceProps {...props} />}
+-        {selection.kind === 'connection' && <ConnectionProps {...props} />}
+-        {selection.kind === 'step' && <StepProps {...props} />}
+-      </div>
+-    </div>
+-  );
+-}
+-
+-/** P1-10: 键盘可达的零件/连接大纲列表。 */
+-function OutlineList({ project, selection, onSelectPiece, onSelectConnection }: Props) {
+-  const [expanded, setExpanded] = useState(true);
+-  if (project.pieces.length === 0 && project.connections.length === 0) return null;
+-
+-  const pieceLabel = (p: EditorProject['pieces'][number]) => {
+-    const part = project.parts.find((pp) => pp.id === p.partId);
+-    return `${part?.shape ?? '?'} · ${part?.color ?? ''}`;
+-  };
+-
+-  return (
+-    <div className="border-b">
+-      <button
+-        onClick={() => setExpanded((v) => !v)}
+-        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100"
+-        aria-expanded={expanded}
+-      >
+-        <span>大纲({project.pieces.length} 零件 / {project.connections.length} 连接)</span>
+-        <span className="text-gray-400">{expanded ? '▾' : '▸'}</span>
+-      </button>
+-      {expanded && (
+-        <ul role="tree" aria-label="零件与连接大纲" className="max-h-32 overflow-y-auto text-xs">
+-          {project.pieces.map((p, i) => {
+-            const isSelected = selection.kind === 'piece' && selection.id === p.id;
+-            return (
+-              <li key={p.id} role="treeitem" aria-selected={isSelected}>
+-                <button
+-                  onClick={() => onSelectPiece?.(p.id)}
+-                  className={`w-full text-left px-3 py-1 flex items-center gap-2 ${
+-                    isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-50 text-gray-700'
+-                  }`}
+-                  title={p.id}
+-                >
+-                  <span className="inline-block w-4 text-gray-400">{i + 1}.</span>
+-                  <span className="truncate">{pieceLabel(p)}</span>
+-                </button>
+-              </li>
+-            );
+-          })}
+-          {project.connections.map((c, i) => {
+-            const isSelected = selection.kind === 'connection' && selection.index === i;
+-            return (
+-              <li key={`c-${i}`} role="treeitem" aria-selected={isSelected}>
+-                <button
+-                  onClick={() => onSelectConnection?.(i)}
+-                  className={`w-full text-left px-3 py-1 flex items-center gap-2 ${
+-                    isSelected ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-50 text-gray-700'
+-                  }`}
+-                  title={`连接 ${c.pieceA}:${c.portA} → ${c.pieceB}:${c.portB}`}
+-                >
+-                  <span className="inline-block w-4 text-gray-400">↯</span>
+-                  <span className="truncate">连接 #{i} ({c.dihedralDeg}°)</span>
+-                </button>
+-              </li>
+-            );
+-          })}
+-        </ul>
+-      )}
+-    </div>
+-  );
+-}
+-
+-function MaterialList({ project }: { project: EditorProject }) {
+-  const inv = buildMaterialInventory(project);
+-  if (inv.length === 0) return <p className="text-xs text-gray-400">暂无零件</p>;
+-  return (
+-    <div>
+-      <h3 className="text-xs font-semibold text-gray-700 mb-1">材料清单(自动生成)</h3>
+-      <ul className="text-xs space-y-0.5">
+-        {inv.map((i) => (
+-          <li key={`${i.shape}:${i.color}`} className="flex justify-between">
+-            <span>{i.name} · {colorLabels[i.color as MagnetColor] ?? i.color}</span>
+-            <span className="text-gray-500">×{i.count}</span>
+-          </li>
+-        ))}
+-      </ul>
+-    </div>
+-  );
+-}
+-
++  return <div className="magnetic-3d-editor-properties">
++    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
++  </div>
++}
+ function PieceProps(props: Props) {
+-  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onAddPieceToStep, currentStepId, onSetPieceTransform } = props;
++  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onSetPieceTransform } = props;
+   const piece = project.pieces.find((p) => p.id === (selection as any).id);
+   const [posDraft, setPosDraft] = useState<{ x: string; y: string; z: string } | null>(null);
+   const [rotDraft, setRotDraft] = useState<{ x: string; y: string; z: string } | null>(null);
+@@ -204,8 +49,8 @@
+   ];
+ 
+   // 编辑中的草稿值优先显示
+-  const posDisplay = posDraft ?? { x: curPos[0].toFixed(2), y: curPos[1].toFixed(2), z: curPos[2].toFixed(2) };
+-  const rotDisplay = rotDraft ?? { x: curRotDeg[0].toFixed(0), y: curRotDeg[1].toFixed(0), z: curRotDeg[2].toFixed(0) };
++  const posDisplay = posDraft ?? { x: String(curPos[0]), y: String(curPos[1]), z: String(curPos[2]) };
++  const rotDisplay = rotDraft ?? { x: String(curRotDeg[0]), y: String(curRotDeg[1]), z: String(curRotDeg[2]) };
+ 
+   // 提交位置(回车或失焦时)
+   const commitPosition = () => {
+@@ -302,6 +147,7 @@
+                 <label htmlFor={fid} className="text-[10px] text-gray-400">{axis.toUpperCase()}</label>
+                 <input
+                   id={fid}
++                  aria-label={`3D 位置 ${axis.toUpperCase()}`}
+                   type="number"
+                   step={0.1}
+                   value={posDisplay[axis]}
+@@ -329,6 +175,7 @@
+                 <label htmlFor={fid} className="text-[10px] text-gray-400">{axis.toUpperCase()}</label>
+                 <input
+                   id={fid}
++                  aria-label={`3D 旋转 ${axis.toUpperCase()}`}
+                   type="number"
+                   step={15}
+                   value={rotDisplay[axis]}
+@@ -350,37 +197,24 @@
+           <button onClick={() => rotateBy('z', -15)} className="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-50" title="B">Z -15°</button>
+         </div>
+       </fieldset>
+-      <div className="text-xs">
+-        <span className="text-gray-500">根零件:</span>
+-        <span className="ml-1">{piece.isRoot ? '是' : '否'}</span>
+-      </div>
+       <div className="flex gap-2 pt-2 border-t">
+         <button onClick={onDuplicatePiece} className="text-xs px-2 py-1 border rounded hover:bg-gray-50">复制</button>
+         <button onClick={onDeleteSelected} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">删除</button>
+       </div>
+ 
+-      {currentStepId !== null && (
+-        <div className="pt-2 border-t">
+-          <button
+-            onClick={() => onAddPieceToStep(currentStepId, piece.id)}
+-            className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+-          >
+-            加入当前步骤 #{currentStepId}
+-          </button>
+-        </div>
+-      )}
++
+     </div>
+   );
+ }
+ 
+ function ConnectionProps(props: Props) {
+-  const { project, selection, onUpdateConnection, onPreviewConnection, onEndPreviewConnection, onRemoveConnection } = props;
++  const { project, selection, onUpdateConnection, onRemoveConnection } = props;
+   const idx = (selection as any).index as number;
+   const conn = project.connections[idx];
+   const dihedralId = useMemo(() => nextFieldId(), []);
+   const flipId = useMemo(() => nextFieldId(), []);
+ 
+-  // 本地预览值：拖动滑块时实时显示数值并实时更新3D（不入栈），释放时一次性提交历史
++  // 本地输入值；明确应用后只更新约束，Pose 由独立的显式求解操作修改。
+   const [localDihedral, setLocalDihedral] = useState(conn?.dihedralDeg ?? 0);
+   // 外部变化（undo/redo/预设按钮）时同步 local state
+   useEffect(() => {
+@@ -399,20 +233,21 @@
+         <label htmlFor={dihedralId} className="text-xs text-gray-500">二面角(deg): {localDihedral}</label>
+         <input
+           id={dihedralId}
+-          type="range"
++          type="number"
+           min={-180}
+           max={180}
+-          step={5}
++          step={1}
+           value={localDihedral}
+           onChange={(e) => {
+             const v = Number(e.target.value);
+             setLocalDihedral(v);
+-            onPreviewConnection(idx, { dihedralDeg: v });
++
+           }}
+-          onPointerUp={() => onEndPreviewConnection()}
++
+           className="w-full"
+           aria-valuetext={`${localDihedral} 度`}
+         />
++        <button onClick={() => onUpdateConnection(idx, { dihedralDeg: localDihedral })}>应用约束角度</button>
+         <div className="flex gap-1 mt-1" role="group" aria-label="二面角预设">
+           {[0, 45, 90, -90, 135, 180].map((d) => (
+             <button
+@@ -450,308 +285,3 @@
+   );
+ }
+ 
+-function StepProps(props: Props) {
+-  const { project, selection, onUpdateStep } = props;
+-  const stepId = (selection as any).id as number;
+-  const step = project.steps.find((s) => s.id === stepId);
+-  const titleId = useMemo(() => nextFieldId(), []);
+-  const descId = useMemo(() => nextFieldId(), []);
+-  const guideId = useMemo(() => nextFieldId(), []);
+-  if (!step) return <p className="text-xs text-gray-400 p-4">步骤不存在</p>;
+-
+-  return (
+-    <div className="p-3 space-y-3">
+-      <div>
+-        <label htmlFor={titleId} className="text-xs text-gray-500">标题</label>
+-        <input
+-          id={titleId}
+-          type="text"
+-          value={step.title}
+-          onChange={(e) => onUpdateStep(stepId, { title: e.target.value })}
+-          className="w-full mt-0.5 px-2 py-1 text-sm border rounded"
+-          placeholder="必须填写标题"
+-        />
+-      </div>
+-      <div>
+-        <label htmlFor={descId} className="text-xs text-gray-500">教学说明</label>
+-        <textarea
+-          id={descId}
+-          value={step.description}
+-          onChange={(e) => onUpdateStep(stepId, { description: e.target.value })}
+-          className="w-full mt-0.5 px-2 py-1 text-sm border rounded"
+-          rows={3}
+-          placeholder="描述本步骤的操作要点"
+-        />
+-      </div>
+-      <div>
+-        <label htmlFor={guideId} className="text-xs text-gray-500">家长引导</label>
+-        <input
+-          id={guideId}
+-          type="text"
+-          value={step.parentGuide}
+-          onChange={(e) => onUpdateStep(stepId, { parentGuide: e.target.value })}
+-          className="w-full mt-0.5 px-2 py-1 text-sm border rounded"
+-        />
+-      </div>
+-      <div>
+-        <div className="text-xs text-gray-500">本步骤新增零件 ({step.addedPieceIds.length})</div>
+-        <ul className="text-[10px] mt-1 space-y-0.5">
+-          {step.addedPieceIds.length === 0 ? (
+-            <li className="text-gray-400">无。选中零件后点"加入当前步骤"。</li>
+-          ) : step.addedPieceIds.map((pid) => (
+-            <li key={pid} className="font-mono text-gray-700">{pid}</li>
+-          ))}
+-        </ul>
+-      </div>
+-      <div>
+-        <div className="text-xs text-gray-500">本步骤新增连接 ({step.addedConnections.length})</div>
+-        <ul className="text-[10px] mt-1 space-y-0.5">
+-          {step.addedConnections.map((c, i) => (
+-            <li key={i} className="font-mono text-gray-700">{c.pieceA}:{c.portA}→{c.pieceB}:{c.portB}</li>
+-          ))}
+-        </ul>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-/* ----------------- 校验 Tab ----------------- */
+-function ValidationTab(props: Props) {
+-  const { validation, onFocusError } = props;
+-  // P0-5: 初始状态为「尚未校验」，不显示「校验中…」误导用户
+-  if (!validation) {
+-    return (
+-      <div className="p-4 text-center" data-testid="validation-idle">
+-        <div className="text-gray-400 text-3xl mb-2" aria-hidden="true">○</div>
+-        <p className="text-xs text-gray-600 mb-1">尚未校验</p>
+-        <p className="text-[11px] text-gray-400">点击工具栏「校验」按钮开始检查</p>
+-      </div>
+-    );
+-  }
+-  if (validation.solverError) {
+-    return <p className="text-xs text-red-600 p-4">{validation.solverError}</p>;
+-  }
+-  if (validation.issues.length === 0) {
+-    return (
+-      <div className="p-4 text-center">
+-        <div className="text-green-500 text-3xl mb-2">✓</div>
+-        <p className="text-xs text-gray-700">校验通过</p>
+-      </div>
+-    );
+-  }
+-
+-  // 按类别分组
+-  const grouped = new Map<string, EditorValidationIssue[]>();
+-  for (const i of validation.issues) {
+-    const list = grouped.get(i.category) || [];
+-    list.push(i);
+-    grouped.set(i.category, list);
+-  }
+-
+-  return (
+-    <div className="p-3 space-y-2">
+-      <div className="flex gap-2 text-xs">
+-        <span className="text-red-600">错误 {validation.errorCount}</span>
+-        <span className="text-yellow-600">警告 {validation.warningCount}</span>
+-      </div>
+-      {Array.from(grouped.entries()).map(([cat, issues]) => (
+-        <div key={cat} className="border rounded">
+-          <div className="px-2 py-1 bg-gray-50 text-xs font-semibold text-gray-700">
+-            {categoryLabels[cat as keyof typeof categoryLabels] ?? cat} ({issues.length})
+-          </div>
+-          <ul className="divide-y">
+-            {issues.map((issue, idx) => (
+-              <li
+-                key={idx}
+-                onClick={() => onFocusError({ pieceId: issue.pieceId, connectionIndex: issue.connectionIndex })}
+-                className={`p-2 text-xs cursor-pointer hover:bg-blue-50 ${issue.severity === 'error' ? 'text-red-700' : 'text-yellow-700'}`}
+-              >
+-                <div>{issue.message}</div>
+-                <div className="text-[10px] text-gray-500 mt-0.5">
+-                  {issue.pieceId && <span>零件: {issue.pieceId} </span>}
+-                  {issue.connectionIndex !== undefined && <span>连接 #{issue.connectionIndex} </span>}
+-                  {issue.portId && <span>端口: {issue.portId} </span>}
+-                  {issue.stepId !== undefined && <span>步骤: {issue.stepId} </span>}
+-                </div>
+-                <div className="text-[10px] text-blue-500 mt-0.5">→ {suggestFix(issue)}</div>
+-              </li>
+-            ))}
+-          </ul>
+-        </div>
+-      ))}
+-    </div>
+-  );
+-}
+-
+-/* ----------------- 方案信息 Tab ----------------- */
+-function InfoTab({ project, onUpdateMetadata }: {
+-  project: EditorProject;
+-  onUpdateMetadata: (patch: Partial<EditorProject['metadata']>) => void;
+-}) {
+-  const m = project.metadata;
+-  // P1-10: 为每个字段生成稳定 id 供 label 关联
+-  const ids = useMemo(() => ({
+-    name: nextFieldId(), desc: nextFieldId(), diff: nextFieldId(), theme: nextFieldId(),
+-    minAge: nextFieldId(), maxAge: nextFieldId(), time: nextFieldId(), mode: nextFieldId(),
+-    tags: nextFieldId(), tips: nextFieldId(), safety: nextFieldId(), author: nextFieldId(), ver: nextFieldId(),
+-  }), []);
+-  return (
+-    <div className="p-3 space-y-3">
+-      <Field label="方案名称" htmlFor={ids.name}>
+-        <input
+-          id={ids.name}
+-          type="text"
+-          value={m.name}
+-          onChange={(e) => onUpdateMetadata({ name: e.target.value })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="简介" htmlFor={ids.desc}>
+-        <textarea
+-          id={ids.desc}
+-          value={m.description}
+-          onChange={(e) => onUpdateMetadata({ description: e.target.value })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-          rows={2}
+-        />
+-      </Field>
+-      <Field label="难度" htmlFor={ids.diff}>
+-        <select
+-          id={ids.diff}
+-          value={m.difficulty}
+-          onChange={(e) => onUpdateMetadata({ difficulty: e.target.value as Difficulty })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        >
+-          <option value="easy">简单</option>
+-          <option value="medium">中等</option>
+-          <option value="hard">困难</option>
+-        </select>
+-      </Field>
+-      <Field label="主题" htmlFor={ids.theme}>
+-        <select
+-          id={ids.theme}
+-          value={m.theme}
+-          onChange={(e) => onUpdateMetadata({ theme: e.target.value as Theme })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        >
+-          <option value="house">房子</option>
+-          <option value="car">汽车</option>
+-          <option value="rocket">火箭</option>
+-          <option value="animal">动物</option>
+-          <option value="castle">城堡</option>
+-          <option value="other">其他</option>
+-        </select>
+-      </Field>
+-      <div className="grid grid-cols-2 gap-2">
+-        <Field label="最小年龄" htmlFor={ids.minAge}>
+-          <input
+-            id={ids.minAge}
+-            type="number"
+-            value={m.minAge}
+-            onChange={(e) => onUpdateMetadata({ minAge: Number(e.target.value) })}
+-            className="w-full px-2 py-1 text-sm border rounded"
+-          />
+-        </Field>
+-        <Field label="最大年龄" htmlFor={ids.maxAge}>
+-          <input
+-            id={ids.maxAge}
+-            type="number"
+-            value={m.maxAge}
+-            onChange={(e) => onUpdateMetadata({ maxAge: Number(e.target.value) })}
+-            className="w-full px-2 py-1 text-sm border rounded"
+-          />
+-        </Field>
+-      </div>
+-      <Field label="预计搭建时间" htmlFor={ids.time}>
+-        <input
+-          id={ids.time}
+-          type="text"
+-          value={m.estimatedTime}
+-          onChange={(e) => onUpdateMetadata({ estimatedTime: e.target.value })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="构建模式" htmlFor={ids.mode}>
+-        <select
+-          id={ids.mode}
+-          value={m.buildMode}
+-          onChange={(e) => onUpdateMetadata({ buildMode: e.target.value as any })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        >
+-          <option value="solid">solid(立体)</option>
+-          <option value="flat">flat(平面)</option>
+-          <option value="standing">standing(站立)</option>
+-        </select>
+-      </Field>
+-      <Field label="标签(逗号分隔)" htmlFor={ids.tags}>
+-        <input
+-          id={ids.tags}
+-          type="text"
+-          value={m.tags.join(', ')}
+-          onChange={(e) => onUpdateMetadata({ tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="教学提示(逗号分隔)" htmlFor={ids.tips}>
+-        <input
+-          id={ids.tips}
+-          type="text"
+-          value={m.teachingTips.join(', ')}
+-          onChange={(e) => onUpdateMetadata({ teachingTips: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="安全提示(逗号分隔)" htmlFor={ids.safety}>
+-        <input
+-          id={ids.safety}
+-          type="text"
+-          value={m.safetyTips.join(', ')}
+-          onChange={(e) => onUpdateMetadata({ safetyTips: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="作者" htmlFor={ids.author}>
+-        <input
+-          id={ids.author}
+-          type="text"
+-          value={m.author}
+-          onChange={(e) => onUpdateMetadata({ author: e.target.value })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <Field label="数据版本" htmlFor={ids.ver}>
+-        <input
+-          id={ids.ver}
+-          type="text"
+-          value={m.dataVersion}
+-          onChange={(e) => onUpdateMetadata({ dataVersion: e.target.value })}
+-          className="w-full px-2 py-1 text-sm border rounded"
+-        />
+-      </Field>
+-      <div className="text-[10px] text-gray-400 pt-2 border-t">
+-        <div>schemaVersion: {project.schemaVersion}</div>
+-        <div>ID: {project.id}</div>
+-        <div>创建: {new Date(project.createdAt).toLocaleString()}</div>
+-        <div>更新: {new Date(project.updatedAt).toLocaleString()}</div>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+-  return (
+-    <div>
+-      <label htmlFor={htmlFor} className="text-xs text-gray-500">{label}</label>
+-      {children}
+-    </div>
+-  );
+-}
+-
+-function colorSwatch(c: MagnetColor): string {
+-  const map: Record<MagnetColor, string> = {
+-    red: '#ff6b6b', orange: '#ff9f43', yellow: '#ffe66d', green: '#4ecd96',
+-    cyan: '#4ecd98', blue: '#3498db', purple: '#9b59b6', pink: '#f5b7b1',
+-    white: '#ffffff', black: '#2c3e50', clear: '#e0f7fa',
+-  };
+-  return map[c];
+-}

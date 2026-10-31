@@ -1,0 +1,45 @@
+.studio-view-toggle { display:flex; gap:4px; margin:0 0 12px; }
+.studio-view-toggle button[aria-pressed="true"], .magnetic-3d-examples button[aria-pressed="true"] { background:#dbeee9; border-color:#197b6b; color:#154e45; }
+.magnetic-3d-workspace { min-width:0; }
+.magnetic-3d-heading { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.magnetic-3d-heading h3 { margin:0; }.magnetic-3d-heading p { margin:4px 0; color:#537069; font-size:13px; }
+.magnetic-3d-examples { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+.magnetic-3d-examples button { font-size:12px; }
+.magnetic-3d-summary { color:#3e685d; font-size:13px; }
+.magnetic-3d-scene { position:relative; border:1px solid #cbdcd5; border-radius:12px; background:#f0f6f4; overflow:hidden; }
+.magnetic-3d-canvas { height:clamp(360px,64vh,760px); width:100%; touch-action:none; background:radial-gradient(ellipse at 40% 30%,#fafcfb,#dfece7); }
+.magnetic-3d-camera-tools { display:flex; gap:6px; padding:8px; }
+.magnetic-3d-scene > .hint { padding:0 10px; font-size:12px; }
+.magnetic-3d-camera-state { font-size:11px; padding:0 10px 8px; }.magnetic-3d-camera-state output { overflow-wrap:anywhere; }
+.magnetic-3d-load { margin-top:16px; }.magnetic-3d-load textarea { display:block; width:100%; box-sizing:border-box; min-height:200px; margin:8px 0; font:12px/1.5 monospace; resize:vertical; }
+.magnetic-3d-file { display:inline-flex; flex-direction:column; gap:4px; font-size:12px; max-width:100%; }.magnetic-3d-file input { max-width:190px; }
+.magnetic-3d-piece-list { display:flex; flex-direction:column; gap:5px; margin:12px 0; }
+.magnetic-3d-piece-list button { display:flex; align-items:center; gap:6px; overflow-wrap:anywhere; text-align:left; flex-wrap:wrap; }
+.magnetic-3d-piece-list small { color:#5b756f; margin-left:auto; }
+.magnetic-3d-piece-list button[aria-pressed="true"] { border-color:#16826d; box-shadow:inset 3px 0 #16826d; background:#e5f4ee; }
+.magnetic-3d-swatch { display:inline-block; width:13px; height:13px; border-radius:3px; border:1px solid #0002; flex-shrink:0; vertical-align:middle; margin-right:4px; }
+.magnetic-3d-piece-info dl { font-size:12px; overflow-wrap:anywhere; }.magnetic-3d-piece-info dt { color:#617c73; margin-top:10px; }.magnetic-3d-piece-info dd { margin:3px 0; font-variant-numeric:tabular-nums; }
+@media(max-width:760px) { .magnetic-3d-canvas { height:55vh; min-height:320px; } }
+
+.magnetic-3d-canvas canvas{width:100%!important;height:100%!important;display:block}
+.magnetic-3d-edit-toggle,.magnetic-3d-draft-tools{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.magnetic-3d-edit-toggle button[aria-pressed=true]{background:#dbeee9;border-color:#197b6b}
+.magnetic-3d-edit-inspector{border:1px solid #cbdcd5;border-radius:8px;margin:12px 0;padding:10px;min-width:0}
+.magnetic-3d-edit-inspector label{display:block;font-size:12px;margin:8px 0}
+.magnetic-3d-edit-inspector select,.magnetic-3d-edit-inspector input[type=number]{width:100%;box-sizing:border-box;min-width:0;padding:5px;font-size:12px}
+.magnetic-3d-edit-inspector input[type=color]{display:block;width:100%;height:28px}
+.magnetic-3d-edit-inspector input[type=checkbox]{width:auto}
+.magnetic-3d-edit-inspector button{font-size:12px;margin:3px 3px 3px 0;max-width:100%;overflow-wrap:anywhere}
+.magnetic-3d-editor-properties fieldset{padding:6px;border:1px solid #dce6df;margin:10px 0;min-width:0}
+.magnetic-3d-editor-properties .grid-cols-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.magnetic-3d-editor-properties .grid-cols-6{display:flex;flex-wrap:wrap;gap:3px}
+.magnetic-3d-editor-properties .grid-cols-6 button{width:26px;height:26px}
+.magnetic-3d-editor-properties .break-all{overflow-wrap:anywhere;font-size:11px}
+.magnetic-3d-connections{display:flex;flex-direction:column;gap:4px;margin:8px 0}.magnetic-3d-connections button{font-size:11px;overflow-wrap:anywhere;text-align:left}
+.magnetic-3d-connections button[aria-pressed=true]{background:#fff0cf;border-color:#bb8427}
+.magnetic-3d-editor-canvas{position:relative;width:100%;height:clamp(360px,64vh,760px);overflow:hidden;border:1px solid #cbdcd5;border-radius:12px;background:#edf5f1}
+.magnetic-3d-editor-canvas canvas{width:100%!important;height:100%!important;display:block;touch-action:none}
+.magnetic-3d-editor-camera-tools{position:absolute;top:8px;left:8px;display:flex;gap:5px}.magnetic-3d-editor-camera-tools svg{width:20px;height:20px}
+.magnetic-3d-editor-view-tools{position:absolute;bottom:50px;right:8px;display:flex;gap:4px;font-size:11px}
+.magnetic-3d-editor-help{position:absolute;bottom:6px;left:8px;right:8px;pointer-events:none;font-size:11px;color:#556e66}
+@media(max-width:760px){.magnetic-3d-editor-canvas{height:55vh;min-height:320px}}

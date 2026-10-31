@@ -5,5 +5,16 @@
   "src/engine/validator.ts": "ef1c69bf4c215d838ec6606ab0f0896f24f4d76407c5d03cb5c5eb27da257fcc",
   "src/test/engine.solver.test.ts": "5760ffbccf49a757b1c7edab5a7edc813e979909c0481e2835d3f09736854330",
   "src/test/engine.validator.test.ts": "4202627736fb7836c78ff42830bdb2f2dca4605d696e77c7074479139b789c89",
-  "src/test/shapes.test.ts": "75240bd819c8bf59371ed9068900cabee87d725b7d815544e5940ea52cfe2d89"
+  "src/test/shapes.test.ts": "75240bd819c8bf59371ed9068900cabee87d725b7d815544e5940ea52cfe2d89",
+  "src/components/MagnetScene3D.tsx": "cb5564a8ba08584650506622b042c082c45b4cdec4d4e41699bd848406fc22c9",
+  "src/components/magnet3d/primitives.tsx": "2e759119b9b164b6b775f8287a024d7b7a31e8ffd1e389e9f7237b9cc7f915a2",
+  "src/components/magnet3d/cameraUtils.ts": "08a48be1f27f0a522bb96e3b7077395d9378e53df6d0ac4b7f87621c2fc7c17f",
+  "src/components/magnet3d/SceneLighting.tsx": "3bb3976e19ecb924a6582a6ddf537b460caacd32d8bc19bfaacbecc20733a724",
+  "src/utils/geometry.ts": "eb40b3a5e9a6b1d1988ef7a874a973e4202608f64186abb191196db4cbc8e373",
+  "src/editor/state.ts": "bcfd54ff6c69910423ff15c5d5d4bac4bf7a32655c8ec1497b37f2b1e1a70597",
+  "src/editor/snap.ts": "6b93b6758e8339583ab32e82eeec3e3bd1359b6f36cd97b9326a53f75415118e",
+  "src/editor/id.ts": "5cf390a588fd6fb64a69a318a57f479a7da16c032447c1dc939738a4f7572028",
+  "src/components/editor/EditorCanvas.tsx": "695e2038a289617f976f2c27722cd7d9faab5b2f8517790f5e4465640eb5de40",
+  "src/components/editor/PropertyPanel.tsx": "1dfddd03a49dee200e8f0ac21ee020bed6323781399624eb2c7035fd7d5e8c6e",
+  "src/test/editor.test.ts": "4c0bf5b16ffdef883f81f083cc01b98334aaff51e17024e3df5b1f54de181157"
 }

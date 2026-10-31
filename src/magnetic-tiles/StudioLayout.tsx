@@ -7,23 +7,27 @@ import type { WorkflowStage } from './studio-url.ts'
 import { readStudioUrl, useUrlRequest, writeStudioUrl } from './studio-url.ts'
 import { InfoHint } from '../brick-vision/InfoHint.tsx'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
+const ThreeDWorkspace = lazy(() => import('./three-d/ThreeDWorkspace.tsx'))
+
 export type Stage = WorkflowStage
+type ViewMode = '2d' | '3d'
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
-const Context = createContext<{stage:Stage; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
+const Context = createContext<{stage:Stage; viewMode:ViewMode; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
-export function StudioSlot({column,stages:visible,children}:{column:Column;stages:Stage[];children:ReactNode}){
-  const {stage,hosts}=useStudio(),host=hosts[column]
-  return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)}>{children}</div>,host) : null
+export function StudioSlot({column,stages:visible,children,view='2d'}:{column:Column;stages:Stage[];children:ReactNode;view?:ViewMode}){
+  const {stage,viewMode,hosts}=useStudio(),host=hosts[column]
+  return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)||(stage==='assembly'&&viewMode!==view)}>{children}</div>,host) : null
 }
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
+  const [viewMode,setViewMode]=useState<ViewMode>('2d'),[opened3D,setOpened3D]=useState(false)
   const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
   const request=useUrlRequest(), parsed=readStudioUrl(request.href)
@@ -32,7 +36,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [stage,setStage]=useState<Stage>(boot.stage),[rightTab,setRightTab]=useState<RightTab>(boot.rightTab),[catalogProfile,setCatalogProfile]=useState(boot.catalogProfile)
   const [appliedRequest,setAppliedRequest]=useState(request),[warnings,setWarnings]=useState(boot.warnings),[storageWarning,setStorageWarning]=useState(boot.storageWarning)
   const rightColumn=useRef<HTMLElement>(null),scrollOffsets=useRef({inspector:0,catalog:0})
-  useEffect(()=>{const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
+  useEffect(()=>{setViewMode('2d');const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
   useEffect(()=>{
     if(appliedRequest!==request)return
     writeStudioUrl({stage,rightTab,catalogProfile})
@@ -42,10 +46,10 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [workflow,setWorkflow]=useState<HTMLDivElement|null>(null),[workspace,setWorkspace]=useState<HTMLDivElement|null>(null),[inspector,setInspector]=useState<HTMLDivElement|null>(null)
   useEffect(()=>{if(workspace)workspace.scrollTop=0;if(rightTab==='inspector'&&rightColumn.current){rightColumn.current.scrollTop=0;scrollOffsets.current.inspector=0}},[stage,workspace])
   const [mobileColumn,setMobileColumn]=useState<Column>(boot.rightTab==='catalog'?'inspector':'workspace')
-  const navigate=(s:Stage)=>{if(!dragging){writeStudioUrl({stage:s,...(stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
+  const navigate=(s:Stage)=>{if(!dragging){setViewMode('2d');writeStudioUrl({stage:s,...(stage==='assembly'&&s==='build'?{buildId:undefined}:{})},true);setStage(s);setMobileColumn('workspace')}}
   const selectTab=(tab:RightTab)=>{if(tab===rightTab)return;if(rightColumn.current)scrollOffsets.current[rightTab]=rightColumn.current.scrollTop;setRightTab(tab);setWarnings([]);setMobileColumn('inspector')}
-  return <Context.Provider value={{stage,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
-    <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage}>
+  return <Context.Provider value={{stage,viewMode,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+    <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
@@ -53,12 +57,16 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
         <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
         <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workspace')}>查看工作区</button><button onClick={()=>setMobileColumn('inspector')}>查看检查器</button></div>
         <div ref={setWorkflow}/>{parsed.errors.map(e=><p key={e} role="alert">{e}；未按无效参数恢复。</p>)}
-        <p className="hint">相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。</p>
+        <p className="hint">{stage==='assembly'&&viewMode==='3d'?'3D 快照 · 按保存的位姿查看；几何校验不代表物理稳定性。':'相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。'}</p>
       </aside></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整左栏与中栏宽度" title="拖动或使用方向键调整左栏与中栏宽度"/>
       <Panel id="workspace" className="studio-panel studio-panel-workspace" defaultSize="58%" minSize="30%">
       <section className="studio-column studio-workspace" aria-label="Workspace">
         <div className="studio-column-heading">{stage!=='review'&&<h2>{stages.find(s=>s.id===stage)!.label}</h2>}<div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('inspector')}>检查器</button></div></div>
+        {stage==='assembly'&&<div className="studio-view-toggle" role="group" aria-label="作品查看模式">
+          <button aria-pressed={viewMode==='2d'} disabled={dragging} onClick={()=>setViewMode('2d')}>2D 查看</button>
+          <button aria-pressed={viewMode==='3d'} disabled={dragging} onClick={()=>{setOpened3D(true);setViewMode('3d');setRightTab('inspector')}}>3D 查看</button>
+        </div>}
         <div ref={setWorkspace}/>
       </section></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整中栏与右栏宽度" title="拖动或使用方向键调整中栏与右栏宽度"/>
@@ -77,5 +85,6 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       </aside></Panel>
     </Group></main>
     {children}
+    {opened3D&&<Suspense fallback={<StudioSlot column="workspace" stages={['assembly']} view="3d"><p role="status">正在加载 3D Viewer…</p></StudioSlot>}><ThreeDWorkspace/></Suspense>}
   </Context.Provider>
 }

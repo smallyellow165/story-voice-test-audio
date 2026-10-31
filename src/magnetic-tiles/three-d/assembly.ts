@@ -5,7 +5,7 @@ import type { Connection, PieceTransform } from './vendor/engine/types.ts'
 
 /** Position of the area centroid; quaternion [x,y,z,w], local XY, local +Z normal. */
 export type Pose3D = { position: [number, number, number]; quaternion: [number, number, number, number] }
-export type Piece3D = { id: string; profileId: string; profileVersion: number; pose: Pose3D }
+export type Piece3D = { id: string; profileId: string; profileVersion: number; pose: Pose3D; color?: string }
 export type Assembly3D = {
   kind: 'magnetic-assembly-3d'; schemaVersion: 1; id: string; revision: number
   profiles: ProfileSnapshot3D[]; pieces: Piece3D[]; connections: Connection[]
@@ -40,7 +40,8 @@ export function assertAssembly3D(a: Assembly3D): void {
   }
   const catalog = createShapeCatalog(a.profiles), ids = new Set<string>()
   const shapes = new Map(a.pieces.map(p => {
-    object(p, ['id', 'profileId', 'profileVersion', 'pose'])
+    object(p, ['id', 'profileId', 'profileVersion', 'pose', 'color'])
+    if (p.color !== undefined && (typeof p.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(p.color))) fail('Invalid 3D piece color: expected #RRGGBB')
     if (!identifier(p.id) || ids.has(p.id)) fail('Duplicate or invalid 3D piece ID')
     if (typeof p.profileId !== 'string' || !Number.isSafeInteger(p.profileVersion) || p.profileVersion < 1) fail('Invalid 3D Profile reference')
     ids.add(p.id); assertPose3D(p.pose)

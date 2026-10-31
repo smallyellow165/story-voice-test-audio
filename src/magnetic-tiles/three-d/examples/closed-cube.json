@@ -1,0 +1,254 @@
+{
+  "kind": "magnetic-assembly-3d",
+  "schemaVersion": 1,
+  "id": "closed-cube",
+  "revision": 1,
+  "profiles": [
+    {
+      "profile": {
+        "id": "square",
+        "version": 1,
+        "name": "正方形",
+        "vertices": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "connectableEdges": [
+          "e0",
+          "e1",
+          "e2",
+          "e3"
+        ]
+      },
+      "thickness": 0.05
+    }
+  ],
+  "pieces": [
+    {
+      "id": "bottom",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#f5b942",
+      "pose": {
+        "position": [
+          0,
+          0.025,
+          0
+        ],
+        "quaternion": [
+          -0.7071067811865475,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      }
+    },
+    {
+      "id": "top",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#ef795d",
+      "pose": {
+        "position": [
+          0,
+          1.025,
+          2.220446049250313e-16
+        ],
+        "quaternion": [
+          -0.7071067811865475,
+          0,
+          0,
+          0.7071067811865476
+        ]
+      }
+    },
+    {
+      "id": "front",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#55b8ac",
+      "pose": {
+        "position": [
+          0,
+          0.5249999999999999,
+          0.5000000000000001
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "back",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#7e9bda",
+      "pose": {
+        "position": [
+          0,
+          0.5250000000000001,
+          -0.4999999999999999
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "right",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#b895cf",
+      "pose": {
+        "position": [
+          0.5,
+          0.525,
+          1.1102230246251565e-16
+        ],
+        "quaternion": [
+          -0.5,
+          0.5,
+          -0.4999999999999999,
+          0.5000000000000001
+        ]
+      }
+    },
+    {
+      "id": "left",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#55b8ac",
+      "pose": {
+        "position": [
+          -0.5,
+          0.525,
+          1.1102230246251565e-16
+        ],
+        "quaternion": [
+          -0.5,
+          0.5,
+          -0.4999999999999999,
+          0.5000000000000001
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "pieceA": "bottom",
+      "pieceB": "front",
+      "portA": "e0-p0",
+      "portB": "e0-p0",
+      "dihedralDeg": 89.99999999999999,
+      "flip": false
+    },
+    {
+      "pieceA": "bottom",
+      "pieceB": "back",
+      "portA": "e2-p0",
+      "portB": "e0-p0",
+      "dihedralDeg": -89.99999999999999,
+      "flip": true
+    },
+    {
+      "pieceA": "bottom",
+      "pieceB": "right",
+      "portA": "e1-p0",
+      "portB": "e1-p0",
+      "dihedralDeg": 89.99999999999999,
+      "flip": false
+    },
+    {
+      "pieceA": "bottom",
+      "pieceB": "left",
+      "portA": "e3-p0",
+      "portB": "e1-p0",
+      "dihedralDeg": -89.99999999999999,
+      "flip": true
+    },
+    {
+      "pieceA": "top",
+      "pieceB": "front",
+      "portA": "e0-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 89.99999999999999,
+      "flip": true
+    },
+    {
+      "pieceA": "top",
+      "pieceB": "back",
+      "portA": "e2-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": -89.99999999999999,
+      "flip": false
+    },
+    {
+      "pieceA": "top",
+      "pieceB": "right",
+      "portA": "e1-p0",
+      "portB": "e3-p0",
+      "dihedralDeg": 89.99999999999999,
+      "flip": true
+    },
+    {
+      "pieceA": "top",
+      "pieceB": "left",
+      "portA": "e3-p0",
+      "portB": "e3-p0",
+      "dihedralDeg": -89.99999999999999,
+      "flip": false
+    },
+    {
+      "pieceA": "front",
+      "pieceB": "right",
+      "portA": "e1-p0",
+      "portB": "e0-p0",
+      "dihedralDeg": 90,
+      "flip": true
+    },
+    {
+      "pieceA": "front",
+      "pieceB": "left",
+      "portA": "e3-p0",
+      "portB": "e0-p0",
+      "dihedralDeg": -90,
+      "flip": false
+    },
+    {
+      "pieceA": "back",
+      "pieceB": "right",
+      "portA": "e1-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 90,
+      "flip": false
+    },
+    {
+      "pieceA": "back",
+      "pieceB": "left",
+      "portA": "e3-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": -90,
+      "flip": true
+    }
+  ]
+}

@@ -65,12 +65,16 @@
     "test:magnetic-build-flow": "node --experimental-strip-types --test test/magnetic-build-flow.test.mjs",
     "test:magnetic-build-flow:browser": "node --experimental-strip-types scripts/verify-magnetic-build-flow.mjs",
     "test:magnetic-3d": "vitest run --config vitest.magnetic-3d.config.ts",
-    "typecheck:magnetic-3d": "tsc -p tsconfig.magnetic-3d.json"
+    "typecheck:magnetic-3d": "tsc -p tsconfig.magnetic-3d.json",
+    "test:magnetic-3d:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-viewer.mjs",
+    "test:magnetic-3d:editor:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-editor.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
     "@google/genai": "2.21.0",
     "@mediapipe/tasks-vision": "1.0.1",
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.1",
     "diff": "^9.0.0",
     "fish-audio": "0.1.0",
     "google-auth-library": "^11.0.2",

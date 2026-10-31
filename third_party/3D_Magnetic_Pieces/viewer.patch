@@ -1,0 +1,798 @@
+--- a/src/components/MagnetScene3D.tsx
++++ b/src/components/MagnetScene3D.tsx
+@@ -1,327 +1,75 @@
+-import { useRef, useMemo, useEffect, useCallback } from 'react';
+-import { Canvas, useThree } from '@react-three/fiber';
+-import { OrbitControls } from '@react-three/drei';
+-import * as THREE from 'three';
+-import { Model, MagnetColor } from '../data/types';
+-import { solveConnections } from '../engine/solver';
+-import { getShapeDef } from '../engine/shapes';
+-import { PieceTransform } from '../engine/types';
+-import { MagnetPieceMesh, debugFlags } from './magnet3d/primitives';
+-import { SceneLighting, defaultGLProps } from './magnet3d/SceneLighting';
++// Adapted from MIT 3D_Magnetic_Pieces MagnetScene3D.
++// Kept: R3F Canvas → SceneContent → SceneLighting/MagnetPieceMesh + OrbitControls.
++// Replaced product Model/step/solver lookup with the host's exact snapshot boundary.
++// See third_party/3D_Magnetic_Pieces/VIEWER.md for source and adaptation record.
++import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import type { ReactNode } from 'react'
++import { Canvas, useThree } from '@react-three/fiber'
++import { OrbitControls } from '@react-three/drei'
++import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
++import { OrthographicCamera } from 'three'
++import type { Assembly3D } from '../../assembly.ts'
++import { createViewerModel } from '../../viewer-model.ts'
++import type { ViewerPiece } from '../../viewer-model.ts'
++import { MagnetPieceMesh, disposeShapeResources } from './magnet3d/primitives.tsx'
++import { SceneLighting, defaultGLProps } from './magnet3d/SceneLighting.tsx'
++import { computeFitCamera, applyFitResult, pieceWorldVertices } from './magnet3d/cameraUtils.ts'
+ 
+-interface MagnetScene3DProps {
+-  model: Model;
+-  stepIndex: number;
+-  highlightNew?: boolean;
+-  interactive?: boolean;
++export type CameraState = { position: number[]; target: number[]; zoom: number }
++type Props = { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void }
++function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange }: {
++  pieces: ViewerPiece[]; selected: string | null; onSelect: Props['onSelect']; fitRequest: number; resetRequest: number;
++  onCameraChange: (state: CameraState) => void
++}) {
++  const controls = useRef<OrbitControlsImpl | null>(null)
++  const { camera, size } = useThree()
++  const vertices = useMemo(() => pieces.flatMap(p => pieceWorldVertices(p.shape, p.transform.position, p.transform.quaternion)), [pieces])
++  const report = useCallback(() => {
++    if (camera instanceof OrthographicCamera && controls.current) onCameraChange({
++      position: camera.position.toArray(), target: controls.current.target.toArray(), zoom: camera.zoom,
++    })
++  }, [camera, onCameraChange])
++  const lastReset = useRef<number | null>(null)
++  const fit = useCallback((preferredView: 'current' | 'threeQuarter') => {
++    if (!(camera instanceof OrthographicCamera) || !size.width || !size.height) return
++    const result = computeFitCamera({ worldVertices: vertices, camera, size, preferredView })
++    if (result) { applyFitResult(camera, result, controls.current); report() }
++  }, [camera, vertices, size.width, size.height, report])
++  // Document load, container resize and explicit Fit/Reset affect the CAMERA only.
++  useEffect(() => { fit(lastReset.current === resetRequest ? 'current' : 'threeQuarter'); lastReset.current = resetRequest }, [fit, fitRequest, resetRequest])
++  useEffect(() => () => disposeShapeResources([...new Set(pieces.map(p => p.shape))]), [pieces])
++  return <>
++    <SceneLighting shadowOpacity={0}>{pieces.map(p => <MagnetPieceMesh key={p.id} shape={p.shape}
++      transform={p.transform} color={p.color} selected={p.id === selected}
++      onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/>)}</SceneLighting>
++    <OrbitControls ref={controls} makeDefault enablePan enableZoom enableRotate enableDamping={false}
++      minZoom={.01} maxZoom={100000} onChange={report}/>
++  </>
+ }
+-
+-interface DefaultCameraState {
+-  position: THREE.Vector3;
+-  quaternion: THREE.Quaternion;
+-  zoom: number;
+-  target: THREE.Vector3;
++export class ViewerErrorBoundary extends Component<{ children: ReactNode }, { error: string }> {
++  state = { error: '' }
++  static getDerivedStateFromError(error: Error) { return { error: error.message } }
++  render() { return this.state.error ? <p role="alert">3D 画布无法启动：{this.state.error}。请确认浏览器支持 WebGL；可继续使用 2D 查看。</p> : this.props.children }
+ }
+-
+-function getVisiblePieceIds(model: Model, stepIndex: number): string[] {
+-  const target = stepIndex === -1 ? model.steps.length - 1 : stepIndex;
+-  const ids: string[] = [];
+-  for (let i = 0; i <= target; i++) {
+-    // P0-1: 所有 v2 模型已统一使用 addedPieceIds,移除 v1 addedPieces 兼容分支
+-    const s = model.steps[i];
+-    if (s.addedPieceIds) {
+-      ids.push(...s.addedPieceIds);
+-    }
+-  }
+-  return ids;
++export function MagnetScene3D({ assembly, selected, onSelect }: Props) {
++  const pieces = useMemo(() => createViewerModel(assembly), [assembly])
++  const [fitRequest, requestFit] = useState(0), [resetRequest, requestReset] = useState(0)
++  const [cameraState, setCameraState] = useState<CameraState | null>(null)
++  return <section className="magnetic-3d-scene" aria-label="磁力片三维画布">
++    <div className="magnetic-3d-camera-tools"><button onClick={() => requestFit(n => n + 1)}>Fit to View</button>
++      <button onClick={() => requestReset(n => n + 1)}>Reset Camera</button></div>
++    <div className="magnetic-3d-canvas" data-testid="magnetic-3d-canvas">
++      <ViewerErrorBoundary>
++        <Canvas orthographic camera={{ position: [5, 5, 5], zoom: 50, near: .001, far: 100 }}
++          dpr={[1, 2]} gl={defaultGLProps} fallback={<p role="alert">浏览器不支持 WebGL，无法显示 3D。可切回 2D 查看。</p>}
++          onPointerMissed={() => onSelect(null)}>
++          <SceneContent pieces={pieces} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
++            resetRequest={resetRequest} onCameraChange={setCameraState}/>
++        </Canvas>
++      </ViewerErrorBoundary>
++    </div>
++    <p className="hint">左键拖动旋转 · 滚轮缩放 · 右键拖动平移 · 点击零件查看详情</p>
++    <details className="magnetic-3d-camera-state"><summary>相机状态</summary>
++      <output aria-label="3D 相机状态">{JSON.stringify(cameraState)}</output></details>
++  </section>
+ }
+-
+-function getNewPieceIds(model: Model, stepIndex: number): Set<string> {
+-  const target = stepIndex === -1 ? model.steps.length - 1 : stepIndex;
+-  const s = model.steps[target];
+-  // P0-1: 移除 v1 addedPieces 兼容分支
+-  if (s?.addedPieceIds) return new Set(s.addedPieceIds);
+-  return new Set();
+-}
+-
+-function getPartMap(model: Model): Record<string, Model['parts'][number]> {
+-  const map: Record<string, Model['parts'][number]> = {};
+-  model.parts.forEach((p) => (map[p.id] = p));
+-  return map;
+-}
+-
+-function getPieceMap(model: Model): Record<string, NonNullable<Model['pieces']>[number]> {
+-  const map: Record<string, NonNullable<Model['pieces']>[number]> = {};
+-  model.pieces?.forEach((p) => (map[p.id] = p));
+-  return map;
+-}
+-
+-function SceneContent({
+-  model,
+-  visibleIds,
+-  newIds,
+-  interactive,
+-  defaultCameraStateRef,
+-  resetViewRef,
+-}: {
+-  model: Model;
+-  visibleIds: string[];
+-  newIds: Set<string>;
+-  interactive: boolean;
+-  defaultCameraStateRef: React.MutableRefObject<DefaultCameraState | null>;
+-  resetViewRef: React.MutableRefObject<(() => void) | null>;
+-}) {
+-  const buildMode = model.buildMode || 'solid';
+-  const partMap = useMemo(() => getPartMap(model), [model]);
+-  const pieceMap = useMemo(() => getPieceMap(model), [model]);
+-  const controlsRef = useRef<any>(null);
+-  const { camera, size } = useThree();
+-
+-  const transforms = useMemo(() => {
+-    if (!model.pieces || !model.connections) return {} as Record<string, PieceTransform>;
+-    const rootPiece = model.pieces.find((p) => p.isRoot) || model.pieces[0];
+-    const res = solveConnections({
+-      pieces: model.pieces,
+-      connections: model.connections,
+-      rootPieceId: rootPiece.id,
+-      getShapeForPiece: (pid) => {
+-        const piece = pieceMap[pid];
+-        if (!piece) return undefined;
+-        const part = partMap[piece.partId];
+-        if (!part) return undefined;
+-        return getShapeDef(part.shape);
+-      },
+-    });
+-    return res.transforms;
+-  }, [model, partMap, pieceMap]);
+-
+-  const fitCameraToModel = useCallback(() => {
+-    if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
+-    const ortho = camera as THREE.OrthographicCamera;
+-
+-    const worldVertices: THREE.Vector3[] = [];
+-    let hasVisible = false;
+-
+-    for (const pid of visibleIds) {
+-      const tf = transforms[pid];
+-      const piece = pieceMap[pid];
+-      if (!tf || !piece) continue;
+-      const part = partMap[piece.partId];
+-      if (!part) continue;
+-      const shape = getShapeDef(part.shape);
+-      if (!shape) continue;
+-
+-      const matrix = new THREE.Matrix4().compose(tf.position, tf.quaternion, new THREE.Vector3(1, 1, 1));
+-      const halfThick = shape.thickness / 2;
+-      for (const v of shape.vertices) {
+-        for (const z of [-halfThick, halfThick]) {
+-          const world = new THREE.Vector3(v.x, v.y, z).applyMatrix4(matrix);
+-          worldVertices.push(world);
+-          hasVisible = true;
+-        }
+-      }
+-    }
+-
+-    if (!hasVisible || worldVertices.length === 0) {
+-      ortho.zoom = 1;
+-      ortho.updateProjectionMatrix();
+-      return;
+-    }
+-
+-    const box = new THREE.Box3();
+-    for (const v of worldVertices) {
+-      box.expandByPoint(v);
+-    }
+-    const center = box.getCenter(new THREE.Vector3());
+-    const size = box.getSize(new THREE.Vector3());
+-
+-    const preferredView = buildMode === 'flat' ? 'top' : 'threeQuarter';
+-
+-    let cameraPosition: THREE.Vector3;
+-    if (preferredView === 'top') {
+-      const maxDim = Math.max(size.x, size.z);
+-      const distance = maxDim * 1.5 + 10;
+-      cameraPosition = new THREE.Vector3(center.x, center.y + distance, center.z);
+-    } else {
+-      const maxDim = Math.max(size.x, size.y, size.z);
+-      const distance = maxDim * 1.2 + 5;
+-      cameraPosition = new THREE.Vector3(
+-        center.x + distance * 0.7,
+-        center.y + distance * 0.7,
+-        center.z + distance * 0.7
+-      );
+-    }
+-
+-    ortho.position.copy(cameraPosition);
+-    ortho.lookAt(center);
+-    ortho.updateMatrixWorld(true);
+-
+-    const cameraSpaceVertices: THREE.Vector3[] = [];
+-    for (const v of worldVertices) {
+-      const camSpace = v.clone().applyMatrix4(ortho.matrixWorldInverse);
+-      cameraSpaceVertices.push(camSpace);
+-    }
+-
+-    let minX = Infinity, maxX = -Infinity;
+-    let minY = Infinity, maxY = -Infinity;
+-    for (const v of cameraSpaceVertices) {
+-      if (v.x < minX) minX = v.x;
+-      if (v.x > maxX) maxX = v.x;
+-      if (v.y < minY) minY = v.y;
+-      if (v.y > maxY) maxY = v.y;
+-    }
+-
+-    const projectedWidth = maxX - minX;
+-    const projectedHeight = maxY - minY;
+-
+-    const fillRatio = 0.76;
+-    const frustumWidth = ortho.right - ortho.left;
+-    const frustumHeight = ortho.top - ortho.bottom;
+-
+-    const targetZoomX = (frustumWidth * fillRatio) / (projectedWidth || 1);
+-    const targetZoomY = (frustumHeight * fillRatio) / (projectedHeight || 1);
+-    const targetZoom = Math.min(targetZoomX, targetZoomY);
+-
+-    ortho.zoom = targetZoom;
+-    ortho.updateProjectionMatrix();
+-
+-    if (controlsRef.current) {
+-      controlsRef.current.target.copy(center);
+-      controlsRef.current.update();
+-    }
+-
+-    defaultCameraStateRef.current = {
+-      position: ortho.position.clone(),
+-      quaternion: ortho.quaternion.clone(),
+-      zoom: ortho.zoom,
+-      target: center.clone(),
+-    };
+-  }, [camera, visibleIds, transforms, pieceMap, partMap, buildMode, defaultCameraStateRef, size]);
+-
+-  const controlsReadyRef = useRef(false);
+-
+-  useEffect(() => {
+-    if (!controlsRef.current) {
+-      const interval = setInterval(() => {
+-        if (controlsRef.current) {
+-          controlsReadyRef.current = true;
+-          clearInterval(interval);
+-          fitCameraToModel();
+-        }
+-      }, 50);
+-      return () => clearInterval(interval);
+-    }
+-    fitCameraToModel();
+-  }, [fitCameraToModel]);
+-
+-  const resetView = useCallback(() => {
+-    if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
+-    const ortho = camera as THREE.OrthographicCamera;
+-    const state = defaultCameraStateRef.current;
+-
+-    if (state) {
+-      ortho.position.copy(state.position);
+-      ortho.quaternion.copy(state.quaternion);
+-      ortho.zoom = state.zoom;
+-      ortho.updateProjectionMatrix();
+-
+-      if (controlsRef.current) {
+-        controlsRef.current.target.copy(state.target);
+-        controlsRef.current.update();
+-      }
+-    }
+-  }, [camera, defaultCameraStateRef]);
+-
+-  useEffect(() => {
+-    resetViewRef.current = resetView;
+-  }, [resetView]);
+-
+-  return (
+-    <>
+-      <SceneLighting shadowScale={10} shadowOpacity={0.4}>
+-        {visibleIds.map((pid) => {
+-          const piece = pieceMap[pid];
+-          const tf = transforms[pid];
+-          if (!piece || !tf) return null;
+-          const part = partMap[piece.partId];
+-          if (!part) return null;
+-          const shape = getShapeDef(part.shape);
+-          if (!shape) return null;
+-          return (
+-            <MagnetPieceMesh
+-              key={pid}
+-              shape={shape}
+-              transform={tf}
+-              color={part.color as MagnetColor}
+-              isNew={newIds.has(pid)}
+-            />
+-          );
+-        })}
+-      </SceneLighting>
+-
+-      <OrbitControls
+-        ref={controlsRef}
+-        makeDefault
+-        enablePan={false}
+-        enabled={interactive}
+-        minDistance={2}
+-        maxDistance={20}
+-      />
+-    </>
+-  );
+-}
+-
+-export function MagnetScene3D({ model, stepIndex, highlightNew = false, interactive = true }: MagnetScene3DProps) {
+-  const visibleIds = useMemo(() => getVisiblePieceIds(model, stepIndex), [model, stepIndex]);
+-  const newIds = useMemo(() => (highlightNew ? getNewPieceIds(model, stepIndex) : new Set<string>()), [model, stepIndex, highlightNew]);
+-  const defaultCameraStateRef = useRef<DefaultCameraState | null>(null);
+-
+-  const resetViewRef = useRef<(() => void) | null>(null);
+-
+-  const resetView = () => {
+-    resetViewRef.current?.();
+-  };
+-
+-  return (
+-    <div className="relative w-full h-full overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-pink-50">
+-      <Canvas
+-        orthographic
+-        camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
+-        shadows="percentage"
+-        dpr={[1, 2]}
+-        style={{ width: '100%', height: '100%' }}
+-        gl={{ ...defaultGLProps }}
+-      >
+-        <SceneContent
+-          model={model}
+-          visibleIds={visibleIds}
+-          newIds={newIds}
+-          interactive={interactive}
+-          defaultCameraStateRef={defaultCameraStateRef}
+-          resetViewRef={resetViewRef}
+-        />
+-      </Canvas>
+-
+-      {interactive && (
+-        <>
+-          <button
+-            data-testid="reset-view"
+-            aria-label="重置视角"
+-            onClick={resetView}
+-            className="absolute bottom-3 right-3 p-2 rounded-full bg-white/80 hover:bg-white shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+-          >
+-            <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+-            </svg>
+-          </button>
+-          <div className="absolute bottom-3 left-3 text-xs text-gray-400 pointer-events-none">
+-            <span>拖拽可旋转视角</span>
+-          </div>
+-        </>
+-      )}
+-    </div>
+-  );
+-}
+-
+-// 保留 debugFlags 引用以避免 tree-shaking 移除全局调试开关副作用
+-void debugFlags;
+--- a/src/components/magnet3d/primitives.tsx
++++ b/src/components/magnet3d/primitives.tsx
+@@ -1,21 +1,21 @@
++// Adapted MIT upstream renderer; see third_party/3D_Magnetic_Pieces/VIEWER.md.
+ import { useRef, useMemo, useEffect } from 'react';
+ import { useFrame, useThree } from '@react-three/fiber';
+ import * as THREE from 'three';
+ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+-import { MagnetColor } from '../../data/types';
+-import { magnetColorMap, magnetEdgeColorMap } from '../../data/models';
+-import { ShapeDef, PieceTransform } from '../../engine/types';
+-import { parseRgbaString } from '../../utils/color';
+-import { insetVertices } from '../../utils/geometry';
++type MagnetColor = string;
++function fillColor(hex: string, a = 1) { const c = new THREE.Color(hex); return { r: c.r, g: c.g, b: c.b, a }; }
++import type { ShapeDef, PieceTransform } from '../../engine/types.ts';
++import { insetVertices } from '../../utils/geometry.ts';
+ 
+ /**
+  * 共享的磁力片 3D 渲染原语。
+  * 供用户端 MagnetScene3D 和编辑器 EditorCanvas 共同复用,
+  * 避免建立第二套几何/材质系统。
+  *
+- * 所有 geometry / material 都做了按 (shapeId / color) 缓存,
++ * 几何按 ShapeDef 对象身份缓存；材质由每片 mesh 持有并清理,
+  * 不会在每次渲染时重建,符合性能要求。
+  *
+  * P2 视觉修复:
+@@ -51,18 +51,12 @@
+   showHighlight: true,
+ };
+ 
+-if (typeof window !== 'undefined') {
+-  (window as any).__MAGNET_DEBUG__ = debugFlags;
+-}
+-
+-const frameGeomCache = new Map<string, THREE.ExtrudeGeometry>();
+-const centerGeomCache = new Map<string, THREE.ExtrudeGeometry>();
+-const frameMatCache = new Map<string, THREE.MeshStandardMaterial>();
+-const centerMatCache = new Map<string, THREE.MeshStandardMaterial>();
+-const edgeLineGeomCache = new Map<string, LineSegmentsGeometry>();
+-const edgeLineMatCache = new Map<string, LineMaterial>();
+-/** P2-5: 边缘磁铁条几何缓存(按 shapeId) */
+-const magnetStripGeomCache = new Map<string, THREE.InstancedBufferGeometry>();
++
++const frameGeomCache = new Map<ShapeDef, THREE.ExtrudeGeometry>();
++const centerGeomCache = new Map<ShapeDef, THREE.ExtrudeGeometry>();
++const edgeLineGeomCache = new Map<ShapeDef, LineSegmentsGeometry>();
++/** P2-5: 边缘磁铁条几何缓存(按 ShapeDef 对象身份) */
++const magnetStripGeomCache = new Map<ShapeDef, THREE.InstancedBufferGeometry>();
+ 
+ /**
+  * P0-4: 边缘磁铁条材质 — 所有磁力片共用同一灰色金属材质,模块级单例。
+@@ -189,14 +183,21 @@
+   return pts;
+ }
+ 
++// Limit the decorative frame to the polygon inradius, including small/narrow profiles.
++function frameInset(shape: ShapeDef): number {
++  const radius = Math.min(...shape.edges.filter(e => !e.isCurved).map(e =>
++    Math.abs(e.v0.x * e.v1.y - e.v1.x * e.v0.y) / e.length));
++  return Math.min(INSET, radius * 0.25);
++}
++
+ export function createFrameGeometry(shape: ShapeDef): THREE.ExtrudeGeometry {
+-  const cacheKey = shape.id;
++  const cacheKey = shape;
+   if (frameGeomCache.has(cacheKey)) {
+     return frameGeomCache.get(cacheKey)!;
+   }
+ 
+   const outerShape = buildShapeFromDef(shape);
+-  const innerShape = buildInsetShapeFromDef(shape, INSET);
++  const innerShape = buildInsetShapeFromDef(shape, frameInset(shape));
+ 
+   outerShape.holes.push(innerShape);
+ 
+@@ -204,41 +205,37 @@
+     depth: shape.thickness,
+     bevelEnabled: false,
+   });
+-  geom.center();
++  geom.translate(0, 0, -shape.thickness / 2);
+ 
+   frameGeomCache.set(cacheKey, geom);
+   return geom;
+ }
+ 
+ export function createCenterGeometry(shape: ShapeDef): THREE.ExtrudeGeometry {
+-  const cacheKey = shape.id;
++  const cacheKey = shape;
+   if (centerGeomCache.has(cacheKey)) {
+     return centerGeomCache.get(cacheKey)!;
+   }
+ 
+-  const innerShape = buildInsetShapeFromDef(shape, INSET);
++  const innerShape = buildInsetShapeFromDef(shape, frameInset(shape));
+ 
+   const centerThickness = shape.thickness * CENTER_THICKNESS_FACTOR;
+   const geom = new THREE.ExtrudeGeometry(innerShape, {
+     depth: centerThickness,
+     bevelEnabled: false,
+   });
+-  geom.center();
+-
+-  // P2-3: 增加 Z 轴偏移,使中心板与外框不共面,消除 z-fighting
+-  const offset = (shape.thickness - centerThickness) / 2 + CENTER_Z_OFFSET;
+-  geom.translate(0, 0, offset);
++  geom.translate(0, 0, -centerThickness / 2);
++
++  // P2-3: 中心板保留在真实厚度内；使用材质 polygonOffset 处理共面显示
++  // Center slab stays inside the authoritative thickness envelope.
+ 
+   centerGeomCache.set(cacheKey, geom);
+   return geom;
+ }
+ 
+ export function getFrameMaterial(color: MagnetColor): THREE.MeshStandardMaterial {
+-  if (frameMatCache.has(color)) {
+-    return frameMatCache.get(color)!;
+-  }
+-
+-  const fill = parseRgbaString(magnetColorMap[color]);
++
++  const fill = fillColor(color, 0.58);
+   const mat = new THREE.MeshStandardMaterial({
+     color: new THREE.Color(fill.r * 0.85, fill.g * 0.85, fill.b * 0.85),
+     roughness: 0.35,
+@@ -251,7 +248,6 @@
+     polygonOffsetUnits: 1,
+   });
+ 
+-  frameMatCache.set(color, mat);
+   return mat;
+ }
+ 
+@@ -267,11 +263,8 @@
+  * 替代方案(alphaHash/抖动透明)未采用,因为磁力片中心板需要真实的半透明效果
+  */
+ export function getCenterMaterial(color: MagnetColor): THREE.MeshStandardMaterial {
+-  if (centerMatCache.has(color)) {
+-    return centerMatCache.get(color)!;
+-  }
+-
+-  const fill = parseRgbaString(magnetColorMap[color]);
++
++  const fill = fillColor(color, 0.58);
+   const isTransparent = fill.a < 1;
+   const mat = new THREE.MeshStandardMaterial({
+     color: new THREE.Color(fill.r, fill.g, fill.b),
+@@ -288,7 +281,6 @@
+     polygonOffsetUnits: -1,
+   });
+ 
+-  centerMatCache.set(color, mat);
+   return mat;
+ }
+ 
+@@ -299,13 +291,8 @@
+  * LineMaterial 支持以像素为单位的真实线宽,且支持 resolution 自适应。
+  */
+ export function getEdgeLineMaterial(color: MagnetColor, resolution: { width: number; height: number }): LineMaterial {
+-  if (edgeLineMatCache.has(color)) {
+-    const mat = edgeLineMatCache.get(color)!;
+-    mat.resolution.set(resolution.width, resolution.height);
+-    return mat;
+-  }
+-
+-  const edge = parseRgbaString(magnetEdgeColorMap[color]);
++
++  const edge = fillColor(color);
+   const mat = new LineMaterial({
+     color: new THREE.Color(edge.r, edge.g, edge.b).getHex(),
+     transparent: edge.a < 1,
+@@ -316,7 +303,6 @@
+   });
+   mat.resolution.set(resolution.width, resolution.height);
+ 
+-  edgeLineMatCache.set(color, mat);
+   return mat;
+ }
+ 
+@@ -324,7 +310,7 @@
+  * P2-4: 把 EdgesGeometry 转为 LineSegmentsGeometry 供 LineSegments2 使用
+  */
+ export function createEdgeLineGeometry(shape: ShapeDef, frameGeom: THREE.ExtrudeGeometry): LineSegmentsGeometry {
+-  const cacheKey = shape.id;
++  const cacheKey = shape;
+   if (edgeLineGeomCache.has(cacheKey)) {
+     return edgeLineGeomCache.get(cacheKey)!;
+   }
+@@ -343,7 +329,7 @@
+  * P2-5: 创建边缘磁铁条几何(沿每条边的中点放置小圆柱)
+  */
+ export function createMagnetStripGeometry(shape: ShapeDef): THREE.InstancedBufferGeometry | null {
+-  const cacheKey = shape.id;
++  const cacheKey = shape;
+   if (magnetStripGeomCache.has(cacheKey)) {
+     return magnetStripGeomCache.get(cacheKey)!;
+   }
+@@ -363,7 +349,7 @@
+   }
+ 
+   // 创建一个小圆柱几何,沿 Z 轴方向
+-  const cylGeom = new THREE.CylinderGeometry(MAGNET_STRIP_RADIUS, MAGNET_STRIP_RADIUS, MAGNET_STRIP_HEIGHT, 8, 1);
++  const cylGeom = new THREE.CylinderGeometry(Math.min(MAGNET_STRIP_RADIUS, shape.thickness * .4), Math.min(MAGNET_STRIP_RADIUS, shape.thickness * .4), shape.thickness * .7, 8, 1);
+   cylGeom.rotateX(Math.PI / 2); // 把圆柱从 Y 轴方向旋转到 Z 轴方向
+   const instancedGeom = new THREE.InstancedBufferGeometry();
+   instancedGeom.index = cylGeom.index;
+@@ -373,7 +359,8 @@
+   const matrices: number[] = [];
+   const dummy = new THREE.Object3D();
+   for (const mp of midpoints) {
+-    dummy.position.set(mp.x, mp.y, shape.thickness / 2 + MAGNET_STRIP_HEIGHT / 2);
++    const r = Math.min(MAGNET_STRIP_RADIUS, shape.thickness * .4);
++    dummy.position.set(mp.x - Math.sin(mp.angle) * r * 1.5, mp.y + Math.cos(mp.angle) * r * 1.5, 0);
+     dummy.rotation.set(0, 0, mp.angle);
+     dummy.updateMatrix();
+     matrices.push(...dummy.matrix.elements);
+@@ -436,7 +423,7 @@
+   const edgeLineGeom = useMemo(() => createEdgeLineGeometry(shape, frameGeom), [shape, frameGeom]);
+   const edgeLineMat = useMemo(() => {
+     return getEdgeLineMaterial(color, { width: size.width || 800, height: size.height || 600 });
+-  }, [color, size.width, size.height]);
++  }, [color]);
+ 
+   // P2-4: memoize LineSegments2 实例,避免每次渲染重建
+   const lineSegments2 = useMemo(() => {
+@@ -494,7 +481,7 @@
+ 
+   // P2-2: highlightMat 复用单一实例,透明时 depthWrite:false
+   const highlightMat = useMemo(() => {
+-    const fill = parseRgbaString(magnetColorMap[color]);
++    const fill = fillColor(color, 0.58);
+     return new THREE.MeshStandardMaterial({
+       color: new THREE.Color(fill.r, fill.g, fill.b),
+       emissive: new THREE.Color(0.3, 0.3, 0.3),
+@@ -527,9 +514,11 @@
+     return () => {
+       highlightMat.dispose();
+       // P0-4: magnetStripMat 是模块级单例,不在组件卸载时 dispose
+-      lineSegments2.geometry.dispose();
++      frameMat.dispose();
++      centerMat.dispose();
++      edgeLineMat.dispose();
+     };
+-  }, [highlightMat, lineSegments2]);
++  }, [highlightMat, frameMat, centerMat, edgeLineMat]);
+ 
+   // hover 时不再切换材质（消除转动视角时 highlightMat/centerMat 频繁切换导致的闪烁），
+   // hover 的视觉反馈通过 cursor 变化（EditorCanvas 已设置 cursor:pointer）实现
+@@ -539,6 +528,7 @@
+   return (
+     <group
+       ref={groupRef}
++      dispose={null}
+       onClick={onClick}
+       onPointerDown={onPointerDown}
+       onPointerOver={onPointerOver}
+@@ -574,9 +564,11 @@
+       )}
+       {/* P2-5: 边缘磁铁条 */}
+       {debugFlags.showFrame && magnetStripGeom && (
+-        <mesh geometry={magnetStripGeom} castShadow={debugFlags.showShadows}>
++        <instancedMesh args={[magnetStripGeom, magnetStripMat, magnetStripGeom.instanceCount]}
++          onUpdate={mesh => { mesh.instanceMatrix.array.set(magnetStripGeom.getAttribute('instanceMatrix').array); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); }}
++          castShadow={debugFlags.showShadows}>
+           <primitive object={magnetStripMat} attach="material" />
+-        </mesh>
++        </instancedMesh>
+       )}
+     </group>
+   );
+@@ -586,18 +578,21 @@
+ export function disposeMagnet3DCaches() {
+   for (const g of frameGeomCache.values()) g.dispose();
+   for (const g of centerGeomCache.values()) g.dispose();
+-  for (const m of frameMatCache.values()) m.dispose();
+-  for (const m of centerMatCache.values()) m.dispose();
+   for (const g of edgeLineGeomCache.values()) g.dispose();
+-  for (const m of edgeLineMatCache.values()) m.dispose();
+   for (const g of magnetStripGeomCache.values()) g.dispose();
+   // P0-4: 释放单例磁铁条材质
+   magnetStripMatSingleton.dispose();
+   frameGeomCache.clear();
+   centerGeomCache.clear();
+-  frameMatCache.clear();
+-  centerMatCache.clear();
+   edgeLineGeomCache.clear();
+-  edgeLineMatCache.clear();
+   magnetStripGeomCache.clear();
+ }
++
++/** Release only the outgoing document's shape identities; other viewers stay intact. */
++export function disposeShapeResources(shapes: readonly ShapeDef[]) {
++  for (const shape of shapes) {
++    for (const cache of [frameGeomCache, centerGeomCache, edgeLineGeomCache, magnetStripGeomCache]) {
++      cache.get(shape)?.dispose(); cache.delete(shape);
++    }
++  }
++}
+--- a/src/components/magnet3d/cameraUtils.ts
++++ b/src/components/magnet3d/cameraUtils.ts
+@@ -1,5 +1,6 @@
++// Adapted MIT upstream camera helpers; see third_party/3D_Magnetic_Pieces/VIEWER.md.
+ import * as THREE from 'three';
+-import { ShapeDef } from '../../engine/types';
++import type { ShapeDef } from '../../engine/types.ts';
+ 
+ /**
+  * 共享的相机拟合算法。
+@@ -19,7 +20,7 @@
+   /** 填充比例(0-1),默认 0.76 */
+   fillRatio?: number;
+   /** 视角偏好:'threeQuarter' | 'top' */
+-  preferredView?: 'threeQuarter' | 'top';
++  preferredView?: 'threeQuarter' | 'top' | 'current';
+   /** 画布尺寸(用于修正 frustum) */
+   size?: { width: number; height: number };
+ }
+@@ -36,8 +37,9 @@
+  * 返回新的相机状态(position/quaternion/zoom/target)。
+  */
+ export function computeFitCamera(input: FitInput): FitResult | null {
+-  const { worldVertices, camera, fillRatio = 0.76, preferredView = 'threeQuarter', size } = input;
++  const { worldVertices, camera: sourceCamera, fillRatio = 0.76, preferredView = 'threeQuarter', size } = input;
+   if (worldVertices.length === 0) return null;
++  const camera = sourceCamera.clone();
+ 
+   const box = new THREE.Box3();
+   for (const v of worldVertices) box.expandByPoint(v);
+@@ -45,7 +47,10 @@
+   const boxSize = box.getSize(new THREE.Vector3());
+ 
+   let cameraPosition: THREE.Vector3;
+-  if (preferredView === 'top') {
++  if (preferredView === 'current') {
++    const distance = Math.max(boxSize.x, boxSize.y, boxSize.z) * 1.2 + 5;
++    cameraPosition = center.clone().add(sourceCamera.getWorldDirection(new THREE.Vector3()).multiplyScalar(-distance));
++  } else if (preferredView === 'top') {
+     const maxDim = Math.max(boxSize.x, boxSize.z);
+     const distance = maxDim * 1.5 + 10;
+     cameraPosition = new THREE.Vector3(center.x, center.y + distance, center.z);
+@@ -76,6 +81,11 @@
+   }
+   const projectedWidth = maxX - minX;
+   const projectedHeight = maxY - minY;
++  // Disconnected/asymmetric outlines need their projected bounds centered too.
++  const projectedCenter = new THREE.Vector3((minX + maxX) / 2, (minY + maxY) / 2, 0)
++    .applyQuaternion(camera.quaternion);
++  cameraPosition.add(projectedCenter);
++  center.add(projectedCenter);
+ 
+   // 修正 frustum(如果传了 size,按宽高比修正)
+   let frustumWidth = camera.right - camera.left;
+@@ -134,6 +144,8 @@
+   camera.position.copy(result.position);
+   camera.quaternion.copy(result.quaternion);
+   camera.zoom = result.zoom;
++  camera.near = .001;
++  camera.far = Math.max(100, camera.position.distanceTo(result.target) * 10);
+   camera.updateProjectionMatrix();
+   if (controls) {
+     controls.target.copy(result.target);
+--- a/src/components/magnet3d/SceneLighting.tsx
++++ b/src/components/magnet3d/SceneLighting.tsx
+@@ -1,3 +1,4 @@
++// MIT upstream lighting; see third_party/3D_Magnetic_Pieces/VIEWER.md.
+ /**
+  * P2-6: 共享场景灯光与渲染配置
+  *
+@@ -58,14 +59,14 @@
+       <directionalLight position={[0, 8, 0]} intensity={0.3} />
+ 
+       {/* 接触阴影:增强地面接触感 */}
+-      <ContactShadows
++      {shadowOpacity > 0 && <ContactShadows
+         position={[0, 0.01, 0]}
+         opacity={shadowOpacity}
+         scale={shadowScale}
+         blur={2.5}
+         far={4}
+         resolution={512}
+-      />
++      />}
+ 
+       {children}
+     </>
+@@ -87,5 +88,5 @@
+   // 色调映射曝光,略高于 1.0 使整体更明亮
+   toneMappingExposure: 1.1,
+   // P2: 保留绘图缓冲,使 toDataURL() 可用于封面生成(性能影响可忽略)
+-  preserveDrawingBuffer: true,
++  preserveDrawingBuffer: false,
+ };
