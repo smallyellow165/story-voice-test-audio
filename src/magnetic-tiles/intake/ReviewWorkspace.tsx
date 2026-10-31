@@ -41,8 +41,8 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
   </Panel>
   <Separator className="studio-separator review-separator" aria-label="调整零件表与原图高度" title="拖动或使用方向键调整上下高度"/>
   <Panel id="evidence" defaultSize="35%" minSize="15%">
-   <section className="review-evidence" aria-label="Source Evidence"><div className="review-evidence-tools"><b>原图证据（Source Evidence）</b><label>缩放<select aria-label="审核原图缩放" value={zoom} onChange={e=>setZoom(Number(e.target.value))}><option value={100}>完整图片</option><option value={200}>200%</option><option value={300}>300%</option></select></label></div>
-    <div className="review-evidence-scroll" tabIndex={0} aria-label="原图证据滚动区"><div className="review-evidence-content" style={{width:`${zoom}%`,height:`${zoom}%`}}>{children}</div>{chosen&&<div className="review-selected-evidence"><b>{chosen.id}{chosen.excluded?' · 已排除，原图不显示轮廓':''}</b><p>{chosen.evidence}</p><p>{chosen.uncertainty}</p></div>}</div>
+   <section className="review-evidence" aria-label="Source Evidence"><div className="review-evidence-tools"><b>原图证据（Source Evidence）</b>{spatial?<span>完整图片 · 自动适配</span>:<label>缩放<select aria-label="审核原图缩放" value={zoom} onChange={e=>setZoom(Number(e.target.value))}><option value={100}>完整图片</option><option value={200}>200%</option><option value={300}>300%</option></select></label>}</div>
+    {spatial?<><div className="review-evidence-fit" aria-label="原图证据预览区">{children}</div>{chosen&&<details className="review-selected-evidence review-spatial-evidence-description"><summary>{chosen.id}{chosen.excluded?' · 已排除':''} · 证据说明</summary><p>{chosen.evidence}</p><p>{chosen.uncertainty}</p></details>}</>:<div className="review-evidence-scroll" tabIndex={0} aria-label="原图证据滚动区"><div className="review-evidence-content" style={{width:`${zoom}%`,height:`${zoom}%`}}>{children}</div>{chosen&&<div className="review-selected-evidence"><b>{chosen.id}{chosen.excluded?' · 已排除，原图不显示轮廓':''}</b><p>{chosen.evidence}</p><p>{chosen.uncertainty}</p></div>}</div>}
    </section>
   </Panel>
  </Group>

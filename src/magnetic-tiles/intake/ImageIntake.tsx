@@ -24,7 +24,8 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import type { Assembly, Vec, WorkMode } from '../geometry.ts'
 import { validate } from '../geometry.ts'
 import { canonical, contentHash } from '../build-plan.ts'
-import { intakeApi, prepareImage, prepareLibraryImage } from './api.ts'
+import { intakeApi, prepareSourceImage } from './api.ts'
+import {SourceImagePicker} from './SourceImagePicker.tsx'
 import type { Analysis, Candidate, Evidence, IntakeHistory, Observation, Origin, Reconstruction, Review, SelectedStage, Source } from './contracts.ts'
 type ReviewUndo={evidence:Evidence;review:Review|null;selected:string;label:string}
 type Config={models:{id:string;label:string;provider:string}[];providers:Record<string,boolean>}
@@ -43,7 +44,7 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
  const [selected,setSelected]=useState(''),[model,setModel]=useState(''),[candidateId,setCandidateId]=useState(''),[checked,setChecked]=useState(false)
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('选择当前图片或历史快照，继续工作。'),[error,setError]=useState(''),[currentHash,setCurrentHash]=useState('')
  const [target,setTarget]=useState(''),[intent,setIntent]=useState<'connect'|'separate'|'uncertain'>('connect')
- const [imageSource,setImageSource]=useState<''|'upload'|'server'>('upload'),[library,setLibrary]=useState<{name:string;mimeType:string}[]>([]),[libraryName,setLibraryName]=useState('')
+ const [imageSource,setImageSource]=useState<''|'upload'|'server'>('upload'),[libraryName,setLibraryName]=useState('')
  const [preferencesRestored,setPreferencesRestored]=useState<typeof urlRequest|null>(null)
  const [preferencesReady,setPreferencesReady]=useState(false),[preferenceWarnings,setPreferenceWarnings]=useState({sourceType:'',model:''})
  const [preferenceStorageError,setPreferenceStorageError]=useState('')
@@ -51,7 +52,7 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
 
  const reviewInspector=useRef<HTMLElement>(null)
  useEffect(()=>{if(stage==='review')reviewInspector.current?.closest<HTMLElement>('.studio-inspector')?.scrollTo({top:0})},[selected,stage])
- const lock=useRef(false),file=useRef<HTMLInputElement>(null),svg=useRef<SVGSVGElement>(null),drag=useRef<{id:string;index:number;pointerId:number}|null>(null)
+ const lock=useRef(false),svg=useRef<SVGSVGElement>(null),drag=useRef<{id:string;index:number;pointerId:number}|null>(null)
  useEffect(()=>{let live=true;intakeApi<Config>('status').then(c=>{if(live)setConfig(c)}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[])
  useEffect(()=>{let live=true;void contentHash(assembly).then(h=>{if(live)setCurrentHash(h)});return()=>{live=false}},[assembly])
  useEffect(()=>{
@@ -70,12 +71,6 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
   writeStudioUrl(values)
   try{const raw=JSON.parse(localStorage.getItem(PREFERENCES_KEY)||'{}');localStorage.setItem(PREFERENCES_KEY,JSON.stringify({...raw,...values}))}catch{setPreferenceStorageError('图片来源 / 模型偏好无法写入本地；URL 仍可用于恢复。')}
  },[imageSource,model,preferencesReady,preferencesRestored,urlRequest,preferenceWarnings])
- useEffect(()=>{
-  if(imageSource!=='server')return
-  let alive=true
-  void intakeApi<{images:{name:string;mimeType:string}[]}>('library').then(list=>{if(alive)setLibrary(list.images)}).catch(e=>{if(alive)setError('服务器图库加载失败：'+String(e))})
-  return()=>{alive=false}
- },[imageSource])
  function chooseSource(value:'upload'|'server'){setImageSource(value);setPreferenceWarnings(w=>({...w,sourceType:''}))}
  function chooseModel(value:string){setModel(value);setPreferenceWarnings(w=>({...w,model:''}))}
  function acceptHistory(next:IntakeHistory){setHistory(previous=>mergeSelectedHistory(previous,next))}
@@ -93,7 +88,6 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
   finally{await refresh()}
  }
 
- async function refreshLibrary(){const list=await intakeApi<{images:{name:string;mimeType:string}[]}>('library');setLibrary(list.images);setLibraryName('')}
  async function run(action:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await action()}catch(e){setError(String(e))}finally{lock.current=false;setBusy(false)}}
  async function preserveEdits(){
   if(analysis?.status==='complete'&&draft&&!review&&canonical(draft)!==canonical(analysis.evidence)){
@@ -175,6 +169,10 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
  const selectedMismatch=selectedReview.analysisId&&selectedAnalysis.snapshotId&&selectedReview.analysisId!==selectedAnalysis.snapshotId?`Selected Review 来源 Analysis ${selectedReview.analysisId} 与 Selected Analysis ${selectedAnalysis.snapshotId} 不同；关联保持原样。`:undefined
  const disabled=busy||!config||!urlReady||!preferencesReady
  function addPiece(){if(!draft||draft.observations.length>=25)return;const p=profiles[0],xs=p.vertices.map(v=>v[0]),ys=p.vertices.map(v=>v[1]),scale=.2/Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));const id='manual-'+crypto.randomUUID().slice(0,8);editPart({...draft,observations:[...draft.observations,{id,profileId:profiles[0].id,profileVersion:profiles[0].version,color:'#f5b942',outline:p.vertices.map(([x,y])=>[.4+(x-Math.min(...xs))*scale,.4+(Math.max(...ys)-y)*scale]),confidence:0,evidence:'人工补片',uncertainty:'请将轮廓角点拖到图片中真实边界',origin:'manual',excluded:false}]},`新增 ${id}`);setSelected(id)}
+ const sourceImage=source&&<svg ref={svg} className="intake-image" viewBox={`0 0 ${source.view.width} ${source.view.height}`} preserveAspectRatio="xMidYMid meet" aria-label="图片与识别轮廓" onPointerMove={e=>{const d=drag.current;if(!d||d.pointerId!==e.pointerId||!chosen||busy)return;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.current!.getScreenCTM()!.inverse());patch(d.id,{outline:chosen.outline.map((v,i)=>i===d.index?[Math.max(0,Math.min(1,p.x/source.view.width)),Math.max(0,Math.min(1,p.y/source.view.height))]:v)})}} onPointerUp={()=>{drag.current=null}} onPointerCancel={()=>{drag.current=null}}>
+    <image href={image} width={source.view.width} height={source.view.height}/>
+    {shown?.observations.filter(o=>!o.excluded).map(o=>{const pts=o.outline.map(([x,y]):Vec=>[x*source.view.width,y*source.view.height]),cx=pts.reduce((s,p)=>s+p[0],0)/pts.length,cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;return <g key={o.id}><polygon data-observation={o.id} points={pts.map(p=>p.join(',')).join(' ')} className={selected===o.id?'observation selected':'observation'} role="button" tabIndex={0} aria-label={`识别零件 ${o.id}`} onClick={()=>setSelected(o.id)} onKeyDown={e=>{if(e.key==='Enter')setSelected(o.id)}}/><text x={cx} y={cy} fontSize={source.view.width*.025} className="observation-label">{o.id}</text>{selected===o.id&&draft&&!busy&&pts.map(([x,y],i)=><circle key={i} cx={x} cy={y} r={source.view.width*.009} className="observation-handle" onPointerDown={e=>{e.preventDefault();drag.current={id:o.id,index:i,pointerId:e.pointerId};svg.current!.setPointerCapture(e.pointerId)}}/>)}</g>})}
+   </svg>
  return <>
   <StudioSlot column="workflow" stages={[...workflowStages]}><section className="intake-controls shared-intake-context" aria-label="共享图片与历史">
    <label className="compact-field current-source">当前图片<select aria-label="当前图片" title={source?`${source.name} · ${source.id}`:'选择当前 Source Image'} disabled={disabled} value={source?.id??''} onChange={e=>{const s=history.sources.find(s=>s.id===e.target.value);if(s)void run(async()=>{await openSource(s);chooseSource('upload')})}}><option value="">选择图片</option>{history.sources.map(s=><option key={s.id} value={s.id}>{s.name} · {s.id.slice(0,8)}</option>)}</select></label>
@@ -186,11 +184,8 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
   </section></StudioSlot>
   <StudioSlot column="workspace" stages={imageStages}>
     <ReviewWorkspace active={studioMode==='2d'&&stage==='review'} evidence={shown} onAdd={addPiece} addDisabled={disabled||!draft||draft.observations.length>=25} imageWidth={source?.view.width??0} imageHeight={source?.view.height??0} selected={selected} onSelect={setSelected} busy={busy} inputControl={draft&&<div className="review-input-row"><label className="compact-field">输入类别<select aria-label="输入类别" title={draft.sourceKind==='unsupported'?'未确认 / 不支持二维':draft.sourceKind==='diagram'?'已确认 · 平面示意图':'已确认 · 二维平铺照片'} disabled={busy} value={draft.sourceKind} onChange={e=>edit({...draft,sourceKind:e.target.value as Evidence['sourceKind']})}><option value="unsupported">未确认 / 不支持二维</option><option value="flat_photo">已确认 · 二维平铺照片</option><option value="diagram">已确认 · 平面示意图</option></select></label><InfoHint label="二维重建输入">Known 仅表示零件已选择 Profile，不能代替整图二维确认。核实采用的零件适合二维后选择类别，请点击同一区域的「保存审核快照」，将输入类别与所有零件修改一起保存为新 Review。三维、堆叠或无法确定的遮挡应保持不支持；未知零件仍需确认或明确排除。原始 Analysis 与历史 Review 不变，确认类别不会自动生成候选。</InfoHint></div>} saveControl={<><span role="status" aria-live="polite" data-testid="review-save-status" title={review?'当前审核快照已保存':'修改后请点击保存审核快照'}>{draft?(review?'已保存':'未保存'):'未打开审核'}</span><button disabled={disabled||!draft||!analysis} onClick={()=>void saveReview()}>保存审核快照</button></>}><SourceComparison comparing={stage==='reconstruction'} source={
-      <section aria-label="来源图片"><h3>原图与零件轮廓（Source）</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
-   {source&&<svg ref={svg} className="intake-image" viewBox={`0 0 ${source.view.width} ${source.view.height}`} aria-label="图片与识别轮廓" onPointerMove={e=>{const d=drag.current;if(!d||d.pointerId!==e.pointerId||!chosen||busy)return;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.current!.getScreenCTM()!.inverse());patch(d.id,{outline:chosen.outline.map((v,i)=>i===d.index?[Math.max(0,Math.min(1,p.x/source.view.width)),Math.max(0,Math.min(1,p.y/source.view.height))]:v)})}} onPointerUp={()=>{drag.current=null}} onPointerCancel={()=>{drag.current=null}}>
-    <image href={image} width={source.view.width} height={source.view.height}/>
-    {shown?.observations.filter(o=>!o.excluded).map(o=>{const pts=o.outline.map(([x,y]):Vec=>[x*source.view.width,y*source.view.height]),cx=pts.reduce((s,p)=>s+p[0],0)/pts.length,cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;return <g key={o.id}><polygon data-observation={o.id} points={pts.map(p=>p.join(',')).join(' ')} className={selected===o.id?'observation selected':'observation'} role="button" tabIndex={0} aria-label={`识别零件 ${o.id}`} onClick={()=>setSelected(o.id)} onKeyDown={e=>{if(e.key==='Enter')setSelected(o.id)}}/><text x={cx} y={cy} fontSize={source.view.width*.025} className="observation-label">{o.id}</text>{selected===o.id&&draft&&!busy&&pts.map(([x,y],i)=><circle key={i} cx={x} cy={y} r={source.view.width*.009} className="observation-handle" onPointerDown={e=>{e.preventDefault();drag.current={id:o.id,index:i,pointerId:e.pointerId};svg.current!.setPointerCapture(e.pointerId)}}/>)}</g>})}
-   </svg>}
+      <section aria-label="来源图片" className={stage==='source'?'analysis-image-preview':undefined}><h3>原图与零件轮廓（Source）</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
+   {stage==='source'?<div className="analysis-image-fit">{sourceImage}</div>:sourceImage}
       {!source&&<p className="studio-empty">在图片与识别阶段选择来源或上传图片，也可从左栏打开当前图片。</p>}</section>} candidate={
       <section aria-label="候选对照"><h3>几何重建候选（Candidate）</h3>{candidate?<CandidateView candidate={candidate} selected={selected} onSelect={setSelected}/>:diagnostic&&result?<><p className="diagnostic-label">Diagnostic · {diagnostic.layout==='partial'?'Partial':'Complete'} / Invalid for adoption · {diagnostic.placedIds.length} / {result.trace?.input.evidence.observations.filter(o=>!o.excluded).length??'?'} 片 · {diagnostic.failureStage}</p><AlignmentView key={result.id+diagnostic.id+conflictSelection.request} record={result} diagnostic={diagnostic} conflicts={conflictData!} focus={conflictFocus} onFocus={focusConflict} selected={selected} onSelect={setSelected}/></>:<p className="studio-empty">从 History 选择审核快照，在几何重建 Inspector 中生成候选。</p>}</section>
     }/>
@@ -198,9 +193,9 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
   </StudioSlot>
   <StudioSlot column="inspector" stages={['source']}><section className="intake-controls source-inspector" aria-label="图片与识别操作">
    <div className="review-inspector-heading"><h2>{workflowTerms.source.label}</h2><TraceViewer analysisId={analysis?.id} reviewId={review?.id}/><InfoHint label="图片与识别操作">上传本地图片或选择服务器图库会保存 Source 快照，不调用模型。下次识别模型与历史 Analysis 的实际模型独立；只有明确点击「识别图片（调用模型）」才发起新识别。支持清晰二维平铺照片 / 分块示意图，1–25 片。</InfoHint></div>
-   <label className="compact-field">图片来源<select aria-label="图片来源" disabled={disabled} value={imageSource} onChange={e=>{const value=e.target.value as 'upload'|'server';chooseSource(value)}}><option value="" disabled>选择图片来源</option><option value="upload">上传图片（Uploaded Images）</option><option value="server">服务器图库（Server Library）</option></select></label>
-   {imageSource==='server'&&<><div className="source-library-row"><label className="compact-field">服务器图片<select aria-label="服务器图片" disabled={disabled} value={libraryName} onChange={e=>{const name=e.target.value;if(name)void run(async()=>{const s=await intakeApi<Source>('sources',await prepareLibraryImage(name));await openSource(s);setLibraryName(name);await refresh()})}}><option value="">选择服务器图片</option>{library.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</select></label><button disabled={busy} onClick={()=>void run(refreshLibrary)} aria-label="刷新 Server Library" title="刷新服务器图库">刷新</button></div>{!library.length&&<p role="status">图库暂无图片。</p>}</>}
-   <div className="button-row"><button disabled={disabled} onClick={()=>file.current?.click()}>上传磁力片图片</button><input data-testid="intake-upload" hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void run(async()=>{const s=await intakeApi<Source>('sources',await prepareImage(f));await openSource(s);chooseSource('upload');await refresh()})}}/></div>
+   <SourceImagePicker sourceType={imageSource} onSourceTypeChange={chooseSource} currentSource={source} serverImage={libraryName} disabled={disabled}
+    onImage={selection=>void run(async()=>{const s=await intakeApi<Source>('sources',await prepareSourceImage(selection));await openSource(s);if(selection.kind==='server')setLibraryName(selection.name);else chooseSource('upload');await refresh()})}
+    onOpenSource={id=>void run(async()=>{const s=await intakeApi<Source>('sources/'+id);await openSource(s)})}/>
    <label className="compact-field">下次识别模型<select aria-label="识别模型" disabled={disabled} value={model} onChange={e=>chooseModel(e.target.value)}><option value="">选择模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
    <button className="primary" disabled={disabled||!source||!model} onClick={()=>void run(async()=>{await preserveEdits();setMessage('正在真实识别，可能需要数分钟；不会自动重试。');const a=await intakeApi<Analysis>('recognize',{sourceId:source!.id,model,requestId:crypto.randomUUID()});await refresh();await openAnalysis(a,false)})}>识别图片（调用模型）</button>
    {preferenceWarnings.sourceType&&<p role="alert">{preferenceWarnings.sourceType}</p>}{preferenceWarnings.model&&<p role="alert">{preferenceWarnings.model}</p>}{preferenceStorageError&&<p role="alert">{preferenceStorageError}</p>}

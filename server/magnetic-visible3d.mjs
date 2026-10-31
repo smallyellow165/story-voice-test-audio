@@ -5,6 +5,7 @@ import {mkdir,readFile,writeFile,link,unlink,readdir,rename} from 'node:fs/promi
 import path from 'node:path'
 import {randomUUID,createHash} from 'node:crypto'
 import {recordedSpatialOperation} from './spatial-operation.mjs'
+import {shareText} from './llm-traces.mjs'
 import {modelOptions,providerStatus} from './brick-model-registry.mjs'
 import {runVisibleModel,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
@@ -63,7 +64,16 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
   if(method==='GET'&&route==='history'){
    const result={};for(const k of kinds){const files=await readdir(path.join(directory,k)).catch(e=>{if(e.code==='ENOENT')return [];throw e});result[k]=await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(f=>read(k,f.slice(0,-5))));result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return result
   }
-  if(method==='GET'&&route.startsWith('trace/')){const traceId=identifier(route.slice(6));return JSON.parse(await readFile(path.join(directory,'model-traces',traceId+'.json'),'utf8'))}
+  if(method==='GET'&&route.startsWith('trace/')){
+   const [,value,section,...extra]=route.split('/'),traceId=identifier(value)
+   if(extra.length||section&&section!=='wire')fail('未知 Trace 内容',404)
+   const prefix=path.join(directory,'model-traces',traceId),trace=JSON.parse(await readFile(prefix+'.json','utf8'))
+   if(!section)return trace
+   // Read-only view adapter: derive paths from the validated ID, never from a
+   // stored absolute path. Reuse the existing Trace redaction and availability.
+   async function wire(suffix){try{return {available:true,origin:traceId+suffix,...shareText(await readFile(prefix+suffix,'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'未保存实际 HTTP wire 正文；不会用应用请求或解析结果补齐。'};throw e}}
+   return {traceId,request:await wire('.request.json'),response:await wire('.response.txt')}
+  }
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}
   if(method!=='POST')fail('未知 Visible 3D 操作',404)

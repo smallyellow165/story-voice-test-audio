@@ -27,3 +27,9 @@ export async function prepareLibraryImage(name: string) {
   const bytes=Uint8Array.from(atob(image.imageBase64),c=>c.charCodeAt(0))
   return prepareImage(new File([bytes],image.name,{type:image.mimeType}))
 }
+
+export type SourceImageSelection={kind:'upload';file:File}|{kind:'server';name:string}
+/** Both Analysis modes use the same orientation, resizing, PNG view and Source API input. */
+export function prepareSourceImage(selection:SourceImageSelection){
+  return selection.kind==='upload'?prepareImage(selection.file):prepareLibraryImage(selection.name)
+}

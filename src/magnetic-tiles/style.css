@@ -232,3 +232,25 @@
 .studio-mode-switch button[aria-pressed=true]{background:#276b57;color:#fff;font-weight:700}
 .studio-mode-switch button:focus-visible{outline:2px solid #006aff;outline-offset:-3px}
 .studio-mode-warning{font-size:12px;overflow-wrap:anywhere;color:#843b29}
+/* Analysis alone fits the image plus evidence into the remaining center pane.
+   SVG meet transforms apply to the image and annotations together. */
+.studio[data-active-stage=source] .studio-workspace{display:flex;flex-direction:column;overflow:hidden}
+.studio[data-active-stage=source] .studio-workspace>.studio-column-heading{flex:none}
+.studio[data-active-stage=source] .studio-workspace>div:last-child{flex:1;min-height:0}
+.studio[data-active-stage=source] .studio-workspace .studio-slot:not([hidden]){display:flex;flex-direction:column;height:100%;min-height:0;margin:0}
+.studio[data-active-stage=source] .studio-comparison{flex:1;min-height:0}
+.studio[data-active-stage=source] .studio-view-pane{height:100%}
+.analysis-image-preview{display:flex;flex-direction:column;flex:1;height:100%;min-height:0;min-width:0}
+.analysis-image-preview>h3{margin:0 0 8px}.analysis-image-preview>p{flex:none;font-size:12px;margin:0 0 10px}
+.analysis-image-preview .analysis-image-fit{flex:1;min-height:0;width:100%;max-width:100%;max-height:none;overflow:hidden;border:1px solid #becbc0;border-radius:10px;background:#f0f3ed}
+.analysis-image-preview .analysis-image-fit>svg{display:block;width:100%;height:100%;min-height:0;max-height:100%;border:0;border-radius:0}
+.analysis-image-preview>p:last-child,.studio[data-active-stage=source] .studio-slot>p.hint{margin:6px 0 0;font-size:12px}
+.source-image-picker{display:flex;flex-direction:column;gap:12px;min-width:0}
+.source-image-picker p{font-size:12px;margin:0}
+.visible3d-analysis-inspector{padding:0;overflow:visible}
+.visible3d-analysis-inspector .compact-field{display:grid;margin:0}
+.visible3d-analysis-inspector .source-inspector button{margin:0}
+.visible3d-analysis-inspector .source-inspector label{margin:0}
+/* Resizable Panel wrappers have an indefinite percentage height on mobile.
+   Use the same viewport bound as Review so tall images cannot grow the pane. */
+@media(max-width:760px){.studio[data-active-stage=source] .studio-panel-workspace{height:100dvh}}
