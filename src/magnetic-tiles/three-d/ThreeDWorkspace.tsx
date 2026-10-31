@@ -19,7 +19,7 @@ import { EditorInspector } from './EditorInspector.tsx'
 import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
 import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
-import {adoptReconstructionDraft,loadPhotoOrigin} from './reconstruction/adopt-draft.ts'
+import {adoptReconstructionDraft,loadPhotoOrigin,photoDraftGeometryGate,revalidatePhotoDraft} from './reconstruction/adopt-draft.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
 import cube from './examples/closed-cube.json' with { type: 'json' }
@@ -60,7 +60,7 @@ export default function ThreeDWorkspace() {
       const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current,adoption3D.cameraView)
       expectedRaw.current=raw
       accept(actions.createInitialHistory(assembly));setClean(raw);setText(raw);setPhotoOrigin(sidecar)
-      setLoaded(old=>({source:raw,name:'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
+      setLoaded(old=>({source:raw,name:adoption3D.origin.entryMode==='diagnostic-override'?'Visible 3D · 待修复 Draft':'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
     }catch(e){setError(String(e))}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
@@ -72,6 +72,7 @@ export default function ThreeDWorkspace() {
   const setSelected = (id: string | null) => { if (!live) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
   const items = useMemo(() => createViewerModel(assembly), [assembly])
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
+  const geometryGate=useMemo(()=>photoDraftGeometryGate(assembly,photoOrigin,validation),[assembly,photoOrigin,validation])
   const chosen = items.find(p => p.id === selected)
   const profileSignature = canonical(current.profiles)
   const catalog = useMemo(() => createShapeCatalog(current.profiles), [profileSignature])
@@ -115,6 +116,21 @@ export default function ThreeDWorkspace() {
       setClean(serializeAssembly3D(historyRef.current.current)); setSaveNotice('3D Draft 已保存，刷新可恢复；几何状态未被修正。'); setError('')
     } catch (e) { setError(String(e)) }
   }
+  async function revalidate() {
+    const target=historyRef.current.current,signature=serializeAssembly3D(target);
+    try {
+      if(live)throw Error('请先结束画布操作，再执行 Revalidate Geometry');
+      const report=validateAssembly3D(target);
+      if(photoDraftGeometryGate(target,loadPhotoOrigin(localStorage),report).repair){
+        const next=await revalidatePhotoDraft(localStorage,target,expectedRaw.current);
+        setPhotoOrigin(next);
+        if(serializeAssembly3D(historyRef.current.current)!==signature)throw Error('复验期间 Draft 已变化，结果已过期，请重新执行 Revalidate Geometry');
+        setAssembly3D(structuredClone(target));
+        setSaveNotice(`Revalidate Geometry：revision ${target.revision} · Hash ${next.geometryReview!.assemblyHash} · ${report.valid?'Geometry Valid':'Geometry Invalid；保留待修复 Draft'}`);
+      }else setSaveNotice(`Revalidate Geometry：revision ${target.revision} · ${report.valid?'Geometry Valid':'Geometry Invalid；保留 Draft'}`);
+      setError(report.valid?'':'严格复验失败：'+report.issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'));
+    } catch(e) {setError(String(e))}
+  }
   function reloadSaved() {
     if (!allowReplace()) return
     try {
@@ -147,7 +163,7 @@ export default function ThreeDWorkspace() {
         <div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example =>
           <button key={example.id} data-3d-example={example.id} aria-pressed={assembly.id === example.id}
             onClick={() => { fileRequest.current++; load(JSON.stringify(example.data, null, 2), example.name) }}>{example.name}</button>)}</div>
-        <p className="magnetic-3d-summary" role="status">{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · {componentCount(assembly)} 个组件 · {validation.valid ? '几何校验通过 · Geometry Valid' : '存在几何问题 · Geometry Invalid'}{live ? ' · 正在编辑预览，尚未提交' : loaded.isDraft ? dirty ? ' · Draft 未保存' : ' · Draft 无未保存修改' : ''}</p>
+        <p className="magnetic-3d-summary" role="status">{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · {componentCount(assembly)} 个组件 · {validation.valid ? geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid' : '存在几何问题 · Geometry Invalid'}{live ? ' · 正在编辑预览，尚未提交' : loaded.isDraft ? dirty ? ' · Draft 未保存' : ' · Draft 无未保存修改' : ''}</p>
         {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} selection={selection} toolMode={tool}
           onSelectPiece={id => { if (!live) setSelection({ kind: 'piece', id }) }}
           onSelectConnection={index => { if (!live) setSelection({ kind: 'connection', index }) }}
@@ -180,14 +196,16 @@ export default function ThreeDWorkspace() {
     <StudioSlot column="inspector" stages={['assembly']} view="3d">
       <section className="magnetic-3d-inspector" aria-label="3D Inspector">
         <h3>3D Inspector</h3><p className="hint">{editing ? '手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。' : 'View 只读：点击画布或列表查看。'}</p>
+        {geometryGate.repair&&<section aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker?'alert':'status'}>{geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></section>}
         <div className="magnetic-3d-draft-tools">
+          <button disabled={!!live} onClick={()=>void revalidate()}>Revalidate Geometry</button>
           <button disabled={!!live} onClick={blank}>新建空白 3D Draft</button>
           <button disabled={!!live} onClick={reloadSaved}>重新加载已保存 Draft</button>
           {editing && <><button disabled={!!live || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
             <button disabled={!!live || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button>
             <button disabled={!!live || !!boot.error} onClick={save}>保存 3D Draft</button></>}
         </div>
-        {saveNotice && <p role="status">{saveNotice}</p>}
+        {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <p role="alert">{error}</p>}
         <div className="magnetic-3d-piece-list" role="group" aria-label="3D 零件列表">{items.map(item => <button key={item.id}
           data-3d-piece={item.id} aria-pressed={item.id === selected} onClick={() => setSelected(item.id)}>
@@ -209,7 +227,7 @@ export default function ThreeDWorkspace() {
           setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={!!live} tool={tool} setTool={setTool}/>}
         <details open={!validation.valid}><summary>几何检查 · {validation.valid ? '通过' : '需检查'}</summary>
           <p>{assembly.id} · revision {assembly.revision}</p>
-          {validation.issues.length ? <ul>{validation.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul> : <p>保存位姿满足当前连接与碰撞检查。</p>}
+          {validation.issues.length ? <ul>{validation.issues.map((issue, i) => <li key={i} role={issue.severity==='error'?'alert':undefined}>{issue.message}</li>)}</ul> : <p>保存位姿满足当前连接与碰撞检查。</p>}
           <p className="hint">几何校验不代表真实磁力或物理稳定性保证。</p></details>
       </section>
     </StudioSlot>

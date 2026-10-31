@@ -3,8 +3,11 @@ import type {CameraView3D} from '../camera-view.ts'
 import {serializeAssembly3D,parseAssembly3D} from '../assembly.ts'
 import type {Assembly3D} from '../assembly.ts'
 import {DRAFT_3D_KEY,saveDraft3D} from '../draft-storage.ts'
+import {validateAssembly3D} from '../engine-adapter.ts'
+import {contentHash} from '../../build-plan.ts'
 export const PHOTO_ORIGIN_3D_KEY='magnetic-tiles.assembly3d-origin.v1'
-export type PhotoOrigin3D={origin:Record<string,unknown>;assemblyRaw:string;cameraView?:CameraView3D}
+export type DraftGeometryReview3D={assemblyId:string;revision:number;assemblyHash:string;assemblyRaw:string;geometry:ReturnType<typeof validateAssembly3D>}
+export type PhotoOrigin3D={origin:Record<string,unknown>;assemblyRaw:string;cameraView?:CameraView3D;geometryReview?:DraftGeometryReview3D}
 /** Existing Draft CAS remains authoritative. The optional sidecar binds exact bytes.
  * Preserve the previous provenance when an adoption fails before updating the Draft.
  */
@@ -25,4 +28,29 @@ export function adoptReconstructionDraft(storage:Pick<Storage,'getItem'|'setItem
 
 export function loadPhotoOrigin(storage:Pick<Storage,'getItem'>):PhotoOrigin3D|null{
  try{const value=JSON.parse(storage.getItem(PHOTO_ORIGIN_3D_KEY)||'null');if(!value||typeof value.origin?.id!=='string')return null;parseAssembly3D(value.assemblyRaw);if(value.cameraView){try{assertCameraView(value.cameraView)}catch{delete value.cameraView}}return value}catch{return null}
+}
+
+/** No override permission is inherited. A repair draft needs a current explicit
+ * revalidation receipt AND a fresh strict check at the downstream boundary. */
+export function photoDraftGeometryGate(assembly:Assembly3D,sidecar:PhotoOrigin3D|null,geometry=validateAssembly3D(assembly)){
+ const repair=sidecar?.origin.entryMode==='diagnostic-override'&&parseAssembly3D(sidecar.assemblyRaw).id===assembly.id;
+ const review=repair?sidecar?.geometryReview:undefined;
+ const current=!!review&&review.assemblyId===assembly.id&&review.revision===assembly.revision&&review.assemblyRaw===serializeAssembly3D(assembly);
+ const blocker=!geometry.valid?'Geometry Invalid：当前 Draft 未通过严格验证，不能作为合法 Assembly 或进入 Build Tutorial。':repair&&(!current||!review?.geometry?.valid)?'验证已过期或尚未复验：请对当前 Draft 执行 Revalidate Geometry。':null;
+ return {repair,current,geometry,ready:!blocker,blocker};
+}
+export function assertPhotoDraftReady(storage:Pick<Storage,'getItem'>,assembly:Assembly3D){
+ const sidecar=loadPhotoOrigin(storage);
+ if(storage.getItem(PHOTO_ORIGIN_3D_KEY)!==null&&!sidecar)throw Error('照片来源元数据损坏，请返回 Assembly 检查，不能使用未知验证状态。');
+ const gate=photoDraftGeometryGate(assembly,sidecar);
+ if(gate.blocker)throw Error(gate.blocker);
+ return gate;
+}
+export async function revalidatePhotoDraft(storage:Pick<Storage,'getItem'|'setItem'>,assembly:Assembly3D,expectedDraft:string|null){
+ const previous=storage.getItem(PHOTO_ORIGIN_3D_KEY),sidecar=loadPhotoOrigin(storage),assemblyRaw=serializeAssembly3D(assembly),geometry=validateAssembly3D(assembly);
+ if(!sidecar||!photoDraftGeometryGate(assembly,sidecar,geometry).repair)throw Error('当前作品没有待修复照片 Draft 来源');
+ const geometryReview:DraftGeometryReview3D={assemblyId:assembly.id,revision:assembly.revision,assemblyHash:await contentHash(assembly),assemblyRaw,geometry};
+ if(storage.getItem(DRAFT_3D_KEY)!==expectedDraft||storage.getItem(PHOTO_ORIGIN_3D_KEY)!==previous)throw Error('Draft 或来源已被其他页面更新，复验记录未覆盖');
+ const next={...sidecar,geometryReview};storage.setItem(PHOTO_ORIGIN_3D_KEY,JSON.stringify(next));
+ return next;
 }

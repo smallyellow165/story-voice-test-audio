@@ -20,6 +20,7 @@ import {planningScope,executionScope,planningRequest,executionRequest,planningDi
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
+import {diagnosticHandoffCheck} from './diagnostic-handoff.ts';
 import {assemblyValidationLayers} from '../engine-adapter.ts';
 import {executionPreviews,defaultExecutionPreview} from './execution-preview.ts';
 import {CandidateCameraViewer} from './CandidateCameraViewer.tsx';
@@ -92,6 +93,7 @@ export default function Visible3DWorkflow() {
     const [connectionOpen,setConnectionOpen]=useState(false),[edgeRefs,setEdgeRefs]=useState<string[]>([]),[edgeRange,setEdgeRange]=useState<{min:number;max:number}|null>(null);
     const [rebaseId,setRebaseId]=useState(''),[spaceRelation,setSpaceRelation]=useState<ReviewedSpatialCheck3D['relation']>('plane-angle'),[spaceMin,setSpaceMin]=useState(85),[spaceMax,setSpaceMax]=useState(90);
     const [viewRequest,setViewRequest]=useState(0);
+    const [overrideAuthorization,setOverrideAuthorization]=useState('');
     const [requests,setRequests]=useState<OperationRecord[]>([]),[requestError,setRequestError]=useState(''),[attempt,setAttempt]=useState<OperationAttempt|null>(null),[runningOperation,setRunningOperation]=useState<'plan'|'execute'|null>(null);
     const [traceOpenRequest,setTraceOpenRequest]=useState<{tab:string;sequence:number}>();
     useEffect(()=>{setAttempt(null)},[source?.id,review?.id,plan?.id,execution?.id]);
@@ -104,6 +106,10 @@ export default function Visible3DWorkflow() {
     const candidate = previews.find(c => c.id === candidateId) ?? null;
     const validation=candidate?(candidate.validation??assemblyValidationLayers(candidate.geometry)):null;
     const diagnostic=candidate?.kind==='diagnostic'||!!candidate&&!candidate.geometry.valid;
+    const overrideIdentity=JSON.stringify([source?.id,source?.hash,review?.id,review?.hash,plan?.id,plan?.hash,execution?.id,execution?.hash,candidateId]);
+    const overrideChecked=overrideAuthorization===overrideIdentity;
+    const overrideEligible=useMemo(()=>{try{return !!candidate&&diagnosticHandoffCheck(candidate).allowed}catch{return false}},[candidate]);
+    useEffect(()=>setOverrideAuthorization(''),[source,review,plan,execution,candidateId,stage,active]);
     const executionInput=execution&&review&&execution.reviewId===review.id?review.input:history.reviews.find(r=>r.id===execution?.reviewId)?.input;
     const mapping=useMemo(()=>candidate?(candidate.observationMap??(executionInput?candidateObservationMap(candidate.assembly,executionInput):[])):[],[candidate,executionInput]);
     const selectedPieceId=mapping.find(m=>m.observationId===selected)?.pieceId??null;
@@ -267,7 +273,7 @@ export default function Visible3DWorkflow() {
   <StudioSlot column="workspace" stages={['reconstruction']} intake="visible3d">
    <section className="visible3d-workspace visible3d-reconstruction" aria-label="Visible 3D 照片与候选对照">
     <div className="visible3d-comparison-heading"><h3>照片与 3D Candidate 对照</h3><p className="context-notice">来源 {source?.name??'未选照片'} · {candidate?.id??'尚无候选'}</p>
-     {candidate&&<p data-testid="visible3d-preview-validation"><b className={diagnostic?'visible3d-preview-blocker':undefined}>{diagnostic?'Diagnostic · 不可采用':'Geometry Valid'}</b> · Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'} · Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed} · Photo Match Unverified</p>}
+     {candidate&&<p data-testid="visible3d-preview-validation"><b className={diagnostic?'visible3d-preview-blocker':undefined}>{diagnostic?'Diagnostic · Geometry Invalid':'Geometry Valid'}</b> · Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'} · Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed} · Photo Match Unverified</p>}
     </div>
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{analysis?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
@@ -336,13 +342,13 @@ export default function Visible3DWorkflow() {
      </>}
     </section>
     <section className="intake-controls visible3d-control-section" aria-label="Candidate Selection"><h3>3 · Candidate Selection</h3>
-     <label className="compact-field">候选<select aria-label="3D Reconstruction Candidate" disabled={busy||!previews.length} value={candidateId} onChange={e=>{setCandidateId(e.target.value);setViewRequest(n=>n+1);setChecked(false)}}><option value="">选择候选</option>{previews.map(c=><option key={c.id} value={c.id} title={c.interpretation}>{c.id} · {c.coverage.reconstructed.length}/{c.coverage.totalConfirmed} 可见实例 · {c.kind==='diagnostic'?'Diagnostic / 不可采用':'Geometry Valid'} · {c.interpretation} · Spatial {c.spatialConsistency?.status??'unverified'}</option>)}</select></label>
+     <label className="compact-field">候选<select aria-label="3D Reconstruction Candidate" disabled={busy||!previews.length} value={candidateId} onChange={e=>{setCandidateId(e.target.value);setViewRequest(n=>n+1);setChecked(false)}}><option value="">选择候选</option>{previews.map(c=><option key={c.id} value={c.id} title={c.interpretation}>{c.id} · {c.coverage.reconstructed.length}/{c.coverage.totalConfirmed} 可见实例 · {c.kind==='diagnostic'?'Diagnostic / Geometry Invalid':'Geometry Valid'} · {c.interpretation} · Spatial {c.spatialConsistency?.status??'unverified'}</option>)}</select></label>
      {candidate&&<p className="visible3d-candidate-interpretation">{candidate.interpretation}</p>}
     </section>
    </>}
    {stage==='reconstruction'&&candidate&&<section className="intake-controls visible3d-control-section" aria-label="Candidate Review 与 Assembly"><h3>4 · Candidate Review / Assembly</h3>
     <p data-testid="candidate-validation" data-candidate-kind={diagnostic?'diagnostic':'candidate'}><b>{candidate.id} · {diagnostic?'Diagnostic / Geometry Invalid':'Geometry Valid'}</b><br/>Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'}<br/>Evidence Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed}</p>
-    {diagnostic&&<p role="alert">Diagnostic Candidate：严格几何验证未通过，仅供观察，不能通过普通 Adopt 进入 Assembly。</p>}
+    {diagnostic&&<p role="alert">Diagnostic Candidate：严格几何验证未通过，不能通过普通 Adopt 进入 Assembly。符合条件时可明确授权进入待修复 Draft；Error / Blocker 不变。</p>}
     {candidate.coverage.reconstructed.length<candidate.coverage.totalConfirmed&&<p role="alert">局部重建：未覆盖 {candidate.coverage.totalConfirmed-candidate.coverage.reconstructed.length} 个已确认实例；不能代表完整作品。</p>}
     <p>Photo Match 未验证 · Human Review {checked?'待提交':'Pending'}</p>
     <p data-testid="visible3d-spatial-status">Spatial Interpretation Consistency · {spatial?.status??'unverified'}（仅已审核相对关系）</p>
@@ -357,10 +363,11 @@ export default function Visible3DWorkflow() {
      <details><summary>零件证据 / Pose / Profile / 法向详情</summary><p>{selectedEvidence?.evidence}</p>{selectedPieceId&&<pre>{JSON.stringify({piece:candidate.assembly.pieces.find(p=>p.id===selectedPieceId),worldNormal:selectedGeometry?.normal.toArray()},null,2)}</pre>}</details>
      <button onClick={()=>navigate('review')}>回到 Review 修正选中零件</button>
     </section>}
-    <label className="intake-check"><input type="checkbox" disabled={diagnostic} aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label><button disabled={diagnostic || busy || outdated || !checked || spatial?.status==='contradicted'} onClick={() => void run(async () => { if(diagnostic)throw Error('Diagnostic Candidate 不可采用'); if (!confirm('采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))
+    {diagnostic&&<div className="visible3d-diagnostic-override"><label className="intake-check"><input type="checkbox" aria-label="强制允许进入 Assembly Editor" checked={overrideChecked} disabled={!overrideEligible||outdated||busy||spatial?.status==='contradicted'} onChange={e=>setOverrideAuthorization(e.target.checked?overrideIdentity:'')}/>强制允许进入 Assembly Editor</label><p className="hint">仅跳过进入编辑器的限制，不代表几何验证通过。进入后为待修复 Draft；不能作为合法 Assembly 或进入 Build，必须修复并重新验证。</p>{!overrideEligible&&<p role="alert">此 Diagnostic 不满足 Ideal Geometry Valid / Solid Collision Invalid 条件，禁止强制进入。</p>}</div>}
+    <label className="intake-check"><input type="checkbox" disabled={diagnostic} aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label><button disabled={busy || outdated || (diagnostic?(!overrideEligible||!overrideChecked):!checked) || spatial?.status==='contradicted'} onClick={() => void run(async () => { if(diagnostic&&(!overrideEligible||!overrideChecked))throw Error('Diagnostic 必须明确授权且满足强制进入条件'); if (!confirm(diagnostic?'进入待修复 3D Draft 并替换当前保存草稿？几何仍为 Invalid，必须修复并复验；2D 工作与教程存档不变。':'采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))
         return; let cameraView;try{cameraView=loadCandidateCamera(localStorage,{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id})??undefined}catch{/* Invalid view metadata does not block the existing geometry adoption. */}const origin = await api<Record<string, unknown> & {
         assembly: Assembly3D;
-    }>('adopt', { executionId: execution!.id, candidateId: candidate.id, visualChecked: true }); await refresh(); adopt3D(origin.assembly, origin,cameraView); })}>采用候选到 3D Assembly Editor</button>
+    }>(diagnostic?'open-diagnostic-draft':'adopt', { executionId: execution!.id,executionHash:execution!.hash, candidateId: candidate.id,...(diagnostic?{override:true}:{visualChecked:true}) }); await refresh(); setOverrideAuthorization('');adopt3D(origin.assembly, origin,cameraView); })}>{diagnostic?'采用当前结构进入 3D Assembly Editor':'采用候选到 3D Assembly Editor'}</button>
    </section>}
    {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage==='reconstruction'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
    {trace !== null && stage!=='reconstruction' && <details open><summary>实际保存的模型 Trace</summary><pre>{JSON.stringify(trace, null, 2)}</pre><button onClick={() => setTrace(null)}>关闭 Trace</button></details>}

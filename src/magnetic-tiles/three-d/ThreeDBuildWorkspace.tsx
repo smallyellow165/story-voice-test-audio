@@ -17,6 +17,7 @@ import './tutorial.css'
 import { generatedPreview, tutorialReadyToSave } from './tutorial-workflow.ts'
 import type { BuildOrderResult } from './build-order.ts'
 import { MagnetScene3D } from './vendor/components/MagnetScene3D.tsx'
+import {assertPhotoDraftReady,loadPhotoOrigin,photoDraftGeometryGate} from './reconstruction/adopt-draft.ts'
 
 export default function ThreeDBuildWorkspace(){
   const {stage,viewMode,assembly3D}=useStudio(),active=stage==='build'&&viewMode==='3d'
@@ -38,8 +39,9 @@ export default function ThreeDBuildWorkspace(){
   const validation=useMemo(()=>tutorial?validateTutorial3D(tutorial):null,[tutorial])
   const project=useMemo(()=>tutorial?tutorialProject(tutorial):null,[tutorial])
   const sourceValidation=useMemo(()=>assembly3D?validateAssembly3D(assembly3D):null,[assembly3D])
+  const sourceGate=useMemo(()=>assembly3D?photoDraftGeometryGate(assembly3D,loadPhotoOrigin(localStorage),sourceValidation!):null,[assembly3D,sourceValidation])
   const matching=tutorial&&tutorialMatchesAssembly(tutorial,assembly3D)
-  const ready=!!tutorial&&!!validation&&tutorialReadyToSave(tutorial,validation,assembly3D)
+  const ready=!!tutorial&&!!validation&&!!sourceGate?.ready&&tutorialReadyToSave(tutorial,validation,assembly3D)
   const index=tutorial?Math.max(0,tutorial.steps.findIndex(s=>s.id===selected)):0,step=tutorial?.steps[index]
   const reportCamera=useCallback((c:TutorialCamera)=>{camera.current=c;setCameraReady(true)},[])
   const replaceGuard=useRef(false);replaceGuard.current=!!tutorial&&!saved&&(dirty||tutorial.steps.length>0)
@@ -51,18 +53,20 @@ export default function ThreeDBuildWorkspace(){
   }
   // Prepare only an empty in-memory document. An existing or unreadable save is
   // never replaced by navigation, source changes or this effect.
-  useEffect(()=>{if(active&&!historyRef.current&&!boot.error&&assembly3D?.pieces.length&&sourceValidation?.valid){accept(createTutorial3D(assembly3D));setNotice('已准备当前作品；点击「生成搭建教程」查看步骤。尚未保存。')}},[active,assembly3D,sourceValidation,boot.error])
-  function create(){try{if(assembly3D&&allowReplace()){fileRequest.current++;accept(createTutorial3D(assembly3D))}}catch(e){setError(String(e))}}
+  useEffect(()=>{if(active&&!historyRef.current&&!boot.error&&assembly3D?.pieces.length&&sourceGate?.ready){try{assertPhotoDraftReady(localStorage,assembly3D);accept(createTutorial3D(assembly3D));setNotice('已准备当前作品；点击「生成搭建教程」查看步骤。尚未保存。')}catch(e){setError(String(e))}}},[active,assembly3D,sourceGate,boot.error])
+  function create(){try{if(assembly3D&&allowReplace()){assertPhotoDraftReady(localStorage,assembly3D);fileRequest.current++;accept(createTutorial3D(assembly3D))}}catch(e){setError(String(e))}}
   function apply(fn:(h:EditorHistory)=>EditorHistory){
     const current=historyRef.current;if(!current)return
     try{const next=fn(current);documentEpoch.current++;historyRef.current=next;setHistory(next);setError('');setNotice('')}catch(e){setError(String(e))}
   }
   function beforeGenerate(){
+    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertPhotoDraftReady(localStorage,sourceRef.current)}catch(e){setError(String(e));return false}
     if(boot.error){setError(boot.error);return false}
     if((tutorial?.steps.length||dirty)&&!confirm('重新生成将替换当前教程预览及未保存修改。已保存教程仍保留在历史中。继续？'))return false
     generationEpoch.current=documentEpoch.current;return true
   }
   function previewGenerated(result:BuildOrderResult){
+    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertPhotoDraftReady(localStorage,sourceRef.current)}catch(e){setError(String(e));return}
     const t=generatedPreview(result,sourceRef.current)
     if(!t){setError('生成结果未通过完整教程检查，当前教程保留。');return}
     if(generationEpoch.current!==documentEpoch.current){setNotice('生成期间教程已有修改，未覆盖。可在高级编辑与诊断中明确选择生成候选。');return}
@@ -72,6 +76,7 @@ export default function ThreeDBuildWorkspace(){
   function choose(id:number){if(!tutorial)return;const i=tutorial.steps.findIndex(s=>s.id===id);setSelected(id);setSeekRequest(old=>({index:i,sequence:(old?.sequence??0)+1}))}
   function save(asDraft=false){try{
     if(boot.error)throw Error(boot.error);if(!tutorial)return
+    if(!asDraft){if(!assembly3D)throw Error('尚无当前 Assembly');assertPhotoDraftReady(localStorage,assembly3D)}
     if(!asDraft&&!ready)throw Error('教程未满足当前作品的完整几何与顺序检查；可在高级区域保存未完成草稿。')
     expected.current=saveTutorial3D(localStorage,tutorial,expected.current);setSavedTutorials(loadTutorial3D(localStorage).saved);setSavedId(tutorial.id)
     setClean(serializeTutorial3D(tutorial));setGenerated(false);setNotice(asDraft?'已保存未完成草稿，不代表几何、顺序或人工审核通过。':'教程已保存；仍需人工检查实际搭建风险，Physical Stability 未验证。');setError('')
@@ -96,10 +101,11 @@ export default function ThreeDBuildWorkspace(){
         <p className="context-notice" title={assembly3D?.id}>当前作品：{assembly3D?`${assembly3D.id} · r${assembly3D.revision}`:'等待加载'}</p>
         {tutorial&&<p className="hint" data-testid="tutorial-source">教程来源 {tutorial.source.assemblyId} @ revision {tutorial.source.assemblyRevision} · {tutorial.assembly.pieces.length} 片 / {tutorial.assembly.connections.length} 条连接</p>}
         {sourceValidation&&!sourceValidation.valid&&<p role="alert">当前 Assembly Geometry Invalid；不能生成正常教程。{sourceValidation.issues.map(i=>i.message).join('；')}</p>}
+        {sourceGate?.repair&&sourceGate.blocker&&<p role="alert" data-testid="repair-build-blocker">{sourceGate.blocker}</p>}
         {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
-        <BuildOrderGenerator assembly={assembly3D} active={active} geometryValid={sourceValidation?.valid??false} hasTutorial={!!tutorial?.steps.length}
+        <BuildOrderGenerator assembly={assembly3D} active={active} geometryValid={sourceGate?.ready??false} hasTutorial={!!tutorial?.steps.length}
           onBeforeGenerate={beforeGenerate} onGenerated={previewGenerated} advancedHost={generatorHost}
-          onAdopt={t=>{if(!confirm('使用此生成候选替换当前教程预览？此操作不保存；未完成结果只能作为未验证草稿。'))return;fileRequest.current++;accept(t)}}/>
+          onAdopt={t=>{try{if(!assembly3D)throw Error('尚无当前 Assembly');assertPhotoDraftReady(localStorage,assembly3D);if(!confirm('使用此生成候选替换当前教程预览？此操作不保存；未完成结果只能作为未验证草稿。'))return;fileRequest.current++;accept(t)}catch(e){setError(String(e))}}}/>
         <div ref={setControlsHost}/>
         {tutorial&&validation&&<section className="magnetic-tutorial-summary" aria-label="3D 教程检查状态">
           <p role="status" data-testid="tutorial-validation">最终 Assembly Geometry {validation.finalValid?'Valid':'Invalid'} · {validation.verified?'几何与顺序检查通过':'教程尚有待检查项'}</p>

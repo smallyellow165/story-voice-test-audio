@@ -96,3 +96,5 @@ Diagnostic 与正常候选共用既有 Observation 映射、相机元数据、Vi
 ## 保留的限制
 
 完整橙色实体结构依然无效；本轮只使其理想空间假设可见，不自动放行接点碰撞。搜索不优化 Pose、不重新拟合照片、不扩展未知 Port/角度，也不搜索被父组件预算截断的图。没有相机标定、照片匹配评分、实体接点建模、材料变形、磁力或物理稳定性结论。
+
+后续交接补充：保持本页普通 Adopt 和严格 Validator 的边界，新增用户明确授权进入待修复 Editor Draft 的独立入口。它不将 Diagnostic 变成合法 Candidate；最新行为与复验门禁见 [Diagnostic Override](magnetic-visible3d-diagnostic-override.md)。
