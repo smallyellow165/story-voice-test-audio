@@ -7,7 +7,7 @@ import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panel
 import { profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
 const status=(o:Observation)=>o.excluded?'Excluded':o.profileId==='unknown'?'Unknown':'Known'
-export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode}){
+export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children,spatial=false,confirmedIds=[]}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode;spatial?:boolean;confirmedIds?:string[]}){
  const {registry:{profiles}}=useProfileRegistry()
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
@@ -30,11 +30,11 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
     </div>
     <div ref={scroll} className="review-table-scroll" tabIndex={0} aria-label="零件表滚动区"><table className="review-parts-table"><thead><tr>{['Observation ID','Profile / ID / Version','Size · 几何规格','颜色','Confidence','最佳形状匹配','状态','关系 / 不确定性'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{rows.map(o=>{
      const p=profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion),xs=o.outline.map(v=>v[0]),ys=o.outline.map(v=>v[1]),links=evidence?.relations.filter(r=>r.from===o.id||r.to===o.id)??[]
-     const match=matchOutline(o.outline,imageWidth,imageHeight,profiles),best=match.candidates[0],name=profiles.find(p=>p.id===best?.profileId&&p.version===best?.profileVersion)?.name
+     const match=spatial?{candidates:[],reason:'3D 透视证据不适用二维轮廓匹配',status:'invalid'}:matchOutline(o.outline,imageWidth,imageHeight,profiles),best=match.candidates[0],name=profiles.find(p=>p.id===best?.profileId&&p.version===best?.profileVersion)?.name
      return <tr key={o.id} data-review-id={o.id} aria-selected={selected===o.id} tabIndex={busy?-1:0} onClick={()=>{if(!busy)onSelect(o.id)}} onKeyDown={e=>{if(!busy&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onSelect(o.id)}}}>
       <td>{o.id}</td><td>{p?<>{p.name}<small>{p.id} · v{p.version}</small></>:<>Unknown<small>无正式 Profile</small></>}</td>
-      <td>{p?profileSizeLabel(p):<>视觉估计：图片包围框 {((Math.max(...xs)-Math.min(...xs))*100).toFixed(1)}% × {((Math.max(...ys)-Math.min(...ys))*100).toFixed(1)}%<small>非物理尺寸，非正式规格</small></>}</td>
-      <td><span className="review-color" style={{background:o.color}}/>{o.color}</td><td>{Math.round(o.confidence*100)}%</td><td title={match.reason}>{match.status==='invalid'?'无法评分':`${name} · ${best?.similarityScore.toFixed(1)}%${needsOutlineConfirmation(o)?' · ⚠ 仅供参考':''}`}</td><td>{status(o)}{o.excluded&&<small>{o.profileId==='unknown'?'Unknown':'Known'} · 证据保留</small>}</td><td>{links.length} 条关系 · {links.filter(r=>r.intent==='uncertain').length} 条不确定{o.uncertainty&&<small className="review-uncertainty" title={o.uncertainty}>⚑ {o.uncertainty}</small>}</td>
+      <td>{p?profileSizeLabel(p):spatial?<>可见区域 / 局部边角证据<small>Profile Unknown，不能从透视轮廓推断实际尺寸</small></>:<>视觉估计：图片包围框 {((Math.max(...xs)-Math.min(...xs))*100).toFixed(1)}% × {((Math.max(...ys)-Math.min(...ys))*100).toFixed(1)}%<small>非物理尺寸，非正式规格</small></>}</td>
+      <td><span className="review-color" style={{background:o.color}}/>{o.color}</td><td>{spatial?'未评估':`${Math.round(o.confidence*100)}%`}</td><td title={match.reason}>{spatial?'3D · 未作投影匹配':match.status==='invalid'?'无法评分':`${name} · ${best?.similarityScore.toFixed(1)}%${needsOutlineConfirmation(o)?' · ⚠ 仅供参考':''}`}</td><td>{status(o)}{spatial&&<small>{confirmedIds.includes(o.id)?'人工已确认':'等待人工确认'}</small>}{o.excluded&&<small>{o.profileId==='unknown'?'Unknown':'Known'} · 证据保留</small>}</td><td>{links.length} 条关系 · {links.filter(r=>r.intent==='uncertain').length} 条不确定{o.uncertainty&&<small className="review-uncertainty" title={o.uncertainty}>⚑ {o.uncertainty}</small>}</td>
      </tr>
     })}</tbody></table>{!rows.length&&<p>没有符合筛选条件的零件。请调整筛选或从左栏打开 Analysis / Review。</p>}</div>
    </section>

@@ -17,6 +17,7 @@ import { EditorCanvas } from './vendor/components/editor/EditorCanvas.tsx'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
 import { EditorInspector } from './EditorInspector.tsx'
 import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
+import {adoptReconstructionDraft} from './reconstruction/adopt-draft.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
 import cube from './examples/closed-cube.json' with { type: 'json' }
@@ -31,7 +32,7 @@ const examples = [
 const initial = JSON.stringify(rightAngle, null, 2)
 const format = (n: number) => Number(n.toFixed(6)).toString()
 export default function ThreeDWorkspace() {
-  const { stage, viewMode, setAssembly3D } = useStudio()
+  const { stage, viewMode, setAssembly3D, adoption3D, clearAdoption3D } = useStudio()
   const active = stage === 'assembly' && viewMode === '3d'
   const { registry: { profiles } } = useProfileRegistry()
   const [boot] = useState(() => {
@@ -47,6 +48,18 @@ export default function ThreeDWorkspace() {
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
+  const [photoOrigin,setPhotoOrigin]=useState<{origin:Record<string,unknown>;assemblyRaw:string}|null>(()=>{try{const value=JSON.parse(localStorage.getItem('magnetic-tiles.assembly3d-origin.v1')||'null');if(!value||typeof value.origin?.id!=='string')return null;parseAssembly3D(value.assemblyRaw);return value}catch{return null}})
+  useEffect(()=>{
+    if(!adoption3D)return
+    try{
+      if(!allowReplace()){clearAdoption3D();return}
+      if(boot.error)throw Error(boot.error)
+      const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current)
+      expectedRaw.current=raw
+      accept(actions.createInitialHistory(assembly));setClean(raw);setText(raw);setPhotoOrigin(sidecar)
+      setLoaded(old=>({source:raw,name:'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
+    }catch(e){setError(String(e))}finally{clearAdoption3D()}
+  },[adoption3D])
   const current = history.current
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
@@ -120,6 +133,7 @@ export default function ThreeDWorkspace() {
   return <>
     <StudioSlot column="workspace" stages={['assembly']} view="3d">
       <section className="magnetic-3d-workspace" aria-label="3D 作品查看">
+        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源 · {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</summary><p>Geometry Valid 与照片匹配独立；照片匹配仍为未标定。来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre></details>}
         <header className="magnetic-3d-heading"><div><h3>3D 作品查看</h3><p>{loaded.name}</p></div>
           <button onClick={() => { fileRequest.current++; load(loaded.source, loaded.name) }}>重新加载来源</button></header>
         <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit">

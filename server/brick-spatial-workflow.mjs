@@ -1,3 +1,4 @@
+import {recordedSpatialOperation} from './spatial-operation.mjs'
 import {createRefinementStore} from './brick-refinement.mjs'
 import {reviewedSource} from './brick-parts-input-source.mjs'
 export {reviewedSource,prepareReviewedSource} from './brick-parts-input-source.mjs'
@@ -37,13 +38,7 @@ export function createSpatialWorkflow(directory,{reverse,games,loadRules=loadBri
  const getPlan=async value=>{const r=await read(path.join(plans,id(value)+'.json'));if(r.id!==value||r.task!=='spatial-planning')fail('不是 Spatial Plan 记录',422);await partsInputs.verifyTrace(r);return r}
  const getGeometry=async value=>{const r=await read(path.join(geometries,id(value)+'.json'));if(r.id!==value||r.version!=='geometry-execution-v1')fail('不是 Geometry Execution 记录',422);return r}
  const refinement=createRefinementStore(directory,{getPlan,getGeometry,loadRules})
- async function operation(body,kind,work){
-  const requestId=id(body.requestId),file=path.join(requests,requestId+'.json'),fingerprint=hash({kind,...body})
-  const pending={id:requestId,kind,fingerprint,state:'running',createdAt:new Date().toISOString(),analysisId:body.analysisId??null,planId:body.planId??null}
-  try{await write(file,pending,true)}catch(e){if(e.code!=='EEXIST')throw e;const old=await read(file);if(old.fingerprint!==fingerprint)fail('请求 ID 已用于不同输入',409);return old}
-  try{const result=await work();const done={...pending,state:'complete',...result};await write(file,done);return done}
-  catch(e){const failed={...pending,state:'failed',error:e.statusCode?e.message:'执行失败；记录已保留，未自动重试。'};await write(file,failed);return failed}
- }
+ const operation=recordedSpatialOperation(requests)
  return {async dispatch(method,route,body={},query=new URLSearchParams()){
   if(method==='GET'&&route==='selections'){
    const items=[];for(const f of await records(selections)){const r=await read(path.join(selections,f));if(r.geometryId===query.get('geometryId'))items.push(r)}

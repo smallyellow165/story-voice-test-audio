@@ -69,7 +69,10 @@
     "test:magnetic-3d:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-viewer.mjs",
     "test:magnetic-3d:editor:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-editor.mjs",
     "test:magnetic-3d:tutorial:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-tutorial.mjs",
-    "test:magnetic-3d:build-order:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-build-order.mjs"
+    "test:magnetic-3d:build-order:browser": "node --experimental-strip-types scripts/verify-magnetic-3d-build-order.mjs",
+    "test:magnetic-visible3d": "node --experimental-strip-types --test test/magnetic-visible3d.test.mjs",
+    "test:magnetic-visible3d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs",
+    "test:magnetic-visible3d:2d:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d-2d.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",
