@@ -20,6 +20,9 @@ import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
 import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 import {adoptReconstructionDraft,loadPhotoOrigin,photoDraftGeometryGate,revalidatePhotoDraft} from './reconstruction/adopt-draft.ts'
+import {previewEdgeSnap,confirmEdgeSnap} from './editor-snap.ts'
+import type {EdgeSnapPreview} from './editor-snap.ts'
+import type {Connection} from './vendor/engine/types.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
 import cube from './examples/closed-cube.json' with { type: 'json' }
@@ -46,7 +49,9 @@ export default function ThreeDWorkspace() {
   const [loaded, setLoaded] = useState(() => ({ source: boot.raw ?? initial, name: boot.assembly ? '已保存的 3D Draft' : examples[0].name, sequence: 0, isDraft: !!boot.assembly }))
   const [text, setText] = useState(boot.raw ?? initial), [error, setError] = useState(boot.error)
   const [selection, setSelection] = useState<Selection>({ kind: 'none' })
-  const [editing, setEditing] = useState(false), [tool, setTool] = useState<ToolMode>('select'), [ownPort, setOwnPort] = useState('e0-p0')
+  const [editing, setEditing] = useState(false), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
+  const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
+  const [pendingSnap,setPendingSnap]=useState<EdgeSnapPreview|null>(null)
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
@@ -64,12 +69,13 @@ export default function ThreeDWorkspace() {
     }catch(e){setError(String(e))}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
+  const operationBusy=!!live||!!pendingSnap
   const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const selected = selection.kind === 'piece' ? selection.id : null
-  const setSelected = (id: string | null) => { if (!live) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
+  const setSelected = (id: string | null) => { if (!live&&!pendingSnap) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
   const items = useMemo(() => createViewerModel(assembly), [assembly])
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const geometryGate=useMemo(()=>photoDraftGeometryGate(assembly,photoOrigin,validation),[assembly,photoOrigin,validation])
@@ -78,40 +84,49 @@ export default function ThreeDWorkspace() {
   const catalog = useMemo(() => createShapeCatalog(current.profiles), [profileSignature])
   const shapes = useMemo(() => new Map([...catalog].map(([key, item]) => [key, item.shape])), [catalog])
   const project = useMemo(() => ({ ...editorProject(current, catalog), shapes }), [current, catalog, shapes])
-  function accept(next: EditorHistory) { historyRef.current = next; setHistory(next); setLive(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
   }
-  useEffect(() => { if (!active) setLive(null) }, [active])
+  useEffect(() => { if (!active){setLive(null);setPendingSnap(null)} }, [active])
+  useEffect(()=>{const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){setPendingSnap(null);setLive(null)}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[])
   useEffect(() => {
     if (selection.kind === 'piece' && !current.pieces.some(p => p.id === selection.id) || selection.kind === 'connection' && !current.connections[selection.index]) setSelection({ kind: 'none' })
   }, [current, selection])
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => {
-      if (!active || !editing || live || !(e.ctrlKey || e.metaKey) || !['z','y'].includes(e.key.toLowerCase())) return
+      if (!active || !editing || operationBusy || !(e.ctrlKey || e.metaKey) || !['z','y'].includes(e.key.toLowerCase())) return
       if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable=true]')) return
       e.preventDefault(); accept(e.key.toLowerCase() === 'y' || e.shiftKey ? actions.redo(historyRef.current) : actions.undo(historyRef.current)); setSelection({ kind: 'none' })
     }
     window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut)
-  }, [active, editing, live])
+  }, [active, editing, operationBusy])
+  function prepareSnap(connection:Connection){
+    setLive(null);setPendingSnap(null);
+    try{setPendingSnap(previewEdgeSnap(historyRef.current.current,connection));setError('')}catch(e){setError(String(e))}
+  }
+  function confirmSnap(){
+    if(!pendingSnap)return;
+    try{accept(confirmEdgeSnap(historyRef.current,pendingSnap));setError('');setSaveNotice('吸附已确认：仅更新源零件 Pose 和真实连接；仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
+  }
   function allowReplace() { return !dirty || confirm('当前 3D Draft 有未保存修改。确认替换？可先取消并导出或保存草稿。') }
   function startEdit() {
     if (!loaded.isDraft) {
       const draft = structuredClone(current); draft.id = uid('draft'); draft.revision = 0
       accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft)); setLoaded(old => ({ ...old, isDraft: true }))
     }
-    setEditing(true)
+    setTool(snapMode==='drag'?'snap':'select');setEditing(true)
   }
   function blank() {
     if (!allowReplace()) return
     const draft = actions.createEmptyProject(); accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft))
-    setLoaded(old => ({ ...old, name: '空白 3D Draft', isDraft: true, sequence: old.sequence + 1 })); setSelection({ kind: 'none' }); setEditing(true)
+    setLoaded(old => ({ ...old, name: '空白 3D Draft', isDraft: true, sequence: old.sequence + 1 })); setSelection({ kind: 'none' });setTool(snapMode==='drag'?'snap':'select'); setEditing(true)
   }
   function save() {
     try {
       if (boot.error) throw Error(boot.error)
-      if (live) throw Error('请先结束画布操作，再保存')
+      if (operationBusy) throw Error('请先结束画布操作或确认/取消吸附预览，再保存')
       expectedRaw.current = saveDraft3D(localStorage, historyRef.current.current, expectedRaw.current)
       setClean(serializeAssembly3D(historyRef.current.current)); setSaveNotice('3D Draft 已保存，刷新可恢复；几何状态未被修正。'); setError('')
     } catch (e) { setError(String(e)) }
@@ -119,7 +134,7 @@ export default function ThreeDWorkspace() {
   async function revalidate() {
     const target=historyRef.current.current,signature=serializeAssembly3D(target);
     try {
-      if(live)throw Error('请先结束画布操作，再执行 Revalidate Geometry');
+      if(operationBusy)throw Error('请先结束画布操作或吸附预览，再执行 Revalidate Geometry');
       const report=validateAssembly3D(target);
       if(photoDraftGeometryGate(target,loadPhotoOrigin(localStorage),report).repair){
         const next=await revalidatePhotoDraft(localStorage,target,expectedRaw.current);
@@ -153,28 +168,25 @@ export default function ThreeDWorkspace() {
   return <>
     <StudioSlot column="workspace" stages={['assembly']} view="3d">
       <section className="magnetic-3d-workspace" aria-label="3D 作品查看">
-        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源 · {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</summary><p>Geometry Valid 与照片匹配独立；照片匹配仍为未标定。来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre></details>}
-        <header className="magnetic-3d-heading"><div><h3>3D 作品查看</h3><p>{loaded.name}</p></div>
-          <button onClick={() => { fileRequest.current++; load(loaded.source, loaded.name) }}>重新加载来源</button></header>
-        <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit">
-          <button disabled={!!live} aria-pressed={!editing} onClick={() => { setLive(null); setEditing(false) }}>View</button>
-          <button disabled={!!live} aria-pressed={editing} onClick={startEdit}>{loaded.isDraft ? 'Edit Draft' : '从当前作品创建 Draft'}</button>
+        <div className="magnetic-3d-toolbar" aria-label="3D Assembly 工具栏">
+          <header className="magnetic-3d-toolbar-row"><div className="magnetic-3d-toolbar-title"><h2>作品编辑（Assembly）</h2><span className="hint" title={loaded.name}>{photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?`照片 · ${String(photoOrigin.origin.sourceId).slice(0,8)}`:loaded.isDraft?'3D Draft':'3D 查看'}</span></div>
+           <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit"><button disabled={operationBusy} aria-pressed={!editing} onClick={()=>{setLive(null);setEditing(false)}}>View</button><button disabled={operationBusy} aria-pressed={editing} onClick={startEdit}>{loaded.isDraft?'Edit Draft':'从当前作品创建 Draft'}</button><button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(loaded.source,loaded.name)}}>重新加载来源</button></div>
+          </header>
+          <div className="magnetic-3d-toolbar-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid':'Geometry Invalid'}</span>{loaded.isDraft&&<span> · {dirty?'未保存':'Draft'}</span>}</p>
+           {editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}
+          </div>
         </div>
-        <div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example =>
-          <button key={example.id} data-3d-example={example.id} aria-pressed={assembly.id === example.id}
-            onClick={() => { fileRequest.current++; load(JSON.stringify(example.data, null, 2), example.name) }}>{example.name}</button>)}</div>
-        <p className="magnetic-3d-summary" role="status">{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · {componentCount(assembly)} 个组件 · {validation.valid ? geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid' : '存在几何问题 · Geometry Invalid'}{live ? ' · 正在编辑预览，尚未提交' : loaded.isDraft ? dirty ? ' · Draft 未保存' : ' · Draft 无未保存修改' : ''}</p>
         {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} selection={selection} toolMode={tool}
-          onSelectPiece={id => { if (!live) setSelection({ kind: 'piece', id }) }}
-          onSelectConnection={index => { if (!live) setSelection({ kind: 'connection', index }) }}
-          onSelectPort={(id, portId) => { setSelection({ kind: 'piece', id }); setOwnPort(portId) }}
-          onClearSelection={() => { if (!live) setSelection({ kind: 'none' }) }} focusRequest={null} fitRequest={null}
+          onSelectPiece={id => { if (!live&&!pendingSnap) setSelection({ kind: 'piece', id }) }}
+          onSelectConnection={index => { if (!live&&!pendingSnap) setSelection({ kind: 'connection', index }) }}
+          onSelectPort={(id,portId)=>{if(operationBusy)return;if(snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
+          onClearSelection={() => { if (!live&&!pendingSnap) setSelection({ kind: 'none' }) }} focusRequest={null} fitRequest={null}
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
-          onCreateConnection={connection => apply(h => actions.createConnectionAction(h, connection, true))}
-          cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={initialCameraView?setEditorCamera:undefined}/></ViewerErrorBoundary>
+          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={snapMode==='click'} interactionLocked={!!pendingSnap} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
+          cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
           : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} initialCameraView={initialCameraView}/>)}
-        {initialCameraView&&editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
+        {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
         <details className="magnetic-3d-load"><summary>加载 / 导出 Assembly3D</summary>
           <label>Assembly3D JSON<textarea aria-label="Assembly3D JSON" value={text} spellCheck={false} maxLength={1_000_000}
             onChange={e => setText(e.target.value)}/></label>
@@ -195,15 +207,17 @@ export default function ThreeDWorkspace() {
     </StudioSlot>
     <StudioSlot column="inspector" stages={['assembly']} view="3d">
       <section className="magnetic-3d-inspector" aria-label="3D Inspector">
-        <h3>3D Inspector</h3><p className="hint">{editing ? '手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。' : 'View 只读：点击画布或列表查看。'}</p>
+        <h3>3D Inspector</h3>
+        {editing&&<p className="hint">{snapMode==='drag'?'拖动吸附：选择零件，拖动 Gizmo 靠近兼容边，松手后确认或取消。没有候选时保留原位；自由移动/旋转可使用下方工具。':'点击吸附：选择源零件 B 及其连接边，再点击目标 A 的兼容边或在右栏指定，预览后确认。'} 已连接零件需要移动时，请先明确解除连接。</p>}
+        {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}<p className="hint">{editing ? '手动移动只修改 Pose；吸附与显式求解才沿约束重新放置。' : 'View 只读：点击画布或列表查看。'}</p>
         {geometryGate.repair&&<section aria-label="待修复 Draft 几何状态"><b>Diagnostic 来源 · 待修复 Draft</b><p data-testid="repair-draft-status" role={geometryGate.blocker?'alert':'status'}>{geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></section>}
         <div className="magnetic-3d-draft-tools">
-          <button disabled={!!live} onClick={()=>void revalidate()}>Revalidate Geometry</button>
-          <button disabled={!!live} onClick={blank}>新建空白 3D Draft</button>
-          <button disabled={!!live} onClick={reloadSaved}>重新加载已保存 Draft</button>
-          {editing && <><button disabled={!!live || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
-            <button disabled={!!live || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button>
-            <button disabled={!!live || !!boot.error} onClick={save}>保存 3D Draft</button></>}
+          <button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>
+          <button disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button>
+          <button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button>
+          {editing && <><button disabled={operationBusy || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
+            <button disabled={operationBusy || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button>
+            <button disabled={operationBusy || !!boot.error} onClick={save}>保存 3D Draft</button></>}
         </div>
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <p role="alert">{error}</p>}
@@ -222,9 +236,11 @@ export default function ThreeDWorkspace() {
         </div> : <p>尚未选择零件。</p>}
         {assembly.connections.length > 0 && <details open={editing}><summary>连接关系</summary><div className="magnetic-3d-connections">{assembly.connections.map((c, index) =>
           <button key={index} data-3d-connection={index} aria-pressed={selection.kind === 'connection' && selection.index === index}
-            disabled={!!live} onClick={() => setSelection({ kind: 'connection', index })}>#{index} · {c.pieceA}:{c.portA} → {c.pieceB}:{c.portB} · {c.dihedralDeg}°</button>)}</div></details>}
+            disabled={operationBusy} onClick={() => setSelection({ kind: 'connection', index })}>#{index} · {c.pieceA}:{c.portA} → {c.pieceB}:{c.portB} · {c.dihedralDeg}°</button>)}</div></details>}
         {editing && <EditorInspector assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
-          setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={!!live} tool={tool} setTool={setTool}/>}
+          setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={operationBusy} tool={tool} setTool={next=>{setTool(next);if(next==='snap')setSnapMode('drag')}} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>}
+        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源与快照</summary><p>Source {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</p><p>Geometry Valid 与照片匹配独立；来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre></details>}
+        <details className="magnetic-3d-examples-debug"><summary>Examples / Debug</summary><p className="hint">开发示例；加载会替换当前查看内容，不属于正式 Tiles Catalog。当前来源：{loaded.name}</p><div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example=><button key={example.id} disabled={operationBusy} data-3d-example={example.id} aria-pressed={assembly.id===example.id} onClick={()=>{fileRequest.current++;load(JSON.stringify(example.data,null,2),example.name)}}>{example.name}</button>)}</div><p>{componentCount(assembly)} 个组件 · revision {assembly.revision}</p></details>
         <details open={!validation.valid}><summary>几何检查 · {validation.valid ? '通过' : '需检查'}</summary>
           <p>{assembly.id} · revision {assembly.revision}</p>
           {validation.issues.length ? <ul>{validation.issues.map((issue, i) => <li key={i} role={issue.severity==='error'?'alert':undefined}>{issue.message}</li>)}</ul> : <p>保存位姿满足当前连接与碰撞检查。</p>}

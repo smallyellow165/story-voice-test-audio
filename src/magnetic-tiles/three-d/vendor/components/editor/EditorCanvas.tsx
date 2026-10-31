@@ -24,7 +24,15 @@ export interface EditorView {
   zoom: number;
 }
 
-interface Props {
+type SnapInteractionProps = {
+  onSnapProposal?:(connection:Connection)=>void;
+  onMovePieceCancel?:()=>void;
+  snapCandidates?:{dihedralDeg:number;flip:boolean}[];
+  snapSourcePort?:string;showSnapTargets?:boolean;
+  snapGhost?:{pieceId:string;tf:SerializableTransform}|null;
+  interactionLocked?:boolean;
+};
+interface Props extends SnapInteractionProps {
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
@@ -60,7 +68,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
 }: {
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
@@ -84,7 +92,7 @@ function SceneContent({
   liveTransformOverride: { pieceId: string; tf: SerializableTransform } | null;
   getCurrentViewRef?: React.MutableRefObject<(() => EditorView | null) | null>;
   onViewChange?: (view: EditorView) => void;
-}) {
+} & SnapInteractionProps) {
   const partMap = useMemo(() => {
     const m: Record<string, EditorProject['parts'][number]> = {};
     project.parts.forEach((p) => (m[p.id] = p));
@@ -115,12 +123,13 @@ function SceneContent({
   const compatibleTargets = useMemo(() => {
     if (selection.kind !== 'piece') return new Set<string>();
     const set = new Set<string>();
-    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: '' }, project)) {
+    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: snapSourcePort??'' }, project)) {
       set.add(`${t.pieceId}:${t.portId}`);
     }
     return set;
-  }, [selection, project]);
+  }, [selection, project,snapSourcePort]);
 
+  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked;
   const controlsRef = useRef<any>(null);
   const transformControlsRef = useRef<any>(null);
   const { camera, size } = useThree();
@@ -132,6 +141,7 @@ function SceneContent({
   transformsRef.current = transforms;
 
   const selectedPieceId = selection.kind === 'piece' ? selection.id : null;
+  const displayedGhost=snapGhost?.tf??snapPreview,ghostPieceId=snapGhost?.pieceId??selectedPieceId;
 
   /* ---- 相机拟合:复用 MagnetScene3D 的投影算法 ---- */
   const computeAllWorldVerts = useCallback((): THREE.Vector3[] => {
@@ -362,7 +372,7 @@ function SceneContent({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 操作对象是输入框/textarea/contenteditable 时禁用全局快捷键
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (lockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
 
@@ -431,7 +441,7 @@ function SceneContent({
   }, [selectedPieceId, transforms]);
 
   const onTransformObjectChange = useCallback(() => {
-    if (!selectedPieceId || !transformControlsRef.current) return;
+    if (interactionLocked || !dragStateRef.current || dragStateRef.current.committed || !selectedPieceId || !transformControlsRef.current) return;
     const obj = transformControlsRef.current.object;
     if (!obj) return;
     // 拖拽中实时更新视觉(不提交历史)
@@ -448,12 +458,12 @@ function SceneContent({
         position: obj.position.clone(),
         quaternion: obj.quaternion.clone(),
       };
-      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
+      const candidate = findBestSnapCandidate(selectedPieceId, project, snapCandidates, liveTf);
       if (candidate) {
         // 检查屏幕像素距离是否满足阈值
         const tf = transforms[selectedPieceId];
         if (tf) {
-          const screenPos = worldToScreen(tf.position, camera, size);
+          const screenPos = worldToScreen(obj.position, camera, size);
           const snapScreenPos = worldToScreen(candidate.resultingTransform.position, camera, size);
           const pixelDist = Math.hypot(screenPos.x - snapScreenPos.x, screenPos.y - snapScreenPos.y);
           if (pixelDist < SNAP_PIXEL_THRESHOLD) {
@@ -469,7 +479,7 @@ function SceneContent({
         setSnapPreview(null);
       }
     }
-  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece]);
+  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked]);
 
   const onTransformMouseUp = useCallback(() => {
     const drag = dragStateRef.current;
@@ -480,23 +490,15 @@ function SceneContent({
       return;
     }
 
-    // 磁吸模式:如果有吸附预览,提交吸附结果并创建连接
-    if (toolMode === 'snap' && snapPreview && selectedPieceId) {
-      // P0-三.1: 使用 dummyObj 的实时变换计算候选
-      const obj = transformControlsRef.current?.object;
-      const liveTf: PieceTransform | undefined = obj
-        ? { position: obj.position.clone(), quaternion: obj.quaternion.clone() }
-        : undefined;
-      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
-      if (candidate) {
-        // Host callback commits the pose/constraint solve atomically in one history entry.
-        // 创建连接
-        onCreateConnection(candidate.connection);
-        drag.committed = true;
-        dragStateRef.current = null;
-        setSnapPreview(null);
-        return;
-      }
+    // Host confirmation path: mouse-up proposes only; the Draft stays exact.
+    if (toolMode === 'snap' && selectedPieceId) {
+      const obj=transformControlsRef.current?.object;
+      const candidate=obj?findBestSnapCandidate(selectedPieceId,project,snapCandidates,{position:obj.position.clone(),quaternion:obj.quaternion.clone()}):null;
+      const close=candidate&&obj?(()=>{const a=worldToScreen(obj.position,camera,size),b=worldToScreen(candidate.resultingTransform.position,camera,size);return Math.hypot(a.x-b.x,a.y-b.y)<SNAP_PIXEL_THRESHOLD})():false;
+      drag.committed=true;dragStateRef.current=null;setSnapPreview(null);
+      if(candidate&&close){if(onSnapProposal)onSnapProposal(candidate.connection);else onCreateConnection(candidate.connection)}
+      else onMovePieceCancel?.();
+      return;
     }
 
     // 普通模式:提交最终位置(单次撤销记录)
@@ -510,18 +512,22 @@ function SceneContent({
     drag.committed = true;
     dragStateRef.current = null;
     setSnapPreview(null);
-  }, [toolMode, snapPreview, selectedPieceId, project, onMovePieceCommit, onCreateConnection]);
+  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
 
-  // 监听 pointercancel / lostpointercapture
+  // Cancellation is rollback, never an implicit mouse-up/connection commit.
   useEffect(() => {
-    const cancel = () => onTransformMouseUp();
-    window.addEventListener('pointercancel', cancel);
-    window.addEventListener('lostpointercapture', cancel);
-    return () => {
-      window.removeEventListener('pointercancel', cancel);
-      window.removeEventListener('lostpointercapture', cancel);
+    const cancel=()=>{
+      const drag=dragStateRef.current;
+      if(!drag&&!keyboardDragStateRef.current)return;
+      if(drag&&transformControlsRef.current?.object){transformControlsRef.current.object.position.copy(drag.startPos);transformControlsRef.current.object.quaternion.copy(drag.startQuat)}
+      if(drag)drag.committed=true;dragStateRef.current=null;keyboardDragStateRef.current=null;
+      if(keyboardCommitTimerRef.current)clearTimeout(keyboardCommitTimerRef.current);keyboardCommitTimerRef.current=null;
+      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;onMovePieceCancel?.();
     };
-  }, [onTransformMouseUp]);
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel()};
+    window.addEventListener('pointercancel',cancel);window.addEventListener('lostpointercapture',cancel);window.addEventListener('keydown',key);
+    return()=>{window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
+  },[onMovePieceCancel]);
 
   // TransformControls 事件
   useEffect(() => {
@@ -580,12 +586,12 @@ function SceneContent({
           const isSelected = selection.kind === 'piece' && selection.id === piece.id;
           const isDimmed = false;
           const isHovered = hoveredPiece === piece.id;
-          const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
+          const isSnapGhost = !!displayedGhost && piece.id === ghostPieceId;
           return (
             <MagnetPieceMesh
               key={piece.id}
               shape={shape}
-              transform={isSnapGhost ? { position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) } : tf}
+              transform={tf}
               color={part.color as MagnetColor}
               selected={isSelected}
               highlighted={isHovered && !isSelected}
@@ -602,15 +608,15 @@ function SceneContent({
         })}
 
         {/* 吸附预览(半透明 ghost) */}
-        {snapPreview && selectedPieceId && (() => {
-          const piece = pieceMap[selectedPieceId];
+        {displayedGhost && ghostPieceId && (() => {
+          const piece = pieceMap[ghostPieceId];
           const part = piece ? partMap[piece.partId] : null;
           const shape = part ? project.shapes.get(part.shape) : null;
           if (!shape) return null;
           return (
             <MagnetPieceMesh
               shape={shape}
-              transform={{ position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) }}
+              transform={{ position: new THREE.Vector3(...displayedGhost.position), quaternion: new THREE.Quaternion(...displayedGhost.quaternion) }}
               color={(partMap[piece!.partId]?.color ?? 'blue') as MagnetColor}
               opacity={0.35}
             />
@@ -637,6 +643,14 @@ function SceneContent({
             );
           });
         })()}
+
+        {showSnapTargets&&selection.kind==='piece'&&project.pieces.filter(p=>p.id!==selection.id).flatMap(piece=>{
+          const shape=project.shapes.get(partMap[piece.partId]?.shape),tf=transforms[piece.id];if(!shape||!tf)return [];
+          return shape.ports.filter(p=>compatibleTargets.has(`${piece.id}:${p.portId}`)).map(port=>{
+            const p0=new THREE.Vector3(port.p0.x,port.p0.y,0).applyQuaternion(tf.quaternion).add(tf.position),p1=new THREE.Vector3(port.p1.x,port.p1.y,0).applyQuaternion(tf.quaternion).add(tf.position);
+            return <Line key={`target-${piece.id}-${port.portId}`} points={[p0,p1]} color="#3b82f6" lineWidth={5} onClick={e=>{e.stopPropagation();onSelectPort?.(piece.id,port.portId)}}/>;
+          });
+        })}
 
         {/* 连接可视化(可点击) */}
         {project.connections.map((conn, idx) => {
@@ -673,7 +687,7 @@ function SceneContent({
       />
 
       {/* TransformControls:仅在选中零件且非选择模式时启用 */}
-      {selectedPieceId && toolMode !== 'select' && (
+      {!interactionLocked && selectedPieceId && toolMode !== 'select' && (
         <TransformControls
           ref={transformControlsRef}
           object={dummyObj}
@@ -715,7 +729,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
 }: Props) {
   const defaultCameraStateRef = useRef<DefaultCameraState | null>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
@@ -759,7 +773,7 @@ export function EditorCanvas({
           cameraTargetRef={cameraTargetRef}
           liveTransformOverride={liveTransformOverride}
           getCurrentViewRef={getCurrentViewRef}
-          onViewChange={onViewChange} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
+          onViewChange={onViewChange} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
 

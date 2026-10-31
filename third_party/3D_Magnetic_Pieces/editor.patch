@@ -1,6 +1,6 @@
 --- a/src/editor/state.ts
 +++ b/src/editor/state.ts
-@@ -1,65 +1,30 @@
+@@ -1,10 +1,10 @@
 -import { EditorProject } from './types';
 -import { SCHEMA_VERSION } from './types';
 -import { defaultMetadata } from './types';
@@ -21,7 +21,7 @@
 +import { solveAssembly3D } from '../../engine-adapter.ts'
 +import type { Connection } from '../engine/types.ts'
 +import { uniqueId, uid } from './id.ts'
- 
+@@ -12,15 +12,4 @@
 -/**
 - * 编辑器状态模型 + 撤销/重做。
 - * 纯数据逻辑,无 React / DOM 依赖,便于未来小程序复用。
@@ -41,7 +41,7 @@
 +export const MAX_HISTORY = 100
 +export function createEmptyProject(): Assembly3D {
 +  return { kind: 'magnetic-assembly-3d', schemaVersion: 1, id: uid('draft'), revision: 0, profiles: [], pieces: [], connections: [] }
- }
+@@ -28,22 +17,3 @@
 -
 -export const MAX_HISTORY = 100;
 -
@@ -67,7 +67,7 @@
 +export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
 +  assertAssembly3D(assembly)
 +  return { past: [], current: structuredClone(assembly), future: [] }
- }
+@@ -51,6 +21 @@
 -
 -export function createInitialHistory(): EditorHistory {
 -  return { past: [], current: createEmptyProject(), future: [] };
@@ -75,74 +75,39 @@
 -
 -function cloneProject(p: EditorProject): EditorProject {
 +function cloneProject(p: Assembly3D): Assembly3D {
-   // P0-4: structuredClone 比 JSON 往返快 5-10x,且不丢 Date/Map 等结构(此处数据全可序列化,但保留语义更稳)。
-   // 老旧环境(无 structuredClone,如非现代浏览器)降级到 JSON 方式。
-   if (typeof structuredClone === 'function') {
-     return structuredClone(p);
-   }
+@@ -62 +27 @@
 -  return JSON.parse(JSON.stringify(p)) as EditorProject;
 +  return JSON.parse(JSON.stringify(p)) as Assembly3D;
- }
- 
- /** 在执行 mutation 前调用:把当前快照压栈。 */
-@@ -68,35 +33,39 @@
-   return { ...h, past, future: [] };
- }
- 
+@@ -71,2 +36,2 @@
 -/** 修改 current 但不入栈(用于自动同步 transforms / updatedAt 等派生字段)。 */
 -export function updateCurrent(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
 +/** 上游保留工具：修改 current 但不入栈；宿主几何编辑使用 commit。 */
 +export function updateCurrent(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
-   // P0-四.7: 克隆 current 后再传给 updater,避免 updater 中的 in-place mutation
-   // 在 React Strict Mode(double-invocation)下污染原始状态。
-   return { ...h, current: updater(cloneProject(h.current)) };
- }
- 
- /** 修改 current 并入栈(用于用户主动操作)。 */
+@@ -79 +44 @@
 -export function commit(h: EditorHistory, updater: (p: EditorProject) => EditorProject): EditorHistory {
 +export function commit(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
-   const next = pushHistory(h);
-   // P0-四.7: 克隆 current 后再传给 updater,避免 in-place mutation 污染 h.current。
-   // React Strict Mode 下 updater 会被调用两次:第一次 mutation 会改变 h.current,
-   // 第二次 pushHistory 会 clone 已被污染的 h.current → past 条目值错误,撤销无效。
-   const current = updater(cloneProject(next.current));
+@@ -85 +50,3 @@
 -  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
 +  assertAssembly3D(current);
 +  if (canonical(current) === canonical(h.current)) return h;
 +  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
- }
- 
- /**
-  * P0-2: 批量提交 — 只 push 一次历史,依次执行多个 updater。
+@@ -90 +57 @@
 - * 用于一次用户操作需要多步 mutation 的场景(如断开连接+移动零件+移出步骤),
 + * 用于一次用户操作需要多步 mutation 的场景，
-  * 避免每个 updater 各 push 一条历史,导致撤销需要按多次。
-  */
+@@ -93 +60 @@
 -export function commitBatch(h: EditorHistory, updaters: ((p: EditorProject) => EditorProject)[]): EditorHistory {
 +export function commitBatch(h: EditorHistory, updaters: ((p: Assembly3D) => Assembly3D)[]): EditorHistory {
-   const next = pushHistory(h);
-   let current = cloneProject(next.current);
-   for (const u of updaters) {
-     current = u(current);
-   }
+@@ -99 +66,3 @@
 -  return { ...next, current: { ...current, updatedAt: new Date().toISOString() } };
 +  assertAssembly3D(current);
 +  if (canonical(current) === canonical(h.current)) return h;
 +  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
- }
- 
- export function undo(h: EditorHistory): EditorHistory {
-@@ -130,557 +99,74 @@
- }
- 
- /** 替换整个 current(用于新建 / 打开 / 导入)。清空历史。 */
+@@ -133 +102 @@
 -export function replaceProject(_h: EditorHistory, project: EditorProject): EditorHistory {
 +export function replaceProject(_h: EditorHistory, project: Assembly3D): EditorHistory {
-   return { past: [], current: cloneProject(project), future: [] };
- }
- 
+@@ -137 +105,0 @@
 -/* ----------------- 零件与连接操作 ----------------- */
- 
+@@ -139,17 +107,12 @@
 -/** 找到或创建一个 partId(同形状同颜色复用)。 */
 -function findOrCreatePart(project: EditorProject, shape: MagnetShape, color: MagnetColor): PartDef {
 -  const existing = project.parts.find((p) => p.shape === shape && p.color === color);
@@ -172,7 +137,7 @@
 +    return p
 +  })
 +  return { history, pieceId }
- }
+@@ -157,30 +120,35 @@
 -
 -/**
 - * 添加一个零件到方案。
@@ -238,7 +203,7 @@
 +    for (const c of p.connections) {
 +      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
 +      if (next && !members.has(next)) { members.add(next); queue.push(next) }
-     }
+@@ -188,5 +156,4 @@
 -    // 自动同步 parts.count
 -    part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
 -    return p;
@@ -248,7 +213,7 @@
 +  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
 +  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
 +  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
- }
+@@ -194,18 +161,2 @@
 -
 -/** 删除零件(级联清理连接和步骤引用)。 */
 -export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
@@ -269,7 +234,7 @@
 -  });
 +export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
 +  return commit(h, p => solveComponent(p, root))
- }
+@@ -213,22 +164,2 @@
 -
 -/** 复制一个零件(同 part,新 piece ID)。 */
 -export function duplicatePieceAction(h: EditorHistory, pieceId: string): { history: EditorHistory; newId: string } {
@@ -294,7 +259,7 @@
 -  return { history, newId };
 +export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
 +  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
- }
+@@ -236,17 +167,2 @@
 -
 -/** 修改零件颜色(改 partId 指向,或新建 part)。 */
 -export function setPieceColorAction(h: EditorHistory, pieceId: string, color: MagnetColor): EditorHistory {
@@ -314,7 +279,7 @@
 -  });
 +export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
 +  return commit(h, p => { p.connections.splice(index, 1); return p })
- }
+@@ -254,8 +170,2 @@
 -
 -/** 直接设置零件的 editor transform(自由移动 / 旋转,不创建连接)。 */
 -export function setPieceTransformAction(
@@ -325,7 +290,7 @@
 -  return commit(h, (p) => setPieceTransformMutation(p, pieceId, transform));
 +export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
 +  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
- }
+@@ -263,424 +172,0 @@
 -
 -/** P0-2: setPieceTransform 的纯 mutation,供 commitBatch 组合。 */
 -export function setPieceTransformMutation(
@@ -752,7 +717,7 @@
 -}
 --- a/src/editor/snap.ts
 +++ b/src/editor/snap.ts
-@@ -1,9 +1,10 @@
+@@ -1,6 +1,7 @@
 -import { Vector3, Quaternion, Matrix4 } from 'three';
 -import { Connection, ShapeDef, PieceTransform } from '../engine/types';
 -import { getPort, getShapeDef } from '../engine/shapes';
@@ -766,55 +731,24 @@
 +import { computeTransformFromConnection } from '../engine/solver.ts';
 +import type { EditorProject } from '../../editor-project.ts';
 +import { toEnginePose as transformFromSerializable } from '../../assembly.ts';
- 
- /**
-  * 端口吸附与连接管理逻辑。
-@@ -11,7 +12,7 @@
-  * 不使用"看起来靠在一起"的视觉吸附,而是创建真实 Connection 数据。
-  */
- 
+@@ -14 +15 @@
 -const PORT_LENGTH_TOLERANCE_RATIO = 0.05;
 +const PORT_LENGTH_TOLERANCE_RATIO = 0.01; // Match the shared validator.
- const SNAP_DISTANCE = 0.6; // 世界单位,吸附触发距离
- 
- function makeGetShape(project: EditorProject) {
-@@ -20,7 +21,7 @@
-     const piece = project.pieces.find((pp) => pp.id === pid);
-     if (!piece) return undefined;
-     const part = partMap.get(piece.partId);
+@@ -23 +24 @@
 -    return part ? getShapeDef(part.shape) : undefined;
 +    return part ? project.shapes.get(part.shape) : undefined;
-   };
- }
- 
-@@ -41,11 +42,10 @@
- }
- 
- /**
+@@ -44,2 +45 @@
 - * 计算显示用变换:可由 solver 推导的零件用 solver 结果,
 - * 浮动(未连通到根)的零件用 editor transforms 缓存。
 + * 计算显示用变换：仅转换 Assembly3D 的保存 Pose，不执行求解。
-  */
- export function getDisplayTransforms(project: EditorProject): Record<string, PieceTransform> {
+@@ -48 +48 @@
 -  const solverTfs = resnapshotTransforms(project);
 +  const solverTfs = project.transforms; // Stored poses are authoritative; no implicit solve.
-   const out: Record<string, PieceTransform> = {};
-   for (const p of project.pieces) {
-     const s = solverTfs[p.id];
-@@ -64,8 +64,7 @@
-  * P0-1: 轻量级显示变换 — 直接读 project.transforms 缓存,不调用 solver。
-  *
-  * 用于拖拽期间的高频调用(findBestSnapCandidate),避免每帧全量求解。
+@@ -67,2 +67 @@
 - * 拖拽期间 project.connections 不变,project.transforms 是上次 commit 后
 - * resnapshotTransforms 的结果,等价于 solver 输出,可安全复用。
 + * 拖拽期间 project.connections 不变，使用保存 Pose 加实时拖动覆盖。
-  * 缺失 transform 的零件回退到原点(与 getDisplayTransforms 兜底一致)。
-  */
- function getDisplayTransformsFromCache(project: EditorProject): Record<string, PieceTransform> {
-@@ -263,90 +262,3 @@
-   return used;
- }
- 
+@@ -266,87 +264,0 @@
 -/* ----------------- P0-3: 连接组件语义 ----------------- */
 -
 -/**
@@ -904,12 +838,11 @@
 -}
 --- a/src/components/editor/EditorCanvas.tsx
 +++ b/src/components/editor/EditorCanvas.tsx
-@@ -1,16 +1,17 @@
+@@ -0,0 +1,3 @@
++import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../../camera-view.ts'
++import type {CameraView3D} from '../../../camera-view.ts'
 +// Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
- import { useRef, useMemo, useEffect, useCallback, useState } from 'react';
- import { Canvas, useThree } from '@react-three/fiber';
- import { OrbitControls, Line, TransformControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
- import * as THREE from 'three';
+@@ -5,9 +8,9 @@
 -import { MagnetColor } from '../../data/types';
 -import { getShapeDef } from '../../engine/shapes';
 -import { Connection, PieceTransform } from '../../engine/types';
@@ -928,266 +861,252 @@
 +import { getDisplayTransforms, findCompatibleTargets, buildPortUsage, findBestSnapCandidate } from '../../editor/snap.ts';
 +import { computeFitCamera, applyFitResult, pieceWorldVertices } from '../magnet3d/cameraUtils.ts';
 +import type { Selection } from '../../../editor-project.ts';
- 
- export type ToolMode = 'select' | 'move' | 'rotate' | 'snap';
- 
-@@ -27,6 +28,7 @@
-   toolMode: ToolMode;
-   onSelectPiece: (id: string) => void;
-   onSelectConnection: (index: number) => void;
+@@ -24 +27,10 @@
+-interface Props {
++type SnapInteractionProps = {
++  onSnapProposal?:(connection:Connection)=>void;
++  onMovePieceCancel?:()=>void;
++  snapCandidates?:{dihedralDeg:number;flip:boolean}[];
++  snapSourcePort?:string;showSnapTargets?:boolean;
++  snapGhost?:{pieceId:string;tf:SerializableTransform}|null;
++  interactionLocked?:boolean;
++};
++interface Props extends SnapInteractionProps {
++  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
+@@ -29,0 +42 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-   onClearSelection: () => void;
-   focusRequest: { pieceId: string; ts: number } | null;
-   fitRequest: { ts: number } | null;
-@@ -52,7 +54,7 @@
- const SNAP_PIXEL_THRESHOLD = 28; // 屏幕像素阈值
- 
- function SceneContent({
+@@ -55 +68 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, focusRequest, fitRequest,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
-   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
-   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-   onViewChange,
-@@ -62,6 +64,7 @@
-   toolMode: ToolMode;
-   onSelectPiece: (id: string) => void;
-   onSelectConnection: (index: number) => void;
+@@ -58 +71 @@
+-  onViewChange,
++  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
+@@ -59,0 +73 @@
++  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
+@@ -64,0 +79 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-   onClearSelection: () => void;
-   focusRequest: { pieceId: string; ts: number } | null;
-   fitRequest: { ts: number } | null;
-@@ -135,7 +138,7 @@
-       if (!tf || !piece) continue;
-       const part = partMap[piece.partId];
-       if (!part) continue;
+@@ -80 +95 @@
+-}) {
++} & SnapInteractionProps) {
+@@ -111 +126 @@
+-    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: '' }, project)) {
++    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: snapSourcePort??'' }, project)) {
+@@ -115,2 +130,3 @@
+-  }, [selection, project]);
+-
++  }, [selection, project,snapSourcePort]);
++
++  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked;
+@@ -127,0 +144 @@
++  const displayedGhost=snapGhost?.tf??snapPreview,ghostPieceId=snapGhost?.pieceId??selectedPieceId;
+@@ -138 +155 @@
 -      const shape = getShapeDef(part.shape);
 +      const shape = project.shapes.get(part.shape);
-       if (!shape) continue;
-       out.push(...pieceWorldVertices(shape, tf.position, tf.quaternion));
-     }
-@@ -167,7 +170,7 @@
-     if (!tf || !piece) return;
-     const part = partMap[piece.partId];
-     if (!part) return;
+@@ -170 +187 @@
 -    const shape = getShapeDef(part.shape);
 +    const shape = project.shapes.get(part.shape);
-     if (!shape) return;
-     const verts = pieceWorldVertices(shape, tf.position, tf.quaternion);
-     const result = computeFitCamera({
-@@ -184,14 +187,12 @@
-   }, [camera, selectedPieceId, transforms, pieceMap, partMap, size, fitAll, cameraTargetRef]);
- 
-   // 仅在首次加载或 project.id 变化时自动 fit
+@@ -185,0 +203 @@
++  const restoredCamera=useRef(false)
+@@ -187 +205 @@
 -  const lastFitProjectId = useRef<string>('');
 +  
-   useEffect(() => {
+@@ -189,6 +207,9 @@
 -    if (project.id !== lastFitProjectId.current) {
 -      lastFitProjectId.current = project.id;
 -      const t = setTimeout(() => fitAll(), 100);
 -      return () => clearTimeout(t);
 -    }
 -  }, [project.id, fitAll]);
++    if(initialCameraView&&camera instanceof THREE.OrthographicCamera&&controlsRef.current){
++      if(!restoredCamera.current){restoreCameraView(camera,controlsRef.current,initialCameraView,size);restoredCamera.current=true;cameraTargetRef.current.fromArray(initialCameraView.target);defaultCameraStateRef.current={position:camera.position.clone(),quaternion:camera.quaternion.clone(),target:controlsRef.current.target.clone(),zoom:camera.zoom}}
++      else resizeSavedCamera(camera,size)
++      onCameraViewChange?.(captureCameraView(camera,controlsRef.current));return
++    }
 +    const t = setTimeout(() => fitAllRef.current?.(), 80);
 +    return () => clearTimeout(t);
 +  }, [project.id, !!project.pieces.length, size.width, size.height]);
 +  useEffect(() => () => disposeShapeResources([...project.shapes.values()]), [project.shapes]);
- 
-   // 聚焦请求
-   useEffect(() => {
-@@ -274,7 +275,7 @@
-   onViewChangeRef.current = onViewChange;
-   useEffect(() => {
-     // DEV 模式需要更新 window 状态;父组件可能需要 onViewChange 通知
+@@ -277,2 +298,2 @@
 -    const needDevWindow = import.meta.env.DEV;
+-    const needNotify = !!onViewChangeRef.current;
 +    const needDevWindow = false; // Do not leak global debug state into the host.
-     const needNotify = !!onViewChangeRef.current;
-     if (!needDevWindow && !needNotify) return;
- 
-@@ -350,8 +351,9 @@
-   useEffect(() => {
-     const onKey = (e: KeyboardEvent) => {
-       // 操作对象是输入框/textarea/contenteditable 时禁用全局快捷键
-+      if (e.ctrlKey || e.metaKey || e.altKey) return;
-       const target = e.target as HTMLElement;
++    const needNotify = !!onViewChangeRef.current||!!onCameraViewChange;
+@@ -294,0 +316 @@
++      if(camera instanceof THREE.OrthographicCamera&&controlsRef.current)onCameraViewChange?.(captureCameraView(camera,controlsRef.current));
+@@ -352,0 +375 @@
++      if (lockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
+@@ -354 +377 @@
 -      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 +      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
- 
-       const sel = selectionRef.current;
-       if (sel.kind !== 'piece') return;
-@@ -476,11 +478,7 @@
-         : undefined;
-       const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
-       if (candidate) {
+@@ -421 +444 @@
+-    if (!selectedPieceId || !transformControlsRef.current) return;
++    if (interactionLocked || !dragStateRef.current || dragStateRef.current.committed || !selectedPieceId || !transformControlsRef.current) return;
+@@ -438 +461 @@
+-      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
++      const candidate = findBestSnapCandidate(selectedPieceId, project, snapCandidates, liveTf);
+@@ -443 +466 @@
+-          const screenPos = worldToScreen(tf.position, camera, size);
++          const screenPos = worldToScreen(obj.position, camera, size);
+@@ -459 +482 @@
+-  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece]);
++  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked]);
+@@ -470,21 +493,9 @@
+-    // 磁吸模式:如果有吸附预览,提交吸附结果并创建连接
+-    if (toolMode === 'snap' && snapPreview && selectedPieceId) {
+-      // P0-三.1: 使用 dummyObj 的实时变换计算候选
+-      const obj = transformControlsRef.current?.object;
+-      const liveTf: PieceTransform | undefined = obj
+-        ? { position: obj.position.clone(), quaternion: obj.quaternion.clone() }
+-        : undefined;
+-      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
+-      if (candidate) {
 -        // 提交吸附位置
 -        onMovePieceCommit(selectedPieceId, {
 -          position: [candidate.resultingTransform.position.x, candidate.resultingTransform.position.y, candidate.resultingTransform.position.z],
 -          quaternion: [candidate.resultingTransform.quaternion.x, candidate.resultingTransform.quaternion.y, candidate.resultingTransform.quaternion.z, candidate.resultingTransform.quaternion.w],
 -        });
-+        // Host callback commits the pose/constraint solve atomically in one history entry.
-         // 创建连接
-         onCreateConnection(candidate.connection);
-         drag.committed = true;
-@@ -530,6 +528,11 @@
-     };
-   }, [onTransformMouseDown, onTransformMouseUp, onTransformObjectChange]);
- 
+-        // 创建连接
+-        onCreateConnection(candidate.connection);
+-        drag.committed = true;
+-        dragStateRef.current = null;
+-        setSnapPreview(null);
+-        return;
+-      }
++    // Host confirmation path: mouse-up proposes only; the Draft stays exact.
++    if (toolMode === 'snap' && selectedPieceId) {
++      const obj=transformControlsRef.current?.object;
++      const candidate=obj?findBestSnapCandidate(selectedPieceId,project,snapCandidates,{position:obj.position.clone(),quaternion:obj.quaternion.clone()}):null;
++      const close=candidate&&obj?(()=>{const a=worldToScreen(obj.position,camera,size),b=worldToScreen(candidate.resultingTransform.position,camera,size);return Math.hypot(a.x-b.x,a.y-b.y)<SNAP_PIXEL_THRESHOLD})():false;
++      drag.committed=true;dragStateRef.current=null;setSnapPreview(null);
++      if(candidate&&close){if(onSnapProposal)onSnapProposal(candidate.connection);else onCreateConnection(candidate.connection)}
++      else onMovePieceCancel?.();
++      return;
+@@ -504,3 +515,3 @@
+-  }, [toolMode, snapPreview, selectedPieceId, project, onMovePieceCommit, onCreateConnection]);
+-
+-  // 监听 pointercancel / lostpointercapture
++  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
++
++  // Cancellation is rollback, never an implicit mouse-up/connection commit.
+@@ -508,8 +519,12 @@
+-    const cancel = () => onTransformMouseUp();
+-    window.addEventListener('pointercancel', cancel);
+-    window.addEventListener('lostpointercapture', cancel);
+-    return () => {
+-      window.removeEventListener('pointercancel', cancel);
+-      window.removeEventListener('lostpointercapture', cancel);
+-    };
+-  }, [onTransformMouseUp]);
++    const cancel=()=>{
++      const drag=dragStateRef.current;
++      if(!drag&&!keyboardDragStateRef.current)return;
++      if(drag&&transformControlsRef.current?.object){transformControlsRef.current.object.position.copy(drag.startPos);transformControlsRef.current.object.quaternion.copy(drag.startQuat)}
++      if(drag)drag.committed=true;dragStateRef.current=null;keyboardDragStateRef.current=null;
++      if(keyboardCommitTimerRef.current)clearTimeout(keyboardCommitTimerRef.current);keyboardCommitTimerRef.current=null;
++      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;onMovePieceCancel?.();
++    };
++    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel()};
++    window.addEventListener('pointercancel',cancel);window.addEventListener('lostpointercapture',cancel);window.addEventListener('keydown',key);
++    return()=>{window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
++  },[onMovePieceCancel]);
+@@ -532,0 +548,5 @@
 +  useEffect(() => () => {
 +    if (keyboardCommitTimerRef.current) clearTimeout(keyboardCommitTimerRef.current);
 +    document.body.style.cursor = 'default';
 +  }, []);
 +
-   // 临时对象:TransformControls 挂载的 dummy
-   const dummyObj = useMemo(() => new THREE.Object3D(), []);
-   useEffect(() => {
-@@ -548,7 +551,7 @@
- 
-   return (
-     <>
+@@ -551 +571 @@
 -      <SceneLighting shadowScale={20} shadowOpacity={0.3}>
 +      <SceneLighting shadowScale={20} shadowOpacity={0}>
-         <gridHelper args={[20, 20, '#cbd5e1', '#e2e8f0']} position={[0, -0.01, 0]} />
- 
-         {/* P0-二.2: TransformControls 附着的 dummyObj 必须真实存在于 scene graph,
-@@ -561,10 +564,10 @@
-           const tf = transforms[piece.id];
-           const part = partMap[piece.partId];
-           if (!tf || !part) return null;
+@@ -564 +584 @@
 -          const shape = getShapeDef(part.shape);
 +          const shape = project.shapes.get(part.shape);
-           if (!shape) return null;
-           const isSelected = selection.kind === 'piece' && selection.id === piece.id;
+@@ -567 +587 @@
 -          const isDimmed = selection.kind === 'piece' && selection.id !== piece.id;
 +          const isDimmed = false;
-           const isHovered = hoveredPiece === piece.id;
-           const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
-           return (
-@@ -591,7 +594,7 @@
-         {snapPreview && selectedPieceId && (() => {
-           const piece = pieceMap[selectedPieceId];
-           const part = piece ? partMap[piece.partId] : null;
+@@ -569 +589 @@
+-          const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
++          const isSnapGhost = !!displayedGhost && piece.id === ghostPieceId;
+@@ -574 +594 @@
+-              transform={isSnapGhost ? { position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) } : tf}
++              transform={tf}
+@@ -591,2 +611,2 @@
+-        {snapPreview && selectedPieceId && (() => {
+-          const piece = pieceMap[selectedPieceId];
++        {displayedGhost && ghostPieceId && (() => {
++          const piece = pieceMap[ghostPieceId];
+@@ -594 +614 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-           if (!shape) return null;
-           return (
-             <MagnetPieceMesh
-@@ -607,7 +610,7 @@
-         {selection.kind === 'piece' && (() => {
-           const piece = pieceMap[selection.id];
-           const part = piece ? partMap[piece.partId] : null;
+@@ -599 +619 @@
+-              transform={{ position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) }}
++              transform={{ position: new THREE.Vector3(...displayedGhost.position), quaternion: new THREE.Quaternion(...displayedGhost.quaternion) }}
+@@ -610 +630 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-           const tf = transforms[selection.id];
-           if (!shape || !tf) return null;
-           const matrix = new THREE.Matrix4().compose(tf.position, tf.quaternion, new THREE.Vector3(1, 1, 1));
-@@ -618,7 +621,8 @@
-             const p1 = new THREE.Vector3(port.p1.x, port.p1.y, 0).applyMatrix4(matrix);
-             const color = isUsed ? '#ef4444' : isCompatible ? '#22c55e' : '#3b82f6';
-             return (
+@@ -621 +641,2 @@
 -              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4} />
 +              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4}
 +                onClick={e => { e.stopPropagation(); onSelectPort?.(selection.id, port.portId); }}/>
-             );
-           });
-         })()}
-@@ -652,8 +656,9 @@
-         ref={controlsRef}
-         makeDefault
-         enablePan
+@@ -624,0 +646,8 @@
++
++        {showSnapTargets&&selection.kind==='piece'&&project.pieces.filter(p=>p.id!==selection.id).flatMap(piece=>{
++          const shape=project.shapes.get(partMap[piece.partId]?.shape),tf=transforms[piece.id];if(!shape||!tf)return [];
++          return shape.ports.filter(p=>compatibleTargets.has(`${piece.id}:${p.portId}`)).map(port=>{
++            const p0=new THREE.Vector3(port.p0.x,port.p0.y,0).applyQuaternion(tf.quaternion).add(tf.position),p1=new THREE.Vector3(port.p1.x,port.p1.y,0).applyQuaternion(tf.quaternion).add(tf.position);
++            return <Line key={`target-${piece.id}-${port.portId}`} points={[p0,p1]} color="#3b82f6" lineWidth={5} onClick={e=>{e.stopPropagation();onSelectPort?.(piece.id,port.portId)}}/>;
++          });
++        })}
+@@ -655,2 +684,3 @@
 -        minDistance={2}
 -        maxDistance={30}
 +        enableDamping={false}
 +        minZoom={.01}
 +        maxZoom={100000}
-       />
- 
-       {/* TransformControls:仅在选中零件且非选择模式时启用 */}
-@@ -663,7 +668,6 @@
-           object={dummyObj}
-           mode={toolMode === 'rotate' ? 'rotate' : 'translate'}
-           size={0.8}
+@@ -660 +690 @@
+-      {selectedPieceId && toolMode !== 'select' && (
++      {!interactionLocked && selectedPieceId && toolMode !== 'select' && (
+@@ -666 +695,0 @@
 -          onObjectChange={onTransformObjectChange}
-         />
-       )}
- 
-@@ -698,7 +702,7 @@
- }
- 
- export function EditorCanvas({
+@@ -701 +730 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, onClearSelection,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
-   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-   liveTransformOverride, getCurrentViewRef, onViewChange,
- }: Props) {
-@@ -713,10 +717,10 @@
-   const fitSelection = () => fitSelectionRef.current?.();
- 
-   return (
+@@ -703 +732 @@
+-  liveTransformOverride, getCurrentViewRef, onViewChange,
++  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,
+@@ -716 +745 @@
 -    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
 +    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" tabIndex={0} role="region" aria-label="3D 编辑画布">
-       <Canvas
-         orthographic
+@@ -719 +748 @@
 -        camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
 +        camera={{ position: [5, 5, 5], zoom: 50, near: 0.001, far: 100 }}
-         shadows="percentage"
-         dpr={[1, 2]}
-         style={{ width: '100%', height: '100%' }}
-@@ -729,6 +733,7 @@
-           toolMode={toolMode}
-           onSelectPiece={onSelectPiece}
-           onSelectConnection={onSelectConnection}
+@@ -731,0 +761 @@
 +          onSelectPort={onSelectPort}
-           onClearSelection={onClearSelection}
-           focusRequest={focusRequest}
-           fitRequest={fitRequest}
-@@ -747,13 +752,13 @@
-         />
-       </Canvas>
- 
+@@ -746 +776 @@
+-          onViewChange={onViewChange}
++          onViewChange={onViewChange} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
+@@ -750,2 +780,2 @@
 -      {/* 右下角按钮组 */}
 -      <div className="absolute bottom-3 right-3 flex flex-col gap-2">
 +      {/* Host-scoped layout; upstream Tailwind is not installed. */}
 +      <div className="magnetic-3d-editor-camera-tools">
-         <button
-           onClick={fitAll}
-           className="p-2 rounded-full bg-white/80 hover:bg-white shadow-sm"
-           title="全部入镜"
+@@ -756 +786 @@
 -          aria-label="全部入镜"
 +          aria-label="Fit to View"
-         >
-           <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l4 4m8-4h4m0 0v4m0-4l-4 4M4 16v4m0 0h4m-4 0l4-4m8 4l4-4m0 4v-4m0 4h-4" />
-@@ -774,7 +779,7 @@
-           onClick={resetView}
-           className="p-2 rounded-full bg-white/80 hover:bg-white shadow-sm"
-           title="重置视角"
+@@ -777 +807 @@
 -          aria-label="重置视角"
 +          aria-label="Reset Camera"
-         >
-           <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-@@ -783,7 +788,7 @@
-       </div>
- 
-       {/* 视图方向按钮 */}
+@@ -786 +816 @@
 -      <div className="absolute top-3 right-3 flex gap-1">
 +      <div className="magnetic-3d-editor-view-tools">
-         {(['front', 'back', 'left', 'right', 'top'] as const).map((v) => {
-           const labels = { front: '前', back: '后', left: '左', right: '右', top: '顶' };
-           return (
-@@ -799,8 +804,8 @@
-         })}
-       </div>
- 
+@@ -802,2 +832,2 @@
 -      <div className="absolute bottom-3 left-3 text-xs text-gray-500 pointer-events-none space-y-0.5">
 -        <div>左键:选中 · {toolMode === 'rotate' ? 'Gizmo 旋转' : toolMode === 'move' ? 'Gizmo 移动' : '拖零件移动'} · 右键:旋转视角 · 滚轮:缩放</div>
 +      <div className="magnetic-3d-editor-help">
 +        <div>点击选中 · 左键拖空白旋转视角 · 右键平移 · 滚轮缩放 · {toolMode === 'rotate' ? '拖圆环旋转' : toolMode === 'snap' ? '拖轴移动并磁吸' : toolMode === 'move' ? '拖轴移动' : '右栏切换移动/旋转工具'}</div>
-         <div>WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销</div>
-       </div>
-     </div>
 --- a/src/components/editor/PropertyPanel.tsx
 +++ b/src/components/editor/PropertyPanel.tsx
-@@ -1,183 +1,28 @@
+@@ -1,12 +1,10 @@
 -import { useState, useMemo, useEffect } from 'react';
 -import * as THREE from 'three';
 -import { EditorProject } from '../../editor/types';
@@ -1210,7 +1129,7 @@
 +const colorSwatch = (c: string) => c
 +let fieldIdCounter = 0
 +const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
- interface Props {
+@@ -14,23 +12,7 @@
 -  project: EditorProject;
 -  selection: Selection;
 -  validation: EditorValidationResult | null;
@@ -1241,7 +1160,7 @@
 +  onRemoveConnection: (index: number) => void
 +  onSetPieceTransform: (id:string, pose:SerializableTransform) => void
 +}
- export function PropertyPanel(props: Props) {
+@@ -38,141 +20,4 @@
 -  const { project, validation } = props;
 -  const [tab, setTab] = useState<'props' | 'validation' | 'info'>('props');
 -
@@ -1387,52 +1306,24 @@
 +    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
 +  </div>
 +}
- function PieceProps(props: Props) {
+@@ -180 +25 @@
 -  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onAddPieceToStep, currentStepId, onSetPieceTransform } = props;
 +  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onSetPieceTransform } = props;
-   const piece = project.pieces.find((p) => p.id === (selection as any).id);
-   const [posDraft, setPosDraft] = useState<{ x: string; y: string; z: string } | null>(null);
-   const [rotDraft, setRotDraft] = useState<{ x: string; y: string; z: string } | null>(null);
-@@ -204,8 +49,8 @@
-   ];
- 
-   // 编辑中的草稿值优先显示
+@@ -207,2 +52,2 @@
 -  const posDisplay = posDraft ?? { x: curPos[0].toFixed(2), y: curPos[1].toFixed(2), z: curPos[2].toFixed(2) };
 -  const rotDisplay = rotDraft ?? { x: curRotDeg[0].toFixed(0), y: curRotDeg[1].toFixed(0), z: curRotDeg[2].toFixed(0) };
 +  const posDisplay = posDraft ?? { x: String(curPos[0]), y: String(curPos[1]), z: String(curPos[2]) };
 +  const rotDisplay = rotDraft ?? { x: String(curRotDeg[0]), y: String(curRotDeg[1]), z: String(curRotDeg[2]) };
- 
-   // 提交位置(回车或失焦时)
-   const commitPosition = () => {
-@@ -302,6 +147,7 @@
-                 <label htmlFor={fid} className="text-[10px] text-gray-400">{axis.toUpperCase()}</label>
-                 <input
-                   id={fid}
+@@ -304,0 +150 @@
 +                  aria-label={`3D 位置 ${axis.toUpperCase()}`}
-                   type="number"
-                   step={0.1}
-                   value={posDisplay[axis]}
-@@ -329,6 +175,7 @@
-                 <label htmlFor={fid} className="text-[10px] text-gray-400">{axis.toUpperCase()}</label>
-                 <input
-                   id={fid}
+@@ -331,0 +178 @@
 +                  aria-label={`3D 旋转 ${axis.toUpperCase()}`}
-                   type="number"
-                   step={15}
-                   value={rotDisplay[axis]}
-@@ -350,37 +197,24 @@
-           <button onClick={() => rotateBy('z', -15)} className="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-50" title="B">Z -15°</button>
-         </div>
-       </fieldset>
+@@ -353,4 +199,0 @@
 -      <div className="text-xs">
 -        <span className="text-gray-500">根零件:</span>
 -        <span className="ml-1">{piece.isRoot ? '是' : '否'}</span>
 -      </div>
-       <div className="flex gap-2 pt-2 border-t">
-         <button onClick={onDuplicatePiece} className="text-xs px-2 py-1 border rounded hover:bg-gray-50">复制</button>
-         <button onClick={onDeleteSelected} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">删除</button>
-       </div>
- 
+@@ -362,10 +205 @@
 -      {currentStepId !== null && (
 -        <div className="pt-2 border-t">
 -          <button
@@ -1444,53 +1335,27 @@
 -        </div>
 -      )}
 +
-     </div>
-   );
- }
- 
- function ConnectionProps(props: Props) {
+@@ -377 +211 @@
 -  const { project, selection, onUpdateConnection, onPreviewConnection, onEndPreviewConnection, onRemoveConnection } = props;
 +  const { project, selection, onUpdateConnection, onRemoveConnection } = props;
-   const idx = (selection as any).index as number;
-   const conn = project.connections[idx];
-   const dihedralId = useMemo(() => nextFieldId(), []);
-   const flipId = useMemo(() => nextFieldId(), []);
- 
+@@ -383 +217 @@
 -  // 本地预览值：拖动滑块时实时显示数值并实时更新3D（不入栈），释放时一次性提交历史
 +  // 本地输入值；明确应用后只更新约束，Pose 由独立的显式求解操作修改。
-   const [localDihedral, setLocalDihedral] = useState(conn?.dihedralDeg ?? 0);
-   // 外部变化（undo/redo/预设按钮）时同步 local state
-   useEffect(() => {
-@@ -399,20 +233,21 @@
-         <label htmlFor={dihedralId} className="text-xs text-gray-500">二面角(deg): {localDihedral}</label>
-         <input
-           id={dihedralId}
+@@ -402 +236 @@
 -          type="range"
 +          type="number"
-           min={-180}
-           max={180}
+@@ -405 +239 @@
 -          step={5}
 +          step={1}
-           value={localDihedral}
-           onChange={(e) => {
-             const v = Number(e.target.value);
-             setLocalDihedral(v);
+@@ -410 +244 @@
 -            onPreviewConnection(idx, { dihedralDeg: v });
 +
-           }}
+@@ -412 +246 @@
 -          onPointerUp={() => onEndPreviewConnection()}
 +
-           className="w-full"
-           aria-valuetext={`${localDihedral} 度`}
-         />
+@@ -415,0 +250 @@
 +        <button onClick={() => onUpdateConnection(idx, { dihedralDeg: localDihedral })}>应用约束角度</button>
-         <div className="flex gap-1 mt-1" role="group" aria-label="二面角预设">
-           {[0, 45, 90, -90, 135, 180].map((d) => (
-             <button
-@@ -450,308 +285,3 @@
-   );
- }
- 
+@@ -453,305 +287,0 @@
 -function StepProps(props: Props) {
 -  const { project, selection, onUpdateStep } = props;
 -  const stepId = (selection as any).id as number;

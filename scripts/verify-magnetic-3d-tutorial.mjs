@@ -75,7 +75,7 @@ try {
  await button('教程 Undo').click();assert.deepEqual(await exported(),authored)
  await page.reload();await button('3D').click();await ready();assert.deepEqual(await exported(),authored)
  // Source changes must never rebind the tutorial. Saved Assembly Draft stays independent.
- await page.locator('[data-stage="assembly"]').click();await button('3D').click();await page.locator('[data-3d-example="closed-cube"]').click()
+ await page.locator('[data-stage="assembly"]').click();await button('3D').click();await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click()
  await button('从当前作品创建 Draft').click();await button('保存 3D Draft').click()
  await build();assert.match(await page.locator('.magnetic-tutorial-warning').filter({hasText:'与当前 Assembly 不同'}).textContent(),/与当前 Assembly 不同/)
  assert.deepEqual(await exported(),authored)

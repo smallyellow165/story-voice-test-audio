@@ -45,3 +45,20 @@
 .magnetic-3d-inspector [role=alert]{color:#a12626;overflow-wrap:anywhere}
 .magnetic-3d-save-notice{overflow-wrap:anywhere}
 @media(max-width:760px){.magnetic-3d-editor-canvas{height:55vh;min-height:320px}}
+/* Assembly-only compact controls; the Studio mode/navigation stays shared. */
+.studio[data-active-stage=assembly][data-view-mode="3d"] .studio-workspace>.studio-column-heading{display:none}
+.magnetic-3d-toolbar{display:grid;gap:6px;margin-bottom:8px;min-width:0}
+.magnetic-3d-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.magnetic-3d-toolbar-title{display:flex;align-items:center;gap:8px;min-width:0}
+.magnetic-3d-toolbar-title h2{margin:0;font-size:18px;white-space:nowrap}
+.magnetic-3d-toolbar-title .hint{margin:0;font-size:11px;white-space:nowrap}
+.magnetic-3d-toolbar .magnetic-3d-edit-toggle{margin:0;gap:4px;flex-wrap:nowrap}
+.magnetic-3d-toolbar button,.magnetic-3d-snap-switch select{font-size:12px;padding:7px 9px}
+.magnetic-3d-toolbar .magnetic-3d-summary{margin:0;font-size:12px;color:inherit;overflow-wrap:anywhere}
+.magnetic-3d-blocker{color:#a12626}
+.magnetic-3d-snap-switch{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:12px}
+.magnetic-3d-snap-preview{border:1px solid #b9cdc3;padding:10px;margin:8px 0;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
+.magnetic-3d-snap-preview h4{margin:0}.magnetic-3d-snap-preview button{margin-right:5px}
+.magnetic-3d-examples-debug{margin-top:12px;font-size:12px}.magnetic-3d-examples-debug summary{cursor:pointer;font-weight:600}
+@media(max-width:1150px){.magnetic-3d-toolbar-title .hint{display:none}.magnetic-3d-toolbar-title h2{font-size:15px}.magnetic-3d-toolbar button{padding:6px}}
+@media(max-width:760px){.studio[data-active-stage=assembly][data-view-mode="3d"] .studio-workspace>.studio-column-heading{display:flex;justify-content:flex-end;margin-bottom:4px;padding:0;position:static}.magnetic-3d-toolbar-row{flex-wrap:wrap}.magnetic-3d-toolbar-title h2{font-size:16px}}

@@ -8,6 +8,7 @@ import { profileKey3D } from './profile-adapter.ts'
 import { PropertyPanel } from './vendor/components/editor/PropertyPanel.tsx'
 import { findCompatibleTargets, isPortOccupied, portsCompatible } from './vendor/editor/snap.ts'
 import type { Connection } from './vendor/engine/types.ts'
+import {disconnectPieceForSnap} from './editor-snap.ts'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
 
 type Props = {
@@ -15,12 +16,15 @@ type Props = {
   ownPort: string; setOwnPort: (id: string) => void
   apply: (action: (h: EditorHistory) => EditorHistory) => void
   select: (s: Selection) => void; busy: boolean; tool: ToolMode; setTool: (tool: ToolMode) => void
+  onPreviewSnap:(connection:Connection)=>void;snapSettings:{dihedralDeg:number;flip:boolean};setSnapSettings:(settings:{dihedralDeg:number;flip:boolean})=>void
 }
-export function EditorInspector({ assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, tool, setTool }: Props) {
+export function EditorInspector({ assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, tool, setTool,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
   const [thickness, setThickness] = useState('.05'), [color, setColor] = useState('#55b8ac')
   const [baseId, setBaseId] = useState(''), [basePort, setBasePort] = useState('e0-p0')
-  const [angle, setAngle] = useState('90'), [flip, setFlip] = useState(false)
+  const [angle,setAngleText]=useState(()=>Number.isFinite(snapSettings.dihedralDeg)?String(snapSettings.dihedralDeg):'')
+  const flip=snapSettings.flip
+  const setAngle=(angle:string)=>{setAngleText(angle);setSnapSettings({...snapSettings,dihedralDeg:angle.trim()?Number(angle):NaN})},setFlip=(flip:boolean)=>setSnapSettings({...snapSettings,flip})
   const selectedId = selection.kind === 'piece' ? selection.id : ''
   const piece = assembly.pieces.find(p => p.id === selectedId)
   const ownShape = piece ? project.shapes.get(profileKey3D({ id: piece.profileId, version: piece.profileVersion })) : undefined
@@ -55,7 +59,7 @@ export function EditorInspector({ assembly, project, profiles, selection, ownPor
   return <fieldset className="magnetic-3d-edit-inspector" disabled={busy}>
     <legend>编辑操作</legend>
     <label>工具<select aria-label="3D 编辑工具" value={tool} onChange={e => setTool(e.target.value as ToolMode)}>
-      <option value="select">选择</option><option value="move">移动 Gizmo</option><option value="rotate">旋转 Gizmo</option><option value="snap">磁吸拖动</option>
+      <option value="select">选择</option><option value="move">移动 Gizmo</option><option value="rotate">旋转 Gizmo</option><option value="snap">拖动吸附（预览）</option>
     </select></label>
     <details open><summary>从 Tiles Catalog 添加</summary>
       <label>Profile<select aria-label="3D Catalog Profile" value={profileKey} onChange={e => setProfileKey(e.target.value)}>
@@ -79,7 +83,7 @@ export function EditorInspector({ assembly, project, profiles, selection, ownPor
         <p className="hint">明确修改此文档的 {selectedKey}，影响引用它的全部零件；不写入 Registry。</p>
         <button onClick={() => apply(h => actions.setProfileThicknessAction(h, selectedKey, Number(snapshotThickness)))}>应用快照厚度</button></details>
       <details open><summary>选择边并连接</summary>
-        <p>固定目标 A，连接选中零件 B。点击画布的蓝色边也可选择 B 端口。</p>
+        <p>固定目标 A，移动选中零件 B。先选择 B 的连接边，再点击 A 的兼容边或使用下方选项；预览后确认。</p>
         <label>B 端口<select aria-label="3D 自身端口 B" value={effectiveOwn?.portId ?? ''} onChange={e => setOwnPort(e.target.value)}>
           {ownShape?.ports.map(p => <option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select></label>
         <label>目标 A<select aria-label="3D 目标零件 A" value={base?.id ?? ''} onChange={e => setBaseId(e.target.value)}>
@@ -89,9 +93,10 @@ export function EditorInspector({ assembly, project, profiles, selection, ownPor
         <label>二面角<input aria-label="新连接二面角" type="number" min="-180" max="180" value={angle} onChange={e => setAngle(e.target.value)}/></label>
         <label><input aria-label="新连接 flip" type="checkbox" checked={flip} onChange={e => setFlip(e.target.checked)}/>flip · 反向端点</label>
         <p className="hint">当前 B 端口有 {compatible.length} 个空闲兼容目标。90° 常用 flip 关闭；相邻共面通常为 0°、flip 开启。</p>
-        <button disabled={!canSnap || !angle.trim()} onClick={() => apply(h => actions.createConnectionAction(h, connection(), true))}>吸附并建立连接</button>
+        <button disabled={!canSnap || !angle.trim()} onClick={() => onPreviewSnap(connection())}>预览吸附</button>
         <button disabled={!base || !effectiveOwn || !effectiveBase || !angle.trim()} onClick={() => apply(h => actions.createConnectionAction(h, connection(), false))}>仅建立约束（不移动）</button>
       </details>
+      <button disabled={!assembly.connections.some(c=>c.pieceA===piece.id||c.pieceB===piece.id)} onClick={()=>apply(h=>disconnectPieceForSnap(h,piece.id))}>解除选中零件全部连接（保留 Pose）</button>
       <button onClick={() => apply(h => actions.solveComponentAction(h, piece.id))}>显式求解（固定选中片）</button>
     </>}
     {selection.kind === 'connection' && <>

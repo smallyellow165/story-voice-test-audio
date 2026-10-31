@@ -34,7 +34,7 @@ try{
  async function saved(){const d=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await d).path(),'utf8'))}
  const checks=[]
  for(const [id,count,connections]of[['right-angle',2,1],['closed-cube',6,12],['mixed-profiles',3,1]]){
-  await page.locator(`[data-3d-example="${id}"]`).click()
+  await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator(`[data-3d-example="${id}"]`).click()
   assert.equal(await page.locator('[data-3d-piece]').count(),count)
   assert.match(await page.locator('.magnetic-3d-summary').textContent(),/几何校验通过/)
   const details=page.locator('.magnetic-3d-load');if(!await details.evaluate(e=>e.open))await details.locator('summary').click()
@@ -45,7 +45,7 @@ try{
   assert.deepEqual(JSON.parse(await page.locator('[data-3d-position]').getAttribute('data-3d-position')),selected.pose.position)
   await button('Fit to View').scrollIntoViewIfNeeded();await page.waitForTimeout(500);await page.screenshot({path:`${out}/${id}.png`});checks.push(id)
  }
- await page.locator('[data-3d-example="closed-cube"]').click();await canvasReady()
+ await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click();await canvasReady()
  const box=await canvas.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2
  await button('Reset Camera').click();await page.waitForTimeout(100);const initial=await camera();console.log('Camera initial',JSON.stringify(initial))
  await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+110,y+45,{steps:12});await page.mouse.up();await page.waitForTimeout(100)
@@ -67,7 +67,7 @@ try{
  fixture.id='loaded-snapshot';fixture.pieces[2].pose.position=[4.123,-.75,2.5];fixture.profiles[2].thickness=.123
  const importPath=out+'/loaded-snapshot.json';await writeFile(importPath,JSON.stringify(fixture))
  await page.getByLabel('打开 Assembly3D 文件',{exact:true}).setInputFiles(importPath)
- await page.waitForFunction(()=>document.querySelector('.magnetic-3d-heading p')?.textContent==='loaded-snapshot.json')
+ await page.waitForFunction(()=>document.querySelector('.magnetic-3d-toolbar-title .hint')?.title==='loaded-snapshot.json')
  await button('重新加载来源').click();assert.deepEqual(await saved(),fixture)
  await page.locator('[data-3d-piece="free-triangle-v2"]').click()
  assert.match(await page.locator('.magnetic-3d-piece-info').textContent(),/right-triangle@2/)
