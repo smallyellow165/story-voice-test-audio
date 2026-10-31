@@ -7,7 +7,7 @@ import {validateAssembly3D} from '../engine-adapter.ts'
 import {contentHash} from '../../build-plan.ts'
 export const PHOTO_ORIGIN_3D_KEY='magnetic-tiles.assembly3d-origin.v1'
 export type DraftGeometryReview3D={assemblyId:string;revision:number;assemblyHash:string;assemblyRaw:string;geometry:ReturnType<typeof validateAssembly3D>}
-export type PhotoOrigin3D={origin:Record<string,unknown>;assemblyRaw:string;cameraView?:CameraView3D;geometryReview?:DraftGeometryReview3D}
+export type PhotoOrigin3D={origin:Record<string,unknown>;assemblyRaw:string;cameraView?:CameraView3D;geometryReview?:DraftGeometryReview3D;symmetryFills?:{sourceIds:string[];addedIds:string[];plane:{normal:[number,number,number];offset:number};sourceRevision:number;addedRevision:number}[]}
 /** Existing Draft CAS remains authoritative. The optional sidecar binds exact bytes.
  * Preserve the previous provenance when an adoption fails before updating the Draft.
  */

@@ -69,6 +69,8 @@
     "test:magnetic-click-snap:browser": "node --experimental-strip-types scripts/verify-magnetic-click-snap.mjs",
     "test:magnetic-build-flow": "node --experimental-strip-types --test test/magnetic-build-flow.test.mjs",
     "test:magnetic-build-flow:browser": "node --experimental-strip-types scripts/verify-magnetic-build-flow.mjs",
+    "test:magnetic-symmetry-fill": "node --experimental-strip-types --test test/magnetic-symmetry-fill.test.mjs",
+    "test:magnetic-symmetry-fill:browser": "node --experimental-strip-types scripts/verify-magnetic-symmetry-fill.mjs",
     "test:magnetic-human-collision": "node --experimental-strip-types --test test/magnetic-human-collision.test.mjs",
     "test:magnetic-human-collision:browser": "node --experimental-strip-types scripts/verify-magnetic-human-collision.mjs",
     "test:magnetic-3d": "vitest run --config vitest.magnetic-3d.config.ts",

@@ -842,7 +842,7 @@
 +import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../../camera-view.ts'
 +import type {CameraView3D} from '../../../camera-view.ts'
 +// Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
-@@ -5,9 +8,13 @@
+@@ -5,9 +8,15 @@
 -import { MagnetColor } from '../../data/types';
 -import { getShapeDef } from '../../engine/shapes';
 -import { Connection, PieceTransform } from '../../engine/types';
@@ -865,7 +865,9 @@
 +import type {TileLabelElements} from '../../../AssemblyAnnotations.tsx';
 +import {CollisionOverlay,CollisionLabel} from '../../../CollisionOverlay.tsx';
 +import type {CollisionDisplayProps} from '../../../CollisionOverlay.tsx';
-@@ -24 +31,11 @@
++import {AssemblyPreviewOverlay} from '../../../AssemblyPreviewOverlay.tsx';
++import type {ViewerPiece} from '../../../viewer-model.ts';
+@@ -24 +33,12 @@
 -interface Props {
 +type SnapInteractionProps = CollisionDisplayProps & {
 +  showTileIds?:boolean;
@@ -877,46 +879,53 @@
 +  interactionLocked?:boolean;
 +};
 +interface Props extends SnapInteractionProps {
++  previewPieces?:ViewerPiece[];
 +  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
-@@ -29,0 +47 @@
+@@ -29,0 +50 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-@@ -55 +73 @@
+@@ -55 +76 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, focusRequest, fitRequest,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
-@@ -58 +76 @@
+@@ -58 +79 @@
 -  onViewChange,
-+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,
-@@ -59,0 +78,2 @@
-+  labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;
++  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,
+@@ -59,0 +81,2 @@
++  labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
 +  initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
-@@ -64,0 +85 @@
+@@ -64,0 +88 @@
 +  onSelectPort?: (pieceId: string, portId: string) => void;
-@@ -80 +101,2 @@
+@@ -80 +104,2 @@
 -}) {
 +} & SnapInteractionProps) {
 +  const solids = useRef<THREE.Group>(null);
-@@ -111 +133 @@
+@@ -111 +136 @@
 -    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: '' }, project)) {
 +    for (const t of findCompatibleTargets({ pieceId: selection.id, portId: snapSourcePort??'' }, project)) {
-@@ -115 +137 @@
+@@ -115,2 +140,3 @@
 -  }, [selection, project]);
+-
 +  }, [selection, project,snapSourcePort]);
-@@ -116,0 +139 @@
++
 +  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked;
-@@ -127,0 +151 @@
+@@ -127,0 +154 @@
 +  const displayedGhost=snapGhost?.tf??snapPreview,ghostPieceId=snapGhost?.pieceId??selectedPieceId;
-@@ -138 +162 @@
+@@ -138 +165 @@
 -      const shape = getShapeDef(part.shape);
 +      const shape = project.shapes.get(part.shape);
-@@ -170 +194 @@
+@@ -141,0 +169 @@
++    for(const p of previewPieces??[])out.push(...pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion));
+@@ -143 +171 @@
+-  }, [project.pieces, transforms, pieceMap, partMap]);
++  }, [project.pieces, transforms, pieceMap, partMap,previewPieces]);
+@@ -170 +198 @@
 -    const shape = getShapeDef(part.shape);
 +    const shape = project.shapes.get(part.shape);
-@@ -185,0 +210 @@
+@@ -185,0 +214 @@
 +  const restoredCamera=useRef(false)
-@@ -187 +212 @@
+@@ -187 +216 @@
 -  const lastFitProjectId = useRef<string>('');
 +  
-@@ -189,6 +214,9 @@
+@@ -189,6 +218,9 @@
 -    if (project.id !== lastFitProjectId.current) {
 -      lastFitProjectId.current = project.id;
 -      const t = setTimeout(() => fitAll(), 100);
@@ -932,31 +941,31 @@
 +    return () => clearTimeout(t);
 +  }, [project.id, !!project.pieces.length, size.width, size.height]);
 +  useEffect(() => () => disposeShapeResources([...project.shapes.values()]), [project.shapes]);
-@@ -277,2 +305,2 @@
+@@ -277,2 +309,2 @@
 -    const needDevWindow = import.meta.env.DEV;
 -    const needNotify = !!onViewChangeRef.current;
 +    const needDevWindow = false; // Do not leak global debug state into the host.
 +    const needNotify = !!onViewChangeRef.current||!!onCameraViewChange;
-@@ -294,0 +323 @@
+@@ -294,0 +327 @@
 +      if(camera instanceof THREE.OrthographicCamera&&controlsRef.current)onCameraViewChange?.(captureCameraView(camera,controlsRef.current));
-@@ -352,0 +382 @@
+@@ -352,0 +386 @@
 +      if (lockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
-@@ -354 +384 @@
+@@ -354 +388 @@
 -      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 +      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-@@ -421 +451 @@
+@@ -421 +455 @@
 -    if (!selectedPieceId || !transformControlsRef.current) return;
 +    if (interactionLocked || !dragStateRef.current || dragStateRef.current.committed || !selectedPieceId || !transformControlsRef.current) return;
-@@ -438 +468 @@
+@@ -438 +472 @@
 -      const candidate = findBestSnapCandidate(selectedPieceId, project, undefined, liveTf);
 +      const candidate = findBestSnapCandidate(selectedPieceId, project, snapCandidates, liveTf);
-@@ -443 +473 @@
+@@ -443 +477 @@
 -          const screenPos = worldToScreen(tf.position, camera, size);
 +          const screenPos = worldToScreen(obj.position, camera, size);
-@@ -459 +489 @@
+@@ -459 +493 @@
 -  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece]);
 +  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked]);
-@@ -470,21 +500,9 @@
+@@ -470,21 +504,9 @@
 -    // 磁吸模式:如果有吸附预览,提交吸附结果并创建连接
 -    if (toolMode === 'snap' && snapPreview && selectedPieceId) {
 -      // P0-三.1: 使用 dummyObj 的实时变换计算候选
@@ -987,19 +996,22 @@
 +      if(candidate&&close){if(onSnapProposal)onSnapProposal(candidate.connection);else onCreateConnection(candidate.connection)}
 +      else onMovePieceCancel?.();
 +      return;
-@@ -504 +522 @@
+@@ -504,3 +526,3 @@
 -  }, [toolMode, snapPreview, selectedPieceId, project, onMovePieceCommit, onCreateConnection]);
-+  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
-@@ -506 +524 @@
+-
 -  // 监听 pointercancel / lostpointercapture
++  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
++
 +  // Cancellation is rollback, never an implicit mouse-up/connection commit.
-@@ -508,6 +526,7 @@
+@@ -508,8 +530,12 @@
 -    const cancel = () => onTransformMouseUp();
 -    window.addEventListener('pointercancel', cancel);
 -    window.addEventListener('lostpointercapture', cancel);
 -    return () => {
 -      window.removeEventListener('pointercancel', cancel);
 -      window.removeEventListener('lostpointercapture', cancel);
+-    };
+-  }, [onTransformMouseUp]);
 +    const cancel=()=>{
 +      const drag=dragStateRef.current;
 +      if(!drag&&!keyboardDragStateRef.current)return;
@@ -1007,84 +1019,85 @@
 +      if(drag)drag.committed=true;dragStateRef.current=null;keyboardDragStateRef.current=null;
 +      if(keyboardCommitTimerRef.current)clearTimeout(keyboardCommitTimerRef.current);keyboardCommitTimerRef.current=null;
 +      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;onMovePieceCancel?.();
-@@ -515 +534,4 @@
--  }, [onTransformMouseUp]);
++    };
 +    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel()};
 +    window.addEventListener('pointercancel',cancel);window.addEventListener('lostpointercapture',cancel);window.addEventListener('keydown',key);
 +    return()=>{window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
 +  },[onMovePieceCancel]);
-@@ -532,0 +555,5 @@
+@@ -532,0 +559,5 @@
 +  useEffect(() => () => {
 +    if (keyboardCommitTimerRef.current) clearTimeout(keyboardCommitTimerRef.current);
 +    document.body.style.cursor = 'default';
 +  }, []);
 +
-@@ -542,0 +570,4 @@
+@@ -542,0 +574,4 @@
 +  const annotationPieces=project.pieces.flatMap(p=>{const shape=project.shapes.get(partMap[p.partId]?.shape),transform=transforms[p.id];return shape&&transform?[{id:p.id,shape,transform}]:[]});
 +  const selectedConnection=selection.kind==='connection'?project.connections[selection.index]:undefined;
 +  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selectedPieceId?[selectedPieceId]:[];
 +
-@@ -551 +582 @@
+@@ -551 +586 @@
 -      <SceneLighting shadowScale={20} shadowOpacity={0.3}>
 +      <SceneLighting shadowScale={20} shadowOpacity={0}>
-@@ -560 +591 @@
+@@ -560 +595 @@
 -        {project.pieces.map((piece) => {
 +        <group ref={solids}>{project.pieces.map((piece) => {
-@@ -564 +595 @@
+@@ -564 +599 @@
 -          const shape = getShapeDef(part.shape);
 +          const shape = project.shapes.get(part.shape);
-@@ -566,2 +597,2 @@
+@@ -566,2 +601,2 @@
 -          const isSelected = selection.kind === 'piece' && selection.id === piece.id;
 -          const isDimmed = selection.kind === 'piece' && selection.id !== piece.id;
 +          const isSelected = selectedIds.includes(piece.id);
 +          const isDimmed = !!collision&&!isSelected;
-@@ -569 +600 @@
+@@ -569 +604 @@
 -          const isSnapGhost = snapPreview !== null && piece.id === selectedPieceId;
 +          const isSnapGhost = !!displayedGhost && piece.id === ghostPieceId;
-@@ -571,2 +602 @@
+@@ -571,2 +606 @@
 -            <MagnetPieceMesh
 -              key={piece.id}
 +            <group key={piece.id} userData={{tileId:piece.id}}><MagnetPieceMesh
-@@ -574 +604 @@
+@@ -574 +608 @@
 -              transform={isSnapGhost ? { position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) } : tf}
 +              transform={tf}
-@@ -578,2 +608,2 @@
+@@ -578,2 +612,2 @@
 -              dimmed={isDimmed}
 -              opacity={isSnapGhost ? 0.4 : 1}
 +              dimmed={isDimmed} inspectionMuted={isDimmed}
 +              opacity={isSnapGhost ? 0.4 : isDimmed ? .14 : 1}
-@@ -582 +612 @@
+@@ -582 +616 @@
 -                onSelectPiece(piece.id);
 +                if(e.delta<=3)onSelectPiece(piece.id);
-@@ -586 +616 @@
+@@ -586 +620 @@
 -            />
 +            /></group>
-@@ -588 +618,3 @@
+@@ -588,2 +622,6 @@
 -        })}
+-
 +        })}</group>
++        {previewPieces&&<AssemblyPreviewOverlay pieces={previewPieces}/>}
 +        <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
-+        {(showTileIds||collision)&&<AssemblyTileLabels pieces={annotationPieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
-@@ -589,0 +622 @@
++        {(showTileIds||collision)&&<AssemblyTileLabels pieces={[...annotationPieces,...(previewPieces??[])]} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
++
 +        <CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/>
-@@ -591,2 +624,2 @@
+@@ -591,2 +629,2 @@
 -        {snapPreview && selectedPieceId && (() => {
 -          const piece = pieceMap[selectedPieceId];
 +        {displayedGhost && ghostPieceId && (() => {
 +          const piece = pieceMap[ghostPieceId];
-@@ -594 +627 @@
+@@ -594 +632 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-@@ -599 +632 @@
+@@ -599 +637 @@
 -              transform={{ position: new THREE.Vector3(snapPreview.position[0], snapPreview.position[1], snapPreview.position[2]), quaternion: new THREE.Quaternion(snapPreview.quaternion[0], snapPreview.quaternion[1], snapPreview.quaternion[2], snapPreview.quaternion[3]) }}
 +              transform={{ position: new THREE.Vector3(...displayedGhost.position), quaternion: new THREE.Quaternion(...displayedGhost.quaternion) }}
-@@ -610 +643 @@
+@@ -610 +648 @@
 -          const shape = part ? getShapeDef(part.shape) : null;
 +          const shape = part ? project.shapes.get(part.shape) : null;
-@@ -621 +654,2 @@
+@@ -621 +659,2 @@
 -              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4} />
 +              <Line key={port.portId} points={[p0, p1]} color={color} lineWidth={4}
 +                onClick={e => { e.stopPropagation(); onSelectPort?.(selection.id, port.portId); }}/>
-@@ -625,0 +660,8 @@
+@@ -625,0 +665,8 @@
 +        {showSnapTargets&&selection.kind==='piece'&&project.pieces.filter(p=>p.id!==selection.id).flatMap(piece=>{
 +          const shape=project.shapes.get(partMap[piece.partId]?.shape),tf=transforms[piece.id];if(!shape||!tf)return [];
 +          return shape.ports.filter(p=>compatibleTargets.has(`${piece.id}:${p.portId}`)).map(port=>{
@@ -1093,69 +1106,71 @@
 +          });
 +        })}
 +
-@@ -627 +669 @@
+@@ -627 +674 @@
 -        {project.connections.map((conn, idx) => {
 +        {!collision&&project.connections.map((conn, idx) => {
-@@ -637 +679 @@
+@@ -637 +684 @@
 -                color={isSelected ? '#f59e0b' : '#94a3b8'}
 +                color={isSelected ? '#153f39' : '#94a3b8'}
-@@ -644 +686 @@
+@@ -644 +691 @@
 -                <meshBasicMaterial color={isSelected ? '#f59e0b' : '#64748b'} transparent opacity={0.6} />
 +                <meshBasicMaterial color={isSelected ? '#153f39' : '#64748b'} transparent opacity={0.6} />
-@@ -655,2 +697,3 @@
+@@ -655,2 +702,3 @@
 -        minDistance={2}
 -        maxDistance={30}
 +        enableDamping={false}
 +        minZoom={.01}
 +        maxZoom={100000}
-@@ -660 +703 @@
+@@ -660 +708 @@
 -      {selectedPieceId && toolMode !== 'select' && (
 +      {!interactionLocked && selectedPieceId && toolMode !== 'select' && (
-@@ -666 +708,0 @@
+@@ -666 +713,0 @@
 -          onObjectChange={onTransformObjectChange}
-@@ -701 +743 @@
+@@ -701 +748 @@
 -  project, selection, toolMode, onSelectPiece, onSelectConnection, onClearSelection,
 +  project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
-@@ -703 +745 @@
+@@ -703 +750 @@
 -  liveTransformOverride, getCurrentViewRef, onViewChange,
-+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,
-@@ -704,0 +747,4 @@
++  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,
+@@ -704,0 +752,4 @@
 +  const labelElements=useRef(new Map<string,HTMLSpanElement>());
 +  const collisionLabel=useRef<HTMLOutputElement>(null);
 +  const c=selection.kind==='connection'?project.connections[selection.index]:undefined;
 +  const selectedIds=collision?collision.evidence.pieceIds:c?[c.pieceA,c.pieceB]:selection.kind==='piece'?[selection.id]:[];
-@@ -716 +762 @@
+@@ -716 +767 @@
 -    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
 +    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" tabIndex={0} role="region" aria-label="3D 编辑画布">
-@@ -719 +765 @@
+@@ -719 +770 @@
 -        camera={{ position: [5, 5, 5], zoom: 50, near: 0.1, far: 100 }}
 +        camera={{ position: [5, 5, 5], zoom: 50, near: 0.001, far: 100 }}
-@@ -727 +773 @@
+@@ -727 +778 @@
 -          project={project}
-+          project={project} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
-@@ -731,0 +778 @@
++          project={project} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+@@ -731,0 +783 @@
 +          onSelectPort={onSelectPort}
-@@ -746 +793 @@
+@@ -746 +798 @@
 -          onViewChange={onViewChange}
 +          onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
-@@ -748,0 +796,2 @@
-+      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:project.pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
-+      <CollisionLabel collision={collision} label={collisionLabel}/>
-@@ -750,2 +799,2 @@
+@@ -749,3 +801,6 @@
+-
 -      {/* 右下角按钮组 */}
 -      <div className="absolute bottom-3 right-3 flex flex-col gap-2">
++      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]} previewIds={previewPieces?.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
++      {previewPieces&&<output className="hint magnetic-symmetry-overlay-evidence" data-symmetry-preview-ids={JSON.stringify(previewPieces.map(p=>p.id))}>灰色半透明为对称候选 · 非照片证据</output>}
++      <CollisionLabel collision={collision} label={collisionLabel}/>
++
 +      {/* Host-scoped layout; upstream Tailwind is not installed. */}
 +      <div className="magnetic-3d-editor-camera-tools">
-@@ -756 +805 @@
+@@ -756 +811 @@
 -          aria-label="全部入镜"
 +          aria-label="Fit to View"
-@@ -777 +826 @@
+@@ -777 +832 @@
 -          aria-label="重置视角"
 +          aria-label="Reset Camera"
-@@ -786 +835 @@
+@@ -786 +841 @@
 -      <div className="absolute top-3 right-3 flex gap-1">
 +      <div className="magnetic-3d-editor-view-tools">
-@@ -802,2 +851,2 @@
+@@ -802,2 +857,2 @@
 -      <div className="absolute bottom-3 left-3 text-xs text-gray-500 pointer-events-none space-y-0.5">
 -        <div>左键:选中 · {toolMode === 'rotate' ? 'Gizmo 旋转' : toolMode === 'move' ? 'Gizmo 移动' : '拖零件移动'} · 右键:旋转视角 · 滚轮:缩放</div>
 +      <div className="magnetic-3d-editor-help">

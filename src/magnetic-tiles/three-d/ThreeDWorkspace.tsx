@@ -21,12 +21,15 @@ import {hasHumanReview} from './human-collision-client.ts'
 import {collisionReviewPolicy,collisionErrorKey} from './human-collision-policy.ts'
 import {collisionVisual,collisionPairKey,collisionLocality} from './collision-visual.ts'
 import type {CollisionFocus} from './CollisionOverlay.tsx'
+import {SymmetryFillPanel} from './SymmetryFillPanel.tsx'
+import {confirmSymmetryFill} from './symmetry-fill.ts'
+import type {SymmetryFillPreview} from './symmetry-fill.ts'
 import {AssemblySelectionTable} from './AssemblySelectionTable.tsx'
 import { EditorInspector } from './EditorInspector.tsx'
 import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
 import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
-import {adoptReconstructionDraft,loadPhotoOrigin,photoDraftGeometryGate,revalidatePhotoDraft} from './reconstruction/adopt-draft.ts'
+import {PHOTO_ORIGIN_3D_KEY,adoptReconstructionDraft,loadPhotoOrigin,photoDraftGeometryGate,revalidatePhotoDraft} from './reconstruction/adopt-draft.ts'
 import {previewEdgeSnap,confirmEdgeSnap} from './editor-snap.ts'
 import type {EdgeSnapPreview} from './editor-snap.ts'
 import type {Connection} from './vendor/engine/types.ts'
@@ -63,6 +66,8 @@ export default function ThreeDWorkspace() {
   const [editing, setEditing] = useState(false), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
   const [pendingSnap,setPendingSnap]=useState<EdgeSnapPreview|null>(null)
+  const [symmetryOpen,setSymmetryOpen]=useState(false),[symmetrySources,setSymmetrySources]=useState<string[]>([]),[symmetryPreview,setSymmetryPreview]=useState<SymmetryFillPreview|null>(null)
+  const symmetryPieces=useMemo(()=>symmetryPreview?createViewerModel(symmetryPreview.assembly).filter(p=>symmetryPreview.addedIds.includes(p.id)):undefined,[symmetryPreview])
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
@@ -81,14 +86,14 @@ export default function ThreeDWorkspace() {
   },[adoption3D])
   const current = history.current
   const humanReview=useHumanCollisionReview(current,active,true)
-  const operationBusy=!!live||!!pendingSnap
+  const operationBusy=!!live||!!pendingSnap||!!symmetryPreview
   const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const snapshotKey=useMemo(()=>`${loaded.sequence}:${serializeAssembly3D(assembly)}`,[loaded.sequence,assembly])
   const selected = selection.kind === 'piece' ? selection.id : null
-  const setSelected = (id: string | null) => { if (!live&&!pendingSnap) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
+  const setSelected = (id: string | null) => { if (!operationBusy) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
   const items = useMemo(() => createViewerModel(assembly), [assembly])
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const geometryGate=useMemo(()=>photoDraftGeometryGate(assembly,photoOrigin,validation),[assembly,photoOrigin,validation])
@@ -112,14 +117,14 @@ export default function ThreeDWorkspace() {
   const catalog = useMemo(() => createShapeCatalog(current.profiles), [profileSignature])
   const shapes = useMemo(() => new Map([...catalog].map(([key, item]) => [key, item.shape])), [catalog])
   const project = useMemo(() => ({ ...editorProject(current, catalog), shapes }), [current, catalog, shapes])
-  function accept(next: EditorHistory) { if(next.current.id===historyRef.current.current.id&&canonical(next.current)!==canonical(historyRef.current.current))humanReview.noteMutation(next.current);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { setSymmetryPreview(null);setSymmetryOpen(false);setSymmetrySources([]); if(next.current.id===historyRef.current.current.id&&canonical(next.current)!==canonical(historyRef.current.current))humanReview.noteMutation(next.current);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
   }
-  useEffect(() => { if (!active){setLive(null);setPendingSnap(null);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null)} }, [active])
+  useEffect(() => { if (!active){setSymmetryPreview(null);setSymmetryOpen(false);setLive(null);setPendingSnap(null);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null)} }, [active])
   useEffect(()=>{if(selection.kind==='collision'&&!selectedCollision){setSelection({kind:'none'});setCollisionFocus(null)}},[selection,selectedCollision])
-  useEffect(()=>{const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){setPendingSnap(null);setLive(null)}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[])
+  useEffect(()=>{const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){setSymmetryPreview(null);setPendingSnap(null);setLive(null)}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[])
   useEffect(() => {
     if (selection.kind === 'piece' && !current.pieces.some(p => p.id === selection.id) || selection.kind === 'connection' && !current.connections[selection.index]) setSelection({ kind: 'none' })
   }, [current, selection])
@@ -138,6 +143,23 @@ export default function ThreeDWorkspace() {
   function confirmSnap(){
     if(!pendingSnap)return;
     try{accept(confirmEdgeSnap(historyRef.current,pendingSnap));setError('');setSaveNotice('吸附已确认：仅更新源零件 Pose 和真实连接；仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
+  }
+  function confirmFill(){
+    if(!symmetryPreview||!editing)return
+    let prior:string|null=null,written:string|null=null
+    try{
+      const next=confirmSymmetryFill(historyRef.current,symmetryPreview)
+      // Reuse the existing photo-origin sidecar for hypothesis provenance only.
+      // The immutable origin and Assembly schema remain unchanged.
+      let origin=photoOrigin
+      if(origin&&JSON.parse(origin.assemblyRaw).id===current.id){
+        prior=localStorage.getItem(PHOTO_ORIGIN_3D_KEY)
+        if(canonical(loadPhotoOrigin(localStorage))!==canonical(origin))throw Error('照片来源已被其他页面更新，未加入补全')
+        origin={...origin,symmetryFills:[...(origin.symmetryFills??[]),{sourceIds:symmetryPreview.request.sourceIds,addedIds:symmetryPreview.addedIds,plane:symmetryPreview.request.plane,sourceRevision:current.revision,addedRevision:next.current.revision}]}
+        written=JSON.stringify(origin);localStorage.setItem(PHOTO_ORIGIN_3D_KEY,written)
+      }
+      accept(next);if(origin)setPhotoOrigin(origin);setSelection({kind:'none'});setError('');setSaveNotice('已加入对称假设零件及复核后的连接；原零件保持原位，新版本不继承人工批准。请重新验证 / 人工审核，并保存 Draft。')
+    }catch(e){if(written&&localStorage.getItem(PHOTO_ORIGIN_3D_KEY)===written){if(prior===null)localStorage.removeItem(PHOTO_ORIGIN_3D_KEY);else localStorage.setItem(PHOTO_ORIGIN_3D_KEY,prior)}setError(String(e))}
   }
   function allowReplace() { return !dirty || confirm('当前 3D Draft 有未保存修改。确认替换？可先取消并导出或保存草稿。') }
   function startEdit() {
@@ -207,17 +229,17 @@ export default function ThreeDWorkspace() {
            <div className="magnetic-3d-edit-toggle" role="group" aria-label="3D View / Edit"><button disabled={operationBusy} aria-pressed={!editing} onClick={()=>{setLive(null);setEditing(false)}}>View</button><button disabled={operationBusy} aria-pressed={editing} onClick={startEdit}>{loaded.isDraft?'Edit Draft':'从当前作品创建 Draft'}</button><button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(loaded.source,loaded.name)}}>重新加载来源</button></div>
           </header>
           <div className="magnetic-3d-toolbar-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?geometryGate.repair&&!geometryGate.current?'几何预检查通过 · 尚未复验':'几何校验通过 · Geometry Valid':'Geometry Invalid'}</span>{loaded.isDraft&&<span> · {dirty?'未保存':'Draft'}</span>}</p>
-           <div className="magnetic-3d-display-tools"><label><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>{editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}</div>
+           <div className="magnetic-3d-display-tools"><label><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>{editing&&<button disabled={operationBusy} aria-expanded={symmetryOpen} onClick={()=>{setSymmetryOpen(v=>!v);setSymmetrySources([]);setSymmetryPreview(null);setSelection({kind:'none'})}}>对称补全</button>}{editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}</div>
           </div>
         </div>
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} selection={selection} toolMode={tool} showTileIds={showTileIds} collision={selectedCollision} collisionFocus={collisionFocus}
-          onSelectPiece={id => { if (!live&&!pendingSnap) setSelection({ kind: 'piece', id }) }}
-          onSelectConnection={index => { if (!live&&!pendingSnap) setSelection({ kind: 'connection', index }) }}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={project} previewPieces={symmetryPieces} selection={selection} toolMode={symmetryPreview?'select':tool} showTileIds={showTileIds} collision={selectedCollision} collisionFocus={collisionFocus}
+          onSelectPiece={id => { if (!operationBusy) setSelection({ kind: 'piece', id }) }}
+          onSelectConnection={index => { if (!operationBusy) setSelection({ kind: 'connection', index }) }}
           onSelectPort={(id,portId)=>{if(operationBusy)return;if(snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
-          onClearSelection={() => { if (!live&&!pendingSnap) setSelection({ kind: 'none' }) }} focusRequest={null} fitRequest={null}
+          onClearSelection={() => { if (!operationBusy) setSelection({ kind: 'none' }) }} focusRequest={null} fitRequest={null}
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
-          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={snapMode==='click'} interactionLocked={!!pendingSnap} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
+          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={snapMode==='click'} interactionLocked={!!pendingSnap||!!symmetryPreview} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
           cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
           : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
@@ -283,7 +305,8 @@ export default function ThreeDWorkspace() {
         </div>
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <div><p role="alert">{error.length>200?error.slice(0,200)+'…':error}</p>{error.length>200&&<details><summary>操作错误详情</summary><p>{error}</p></details>}</div>}
-        <AssemblySelectionTable collisionIds={selectedCollision?.evidence.pieceIds} assembly={assembly} selection={selection} select={setSelection} busy={operationBusy}/>
+        {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
+        <AssemblySelectionTable symmetrySources={editing&&symmetryOpen?symmetrySources:undefined} onSymmetrySource={(id,checked)=>{setSymmetryPreview(null);setSymmetrySources(ids=>checked?[...ids,id]:ids.filter(x=>x!==id))}} collisionIds={selectedCollision?.evidence.pieceIds} assembly={assembly} selection={selection} select={setSelection} busy={operationBusy}/>
         <EditorInspector editing={editing} selectionInfo={<>
         {selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
           <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className="magnetic-3d-blocker">Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
@@ -309,7 +332,7 @@ export default function ThreeDWorkspace() {
         </>} globalTools={<div className="button-row"><button disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button><button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button></div>}
           assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
           setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={operationBusy} tool={tool} setTool={next=>{setTool(next);if(next==='snap')setSnapMode('drag')}} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>
-        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源与快照</summary><p>Source {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</p><p>Geometry Valid 与照片匹配独立；来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre></details>}
+        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>照片来源与快照</summary><p>Source {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'采用时快照一致':'已编辑，原照片关联仅供追溯'}</p><p>Geometry Valid 与照片匹配独立；来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre>{!!photoOrigin.symmetryFills?.length&&<details><summary>编辑器对称假设来源（非照片观察）</summary><pre>{JSON.stringify(photoOrigin.symmetryFills,null,2)}</pre></details>}</details>}
         <details className="magnetic-3d-examples-debug"><summary>Examples / Debug</summary><p className="hint">开发示例；加载会替换当前查看内容，不属于正式 Tiles Catalog。当前来源：{loaded.name}</p><div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example=><button key={example.id} disabled={operationBusy} data-3d-example={example.id} aria-pressed={assembly.id===example.id} onClick={()=>{fileRequest.current++;load(JSON.stringify(example.data,null,2),example.name)}}>{example.name}</button>)}</div><p>{componentCount(assembly)} 个组件 · revision {assembly.revision}</p></details>
       </section>
     </StudioSlot>

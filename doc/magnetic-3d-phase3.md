@@ -116,3 +116,21 @@ Assembly3D 正式格式不变。Tutorial3D.source 仅增加可选 `humanCollisio
 - 用户从 Reconstruction Diagnostic 的既有 Override 进入六片待修复 Draft 后，在 Geometry Check 逐行查看并接受四项碰撞，点击“批准当前作品”。此时仍显示红色 Geometry Invalid 和 Human Approved；进入 Build 点击“生成搭建教程”，检查并保存。回 Assembly 修改 Pose 后旧接受项/批准必须立即失效；Revalidate 仍使用严格 Validator，再逐项审核。
 
 本版没有添加物理规则、自动通过碰撞、磁力、圆角或新的播放器。V1 服务端审核限制为 1–64 片、512 条连接、2 MB Assembly 快照；没有进行大规模性能或多用户角色测试。
+
+## Symmetry Fill V1（2026-10-31）
+
+Edit Draft 工具栏的“对称补全”打开 Inspector 工具，并给现有 Tiles & Connections 增加临时来源 Checkbox。勾选来源、确认平面、预览、确认加入；预览不改 Draft、不撤销已有批准，取消/Escape/离开页面不残留候选。Canvas 保持挂载，候选为真实 Profile/厚度/Pose 的中性半透明外形代理，复用 Tile ID 和 Fit/Reset。它不是照片观察，也不是碰撞放行。
+
+`three-d/symmetry-fill.ts` 的平面为世界 `n·x=d`。自动候选只在来源共面时提供：取来源面的法向、完整理想轮廓沿该方向投影的中心，随后检查未选框架能否按相同 Profile@Version、实体外形和厚度唯一地对称映射。不按实例名、颜色、世界上下或形状名称判断“前后”。这只是受约束的候选假设，必须人工确认。无法确定时可明确选参考 Tile 的局部 X/Y/Z 中心平面及法向偏移；仍需框架几何映射成立。V1 不提供自由 CAD 平面、不推测隐藏结构，不自动补任何其他面。
+
+镜像是 `M(x)=x−2n(n·x−d)`。Pose 使用基向量 `(M·Rx, M·Ry, −M·Rz)` 构造 determinant +1 的旋转；原局部 XY 顶点、Profile 和新片 Port 编号不变。世界法向为 `−M·Rz`，不能直接给 Quaternion 使用 determinant −1 的反射矩阵。当前薄片沿局部 Z 对称挤出、双面显示，因此翻转局部 Z 不改变镜像实体。原框架的反射端口则按实际端点重新查找，方向可能反转，不能沿用旧编号/flip。角度通过 A 原始 Port 轴与双方实际法向的 atan2 计算，并调用原 Solver 的连接变换精确复核。最终仍执行原严格 Validator 的连接、Port、闭环与实体碰撞检查。
+
+新增连接保留来源图的镜像约束，并检查额外的精确端点重合；端口长度必须兼容，端点和完整连接变换必须相符。同一端口多候选、占用冲突、缺少镜像端口、重复实体、结构错误或不连通均拒绝，不能静默覆盖原约束或伪造 Valid。最多 32 个来源、补全后 64 片、1024 个端口和 20000 次候选端口对检查，超预算原 Draft 保持不变。预览绑定原完整序列化快照；确认时重新计算，防止过期/被修改的预览注入数据。
+
+橙色六片的来源 tile2/3/4 给出前后中心平面（原存档约为世界 y=0，这只是本案例坐标结果），新增三个 `sourceID-sym-<hash>` 实例与五条连接：背面三角形内部两条、顶部一条、左右侧面各一条。新 ID 根据快照、平面和来源确定，确认前后及 Undo/Redo 保持一致。原六片 Pose/Profile/颜色、七条 Connection 原样保留，结果 9 片 / 12 条连接、一个组件、底部开放。Ideal Geometry Valid；Solid Collision Invalid，原四项及镜像四项交叠约 0.015，阈值未变。对缺一侧面的五正方形盒子，工具还能只补一片并复核四条连接，得到严格 Geometry Valid 的六面立方体。
+
+确认是原 Editor History 的一次 commit，Revision 增一，复用已有人工审核失效/服务端 CAS 同步。原六片批准不适用于九片，Undo 回六片也不恢复旧批准。九片可继续 Collision Visualization / Revalidate / 保存刷新；八项碰撞重新逐项接受并明确批准后，同一个 Build Order/Player 可生成九步教程。旧六步教程保留，不自动重绑或覆盖；用户需要明确重新生成。
+
+Assembly3D 格式不变。照片来源的原 `origin` 记录完全不改；已有本地照片来源 sidecar 可追加只读 `symmetryFills`（平面、来源/新增 ID、前后 Revision），在“照片来源与快照”折叠区查看。它只作编辑假设追溯，不授予权限或修改 Observation。和原照片来源一致，这份 sidecar 不包含在裸 Assembly3D JSON 中；无照片来源的作品仍可使用工具，但本版没有额外的通用来源档案。模型当前是双面、沿 Z 对称的薄片，不支持有单面装饰或非对称厚度实体的语义镜像。
+
+验证命令：`npm run test:magnetic-3d`（几何/版本/尺寸/任意刚体根位姿、重命名、重复/错误平面/缺失端口、不同作品、原位不变及原全部回归）；`npm run test:magnetic-symmetry-fill`（真实保存案例，六片批准失效、八项重审、九步生成及服务端正式教程保存）；`npm run test:magnetic-symmetry-fill:browser`（临时 API 复制既有来源，真实 Chrome/WebGL，预览三视图、旋转/Fit/Reset、取消/确认、Undo/Redo、保存刷新、九步教程及 1660/1100/680 布局）。浏览器证据在 `/tmp/magnetic-symmetry-browser/`；没有付费模型调用或正式记录写入。

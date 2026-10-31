@@ -18,6 +18,8 @@ import {AssemblyTileLabels,AssemblyConnectionHighlight,TileLabelLayer} from '../
 import type {TileLabelElements} from '../../../AssemblyAnnotations.tsx';
 import {CollisionOverlay,CollisionLabel} from '../../../CollisionOverlay.tsx';
 import type {CollisionDisplayProps} from '../../../CollisionOverlay.tsx';
+import {AssemblyPreviewOverlay} from '../../../AssemblyPreviewOverlay.tsx';
+import type {ViewerPiece} from '../../../viewer-model.ts';
 
 export type ToolMode = 'select' | 'move' | 'rotate' | 'snap';
 
@@ -38,6 +40,7 @@ type SnapInteractionProps = CollisionDisplayProps & {
   interactionLocked?:boolean;
 };
 interface Props extends SnapInteractionProps {
+  previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
@@ -73,9 +76,9 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,
 }: {
-  labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;
+  labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
   selection: Selection;
@@ -163,8 +166,9 @@ function SceneContent({
       if (!shape) continue;
       out.push(...pieceWorldVertices(shape, tf.position, tf.quaternion));
     }
+    for(const p of previewPieces??[])out.push(...pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion));
     return out;
-  }, [project.pieces, transforms, pieceMap, partMap]);
+  }, [project.pieces, transforms, pieceMap, partMap,previewPieces]);
 
   const fitAll = useCallback(() => {
     if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
@@ -616,8 +620,9 @@ function SceneContent({
             /></group>
           );
         })}</group>
+        {previewPieces&&<AssemblyPreviewOverlay pieces={previewPieces}/>}
         <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
-        {(showTileIds||collision)&&<AssemblyTileLabels pieces={annotationPieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
+        {(showTileIds||collision)&&<AssemblyTileLabels pieces={[...annotationPieces,...(previewPieces??[])]} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
 
         <CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/>
         {/* 吸附预览(半透明 ghost) */}
@@ -742,7 +747,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,
 }: Props) {
   const labelElements=useRef(new Map<string,HTMLSpanElement>());
   const collisionLabel=useRef<HTMLOutputElement>(null);
@@ -770,7 +775,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          project={project} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
@@ -793,7 +798,8 @@ export function EditorCanvas({
           onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
-      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:project.pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
+      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]} previewIds={previewPieces?.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
+      {previewPieces&&<output className="hint magnetic-symmetry-overlay-evidence" data-symmetry-preview-ids={JSON.stringify(previewPieces.map(p=>p.id))}>灰色半透明为对称候选 · 非照片证据</output>}
       <CollisionLabel collision={collision} label={collisionLabel}/>
 
       {/* Host-scoped layout; upstream Tailwind is not installed. */}
