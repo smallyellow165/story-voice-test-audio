@@ -21,13 +21,12 @@ try{
  assert.equal(await page.locator('.studio-inspector').getByLabel('输入类别',{exact:true}).count(),0)
  assert.deepEqual(await kind.locator('option').evaluateAll(es=>es.map(e=>e.value)),['unsupported','flat_photo','diagram'])
  const heading=page.locator('.studio-workspace').getByRole('heading',{name:'识别审核（Review）',exact:true})
- assert.equal(await heading.count(),1);assert.equal(await tools.locator('h3').count(),0);assert.ok(!(await tools.innerText()).includes('14/14'))
+ assert.equal(await heading.count(),0);assert.equal(await tools.locator('h3').count(),0);assert.ok((await tools.innerText()).includes('显示 14/14'))
  const centerY=async el=>{const b=await el.boundingBox();return b.y+b.height/2}
- for(const el of [save,status,tools.getByRole('button',{name:'新增零件',exact:true})])assert.ok(Math.abs(await centerY(el)-await centerY(heading))<2,'Review title and operations share the first row')
+ for(const el of [status,tools.getByRole('button',{name:'新增零件',exact:true})])assert.ok(Math.abs(await centerY(el)-await centerY(save))<2,'Review save and add operations share a compact row')
  const filters=tools.locator('.review-filters'),filterButtons=filters.getByRole('button')
- assert.ok(Math.abs(await centerY(kind)-await centerY(filterButtons.first()))<2,'category and filters share the second row')
- assert.ok((await kind.boundingBox()).x>=(await filters.boundingBox()).x+(await filters.boundingBox()).width,'category stays at the right end')
- assert.ok((await kind.boundingBox()).y>=(await save.boundingBox()).y+(await save.boundingBox()).height)
+ const toolbar=await tools.boundingBox();assert.ok(toolbar.height<160,'toolbar has no repeated heading or fixed extra rows')
+ for(const el of [kind,save,filterButtons.first()]){const b=await el.boundingBox();assert.ok(b.x>=toolbar.x&&b.x+b.width<=toolbar.x+toolbar.width+1&&b.y>=toolbar.y&&b.y+b.height<=toolbar.y+toolbar.height+1,'responsive controls fit the toolbar')}
  const hint=tools.getByRole('button',{name:'二维重建输入说明',exact:true})
  await hint.hover();assert.match(await page.getByRole('region',{name:'二维重建输入说明',exact:true}).innerText(),/保存审核快照.*输入类别与所有零件修改/)
  await page.mouse.move(800,40);await page.keyboard.press('Escape')
@@ -69,5 +68,5 @@ try{
  assert.deepEqual(await get('selected/'+sid),refs);assert.deepEqual(await get('reviews/'+original.id),original);assert.deepEqual(await get('analyses/'+analysis.id),analysis)
  assert.deepEqual(errors,[]);assert.deepEqual(paid,[]);assert.equal(posts.length,3)
  await writeFile(out+'/result.json',JSON.stringify({status:'PASS',savedReview:saved.id,protectedDraft:protectedDraft.id,reconstruction:reconstruction.id,savedUrl,selectedUnchanged:true,paidCalls:0},null,2))
- console.log('PASS: compact two-row Review toolbar; one Review title and no duplicate count; filters/category on one row; draggable narrow columns; no duplicate in Inspector; immediate unsaved feedback/no autosave; complete draft/category/color save; real Reconstruction consumes class; existing local and history draft protection; original unsupported/Selected unchanged; filters/matcher; copied URL/reload; 1024/430 layout. '+out)
+ console.log('PASS: compact wrapping Review toolbar; no repeated title; draggable narrow columns; no duplicate in Inspector; immediate unsaved feedback/no autosave; complete draft/category/color save; real Reconstruction consumes class; existing local and history draft protection; original unsupported/Selected unchanged; filters/matcher; copied URL/reload; 1024/430 layout. '+out)
 }finally{await browser.close()}

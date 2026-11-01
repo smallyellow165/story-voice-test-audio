@@ -104,7 +104,9 @@
     "test:magnetic-multi-image-color": "node --experimental-strip-types --test test/magnetic-multi-image-color.test.mjs",
     "replay:magnetic-multi-image-color": "node --experimental-strip-types scripts/replay-magnetic-color-contract.mjs",
     "test:magnetic-analysis-background": "node --experimental-strip-types --test test/magnetic-analysis-background.test.mjs",
-    "test:magnetic-analysis-background:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-background.mjs"
+    "test:magnetic-analysis-background:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-background.mjs",
+    "test:magnetic-review-evidence": "node --experimental-strip-types --test test/magnetic-review-display.test.mjs",
+    "test:magnetic-review-evidence:browser": "node --experimental-strip-types scripts/verify-magnetic-review-evidence.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

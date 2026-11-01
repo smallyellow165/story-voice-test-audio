@@ -40,8 +40,8 @@ try{
  async function participation(){return page.getByTestId('visible3d-planning-participation')}
  async function reviewProgress(confirmed,expected,pending,excluded){
   await stage(page,'review','workspace');const progress=page.getByTestId('review-confirmation-progress').filter({visible:true})
-  await progress.getByText(`当前审核：已确认 ${confirmed}/${expected} 个应审核实例`,{exact:true}).waitFor();assert.match(await progress.innerText(),new RegExp(`尚未确认 ${pending} 个`));assert.match(await progress.innerText(),new RegExp(`已排除 ${excluded} 个`));assert.equal(await progress.getAttribute('role'),confirmed===0?'alert':'status')
-  if(!confirmed)assert.match(await progress.innerText(),/无法执行 Spatial Planning/);else if(pending)assert.match(await progress.innerText(),/不会参与 Spatial Planning.*部分重建/s);else assert.match(await progress.innerText(),/全部应审核实例已确认/)
+  await progress.getByText(`已确认 ${confirmed}/${expected}`,{exact:true}).waitFor();assert.match(await progress.innerText(),new RegExp(`尚未确认 ${pending}`));assert.match(await progress.innerText(),new RegExp(`已排除 ${excluded}`));assert.equal(await progress.getAttribute('role'),confirmed===0?'alert':'status')
+  if(!confirmed)assert.match(await progress.innerText(),/无法执行 Spatial Planning/);else if(pending)assert.match(await progress.innerText(),/未确认实例不参与.*部分重建/s);else assert.match(await progress.innerText(),/全部应审核实例已确认/)
   const states=page.locator('.review-parts-table [data-confirmation-state]').filter({visible:true});assert.equal(await states.count(),expected+excluded)
   assert.equal(await states.filter({hasText:'等待人工确认'}).count(),pending)
   for(const mark of await states.all()){const pending=await mark.getAttribute('data-confirmation-state')==='pending';assert.equal(await mark.evaluate(e=>getComputedStyle(e).color),pending?'rgb(161, 38, 38)':'rgb(91, 109, 99)');assert.equal(await mark.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)')}
