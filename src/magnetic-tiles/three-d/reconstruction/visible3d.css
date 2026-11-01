@@ -115,3 +115,7 @@
 .review-module-controls>select{width:150px;max-width:40vw;margin:0;padding:4px;font-size:12px}.review-module-controls>button{margin:0;flex:none;white-space:nowrap}
 .review-module-notice{font-size:11px;overflow-wrap:anywhere}
 .review-module-cell{max-width:120px;overflow-wrap:anywhere}
+
+.reconstruction-scope-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:10px;font-size:12px}.reconstruction-scope-tools label,.reconstruction-evidence-browser{display:flex;gap:5px;align-items:center;margin:0}.reconstruction-scope-tools select{width:160px;padding:5px;font-size:12px}.reconstruction-evidence-browser select{width:170px;padding:5px;font-size:12px}.reconstruction-evidence-browser{font-size:12px;margin:5px 0}
+
+.visible3d-error-review{font-size:12px;min-width:0}.visible3d-error-review h4{margin:6px 0}.visible3d-error-table{width:100%;table-layout:fixed}.visible3d-error-table th:first-child{width:34%}.visible3d-error-table th:last-child{width:19%}.visible3d-error-table td{overflow-wrap:anywhere}.visible3d-error-table button{font-size:11px;padding:3px}.visible3d-error-table small{display:block}.visible3d-error-table tr{cursor:pointer}.visible3d-error-table tr[aria-selected=true]{background:#e3eee7}.visible3d-error-review p{margin:6px 0}

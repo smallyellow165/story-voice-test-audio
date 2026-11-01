@@ -1,3 +1,4 @@
+import {subsetVisibleInput} from '../src/magnetic-tiles/three-d/reconstruction/reconstruction-scope.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises'
@@ -34,7 +35,7 @@ test('saved zero-confirmation Review blocks the provider server-side; partial me
  const body={reviewId:r.record.id,requestId:randomUUID(),model:'gpt-4.1'},blocked=await workflow.dispatch('POST','plan',body)
  assert.equal(blocked.state,'failed');assert.match(blocked.error,/0\/2 个实例已确认/);assert.equal(calls.length,0);assert.equal(imageReads,0);assert.deepEqual(await workflow.dispatch('POST','plan',body),blocked,'existing request dedup remains intact')
  const partial=editReviewedPiece(none,none.pieces[0].id,{confirmed:true}),saved=await workflow.dispatch('POST','reviews',{analysisId:a.id,review:partial,expectedRevision:1}),result=await workflow.dispatch('POST','plan',{reviewId:saved.record.id,requestId:randomUUID(),model:'gpt-4.1'})
- assert.equal(result.usable,true);assert.equal(calls.length,1);assert.deepEqual(calls[0].input.geometryInput,saved.record.input);assert.deepEqual(result.record.plan.parts.map(p=>p.id),[partial.pieces[0].id]);assert.equal(calls[0].input.geometryInput.review.pieces[1].confirmed,false)
+ assert.equal(result.usable,true);assert.equal(calls.length,1);assert.deepEqual(calls[0].input.geometryInput,subsetVisibleInput(saved.record.input,[partial.pieces[0].id]));assert.deepEqual(result.record.plan.parts.map(p=>p.id),[partial.pieces[0].id]);assert.equal(calls[0].input.geometryInput.review.pieces.length,1);assert.equal(saved.record.input.review.pieces[1].confirmed,false,'stored full Review is unchanged')
  const stale=await workflow.dispatch('POST','plan',{reviewId:r.record.id,requestId:randomUUID(),model:'gpt-4.1'});assert.match(stale.error,/过期/);assert.equal(calls.length,1)
  const stored=(await workflow.dispatch('GET','reviews/'+saved.record.id)).record;assert.deepEqual(stored,saved.record);assert.deepEqual((await workflow.dispatch('GET','analyses/'+a.id)).analysis.evidence,f.evidence)
  const file=path.join(directory,'scoped/reviews',saved.record.id+'.json');await writeFile(file,JSON.stringify({...stored,sourceHash:'tampered'}));const bad=await workflow.dispatch('POST','plan',{reviewId:stored.id,requestId:randomUUID(),model:'gpt-4.1'});assert.match(bad.error,/Hash/);assert.equal(calls.length,1)

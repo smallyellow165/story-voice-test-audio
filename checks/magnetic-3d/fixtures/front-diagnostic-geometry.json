@@ -1,0 +1,712 @@
+{
+  "provenance": {
+    "executionId": "648f53a4-36b4-4b0e-a776-39e7cad0f467",
+    "executionHash": "800f0c8ae1ecb0ef9f13ee6a70a8d3e431081299f7408d8e45c4bfe5a33f1ec7",
+    "planId": "188d80ff-4281-4b00-a203-d50204329572",
+    "candidateId": "diagnostic-1",
+    "note": "Recorded read-only Front diagnostic; not a new model result."
+  },
+  "assembly": {
+    "kind": "magnetic-assembly-3d",
+    "schemaVersion": 1,
+    "id": "diagnostic-1",
+    "revision": 0,
+    "profiles": [
+      {
+        "profile": {
+          "id": "square",
+          "version": 1,
+          "name": "正方形",
+          "vertices": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ],
+          "connectableEdges": [
+            "e0",
+            "e1",
+            "e2",
+            "e3"
+          ]
+        },
+        "thickness": 0.06
+      },
+      {
+        "profile": {
+          "id": "equilateral-triangle",
+          "version": 1,
+          "name": "等边三角形",
+          "vertices": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              0.5,
+              0.8660254037844386
+            ]
+          ],
+          "connectableEdges": [
+            "e0",
+            "e1",
+            "e2"
+          ]
+        },
+        "thickness": 0.06
+      }
+    ],
+    "pieces": [
+      {
+        "id": "p15",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#DC5260",
+        "pose": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "quaternion": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "id": "p16",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#E45870",
+        "pose": {
+          "position": [
+            1,
+            0,
+            0
+          ],
+          "quaternion": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "id": "p17",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#419BCB",
+        "pose": {
+          "position": [
+            -0.5,
+            0,
+            -0.4999999999999999
+          ],
+          "quaternion": [
+            0.4999999999999999,
+            0.4999999999999999,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      {
+        "id": "p18",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#187BB8",
+        "pose": {
+          "position": [
+            1.5000000000000002,
+            -2.220446049250313e-16,
+            -0.4999999999999999
+          ],
+          "quaternion": [
+            0.4999999999999999,
+            0.4999999999999999,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      {
+        "id": "p19",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#247DBB",
+        "pose": {
+          "position": [
+            1.1102230246251565e-16,
+            -1.1102230246251565e-16,
+            -0.9999999999999996
+          ],
+          "quaternion": [
+            -1.232595164407831e-32,
+            -2.220446049250313e-16,
+            -1.1102230246251565e-16,
+            1
+          ]
+        }
+      },
+      {
+        "id": "p20",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#176EB0",
+        "pose": {
+          "position": [
+            1.0000000000000004,
+            -3.3306690738754696e-16,
+            -0.9999999999999996
+          ],
+          "quaternion": [
+            -1.232595164407831e-32,
+            -2.220446049250313e-16,
+            -1.1102230246251565e-16,
+            1
+          ]
+        }
+      },
+      {
+        "id": "p21",
+        "profileId": "square",
+        "profileVersion": 1,
+        "color": "#BF537F",
+        "pose": {
+          "position": [
+            0.5000000000000002,
+            -2.220446049250313e-16,
+            -0.4999999999999999
+          ],
+          "quaternion": [
+            0.4999999999999999,
+            0.4999999999999999,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      {
+        "id": "p22",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#E6BD56",
+        "pose": {
+          "position": [
+            0,
+            -0.49999999999999994,
+            -0.2886751345948128
+          ],
+          "quaternion": [
+            -0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
+          ]
+        }
+      },
+      {
+        "id": "p23",
+        "profileId": "equilateral-triangle",
+        "profileVersion": 1,
+        "color": "#DCC152",
+        "pose": {
+          "position": [
+            1,
+            -0.49999999999999994,
+            -0.2886751345948128
+          ],
+          "quaternion": [
+            -0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "pieceA": "p15",
+        "pieceB": "p16",
+        "portA": "e1-p0",
+        "portB": "e3-p0",
+        "dihedralDeg": 0,
+        "flip": true
+      },
+      {
+        "pieceA": "p15",
+        "pieceB": "p17",
+        "portA": "e3-p0",
+        "portB": "e2-p0",
+        "dihedralDeg": -90,
+        "flip": false
+      },
+      {
+        "pieceA": "p15",
+        "pieceB": "p21",
+        "portA": "e1-p0",
+        "portB": "e2-p0",
+        "dihedralDeg": 90,
+        "flip": true
+      },
+      {
+        "pieceA": "p15",
+        "pieceB": "p22",
+        "portA": "e0-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": -90,
+        "flip": false
+      },
+      {
+        "pieceA": "p16",
+        "pieceB": "p18",
+        "portA": "e1-p0",
+        "portB": "e2-p0",
+        "dihedralDeg": 90,
+        "flip": true
+      },
+      {
+        "pieceA": "p16",
+        "pieceB": "p21",
+        "portA": "e3-p0",
+        "portB": "e2-p0",
+        "dihedralDeg": -90,
+        "flip": false
+      },
+      {
+        "pieceA": "p16",
+        "pieceB": "p23",
+        "portA": "e0-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": -90,
+        "flip": false
+      },
+      {
+        "pieceA": "p19",
+        "pieceB": "p17",
+        "portA": "e3-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": -90,
+        "flip": true
+      },
+      {
+        "pieceA": "p19",
+        "pieceB": "p20",
+        "portA": "e1-p0",
+        "portB": "e3-p0",
+        "dihedralDeg": 0,
+        "flip": true
+      },
+      {
+        "pieceA": "p19",
+        "pieceB": "p21",
+        "portA": "e1-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": 90,
+        "flip": false
+      },
+      {
+        "pieceA": "p20",
+        "pieceB": "p18",
+        "portA": "e1-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": 90,
+        "flip": false
+      },
+      {
+        "pieceA": "p20",
+        "pieceB": "p21",
+        "portA": "e3-p0",
+        "portB": "e0-p0",
+        "dihedralDeg": -90,
+        "flip": true
+      }
+    ]
+  },
+  "geometry": {
+    "valid": false,
+    "issues": [
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p15:e1-p0 被多次使用 (连接 0, 2)",
+        "severity": "error",
+        "pieceId": "p15",
+        "portId": "e1-p0",
+        "edgeId": "e1",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p16:e3-p0 被多次使用 (连接 0, 5)",
+        "severity": "error",
+        "pieceId": "p16",
+        "portId": "e3-p0",
+        "edgeId": "e3",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p21:e2-p0 被多次使用 (连接 2, 5)",
+        "severity": "error",
+        "pieceId": "p21",
+        "portId": "e2-p0",
+        "edgeId": "e2",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p19:e1-p0 被多次使用 (连接 8, 9)",
+        "severity": "error",
+        "pieceId": "p19",
+        "portId": "e1-p0",
+        "edgeId": "e1",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p20:e3-p0 被多次使用 (连接 8, 11)",
+        "severity": "error",
+        "pieceId": "p20",
+        "portId": "e3-p0",
+        "edgeId": "e3",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "端口 p21:e0-p0 被多次使用 (连接 9, 11)",
+        "severity": "error",
+        "pieceId": "p21",
+        "portId": "e0-p0",
+        "edgeId": "e0",
+        "code": "port-reuse"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "零件 p17 与 p22 发生穿透 (穿透深度 0.0260)",
+        "severity": "error",
+        "relatedPieceIds": [
+          "p17",
+          "p22"
+        ],
+        "penetrationDepth": 0.025980762113533007,
+        "pieceId": "p17",
+        "code": "intersection"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "零件 p18 与 p23 发生穿透 (穿透深度 0.0260)",
+        "severity": "error",
+        "relatedPieceIds": [
+          "p18",
+          "p23"
+        ],
+        "penetrationDepth": 0.025980762113533284,
+        "pieceId": "p18",
+        "code": "intersection"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "零件 p21 与 p22 发生穿透 (穿透深度 0.0260)",
+        "severity": "error",
+        "relatedPieceIds": [
+          "p21",
+          "p22"
+        ],
+        "penetrationDepth": 0.025980762113533118,
+        "pieceId": "p21",
+        "code": "intersection"
+      },
+      {
+        "modelId": "visible-candidate",
+        "message": "零件 p21 与 p23 发生穿透 (穿透深度 0.0260)",
+        "severity": "error",
+        "relatedPieceIds": [
+          "p21",
+          "p23"
+        ],
+        "penetrationDepth": 0.02598076211353323,
+        "pieceId": "p21",
+        "code": "intersection"
+      }
+    ]
+  },
+  "collisions": [
+    {
+      "pieceIds": [
+        "p17",
+        "p22"
+      ],
+      "intersects": true,
+      "penetrationDepth": 0.025980762113533007,
+      "region": {
+        "min": [
+          -0.5,
+          -0.4999999999999998,
+          -0.05196152422706592
+        ],
+        "max": [
+          -0.47000000000000025,
+          -0.47,
+          0
+        ]
+      },
+      "intersectionVertices": [
+        [
+          -0.47000000000000025,
+          -0.4999999999999998,
+          0
+        ],
+        [
+          -0.5,
+          -0.47000000000000003,
+          0
+        ],
+        [
+          -0.47000000000000025,
+          -0.47,
+          0
+        ],
+        [
+          -0.47000000000000025,
+          -0.4999999999999998,
+          -0.05196152422706592
+        ],
+        [
+          -0.5,
+          -0.4999999999999998,
+          0
+        ],
+        [
+          -0.47000000000000025,
+          -0.47000000000000003,
+          -0.0519615242270659
+        ]
+      ],
+      "sharedVertices": [
+        [
+          -0.5000000000000002,
+          -0.4999999999999998,
+          0
+        ]
+      ],
+      "sharedEdges": [],
+      "locality": "near-shared-vertex",
+      "proximityRadius": 0.12,
+      "note": "接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。",
+      "declaredConnection": false
+    },
+    {
+      "pieceIds": [
+        "p18",
+        "p23"
+      ],
+      "intersects": true,
+      "penetrationDepth": 0.025980762113533284,
+      "region": {
+        "min": [
+          1.47,
+          -0.5,
+          -0.05196152422706634
+        ],
+        "max": [
+          1.5,
+          -0.47,
+          0
+        ]
+      },
+      "intersectionVertices": [
+        [
+          1.47,
+          -0.5,
+          0
+        ],
+        [
+          1.5,
+          -0.47000000000000003,
+          0
+        ],
+        [
+          1.47,
+          -0.47,
+          0
+        ],
+        [
+          1.47,
+          -0.5,
+          -0.05196152422706633
+        ],
+        [
+          1.5,
+          -0.5,
+          0
+        ],
+        [
+          1.47,
+          -0.47000000000000003,
+          -0.05196152422706634
+        ]
+      ],
+      "sharedVertices": [
+        [
+          1.5,
+          -0.5,
+          0
+        ]
+      ],
+      "sharedEdges": [],
+      "locality": "near-shared-vertex",
+      "proximityRadius": 0.12,
+      "note": "接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。",
+      "declaredConnection": false
+    },
+    {
+      "pieceIds": [
+        "p21",
+        "p22"
+      ],
+      "intersects": true,
+      "penetrationDepth": 0.025980762113533118,
+      "region": {
+        "min": [
+          0.47000000000000003,
+          -0.5,
+          -0.05196152422706624
+        ],
+        "max": [
+          0.5,
+          -0.47,
+          0
+        ]
+      },
+      "intersectionVertices": [
+        [
+          0.47000000000000003,
+          -0.5,
+          0
+        ],
+        [
+          0.5,
+          -0.47000000000000003,
+          0
+        ],
+        [
+          0.47000000000000003,
+          -0.47,
+          0
+        ],
+        [
+          0.47000000000000003,
+          -0.5,
+          -0.051961524227066236
+        ],
+        [
+          0.5,
+          -0.5,
+          0
+        ],
+        [
+          0.47000000000000003,
+          -0.47000000000000003,
+          -0.05196152422706624
+        ]
+      ],
+      "sharedVertices": [
+        [
+          0.5,
+          -0.5,
+          0
+        ]
+      ],
+      "sharedEdges": [],
+      "locality": "near-shared-vertex",
+      "proximityRadius": 0.12,
+      "note": "接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。",
+      "declaredConnection": false
+    },
+    {
+      "pieceIds": [
+        "p21",
+        "p23"
+      ],
+      "intersects": true,
+      "penetrationDepth": 0.02598076211353323,
+      "region": {
+        "min": [
+          0.5,
+          -0.5,
+          -0.05196152422706637
+        ],
+        "max": [
+          0.53,
+          -0.47,
+          0
+        ]
+      },
+      "intersectionVertices": [
+        [
+          0.53,
+          -0.5,
+          0
+        ],
+        [
+          0.5,
+          -0.47000000000000003,
+          0
+        ],
+        [
+          0.53,
+          -0.47,
+          0
+        ],
+        [
+          0.53,
+          -0.5,
+          -0.05196152422706637
+        ],
+        [
+          0.5,
+          -0.5,
+          0
+        ],
+        [
+          0.53,
+          -0.47000000000000003,
+          -0.05196152422706635
+        ]
+      ],
+      "sharedVertices": [
+        [
+          0.5,
+          -0.5,
+          0
+        ]
+      ],
+      "sharedEdges": [],
+      "locality": "near-shared-vertex",
+      "proximityRadius": 0.12,
+      "note": "接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。",
+      "declaredConnection": false
+    }
+  ]
+}

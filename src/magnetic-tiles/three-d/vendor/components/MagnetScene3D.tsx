@@ -1,3 +1,5 @@
+import {GeometryIssueOverlay} from '../../GeometryIssueOverlay.tsx'
+import type {GeometryIssueDisplayProps} from '../../GeometryIssueOverlay.tsx'
 import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../camera-view.ts'
 import type {CameraView3D} from '../../camera-view.ts'
 import {pieceViewPreset} from '../../reconstruction/pose-inspection.ts'
@@ -24,14 +26,14 @@ import { SceneLighting, defaultGLProps } from './magnet3d/SceneLighting.tsx'
 import { computeFitCamera, applyFitResult, pieceWorldVertices } from './magnet3d/cameraUtils.ts'
 
 export type CameraState = CameraView3D
-type Props = CollisionDisplayProps & { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void; showTileIds?:boolean;selectedConnection?:Connection;inspectionTools?:boolean;initialCameraView?:CameraView3D;onSaveCameraView?:(view:CameraView3D)=>void }
-function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange, preset,initialCameraView,showTileIds,selectedConnection,labelElements,collision,collisionFocus,collisionLabel }: CollisionDisplayProps & {
+type Props = CollisionDisplayProps & GeometryIssueDisplayProps & { assembly: Assembly3D; selected: string | null; onSelect: (id: string | null) => void; showTileIds?:boolean;selectedConnection?:Connection;inspectionTools?:boolean;initialCameraView?:CameraView3D;onSaveCameraView?:(view:CameraView3D)=>void }
+function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, onCameraChange, preset,initialCameraView,showTileIds,selectedConnection,labelElements,collision,collisionFocus,collisionLabel,geometryIssue,issueFocus }: CollisionDisplayProps & GeometryIssueDisplayProps & {
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;
   showTileIds?:boolean;selectedConnection?:Connection;pieces: ViewerPiece[]; selected: string | null; onSelect: Props['onSelect']; fitRequest: number; resetRequest: number;
   initialCameraView?:CameraView3D;onCameraChange: (state: CameraState) => void; preset:{up:[number,number,number];direction:[number,number,number]}|null
 }) {
   const solids=useRef<Group>(null)
-  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
+  const selectedIds=collision?collision.evidence.pieceIds:geometryIssue?geometryIssue.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
   const controls = useRef<OrbitControlsImpl | null>(null)
   const { camera, size } = useThree()
   const vertices = useMemo(() => pieces.flatMap(p => pieceWorldVertices(p.shape, p.transform.position, p.transform.quaternion)), [pieces])
@@ -60,8 +62,8 @@ function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, on
   useEffect(() => () => disposeShapeResources([...new Set(pieces.map(p => p.shape))]), [pieces])
   return <>
     <SceneLighting shadowOpacity={0}><group ref={solids}>{pieces.map(p => <group key={p.id} userData={{tileId:p.id}}><MagnetPieceMesh shape={p.shape}
-      transform={p.transform} color={p.color} selected={selectedIds.includes(p.id)} dimmed={!!collision&&!selectedIds.includes(p.id)} inspectionMuted={!!collision&&!selectedIds.includes(p.id)} opacity={collision&&!selectedIds.includes(p.id)?.14:1}
-      onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/></group>)}</group><AssemblyConnectionHighlight pieces={pieces} connection={selectedConnection}/>{(showTileIds||collision)&&<AssemblyTileLabels pieces={pieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}<CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/></SceneLighting>
+      transform={p.transform} color={p.color} selected={selectedIds.includes(p.id)} dimmed={(!!collision||!!geometryIssue?.pieceIds.length)&&!selectedIds.includes(p.id)} inspectionMuted={(!!collision||!!geometryIssue?.pieceIds.length)&&!selectedIds.includes(p.id)} opacity={(collision||geometryIssue?.pieceIds.length)&&!selectedIds.includes(p.id)?.14:1}
+      onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/></group>)}</group><AssemblyConnectionHighlight pieces={pieces} connection={selectedConnection}/>{(showTileIds||collision||geometryIssue)&&<AssemblyTileLabels pieces={pieces} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}<GeometryIssueOverlay pieces={pieces} geometryIssue={geometryIssue} issueFocus={issueFocus}/><CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/></SceneLighting>
     <OrbitControls ref={controls} makeDefault enablePan enableZoom enableRotate enableDamping={false}
       minZoom={.01} maxZoom={100000} onChange={report}/>
   </>
@@ -71,17 +73,17 @@ export class ViewerErrorBoundary extends Component<{ children: ReactNode }, { er
   static getDerivedStateFromError(error: Error) { return { error: error.message } }
   render() { return this.state.error ? <p role="alert">3D 画布无法启动：{this.state.error}。请确认浏览器支持 WebGL；可继续使用 2D 查看。</p> : this.props.children }
 }
-export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=false,initialCameraView,onSaveCameraView,showTileIds,selectedConnection,collision,collisionFocus }: Props) {
+export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=false,initialCameraView,onSaveCameraView,showTileIds,selectedConnection,collision,collisionFocus,geometryIssue,issueFocus }: Props) {
   const collisionLabel=useRef<HTMLOutputElement>(null)
   const labelElements=useRef(new Map<string,HTMLSpanElement>())
-  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
+  const selectedIds=collision?collision.evidence.pieceIds:geometryIssue?geometryIssue.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selected?[selected]:[]
   const pieces = useMemo(() => createViewerModel(assembly), [assembly])
   const [preset,setPreset]=useState<ReturnType<typeof pieceViewPreset>|null>(null)
   const [fitRequest, requestFit] = useState(0), [resetRequest, requestReset] = useState(0)
   const cameraRef=useRef<CameraView3D|null>(null)
   const report=useCallback((state:CameraView3D)=>{cameraRef.current=state;setCameraState(state)},[])
   const [cameraState, setCameraState] = useState<CameraState | null>(null)
-  return <section className="magnetic-3d-scene" data-viewer-selected-piece={selected??''} aria-label="磁力片三维画布">
+  return <section className="magnetic-3d-scene" data-viewer-selected-piece={selected??''} data-geometry-highlight-pieces={geometryIssue?.pieceIds.join(',')} data-geometry-highlight-connections={geometryIssue?.connectionIndices.join(',')} data-geometry-highlight-ports={geometryIssue?.segments.map(s=>s.id).join(';')} aria-label="磁力片三维画布">
     <div className="magnetic-3d-camera-tools"><button onClick={() => requestFit(n => n + 1)}>Fit to View</button>
       <button onClick={() => requestReset(n => n + 1)}>Reset Camera</button>{onSaveCameraView&&<button disabled={!cameraState} onClick={()=>cameraRef.current&&onSaveCameraView(cameraRef.current)}>保存当前视角</button>}{inspectionTools&&<><button disabled={!selected} onClick={()=>selected&&setPreset(pieceViewPreset(assembly,selected,'face'))}>正对所选面</button><button disabled={!selected} onClick={()=>selected&&setPreset(pieceViewPreset(assembly,selected,'up'))}>以所选面为上方观察</button></>}</div>
     <div className="magnetic-3d-canvas" data-testid="magnetic-3d-canvas">
@@ -89,11 +91,11 @@ export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=fal
         <Canvas orthographic camera={{ position: [5, 5, 5], zoom: 50, near: .001, far: 100 }}
           dpr={[1, 2]} gl={defaultGLProps} fallback={<p role="alert">浏览器不支持 WebGL，无法显示 3D。可切回 2D 查看。</p>}
           onPointerMissed={() => onSelect(null)}>
-          <SceneContent pieces={pieces} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel} labelElements={labelElements} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
+          <SceneContent pieces={pieces} geometryIssue={geometryIssue} issueFocus={issueFocus} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel} labelElements={labelElements} selected={selected} onSelect={onSelect} fitRequest={fitRequest}
             resetRequest={resetRequest} onCameraChange={report} preset={preset} showTileIds={showTileIds} selectedConnection={selectedConnection} initialCameraView={initialCameraView}/>
         </Canvas>
       </ViewerErrorBoundary>
-      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
+      {(showTileIds||collision||geometryIssue)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:geometryIssue?geometryIssue.pieceIds:pieces.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
       <CollisionLabel collision={collision} label={collisionLabel}/>
     </div>
     <p className="hint">左键拖动旋转 · 滚轮缩放 · 右键拖动平移 · 点击零件查看详情</p>

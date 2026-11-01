@@ -77,6 +77,6 @@ export function AssemblyConnectionHighlight({ pieces, connection, onSelect }: {
     if (!p || !port) return null
     const world = (v: { x: number; y: number }) => new Vector3(v.x, v.y, 0).applyQuaternion(p.transform.quaternion).add(p.transform.position)
     return <Line key={side} name={`selected-port-${side}`} points={[world(port.p0), world(port.p1)]} color="#153f39" lineWidth={7}
-      depthTest={false} renderOrder={10} onClick={e => { e.stopPropagation(); onSelect?.() }}/>
+      depthTest={false} renderOrder={10} raycast={onSelect?undefined:()=>{}} onClick={e => { e.stopPropagation(); onSelect?.() }}/>
   })}</group>
 }
