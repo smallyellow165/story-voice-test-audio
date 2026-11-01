@@ -42,6 +42,7 @@ export type VisibleEvidence3D = {
     unknowns: string[];
 };
 export type ReviewedPiece3D = {
+    /** Legacy read-only metadata. New reviews and planning use Exact Profile only. */
     shapeFamily?: ShapeFamily3D;
     shapeNote?: string;
     id: string;

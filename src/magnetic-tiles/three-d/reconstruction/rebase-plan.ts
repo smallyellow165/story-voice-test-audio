@@ -16,9 +16,17 @@ export function rebaseSpatialPlan(old:SpatialHypothesis3D,previous:VisibleInput3
  return {plan:parseSpatialHypothesis(plan,input),diagnostics:[...new Set(diagnostics)]}
 }
 
+/** Legacy family/note remain readable in immutable history, but are not a second
+ * review specification. New edits, saves and planning inputs use Exact Profile. */
+export function exactProfileReview(review:VisibleReview3D):VisibleReview3D {
+ const result=structuredClone(review)
+ for(const piece of result.pieces){delete piece.shapeFamily;delete piece.shapeNote}
+ return result
+}
+
 /** Review-local edits invalidate references; original saved snapshots stay immutable. */
 export function editReviewedPiece(review:VisibleReview3D,id:string,patch:Partial<Omit<ReviewedPiece3D,'id'>>){
- const result=structuredClone(review),old=result.pieces.find(p=>p.id===id);if(!old)throw Error('Observation 不存在')
+ const result=exactProfileReview(review),old=result.pieces.find(p=>p.id===id);if(!old)throw Error('Observation 不存在')
  const geometryChanged=patch.profileId!==undefined&&patch.profileId!==old.profileId||patch.profileVersion!==undefined&&patch.profileVersion!==old.profileVersion
  Object.assign(old,patch)
  // Exclusion takes precedence over explicit Profile/confirmation edits. Restoring

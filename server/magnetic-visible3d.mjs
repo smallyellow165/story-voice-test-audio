@@ -1,4 +1,4 @@
-import {rebaseSpatialPlan} from '../src/magnetic-tiles/three-d/reconstruction/rebase-plan.ts'
+import {rebaseSpatialPlan,exactProfileReview} from '../src/magnetic-tiles/three-d/reconstruction/rebase-plan.ts'
 import {candidateObservationMap,inspectSpatialConsistency} from '../src/magnetic-tiles/three-d/reconstruction/spatial-consistency.ts'
 // Shared DUPLO request lifecycle + immutable magnetic evidence records; no brick geometry.
 import {mkdir,readFile,writeFile,link,unlink,readdir,rename} from 'node:fs/promises'
@@ -50,7 +50,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   let review=null
   if(kind==='plan'){const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409);review=l.review;const {blocker}=planningParticipation(review.input.review);if(blocker)fail(blocker,422)}
   const image=await readImage(source),registry=await getRegistry()
-  const geometryInput=review?.input
+  const geometryInput=review?{...review.input,review:exactProfileReview(review.input.review)}:undefined
   if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
   const images=readImages?await readImages(source):null
   const prepared={image,source,...(images?{images}:{}),input:{source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
@@ -124,6 +124,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const registry=await getRegistry(),snapshots=[]
    for(const p of body.review?.pieces??[]){if(!p.profileId)continue;const profile=registry.profiles.find(r=>r.id===p.profileId&&r.version===p.profileVersion);if(!profile)fail('Review Profile 不在 Registry');if(!snapshots.some(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion))snapshots.push({profile,thickness:body.thickness??0.06})}
    const input=validateVisibleInput({evidence:analysis.evidence,review:body.review,profiles:snapshots})
+   input.review=exactProfileReview(input.review)
    return locked(source.id,async()=>{const current=await head(source.id);if(body.expectedRevision!==current.revision)fail('Review 已被其他页面更新，未覆盖',409)
     const review=await put('reviews',{sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,input,registryHash:registry.hash})
     const next={revision:current.revision+1,reviewId:review.id,reviewHash:review.hash},f=filename('heads',source.id),temp=f+'.tmp';await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,f);return {record:review,head:next}

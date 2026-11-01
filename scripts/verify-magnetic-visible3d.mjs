@@ -29,7 +29,7 @@ if(liveDirectory){
 }
 const server=await createServer({configFile:false,root,cacheDir:path.join(directory,'vite-cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-visible3d-api',configureServer(s){s.middlewares.use('/favicon.ico',(req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
  const route=req.url.slice(1).split('?')[0];calls.push({method:req.method,route})
- if(req.method==='POST'&&!['sources','visible3d/annotate','visible3d/reviews','visible3d/manual-plan','visible3d/execute','visible3d/adopt','visible3d/rebase-plan'].includes(route)){res.statusCode=403;res.end(JSON.stringify({error:'Live model calls forbidden in acceptance'}));return}
+ if(req.method==='POST'&&!['sources','source-sets','visible3d/annotate','visible3d/reviews','visible3d/manual-plan','visible3d/execute','visible3d/adopt','visible3d/rebase-plan'].includes(route)){res.statusCode=403;res.end(JSON.stringify({error:'Live model calls forbidden in acceptance'}));return}
  try{let raw='';for await(const chunk of req)raw+=chunk;const result=await api.dispatch(req.method,route,raw?JSON.parse(raw):{});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result))}catch(e){res.statusCode=e.statusCode||422;res.end(JSON.stringify({error:e.message}))}
  })}}]})
 let browser,page
@@ -56,16 +56,20 @@ try{
  }
  async function create(name,expected){
   const f=v2?(name==='closed-cube'?await visibleV2Fixture():upgradeVisibleFixture(await visibleFixture(name))):await visibleFixture(name);if(name==='right-angle')f.plan.connections[0].angles=[90,-90];await step('source');await button('3D').click()
+  // Each geometry fixture is a separate single-image Analysis, not an addition
+  // to the previous fixture's multi-image collection.
+  const remove=page.locator('.source-inspector .source-set-list button[aria-label^="移除 "]').filter({visible:true})
+  while(await remove.count()){const count=await remove.count();await remove.first().click();await page.waitForFunction(count=>document.querySelectorAll('.source-inspector .source-set-list button[aria-label^="移除 "]').length<count,count)}
   await page.locator('.source-inspector').filter({visible:true}).getByTestId('intake-upload').setInputFiles({name:name+'-synthetic.png',mimeType:'image/png',buffer:await image(f.assembly)})
   await button('Analyze Visible 3D（调用模型）').waitFor();await page.waitForFunction(name=>[...document.querySelectorAll('p')].some(p=>p.textContent.includes('Visible 3D · '+name)),name+'-synthetic.png')
   await details(page.locator('.source-inspector details').filter({hasText:'人工标注 / 离线验证'}));await field('Visible 3D 人工标注 JSON').fill(JSON.stringify(f.evidence));await button('保存人工标注并 Review').click();await button('保存 3D Review').waitFor()
-  for(const p of f.review.pieces){await page.locator(`[data-review-id="${p.id}"]`).filter({visible:true}).click();if(v2){assert.equal(await field('3D Review Profile').inputValue(),'');await button('采用 AI 形状判断').click();assert.equal(await field('确认可见实例').isChecked(),false);assert.equal(await field('3D 人工 Shape Family').inputValue(),'square');await button(`使用 Profile 候选 ${p.profileId}@${p.profileVersion}`).click();assert.equal(await field('确认可见实例').isChecked(),true)}else await field('3D Review Profile').selectOption(`${p.profileId}@${p.profileVersion}`);await field('确认可见实例').check()}
+  for(const p of f.review.pieces){await page.locator(`[data-review-id="${p.id}"]`).filter({visible:true}).click();if(v2){assert.equal(await field('3D Review Profile').inputValue(),'');assert.equal(await button('采用 AI 形状判断').count(),0);assert.equal(await field('3D 人工 Shape Family').count(),0);await button(`采用 AI 建议 ${p.profileId}@${p.profileVersion}`).click();assert.equal(await field('确认可见实例').isChecked(),false)}else await field('3D Review Profile').selectOption(`${p.profileId}@${p.profileVersion}`);await field('确认可见实例').check()}
   if(v2){await field('3D 整体解释审核').selectOption('corrected');await field('3D 空间解释修正说明').fill('仅确认可见片构成的局部结构，完整封闭作品未确认');await button('核对此连接与角度建议').first().click();assert.equal(await field('3D 连接 Port A').inputValue(),'');assert.equal(await field('3D Review 二面角候选').inputValue(),'90');assert.equal(await page.getByRole('button',{name:'移除约束',exact:true}).count(),0,'reviewing a suggestion does not establish a constraint');await field('3D 连接 Port A').selectOption(f.plan.connections[0].portA);await field('3D 连接 Port B').selectOption(f.plan.connections[0].portB);await button('加入 / 替换人工连接约束').click();await button('移除约束').click()}
 
   await button('保存 3D Review').click();await page.getByRole('status').filter({hasText:'3D Review 已保存'}).waitFor();await button('进入 3D Reconstruction').click()
   const manual=page.locator('.visible3d-inspector details').filter({hasText:'人工 Spatial Hypothesis / 修改后保存新版本'});await details(manual);await field('3D Spatial Hypothesis JSON').fill(JSON.stringify(f.plan));await button('保存人工 Spatial Hypothesis').click();await manual.locator('summary').click();await button('Geometry Execution（不调用模型）').waitFor({state:'visible'});await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Geometry Execution（不调用模型）'&&!b.disabled));if(v2){await details(page.locator('details[aria-label="Planning 推断详情"]'));const d=page.locator('details[aria-label="3D Planning 连接审核"]');await details(d);await button('选择解释 1 并保存人工计划').click();await page.getByRole('status').filter({hasText:'已创建独立的人工选择计划'}).waitFor()}await button('Geometry Execution（不调用模型）').click()
   await page.getByTestId('visible3d-execution-status').filter({hasText:'candidates_found'}).waitFor({timeout:20000});await page.locator('.visible3d-workspace .magnetic-3d-canvas canvas').waitFor();await page.waitForFunction(()=>{const c=document.querySelector('.visible3d-workspace canvas');return c&&c.width>200&&c.height>100})
-  assert.match(await page.getByTestId('visible3d-execution-status').textContent(),new RegExp(expected+' Candidates'))
+  assert.match(await page.getByTestId('visible3d-execution-status').textContent(),new RegExp(expected+' (?:合法 )?Candidates'))
   await button('Fit to View').click();await button('Reset Camera').click();await rendered();assert.equal(await button('采用候选到 3D Assembly Editor').isDisabled(),true)
   return f
  }
@@ -121,7 +125,7 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
   await button('刷新 3D 历史').click()
   const h=await api.dispatch('GET','visible3d/history'),a=h.analyses.find(a=>a.sourceId===live.sourceId),r=h.reviews.find(r=>r.analysisId===a.id),p=h.plans.find(p=>p.reviewId===r.id),x=h.executions.find(x=>x.planId===p.id)
   await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)
-  await page.getByTestId('visible3d-execution-status').filter({hasText:'2 Candidates'}).waitFor();
+  await page.getByTestId('visible3d-execution-status').filter({hasText:/2 (?:合法 )?Candidates/}).waitFor();
   if(v21){
    const top=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='horizontal').pieceId,side=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='vertical').pieceId
    const image=page.locator('.visible3d-compare .visible3d-image'),viewer=page.locator('.visible3d-compare .magnetic-3d-scene'),canvas=viewer.locator('canvas'),linked=id=>page.locator(`[data-linked-observation="${id}"]`).filter({visible:true})
