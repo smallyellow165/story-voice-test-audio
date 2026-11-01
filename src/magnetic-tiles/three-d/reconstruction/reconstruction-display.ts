@@ -1,7 +1,7 @@
 // Read-only presentation of existing request/record states. No planning or geometry.
 type Ref={id:string;hash:string}
-export type ModelTrace={id:string;status?:string;error?:unknown;validation?:{valid:boolean;issues?:unknown[]}|null;sources?:{sourceId:string;sourceHash:string;reviewId?:string|null;reviewHash?:string|null}[];[key:string]:unknown}
-export type OperationRecord={id:string;kind:string;state:string;createdAt:string;planId?:string|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
+export type ModelTrace={id:string;status?:string;error?:unknown;validation?:{valid:boolean;issues?:unknown[]}|null;background?:{state:string;responseId:string|null;providerStatus?:string|null};sources?:{sourceId:string;sourceHash:string;reviewId?:string|null;reviewHash?:string|null}[];[key:string]:unknown}
+export type OperationRecord={id:string;kind:string;state:string;createdAt:string;sourceId?:string;sourceHash?:string;planId?:string|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
 export type OperationAttempt={id?:string;kind:'plan'|'execute';scope:string;error?:string}
 export const planningScope=(source:Ref|null,review:Ref|null)=>JSON.stringify([source?.id,source?.hash,review?.id,review?.hash])
 export const executionScope=(plan:Ref|null)=>JSON.stringify([plan?.id,plan?.hash])
@@ -11,7 +11,7 @@ const latest=(requests:OperationRecord[])=>[...requests].sort((a,b)=>b.createdAt
  * A request ID is a view preference only and still needs exact saved provenance. */
 export function analysisRequest(requests:OperationRecord[],source:Ref|null,analysis:{id:string;sourceId:string;sourceHash:string;traceId?:string|null}|null,selection='latest'){
  if(!source)return undefined
- const related=requests.filter(r=>r.kind==='analyze'&&r.trace?.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash))
+ const related=requests.filter(r=>r.kind==='analyze'&&(r.trace?.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash)||!r.trace&&r.sourceId===source.id&&r.sourceHash===source.hash))
  if(selection==='record')return analysis?.sourceId===source.id&&analysis.sourceHash===source.hash?related.find(r=>r.record?.id===analysis.id||!!analysis.traceId&&r.trace?.id===analysis.traceId):undefined
  if(selection!=='latest')return related.find(r=>r.id===selection)
  return latest(related)
@@ -29,6 +29,16 @@ export function executionRequest(requests:OperationRecord[],plan:Ref|null,execut
  return plan?latest(requests.filter(r=>r.kind==='execute'&&!r.record&&r.planId===plan.id)):undefined
 }
 export type DisplayStatus={tone:'neutral'|'running'|'error'|'review'|'valid';label:string;message:string}
+export function analysisDisplay(request:OperationRecord|undefined):DisplayStatus{
+ if(!request)return {tone:'neutral',label:'尚未执行 Analysis',message:'选择图片不会调用模型。'}
+ const t=request.trace,b=t?.background,detail=typeof t?.error==='object'&&t.error&&'message' in t.error?String(t.error.message):request.error
+ if(b?.state==='running'||b?.state==='submitting'||request.state==='running'&&!b)return {tone:'running',label:b?.responseId?'Running · 后台识别中':'Submitting · 正在提交',message:b?.responseId?`Response ${b.responseId} · 只查询同一任务，不会重新生成。`:'正在等待供应商确认；不会自动重发。'}
+ if(b?.state==='timeout'||t?.transportError==='TimeoutError')return {tone:'error',label:'Timeout · 请求或查询超时',message:b?.responseId?`可查询同一个 Response ${b.responseId}；超时不代表供应商停止执行。`:'未保存 Provider Response ID，无法安全恢复。供应商执行及计费状态未知，不会自动重发。'}
+ if(b?.state==='unknown')return {tone:'error',label:'Unknown · 执行状态未知',message:`${detail??'网络或响应异常。'} ${b.responseId?'可查询同一个 Response。':'没有 Response ID，无法安全恢复。'} 可能已产生费用；不会自动重发。`}
+ const failure=requestFailure(request)
+ if(failure)return {tone:'error',label:t?.validation?.valid===false?'输出契约校验失败':'Analysis Failed',message:detail??failure}
+ return {tone:'review',label:'Completed · 待人工 Review',message:'已保存模型输出；不代表照片匹配或几何验证通过。'}
+}
 export function requestFailure(request:OperationRecord|undefined):string|null{
  if(!request)return null
  const t=request.trace,issues=t?.validation?.issues??[]

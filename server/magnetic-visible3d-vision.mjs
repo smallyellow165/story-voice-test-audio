@@ -3,7 +3,7 @@ import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {readFile} from 'node:fs/promises'
 import {resolveModel,modelSettings} from './brick-model-registry.mjs'
 import {buildOpenaiRequest} from './openai-responses.mjs'
-import {runStructuredSpatialModel} from './spatial-model-run.mjs'
+import {runStructuredSpatialModel,resumeStructuredSpatialModel} from './spatial-model-run.mjs'
 import {parseVisibleEvidence,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
 const string={type:'STRING'},number={type:'NUMBER'},boolean={type:'BOOLEAN'},array=items=>({type:'ARRAY',items}),nullable=s=>({...s,nullable:true})
 const object=properties=>({type:'OBJECT',properties,required:Object.keys(properties)})
@@ -55,6 +55,8 @@ export function buildVisibleRequest(model,prepared,kind){
  if(resolveModel(model,task).provider==='openai')return buildOpenaiRequest({model,task,prompt,schema,content:[{type:'input_text',text:'Return JSON only.\n'+content},{type:'input_image',image_url:'data:'+prepared.image.mimeType+';base64,'+prepared.image.imageBase64}]})
  return {model,contents:[{role:'user',parts:[{text:content},{inlineData:{mimeType:prepared.image.mimeType,data:prepared.image.imageBase64}}]}],config:{systemInstruction:prompt,responseMimeType:'application/json',responseSchema:schema,...modelSettings(model,task)}}
 }
-export function runVisibleModel(prepared,options,kind){
- return runStructuredSpatialModel(prepared,options,{runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:kind==='analysis'&&prepared.images?.length>1?multiImagePromptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');if(kind==='analysis'){parseVisibleEvidence(value);if(prepared.source)assertImageEvidence(value,prepared.source);if(prepared.images?.length>1&&value.referenceImageId!==prepared.source.primaryImageId)throw Error('参考图片来源不一致')}else parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}})
+function visibleContract(prepared,kind){
+ return {background:kind==='analysis'&&prepared.images?.length>1,runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:kind==='analysis'&&prepared.images?.length>1?multiImagePromptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');if(kind==='analysis'){parseVisibleEvidence(value);if(prepared.source)assertImageEvidence(value,prepared.source);if(prepared.source?.images?.length>1&&value.referenceImageId!==prepared.source.primaryImageId)throw Error('参考图片来源不一致')}else parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}}
 }
+export function runVisibleModel(prepared,options,kind){return runStructuredSpatialModel(prepared,options,visibleContract(prepared,kind))}
+export function resumeVisibleAnalysis(directory,id,source,onTrace){return resumeStructuredSpatialModel(directory,id,visibleContract({source},'analysis'),onTrace)}

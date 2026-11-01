@@ -18,7 +18,7 @@ import {SourceImagePicker} from '../../intake/SourceImagePicker.tsx';
 import {workflowTerms} from '../../studio-terms.ts';
 import {TraceViewer} from '../../intake/TraceViewer.tsx';
 import type {TraceSource} from '../../intake/TraceViewer.tsx';
-import {analysisRequest,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
+import {analysisRequest,analysisDisplay,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
@@ -101,6 +101,8 @@ export default function Visible3DWorkflow() {
     const [overrideAuthorization,setOverrideAuthorization]=useState('');
     const [requests,setRequests]=useState<OperationRecord[]>([]),[requestError,setRequestError]=useState(''),[attempt,setAttempt]=useState<OperationAttempt|null>(null),[runningOperation,setRunningOperation]=useState<'plan'|'execute'|null>(null);
     const [analysisTraceSelection,setAnalysisTraceSelection]=useState('latest');
+    const [analysisQuerying,setAnalysisQuerying]=useState(false),[analysisQueryError,setAnalysisQueryError]=useState('');
+    const analysisQueryLock=useRef(false);
     const [traceOpenRequest,setTraceOpenRequest]=useState<{tab:string;sequence:number}>();
     useEffect(()=>{setAttempt(null)},[source?.id,review?.id,plan?.id,execution?.id]);
     useEffect(()=>{setTraceOpenRequest(undefined)},[stage,active]);
@@ -216,11 +218,12 @@ export default function Visible3DWorkflow() {
             trace?: {
                 id: string;
             };
-        }>(kind, { sourceId: source?.id, reviewId: review?.id, model: kind === 'analyze' ? model : planningModel, requestId });
+        }>(kind, { sourceId: source?.id,...(kind==='analyze'?{sourceHash:source?.hash}:{}), reviewId: review?.id, model: kind === 'analyze' ? model : planningModel, requestId });
         if(kind==='plan')setAttempt({id:r.id,kind:'plan',scope:planningScope(source,review)});
         await refreshRequests();
         if (r.trace)
             setTrace(await api('trace/' + r.trace.id));
+        if(kind==='analyze'&&r.state==='running'){setNotice('已提交后台识别；只查询同一个任务。可切换阶段或刷新后恢复查询。');return}
         if (r.state !== 'complete' || !r.record)
             throw Error(r.error ?? '模型未返回可用契约；请查看 Trace，不自动重试');
         if (kind === 'analyze') {
@@ -235,6 +238,29 @@ export default function Visible3DWorkflow() {
         await refresh();
     }
     const analysisModelRequest=analysisRequest(requests,source,analysis,analysisTraceSelection);
+    const analysisQueryScope=useRef('');analysisQueryScope.current=JSON.stringify([source?.id,source?.hash,analysisModelRequest?.id]);
+    const analysisStatus=analysisDisplay(analysisModelRequest),analysisBackground=analysisModelRequest?.trace?.background;
+    const analysisPending=analysisModelRequest?.state==='running';
+    async function queryAnalysis(request=analysisModelRequest){
+      if(!request||!source||analysisQueryLock.current)return;
+      const scope=JSON.stringify([source.id,source.hash,request.id]);
+      analysisQueryLock.current=true;setAnalysisQuerying(true);setAnalysisQueryError('');setError('');setNotice('');
+      try{await api('resume-analyze',{requestId:request.id,sourceId:source.id,sourceHash:source.hash});await refresh()}
+      catch(e){if(analysisQueryScope.current===scope)setAnalysisQueryError(String(e)+'；未重新提交模型请求，可再次查询同一任务。')}
+      finally{analysisQueryLock.current=false;setAnalysisQuerying(false)}
+    }
+    useEffect(()=>setAnalysisQueryError(''),[source?.id,source?.hash,analysisModelRequest?.id]);
+    useEffect(()=>{
+      if(!active||stage!=='source'||!analysisPending||analysisBackground?.responseId)return;
+      const timer=window.setInterval(()=>void refreshRequests(),3000);return()=>window.clearInterval(timer);
+    },[active,stage,analysisPending,analysisBackground?.responseId]);
+    useEffect(()=>{
+      if(!active||stage!=='source'||!analysisBackground?.responseId||analysisBackground.state!=='running'||analysisQueryError)return;
+      // A bounded UI polling window, not a generation deadline. After 20 min the
+      // user can still retrieve exactly the same response explicitly.
+      const started=Date.now(),timer=window.setInterval(()=>{if(Date.now()-started>20*60*1000){window.clearInterval(timer);setAnalysisQueryError('自动查询已暂停；可继续手动查询同一任务，不会重新生成。');return}void queryAnalysis()},5000);
+      return()=>window.clearInterval(timer);
+    },[active,stage,source?.id,source?.hash,analysisModelRequest?.id,analysisBackground?.state,analysisBackground?.responseId,analysisQueryError]);
     const planRequest=planningRequest(requests,source,review,plan,attempt),executeRequest=executionRequest(requests,plan,execution,attempt);
     const planStatus=planningDisplay(plan,planRequest,runningOperation==='plan',attempt?.kind==='plan'&&attempt.scope===planningScope(source,review)?attempt.error:undefined);
     const executeStatus=executionDisplay(plan,execution,executeRequest,runningOperation==='execute',attempt?.kind==='execute'&&attempt.scope===executionScope(plan)?attempt.error:undefined);
@@ -243,7 +269,7 @@ export default function Visible3DWorkflow() {
       const references={sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,planId:plan?.id,planHash:plan?.hash,executionId:execution?.id,executionHash:execution?.hash,candidateId};
       const partsRequest=stage==='source'?analysisModelRequest:undefined;
       const partsRecordMatches=!!analysis&&partsRequest?.record?.id===analysis.id&&analysis.sourceId===source?.id&&analysis.sourceHash===source?.hash;
-      return {identity:JSON.stringify([stage,analysisTraceSelection,partsRequest?.id,partsRequest?.state,references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:stage==='source'?'parts':'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>tab==='parts'&&partsRequest?{mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,requestId:partsRequest.id,...(partsRecordMatches?{analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash}:{})}:({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
+      return {identity:JSON.stringify([stage,analysisTraceSelection,partsRequest?.id,partsRequest?.state,partsRequest?.trace?.latestPollId,references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:stage==='source'?'parts':'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>tab==='parts'&&partsRequest?{mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,requestId:partsRequest.id,...(partsRecordMatches?{analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash}:{})}:({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
         if(tab==='execution')return {references,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,candidateValidation:validation,candidateCollisions:candidate?.collisions??null,candidateConstruction:candidate?.construction??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
         const record=tab==='parts'?analysis:plan,request=tab==='spatial'?planRequest:partsRequest;
         const pinnedMissing=tab==='parts'&&stage==='source'&&!['latest','record'].includes(analysisTraceSelection)&&!request;
@@ -300,7 +326,12 @@ export default function Visible3DWorkflow() {
      onSource={async s=>{if(s)await openSourceImage(s);else{setAnalysisTraceSelection('latest');setSource(null);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null)}}}
      onOpenSource={id=>void run(async()=>{const s=await intakeApi<Source>('sources/'+id);await openSourceImage(s)})}/>
     <label className="compact-field">下次识别模型<select aria-label="3D Vision 模型" value={model} onChange={e=>setModel(e.target.value)} disabled={busy}><option value="">选择已配置模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
-    <button className="primary" disabled={busy||!source||!model} onClick={()=>void run(()=>modelAction('analyze'))}>Analyze Visible 3D（调用模型）</button>
+    <button className="primary" disabled={busy||analysisPending||!source||!model} onClick={()=>{if(analysisBackground&&['unknown','timeout'].includes(analysisBackground.state)&&!window.confirm('上次请求可能仍在执行或已产生费用。建议先查询已有任务。确定要创建一次新的付费识别请求吗？'))return;void run(()=>modelAction('analyze'))}}>Analyze Visible 3D（调用模型）</button>
+    <ExecutionStatus value={analysisStatus} testId="visible3d-analysis-state"/>
+    {source&&requests.some(r=>analysisRequest([r],source,null))&&<label className="compact-field">识别请求（已有记录）<select aria-label="Analysis 已有请求" value={analysisTraceSelection} disabled={busy||analysisQuerying} onChange={e=>{setAnalysisTraceSelection(e.target.value);setAnalysisQueryError('');setError('');setTrace(null)}}><option value="latest">当前图片集合 · 最新请求</option>{analysis&&<option value="record">当前选中 Analysis 的请求</option>}{requests.filter(r=>analysisRequest([r],source,null)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(r=><option key={r.id} value={r.id}>{r.createdAt} · {r.trace?.background?.state??r.trace?.status??r.state} · {r.id.slice(0,8)}</option>)}</select></label>}
+    {analysisQueryError&&<p role="alert">{analysisQueryError}</p>}
+    {analysisBackground?.responseId&&<button disabled={busy||analysisQuerying||['completed','failed'].includes(analysisBackground.state)} onClick={()=>void queryAnalysis()}>{analysisQuerying?'查询中…':'查询 / 恢复已有识别任务'}</button>}
+    {analysisBackground?.state==='completed'&&analysisModelRequest?.usable&&analysisModelRequest.record&&analysis?.id!==analysisModelRequest.record.id&&<button onClick={()=>{selectAnalysis(analysisModelRequest.record as Analysis);navigate('review')}}>打开已完成识别并 Review</button>}
     <p className="hint">选择图片不会调用模型。仅识别可见证据，空间解释与 Geometry Valid 分开审核。</p>
     {analysis&&<p role="status">{analysis.origin==='model'?'已保存模型识别':'人工标注'} · {analysis.evidence.observations.length} 个可见实例 · {analysis.id.slice(0,8)}</p>}
    <details><summary>人工标注 / 离线验证（不调用模型）</summary><p>导入 VisibleEvidence3D JSON；必须保留可见区域或边角证据。人工标注不代表 Vision 识别成功率。</p><textarea spellCheck={false} aria-label="Visible 3D 人工标注 JSON" value={annotation} onChange={e => setAnnotation(e.target.value)}/><input aria-label="导入 3D 标注文件" type="file" accept="application/json" disabled={busy} onChange={e => { const f = e.target.files?.[0]; if (f)

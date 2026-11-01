@@ -4,12 +4,12 @@ import {candidateObservationMap,inspectSpatialConsistency} from '../src/magnetic
 import {mkdir,readFile,writeFile,link,unlink,readdir,rename} from 'node:fs/promises'
 import path from 'node:path'
 import {randomUUID,createHash} from 'node:crypto'
-import {recordedSpatialOperation} from './spatial-operation.mjs'
+import {recordedSpatialOperation,resumeSpatialOperation} from './spatial-operation.mjs'
 import {shareText} from './llm-traces.mjs'
 import {planningParticipation} from '../src/magnetic-tiles/three-d/reconstruction/planning-preflight.ts'
 import {modelOptions,providerStatus} from './brick-model-registry.mjs'
 import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
-import {runVisibleModel,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
+import {runVisibleModel,resumeVisibleAnalysis,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
 import {adaptProfile} from '../src/magnetic-tiles/three-d/profile-adapter.ts'
 import {executeVisible3D} from '../src/magnetic-tiles/three-d/reconstruction/execute.ts'
@@ -45,7 +45,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   const current=await head(source.id)
   return {record:r,review,analysis,source,head:current,outdated:!!review&&current.reviewId!==review.id}
  }
- async function modelRecord(kind,body){
+ async function modelRecord(kind,body,checkpoint){
   const source=kind==='analysis'?await readSource(body.sourceId):(await lineage('reviews',body.reviewId)).source
   let review=null
   if(kind==='plan'){const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409);review=l.review;const {blocker}=planningParticipation(review.input.review);if(blocker)fail(blocker,422)}
@@ -54,19 +54,36 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
   const images=readImages?await readImages(source):null
   const prepared={image,source,...(images?{images}:{}),input:{source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
-  const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true},kind==='analysis'?'analysis':'plan')
+  const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true,onTrace:async t=>{if(t.background)await checkpoint({trace:t,state:'running'})}},kind==='analysis'?'analysis':'plan')
+  return saveModelResult(kind,trace,source,registry,review)
+ }
+ async function saveModelResult(kind,trace,source,registry,review){
+  const geometryInput=review?.input
   // A parsed object alone is insufficient: require complete saved wire provenance.
   const usable=trace.status==='plan_ready_for_review'&&trace.parseStatus==='parsed'&&trace.validation?.valid&&trace.wireStatus==='response_saved'&&['STOP','completed'].includes(trace.finishReason)&&hash(JSON.parse(trace.rawOutput))===hash(trace.plan)
-  if(!usable)return {trace,usable:false}
+  if(!usable){
+   const error=trace.error?.message||(trace.parseStatus==='invalid_json'?'模型输出 JSON 解析失败；原始响应已保留。':trace.validation?.issues?.join('；'))||(trace.background?.state==='completed'?'后台请求已完成，但没有通过契约检查的输出；请查看 Trace。':'后台请求尚未完成；不会重新提交。')
+   return {trace,usable:false,...(trace.background?{state:['running','submitting'].includes(trace.background.state)?'running':['timeout','unknown'].includes(trace.background.state)?trace.background.state:'failed',error}:{})}
+  }
   if(kind==='analysis'){assertImageEvidence(trace.plan,source);if(source.images?.length>1&&trace.plan.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')}
   if(kind==='analysis')for(const o of parseVisibleEvidence(trace.plan).observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('模型候选 Profile 不在 Registry')
   const data=kind==='analysis'?{evidence:parseVisibleEvidence(trace.plan)}:{plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash}
-  const r=await put(kind==='analysis'?'analyses':'plans',{...data,sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
-  return {record:r,trace,usable:true}
+  // Stable ID makes completion recovery idempotent even after a server restart
+  // between immutable Analysis creation and the request checkpoint.
+  const target=kind==='analysis'?'analyses':'plans'
+  if(trace.background){const old=await read(target,trace.id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(old){if(old.traceHash!==hash(trace)||old.sourceHash!==source.hash)fail('完成记录与 Trace 不一致',409);return {record:old,trace,usable:true,state:'complete'}}}
+  const r=await put(target,{...data,...(trace.background?{id:trace.id}:{}),sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
+  return {record:r,trace,usable:true,...(trace.background?{state:'complete',error:null}:{})}
  }
  return {read,head,lineage,async dispatch(method,route,body={}){
   if(method==='GET'&&route==='status')return {models:modelOptions('reverse'),planningModels:modelOptions('design'),providers:providerStatus(),prompt:await visiblePromptStatus()}
-  if(method==='GET'&&route==='requests'){const files=await readdir(path.join(directory,'requests')).catch(e=>{if(e.code==='ENOENT')return [];throw e});return Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(f=>readFile(path.join(directory,'requests',f),'utf8').then(JSON.parse)))}
+  if(method==='GET'&&route==='requests'){const files=await readdir(path.join(directory,'requests')).catch(e=>{if(e.code==='ENOENT')return [];throw e});return Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(async f=>{
+   const r=JSON.parse(await readFile(path.join(directory,'requests',f),'utf8')),b=r.trace?.background
+   // Presentation only: an interrupted submit cannot be called "running"
+   // forever. Keep the saved evidence unchanged and never retry the POST.
+   if(b?.state==='submitting'&&!b.responseId&&Date.now()-Date.parse(r.createdAt)>95000)return {...r,state:'unknown',error:'提交确认中断；未保存 Provider Response ID，执行与计费状态未知，不会自动重发。',trace:{...r.trace,background:{...b,state:'unknown'}}}
+   return r
+  }))}
   if(method==='GET'&&route==='history'){
    const result={};for(const k of kinds){const files=await readdir(path.join(directory,k)).catch(e=>{if(e.code==='ENOENT')return [];throw e});result[k]=await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(f=>read(k,f.slice(0,-5))));result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return result
   }
@@ -78,12 +95,24 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    // Read-only view adapter: derive paths from the validated ID, never from a
    // stored absolute path. Reuse the existing Trace redaction and availability.
    async function wire(suffix){try{return {available:true,origin:traceId+suffix,...shareText(await readFile(prefix+suffix,'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'未保存实际 HTTP wire 正文；不会用应用请求或解析结果补齐。'};throw e}}
-   return {traceId,request:await wire('.request.json'),response:await wire('.response.txt')}
+   const submission=await wire('.response.txt')
+   let response=submission
+   if(trace.latestPollId){const pollId=identifier(trace.latestPollId);response=await (async()=>{try{return {available:true,origin:traceId+'.polls/'+pollId+'.response.txt',...shareText(await readFile(path.join(directory,'model-traces',traceId+'.polls',pollId+'.response.txt'),'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'该次 GET 未收到实际响应；不会用之前的响应冒充。'};throw e}})()}
+   return {traceId,request:await wire('.request.json'),response,...(trace.background?{submissionResponse:submission,pollingNote:'每次查询的 GET 元数据与原始响应保存在同一 Trace 的 .polls 目录；不是重新生成。'}:{})}
   }
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}
   if(method!=='POST')fail('未知 Visible 3D 操作',404)
-  if(route==='analyze'||route==='plan')return operation(body,route,()=>modelRecord(route==='analyze'?'analysis':'plan',body))
+  if(route==='analyze'||route==='plan')return operation(body,route,checkpoint=>modelRecord(route==='analyze'?'analysis':'plan',body,checkpoint))
+  if(route==='resume-analyze')return resumeSpatialOperation(path.join(directory,'requests'),body.requestId,async(saved,checkpoint)=>{
+   const source=await readSource(body.sourceId),traceId=identifier(saved.trace?.id)
+   const trace=JSON.parse(await readFile(path.join(directory,'model-traces',traceId+'.json'),'utf8'))
+   if(saved.kind!=='analyze'||source.hash!==body.sourceHash||trace.requestInput?.source?.id!==source.id||trace.requestInput.source.hash!==source.hash||!trace.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash))fail('后台任务来源不一致；未查询或生成。',409)
+   if(saved.record)return saved
+   if(!trace.background?.responseId)fail('尚无 Provider Response ID，无法恢复该请求；不能确认是否已计费，不会自动重发。',409)
+   const updated=await resumeVisibleAnalysis(path.join(directory,'model-traces'),traceId,source,async t=>checkpoint({trace:t}))
+   return saveModelResult('analysis',updated,source,await getRegistry(),null)
+  })
   if(route==='annotate'){
    const source=await readSource(body.sourceId),evidence=parseVisibleEvidence(body.evidence),registry=await getRegistry()
    assertImageEvidence(evidence,source);if(source.images?.length>1&&evidence.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')
