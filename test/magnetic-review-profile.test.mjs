@@ -55,3 +55,24 @@ test('planning an immutable legacy Review excludes duplicate manual shape metada
  assert.deepEqual(calls[0].input.geometryInput.profiles,legacy.input.profiles);assert.deepEqual(calls[0].input.geometryInput.evidence,legacy.input.evidence)
  assert.equal(await readFile(file,'utf8'),bytes);assert.deepEqual((await workflow.dispatch('GET','reviews/'+legacy.id)).record,legacy)
 })
+
+test('explicit Profile acceptance and confirmation are atomic, preserve exclusion and invalidate edited constraints',async()=>{
+ const f=await visibleV2Fixture(),review=structuredClone(f.review),id=review.pieces[0].id
+ review.pieces.forEach(p=>{p.confirmed=false;p.profileId=null;p.profileVersion=null})
+ const before=structuredClone(review),adopted=editReviewedPiece(review,id,{profileId:'square',profileVersion:1,confirmed:true})
+ assert.equal(adopted.pieces[0].confirmed,true);assert.equal(adopted.pieces[0].profileId,'square');assert.deepEqual(adopted.pieces.slice(1),before.pieces.slice(1))
+ // Existing reviewed edges are kept with changed-piece Ports invalidated, never auto-approved.
+ const connected={...structuredClone(f.review),constraints:structuredClone(f.plan.connections)}
+ const corrected=editReviewedPiece(connected,id,{profileId:'equilateral-triangle',profileVersion:1,confirmed:true})
+ assert.equal(corrected.pieces[0].confirmed,true)
+ for(let i=0;i<corrected.constraints.length;i++){
+  const c=corrected.constraints[i],old=connected.constraints[i]
+  assert.equal(c.portA,c.pieceA===id?null:old.portA);assert.equal(c.portB,c.pieceB===id?null:old.portB);assert.deepEqual(c.angles,old.angles)
+ }
+ const unknown=editReviewedPiece(corrected,id,{profileId:null,profileVersion:null,confirmed:false})
+ assert.equal(unknown.pieces[0].confirmed,false);assert.equal(unknown.pieces[0].profileId,null);assert.ok(unknown.constraints.every(c=>c.pieceA!==id&&c.pieceB!==id))
+ const excluded=editReviewedPiece(adopted,id,{excluded:true}),attempt=editReviewedPiece(excluded,id,{profileId:'square',profileVersion:1,confirmed:true})
+ assert.equal(attempt.pieces[0].excluded,true);assert.equal(attempt.pieces[0].confirmed,false)
+ const revoked=editReviewedPiece(adopted,id,{confirmed:false});assert.equal(revoked.pieces[0].profileId,'square');assert.equal(revoked.pieces[0].confirmed,false)
+ assert.deepEqual(review,before)
+})
