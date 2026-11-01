@@ -2,6 +2,7 @@ import {useState,useRef,useLayoutEffect} from 'react'
 import type {Profile} from '../../geometry.ts'
 import {profileSizeLabel} from '../../profiles.ts'
 import type {ReviewedPiece3D,VisibleObservation3D} from './contracts.ts'
+import {availableAISuggestions,acceptedProfilePatch} from './review-profile-actions.ts'
 import {familyLabels} from './SpatialUnderstandingPanel.tsx'
 
 type Props={
@@ -14,7 +15,7 @@ export function ReviewObservationInspector({piece,evidence,profiles,busy,images,
  const [suggestion,setSuggestion]=useState(0),core=useRef<HTMLElement>(null)
  useLayoutEffect(()=>{if(core.current?.getClientRects().length)core.current.closest('.studio-inspector')?.scrollTo({top:0})},[piece.id])
  const candidates=evidence?.profileCandidates??[]
- const available=candidates.filter(c=>profiles.some(p=>p.id===c.profileId&&p.version===c.profileVersion))
+ const available=availableAISuggestions(evidence,profiles)
  const candidate=available[suggestion]??available[0]
  const adopted=!!candidate&&piece.profileId===candidate.profileId&&piece.profileVersion===candidate.profileVersion&&piece.confirmed&&!piece.excluded
  const reviewed=profiles.find(p=>p.id===piece.profileId&&p.version===piece.profileVersion)
@@ -24,10 +25,10 @@ export function ReviewObservationInspector({piece,evidence,profiles,busy,images,
   <div className="review-observation-core">
    <div className="review-observation-suggestion visible3d-shape" aria-label="AI 形状与 Profile 建议">
     <strong>{piece.id}</strong><span className="review-observation-ai" title={aiLabel}>{aiLabel}</span>
-    {candidate&&<button disabled={busy||piece.excluded||adopted} aria-label={`采用 AI 建议 ${candidate.profileId}@${candidate.profileVersion}`} onClick={()=>onEdit({profileId:candidate.profileId,profileVersion:candidate.profileVersion,confirmed:true})}>{adopted?'已采用':'采用 AI 建议'}</button>}
+    {candidate&&<button disabled={busy||piece.excluded||adopted} aria-label={`采用 AI 建议 ${candidate.profileId}@${candidate.profileVersion}`} onClick={()=>onEdit(acceptedProfilePatch(candidate))}>{adopted?'已采用':'采用 AI 建议'}</button>}
    </div>
    {available.length>1&&<label className="review-inline-field">其他建议<select aria-label="AI Profile 建议" value={Math.min(suggestion,available.length-1)} onChange={e=>setSuggestion(Number(e.target.value))}>{available.map((c,i)=><option key={`${c.profileId}@${c.profileVersion}`} value={i}>{c.profileId}@{c.profileVersion}</option>)}</select></label>}
-   <label className="review-inline-field">人工修改<select aria-label="3D Review Profile" disabled={busy||piece.excluded} value={piece.profileId?`${piece.profileId}@${piece.profileVersion}`:''} onChange={e=>{const p=profiles.find(p=>`${p.id}@${p.version}`===e.target.value);onEdit({profileId:p?.id??null,profileVersion:p?.version??null,confirmed:!!p})}}><option value="">Unknown</option>{profiles.map(p=><option key={`${p.id}@${p.version}`} value={`${p.id}@${p.version}`}>{p.id}@{p.version} · {p.name}</option>)}</select></label>
+   <label className="review-inline-field">人工修改<select aria-label="3D Review Profile" disabled={busy||piece.excluded} value={piece.profileId?`${piece.profileId}@${piece.profileVersion}`:''} onChange={e=>{const p=profiles.find(p=>`${p.id}@${p.version}`===e.target.value);onEdit(acceptedProfilePatch(p?{profileId:p.id,profileVersion:p.version}:null))}}><option value="">Unknown</option>{profiles.map(p=><option key={`${p.id}@${p.version}`} value={`${p.id}@${p.version}`}>{p.id}@{p.version} · {p.name}</option>)}</select></label>
    <div className="review-observation-toggles">
     <label><input type="checkbox" checked={piece.confirmed} disabled={busy||piece.excluded} onChange={e=>onEdit({confirmed:e.target.checked})}/>确认可见实例</label>
     <label><input type="checkbox" aria-label="排除实例（保留证据）" checked={piece.excluded} disabled={busy} onChange={e=>onEdit({excluded:e.target.checked})}/>排除实例</label>

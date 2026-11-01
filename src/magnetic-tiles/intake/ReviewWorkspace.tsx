@@ -1,3 +1,4 @@
+import {InfoHint} from '../../brick-vision/InfoHint.tsx'
 import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import { matchOutline, needsOutlineConfirmation } from './profile-match.ts'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -7,7 +8,7 @@ import { profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
 import {filteredReviewRows,reviewStatus as status,reviewImageSelection} from './review-display.ts'
 import type {ReviewDisplay} from './review-display.ts'
-export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children,spatial=false,confirmedIds=[],spatialLabels,display,imageControls,evidenceLabel,currentImageId}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode;spatial?:boolean;confirmedIds?:string[];spatialLabels?:Record<string,string>;display:ReviewDisplay;imageControls?:ReactNode;evidenceLabel?:string;currentImageId:string}){
+export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children,spatial=false,confirmedIds=[],spatialLabels,display,imageControls,evidenceLabel,currentImageId,bulkControl,inputHelp}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode;spatial?:boolean;confirmedIds?:string[];spatialLabels?:Record<string,string>;display:ReviewDisplay;imageControls?:ReactNode;evidenceLabel?:string;currentImageId:string;bulkControl?:ReactNode;inputHelp?:string}){
  const {registry:{profiles}}=useProfileRegistry()
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
@@ -30,17 +31,29 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
  return <Group orientation="vertical" className="review-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
   <Panel id="parts" defaultSize="70%" minSize="20%">
    <section className="review-parts" aria-label="Parts Review Table">
-    <div className="review-table-tools"><div className="review-toolbar">
+    <div className={`review-table-tools${spatial?' review-spatial-toolbar':''}`}>
+    {spatial?<>
+     <div className="review-toolbar review-toolbar-primary">
+      <div className="review-filters" role="group" aria-label="Review 统计与筛选" data-testid="review-confirmation-progress" data-confirmed={confirmed} data-pending={pending.length} data-expected={expected.length} data-excluded={observations.length-expected.length}>
+       {(['All','Known','Unknown','Excluded'] as const).map(f=>{const count=f==='All'?observations.length:observations.filter(o=>status(o)===f).length;return <button key={f} aria-pressed={filter===f} onClick={()=>display.update({filter:f})}>{f==='All'?'全部':f} {count}{f==='Known'&&count!==confirmed&&<small> · 确认 {confirmed}</small>}{f==='Unknown'&&count!==pending.length&&<small> · 待确认 {pending.length}</small>}</button>})}
+       <InfoHint label="审核统计">{`完整 Review：已确认 ${confirmed}/${expected.length} · 尚未确认 ${pending.length} · 已排除 ${observations.length-expected.length}。Known / Unknown 按正式 Profile 筛选；存在性确认独立。Excluded 不参与重建。${confirmed===0?'无法执行 Spatial Planning：请确认至少一个实例并保存 Review。':pending.length?'未确认实例不参与本次部分重建。':'全部应审核实例已确认。'}`}</InfoHint>
+      </div>
+      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>display.update({query:e.target.value})}/><select aria-label="审核零件排序" value={sort} onChange={e=>display.update({sort:e.target.value as typeof sort})}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
+      {imageControls}<InfoHint label="图片与标注筛选">多图按 OR 过滤表格；当前证据图片切换时自动勾选该图内可见行。表格 Checkbox 仅控制标注，不代表人工确认。批量采用针对完整 Review，不受这些筛选影响。{chosen&&!rows.includes(chosen)&&<><br/>当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>display.update({query:'',filter:'All',imageIds:null})}>显示全部零件</button></>}</InfoHint>
+     </div>
+     <div className="review-toolbar review-toolbar-actions">
+      <div className="review-display-summary"><button disabled={busy||!selection.eligibleIds.length} title="勾选当前图片中、且在表格筛选范围内的实例" onClick={()=>markAll(true)}>全选当前结果</button><button disabled={busy||!markedIds.length} onClick={()=>mark([])}>清空勾选</button><span className="review-view-count" title="UI 展示数量，与完整审核统计无关">显示 {rows.length}/{observations.length} · 标注 {markedIds.length}</span></div>
+      <div className="review-bulk-actions">{bulkControl}</div>
+      <div className="review-save-actions">{saveControl}<span className="review-reconstruction-action">{inputControl}<InfoHint label="进入 3D Reconstruction">{inputHelp??'请先保存 Review；Spatial Planning 仅使用已保存、已确认且未排除的实例，未确认实例不参与本次部分重建。'} </InfoHint>{confirmed===0&&<span className="review-confirmation-blocker" role="status">待确认</span>}</span></div>
+     </div>
+    </>:<><div className="review-toolbar">
      <div className="review-filters">{(['All','Known','Unknown','Excluded'] as const).map(f=><button key={f} aria-pressed={filter===f} onClick={()=>display.update({filter:f})}>{f==='All'?'全部':f} {f==='All'?scoped.length:scoped.filter(o=>status(o)===f).length}</button>)}</div>
      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>display.update({query:e.target.value})}/><select aria-label="审核零件排序" value={sort} onChange={e=>display.update({sort:e.target.value as typeof sort})}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
      {imageControls}<div className="review-title-row">{!spatial&&<button disabled={addDisabled} onClick={()=>{display.update({query:'',filter:'All',imageIds:null});onAdd()}}>新增零件</button>}{saveControl}</div>{inputControl}
     </div>
     <div className="review-display-summary"><span>显示 {rows.length}/{observations.length} · 标注：已勾选 {markedIds.length} 个</span><button disabled={busy||!selection.eligibleIds.length} title="勾选当前图片中、且在表格筛选范围内的实例" onClick={()=>markAll(true)}>全选当前结果</button><button disabled={busy||!markedIds.length} onClick={()=>mark([])}>清空勾选</button><span className="hint">切图同步勾选；勾选仅控制标注，不代表人工确认</span></div>
-     {spatial&&<div className="review-confirmation-progress" data-testid="review-confirmation-progress" role={confirmed===0?'alert':'status'}>
-      <b className={confirmed===0?'review-confirmation-blocker':undefined}>已确认 {confirmed}/{expected.length}</b><span> · 尚未确认 {pending.length} · 已排除 {observations.length-expected.length}</span>
-      {confirmed===0?<span className="review-confirmation-blocker"> · 无法执行 Spatial Planning：请{expected.length?'确认':'保留并确认'}至少一个实例并保存 Review。</span>:pending.length?<span> · 未确认实例不参与本次部分重建</span>:<span> · 全部应审核实例已确认</span>}
-     </div>}
-     {chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>display.update({query:'',filter:'All',imageIds:null})}>显示全部零件</button></p>}
+    </>}
+     {!spatial&&chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>display.update({query:'',filter:'All',imageIds:null})}>显示全部零件</button></p>}
     </div>
     <div ref={scroll} className="review-table-scroll" tabIndex={0} aria-label="零件表滚动区"><table className="review-parts-table"><thead><tr><th scope="col" className="review-mark-cell"><input type="checkbox" aria-label="全选当前筛选结果" checked={allMarked} ref={el=>{if(el)el.indeterminate=someMarked&&!allMarked}} disabled={busy||!selection.eligibleIds.length} onChange={e=>markAll(e.target.checked)}/></th>{['Observation ID','Profile / ID / Version','状态','Size · 几何规格','颜色','Confidence','最佳形状匹配','关系 / 不确定性'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{rows.map(o=>{
      const p=profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion),xs=o.outline.map(v=>v[0]),ys=o.outline.map(v=>v[1]),links=evidence?.relations.filter(r=>r.from===o.id||r.to===o.id)??[]
