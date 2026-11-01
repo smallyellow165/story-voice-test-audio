@@ -28,7 +28,7 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
  const library=createMagneticImageLibrary(libraryDirectory)
  const selectedSnapshots=createSelectedSnapshots(directory,{read})
  const visible3D=createVisible3DWorkflow(path.join(directory,"visible3d"),{readSource:id=>read("sources",id),readImage:view,readImages:sourceViews,getRegistry:()=>registry.get()})
- const humanCollision=createHumanCollisionReview(path.join(directory,'assembly3d-review'),{enabled:enableHumanReview,readOrigin:id=>visible3D.dispatch('GET','origins/'+id)})
+ const humanCollision=createHumanCollisionReview(path.join(directory,'assembly3d-review'),{enabled:enableHumanReview,readOrigin:async(id,options)=>{const origin=await visible3D.dispatch('GET','origins/'+id);if(options?.acceptingDiagnostic){const l=await visible3D.lineage('executions',origin.executionId);if(l.outdated||l.record.hash!==origin.executionHash||l.source.hash!==origin.sourceHash||l.review.hash!==origin.reviewHash)fail('Diagnostic 来源已变化，不能接受过期快照。',409)}return origin}})
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
  async function put(kind,value,{replace=false}={}){
   const {hash:_,...payload}=value, record={...payload,hash:await contentHash(payload)}

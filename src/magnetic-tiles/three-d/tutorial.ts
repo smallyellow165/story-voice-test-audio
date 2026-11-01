@@ -86,7 +86,7 @@ export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): Tu
   assertTutorial3D(t)
   const issues: TutorialIssue[]=[],final=validateAssembly3D(t.assembly)
   const approved=grantMatches(t.assembly,grant)&&t.source.humanCollisionApproval?.id===grant?.id&&t.source.humanCollisionApproval?.assemblyHash===grant?.assemblyHash&&t.source.humanCollisionApproval?.diagnosticHash===grant?.diagnosticHash
-  const accepted=(i:typeof final.issues[number])=>approved&&i.code==='intersection'&&collisionErrorsAccepted({...final,issues:[i]},grant)
+  const accepted=(i:typeof final.issues[number],assembly:Assembly3D=t.assembly,partial=false)=>approved&&collisionErrorsAccepted({...final,issues:[i]},grant,assembly,partial)
   for(const i of final.issues)issues.push({code:'FINAL_GEOMETRY',severity:'error',message:`最终结构：${i.message}`,...(accepted(i)?{humanAccepted:true}:{})})
   if(!t.assembly.pieces.length)issues.push({code:'EMPTY_ASSEMBLY',severity:'error',message:'来源结构没有零件'})
   const assigned=new Set<string>()
@@ -94,7 +94,7 @@ export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): Tu
     if(!s.addedPieceIds.length)issues.push({stepId:s.id,code:'EMPTY_STEP',severity:'warning',message:'本步没有新增零件'})
     for(const id of s.addedPieceIds){if(assigned.has(id))issues.push({stepId:s.id,code:'DUPLICATE_PIECE',severity:'error',message:`零件 ${id} 重复分配`});assigned.add(id)}
     const a=stepAssembly(t,index),geometry=validateAssembly3D(a),components=componentCount(a)
-    for(const i of geometry.issues)issues.push({stepId:s.id,code:'STEP_GEOMETRY',severity:'error',message:i.message,...(accepted(i)?{humanAccepted:true}:{})})
+    for(const i of geometry.issues)issues.push({stepId:s.id,code:'STEP_GEOMETRY',severity:'error',message:i.message,...(accepted(i,a,true)?{humanAccepted:true}:{})})
     const connected=!!a.pieces.length&&components===1
     if(!connected)issues.push({stepId:s.id,code:'DISCONNECTED',severity:'warning',message:`本步有 ${components} 个组件，未满足 Connected Construction`})
     // Reuse the same Validator's ground check; this is only ground contact, not support simulation.
@@ -102,12 +102,12 @@ export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): Tu
     for(const i of ground.issues.filter(i=>i.code==='ground'))issues.push({stepId:s.id,code:'GROUND',severity:'warning',message:i.message})
     const grounded=createViewerModel(a).some(p=>pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion).some(v=>Math.abs(v.y)<=.02))
     if(!grounded)issues.push({stepId:s.id,code:'NO_GROUND_CONTACT',severity:'warning',message:'当前步骤没有接触地面；支撑与现实可搭建性尚未验证'})
-    return {stepId:s.id,geometryValid:geometry.valid,connected,components,grounded,...(!geometry.valid&&approved&&collisionErrorsAccepted(geometry,grant)?{humanApproved:true}:{})}
+    return {stepId:s.id,geometryValid:geometry.valid,connected,components,grounded,...(!geometry.valid&&approved&&collisionErrorsAccepted(geometry,grant,a,true)?{humanApproved:true}:{})}
   })
   const missing=t.assembly.pieces.filter(p=>!assigned.has(p.id))
   if(missing.length)issues.push({code:'UNASSIGNED',severity:'error',message:`尚有 ${missing.length} 片未安排到步骤：${missing.map(p=>p.id).join(', ')}`})
   if(!t.steps.length)issues.push({code:'NO_STEPS',severity:'error',message:'尚未创建步骤'})
-  return {issues,finalValid:final.valid&&!!t.assembly.pieces.length,verified:!issues.length,steps,...(!final.valid&&approved&&collisionErrorsAccepted(final,grant)?{humanApproved:true}:{})}
+  return {issues,finalValid:final.valid&&!!t.assembly.pieces.length,verified:!issues.length,steps,...(!final.valid&&approved&&collisionErrorsAccepted(final,grant,t.assembly)?{humanApproved:true}:{})}
 }
 export function tutorialMatchesAssembly(t: Tutorial3D,a: Assembly3D|null) {return !!a&&canonical(t.assembly)===canonical(a)}
 export function serializeTutorial3D(t: Tutorial3D) {assertTutorial3D(t);return JSON.stringify(t)}

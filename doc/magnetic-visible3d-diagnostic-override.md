@@ -1,4 +1,6 @@
-# Visible 3D Diagnostic → 待修复 Assembly Draft
+# Visible 3D Diagnostic → Assembly
+
+当前 Reconstruction UI 使用下文的 **Human Accepted Diagnostic V1**：选择 Diagnostic、检查错误、点击一次「人工采用并进入 Assembly」。旧 Override 入口已从 UI 移除，以下旧机制说明仍适用于历史来源与兼容接口。
 
 本轮采用显式 Override，未将 Solid Collision Error / Blocker 降级，未修改 Geometry Engine、Validator 阈值、Solver、Prompt 或 Auto Snap。
 
@@ -57,3 +59,18 @@ Override 来源显示「待修复 Draft」和红色 Invalid / 复验过期 Block
 6. 几何预检查通过后，未 Revalidate 时 Build 仍阻断。Revalidate 通过后保存 Draft、刷新并进入 Build；再次修改后检查旧复验立即过期。
 
 本轮不证明完整橙色实体可搭建，不自动将其修复为 Solid Valid。未来接点／实体对齐规则仍属于独立的 Editor 工作。
+
+
+## Human Accepted Diagnostic V1
+
+新入口复用 `open-diagnostic-draft` 的来源、不可变快照和相机交接，显式提交 `humanAccepted: true`，生成 `entryMode: human-accepted-diagnostic` 来源。普通合法 Candidate 的 Adopt 不变。只在确有已有 Draft 要替换时保留原覆盖确认，不再要求 Override Checkbox 或在 Assembly 重复批准。
+
+浏览器随后调用现有本机服务 `assembly3d-review/accept-diagnostic`。服务端重新核对来源链、当前 Review、Execution Hash、Diagnostic 快照与严格 Validator，并在既有 `assembly3d-review/heads`、`approvals` 中记录授权。原始 Execution / Diagnostic 不改写，原始几何及错误保存在来源与授权记录中；localStorage 仅保留原有 Draft、来源及审核查找标记，不是权限依据。
+
+`diagnostic-acceptance.ts` 将每项错误关联到具体零件、ProfileSnapshot（含厚度/尺寸/Port）、相关连接及局部相对 Pose；Intersection 还核对原始 penetrationDepth。相对位姿使用确定性参考零件坐标系，允许整体刚体变换，数值等价精度为 1e-9，未修改任何 Validator 阈值。相关几何、连接或错误特征变化时不再匹配；新错误、无法定位或有歧义的错误阻断。可识别范围为结构化 Intersection、Port Reuse、连接位置/方向/折角残差和 Port Length；未知错误与损坏或不完整的结构数据不接受；Coverage 不完整仍保留原有部分重建语义。
+
+几何变化继续调用既有审核同步/CAS。服务端保存原始接受基线并重新核对当前错误，全部匹配时签发当前 Revision / Hash 对应的现有 grant；不是让旧快照授权直接跨版本使用。恢复到原已接受关系（包括 Undo）同样重新核对。普通旧式逐项碰撞批准仍保持原先严格失效语义。
+
+Build 继续使用现有 grant、Tutorial3D 和 Player。中间步骤必须是已授权最终 Assembly 的精确子集，只能接受该子集内仍等价的原错误；连接性、零件分配和其他步骤检查照常执行。Geometry Invalid / Error 保持真实、红色、可定位；Human Accepted Diagnostic 不代表 Photo Match、Geometry Valid 或物理稳定。
+
+验证：`test/magnetic-human-diagnostic.test.mjs` 覆盖 Front 九步教程、保存/恢复、刚体变换、同对同深度但关系变化、厚度/连接/新碰撞、未知错误、伪造/过期来源和 CAS。`scripts/verify-magnetic-human-diagnostic.mjs` 将现有 Front 存档复制到临时服务：四条真实交集逐条定位、一次采用、保存刷新、九步 Build、错误变更阻断及 Undo 重新核对均通过，未调用模型、未写入正式历史。原有橙色六片逐项 Human Collision Review 浏览器回归也通过。

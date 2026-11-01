@@ -30,14 +30,16 @@ export function loadPhotoOrigin(storage:Pick<Storage,'getItem'>):PhotoOrigin3D|n
  try{const value=JSON.parse(storage.getItem(PHOTO_ORIGIN_3D_KEY)||'null');if(!value||typeof value.origin?.id!=='string')return null;parseAssembly3D(value.assemblyRaw);if(value.cameraView){try{assertCameraView(value.cameraView)}catch{delete value.cameraView}}return value}catch{return null}
 }
 
-/** No override permission is inherited. A repair draft needs a current explicit
- * revalidation receipt AND a fresh strict check at the downstream boundary. */
+/** Legacy overrides still require an explicit current revalidation receipt.
+ * This local provenance gate never authorizes Invalid geometry: Human Accepted
+ * Diagnostics need the existing authoritative server grant at the caller. */
 export function photoDraftGeometryGate(assembly:Assembly3D,sidecar:PhotoOrigin3D|null,geometry=validateAssembly3D(assembly)){
- const repair=sidecar?.origin.entryMode==='diagnostic-override'&&parseAssembly3D(sidecar.assemblyRaw).id===assembly.id;
+ const legacyRepair=sidecar?.origin.entryMode==='diagnostic-override'&&parseAssembly3D(sidecar.assemblyRaw).id===assembly.id;
+ const repair=!!sidecar&&['diagnostic-override','human-accepted-diagnostic'].includes(String(sidecar.origin.entryMode))&&parseAssembly3D(sidecar.assemblyRaw).id===assembly.id;
  const review=repair?sidecar?.geometryReview:undefined;
  const current=!!review&&review.assemblyId===assembly.id&&review.revision===assembly.revision&&review.assemblyRaw===serializeAssembly3D(assembly);
- const blocker=!geometry.valid?'Geometry Invalid：当前 Draft 未通过严格验证，不能作为合法 Assembly 或进入 Build Tutorial。':repair&&(!current||!review?.geometry?.valid)?'验证已过期或尚未复验：请对当前 Draft 执行 Revalidate Geometry。':null;
- return {repair,current,geometry,ready:!blocker,blocker};
+ const blocker=!geometry.valid?'Geometry Invalid：当前 Draft 未通过严格验证，不能作为合法 Assembly 或进入 Build Tutorial。':legacyRepair&&(!current||!review?.geometry?.valid)?'验证已过期或尚未复验：请对当前 Draft 执行 Revalidate Geometry。':null;
+ return {repair,receiptRequired:legacyRepair,current,geometry,ready:!blocker,blocker};
 }
 export function assertPhotoDraftReady(storage:Pick<Storage,'getItem'>,assembly:Assembly3D){
  const sidecar=loadPhotoOrigin(storage);

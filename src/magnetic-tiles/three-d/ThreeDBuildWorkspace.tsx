@@ -106,7 +106,7 @@ export default function ThreeDBuildWorkspace(){
         <h3>搭建教程</h3>
         <p className="context-notice" title={assembly3D?.id}>当前作品：{assembly3D?`${assembly3D.id} · r${assembly3D.revision}`:'等待加载'}</p>
         {tutorial&&<p className="hint" data-testid="tutorial-source">教程来源 {tutorial.source.assemblyId} @ revision {tutorial.source.assemblyRevision} · {tutorial.assembly.pieces.length} 片 / {tutorial.assembly.connections.length} 条连接</p>}
-        {sourceValidation&&!sourceValidation.valid&&<p role={humanGrant?'status':'alert'}>{humanGrant?'Geometry Invalid + Human Approved：碰撞已授权；Physical Stability 未验证。':'当前 Assembly Geometry Invalid；不能生成正常教程。'}{!humanGrant&&sourceValidation.issues.map(i=>i.message).join('；')}</p>}
+        {sourceValidation&&!sourceValidation.valid&&<p className="magnetic-3d-blocker" role={humanGrant?'status':'alert'}>{humanGrant?(humanGrant.acceptedDiagnostic?'Geometry Invalid + Human Accepted Diagnostic：已接受错误保持授权；Physical Stability 未验证。':'Geometry Invalid + Human Approved：碰撞已授权；Physical Stability 未验证。'):'当前 Assembly Geometry Invalid；不能生成正常教程。'}{!humanGrant&&sourceValidation.issues.map(i=>i.message).join('；')}</p>}
         {sourceGate?.repair&&sourceGate.blocker&&<p role="alert" data-testid="repair-build-blocker">{sourceGate.blocker}</p>}
         {humanReview.error&&<p role="alert">{humanReview.error}</p>}{error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
         <BuildOrderGenerator humanGrant={humanGrant} assembly={assembly3D} active={active} geometryValid={sourceGate?.ready??false} hasTutorial={!!tutorial?.steps.length}
@@ -114,8 +114,8 @@ export default function ThreeDBuildWorkspace(){
           onAdopt={t=>{try{if(!assembly3D)throw Error('尚无当前 Assembly');assertBuildReady(assembly3D);if(!confirm('使用此生成候选替换当前教程预览？此操作不保存；未完成结果只能作为未验证草稿。'))return;fileRequest.current++;accept(t)}catch(e){setError(String(e))}}}/>
         <div ref={setControlsHost}/>{humanGrant&&<details><summary>人工批准与原始严格诊断</summary><pre>{JSON.stringify(humanGrant,null,2)}</pre></details>}
         {tutorial&&validation&&<section className="magnetic-tutorial-summary" aria-label="3D 教程检查状态">
-          <p role="status" data-testid="tutorial-validation">最终 Assembly Geometry {validation.finalValid?'Valid':validation.humanApproved?'Invalid + Human Approved':'Invalid'} · {validation.verified?'几何与顺序检查通过':'教程尚有待检查项'}</p>
-          {!!tutorial.steps.length&&<p data-testid="tutorial-step-validation">当前步骤 Geometry {validation.steps[index]?.geometryValid?'Valid':validation.steps[index]?.humanApproved?'Invalid + Human Approved':'Invalid'} · Connected Construction {validation.steps[index]?.connected?'通过':'未通过'} · {validation.steps[index]?.components??0} 个组件</p>}
+          <p role="status" data-testid="tutorial-validation">最终 Assembly Geometry {validation.finalValid?'Valid':validation.humanApproved?(humanGrant?.acceptedDiagnostic?'Invalid + Human Accepted Diagnostic':'Invalid + Human Approved'):'Invalid'} · {validation.verified?'几何与顺序检查通过':'教程尚有待检查项'}</p>
+          {!!tutorial.steps.length&&<p data-testid="tutorial-step-validation">当前步骤 Geometry {validation.steps[index]?.geometryValid?'Valid':validation.steps[index]?.humanApproved?(humanGrant?.acceptedDiagnostic?'Invalid + Human Accepted Diagnostic':'Invalid + Human Approved'):'Invalid'} · Connected Construction {validation.steps[index]?.connected?'通过':'未通过'} · {validation.steps[index]?.components??0} 个组件</p>}
           <p>Buildability Estimate：{ready?'review-required':'incomplete'} · Physical Stability：未验证</p>
           <p className="hint">地面接触不等于支撑验证；磁力、稳定站立、安装路径与操作空间均未验证。</p>
           {tutorial.steps.length>0&&validation.issues.some(i=>i.severity==='error'&&!i.humanAccepted)&&<p role="alert">教程未通过完整检查，不能保存为正常教程。{validation.issues.filter(i=>i.severity==='error'&&!i.humanAccepted).map(i=>i.message).join('；')}</p>}

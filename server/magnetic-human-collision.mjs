@@ -8,6 +8,7 @@ import {canonical} from '../src/magnetic-tiles/build-plan.ts'
 import {assertAssembly3D} from '../src/magnetic-tiles/three-d/assembly.ts'
 import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
 import {collisionReviewPolicy,grantMatches,referenceFor} from '../src/magnetic-tiles/three-d/human-collision-policy.ts'
+import {acceptedDiagnosticErrors,diagnosticAcceptanceEligibility} from '../src/magnetic-tiles/three-d/diagnostic-acceptance.ts'
 import {generateBuildOrder3D} from '../src/magnetic-tiles/three-d/build-order.ts'
 import {assertTutorial3D,validateTutorial3D} from '../src/magnetic-tiles/three-d/tutorial.ts'
 import {tutorialReadyToSave} from '../src/magnetic-tiles/three-d/tutorial-workflow.ts'
@@ -28,33 +29,61 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin}=
   return current
  }
  async function commit(previous,changes){const r={...changes,version:(previous?.version??0)+1,previousHash:previous?.hash??null,updatedAt:new Date().toISOString()};return publish(path.join(directory,'heads',r.assembly.id,String(r.version).padStart(12,'0')+'.json'),r)}
- function checked(assembly){assertAssembly3D(assembly);if(!assembly.pieces.length||assembly.pieces.length>64||assembly.connections.length>512||Buffer.byteLength(JSON.stringify(assembly))>2_000_000)fail('人工审核 V1 仅支持 1–64 片、最多 512 条连接及 2 MB 快照。');const geometry=validateAssembly3D(assembly),policy=collisionReviewPolicy(assembly,geometry);return {geometry,policy,assemblyHash:hash(assembly),assemblyCanonical:canonical(assembly),diagnosticHash:hash(geometry)}}
+ function checked(assembly){assertAssembly3D(assembly);if(!assembly.pieces.length||assembly.pieces.length>64||assembly.connections.length>512||Buffer.byteLength(JSON.stringify(assembly))>2_000_000)fail('人工审核 V1 仅支持 1–64 片、最多 512 条连接及 2 MB 快照。');const geometry=validateAssembly3D(assembly),policy=collisionReviewPolicy(assembly,geometry);return {assembly,geometry,policy,assemblyHash:hash(assembly),assemblyCanonical:canonical(assembly),diagnosticHash:hash(geometry)}}
  function same(h,c){return h&&h.assemblyHash===c.assemblyHash&&h.assemblyCanonical===c.assemblyCanonical}
  function cas(h,version){if(version!==(h?.version??null))fail('审核版本已过期或发生并发修改；请重新读取审核。',409)}
+ async function publishGrant(assembly,c,origin,acceptedDiagnostic){
+  const id=randomUUID()
+  return publish(path.join(directory,'approvals',id+'.json'),{id,assemblyId:assembly.id,revision:assembly.revision,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,collisionKeys:c.policy.keys,geometry:c.geometry,approvedAt:new Date().toISOString(),actor:'local-operator',...(origin?{origin}:{}),...(acceptedDiagnostic?{acceptedDiagnostic}:{})})
+ }
+ function acceptance(c,evidence){return evidence?acceptedDiagnosticErrors(c.assembly,c.geometry,evidence):null}
  async function grant(h,c){
-  if(!h?.approvalId||!same(h,c)||h.diagnosticHash!==c.diagnosticHash||!c.policy.eligible)return null
+  if(!h?.approvalId||!same(h,c)||h.diagnosticHash!==c.diagnosticHash)return null
   const g=await readRecord(path.join(directory,'approvals',h.approvalId+'.json'))
-  if(!grantMatches(h.assembly,g)||g.assemblyHash!==c.assemblyHash||g.diagnosticHash!==c.diagnosticHash||canonical(g.collisionKeys)!==canonical(c.policy.keys)||canonical(h.acceptedKeys)!==canonical(c.policy.keys))return null
+  if(!grantMatches(h.assembly,g)||g.assemblyHash!==c.assemblyHash||g.diagnosticHash!==c.diagnosticHash)return null
+  if(h.acceptedDiagnostic){
+   if(canonical(g.acceptedDiagnostic)!==canonical(h.acceptedDiagnostic)||!acceptance(c,h.acceptedDiagnostic)?.complete)return null
+  }else if(!c.policy.eligible||canonical(g.collisionKeys)!==canonical(c.policy.keys)||canonical(h.acceptedKeys)!==canonical(c.policy.keys))return null
   return g
  }
- async function response(h,c){return {matches:!h||same(h,c),version:h?.version??null,assemblyHash:c.assemblyHash,diagnosticHash:c.diagnosticHash,assemblyCanonical:c.assemblyCanonical,acceptedKeys:same(h,c)&&h.diagnosticHash===c.diagnosticHash?h.acceptedKeys:[],eligible:c.policy.eligible,collisionKeys:c.policy.keys,geometry:c.geometry,blockers:c.policy.blockers,grant:await grant(h,c)}}
+ async function response(h,c){
+  const matches=!h||same(h,c),review=matches&&h?.acceptedDiagnostic?acceptance(c,h.acceptedDiagnostic):null
+  return {matches,version:h?.version??null,assemblyHash:c.assemblyHash,diagnosticHash:c.diagnosticHash,assemblyCanonical:c.assemblyCanonical,acceptedKeys:same(h,c)&&h.diagnosticHash===c.diagnosticHash?h.acceptedKeys:[],eligible:c.policy.eligible,collisionKeys:c.policy.keys,geometry:c.geometry,blockers:review?.blockers??c.policy.blockers,grant:await grant(h,c),...(h?.acceptedDiagnostic?{humanAcceptedDiagnostic:true,acceptedErrors:review?.accepted??[]}:{})}
+ }
  return {async dispatch(method,route,body={},context){
   authorize(context,route!=='session');if(method!=='POST')fail('Use POST',405)
   if(route==='session'){for(const [k,v]of sessions)if(v<Date.now())sessions.delete(k);if(sessions.size>1024)fail('本机会话过多。',429);const token=randomBytes(32).toString('hex');sessions.set(token,Date.now()+8*3600000);return {token,scope:'local-human-collision-review'}}
-  const allowed={status:['assembly'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
+  const allowed={status:['assembly'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
   if(!allowed[route]||!body||Object.keys(body).some(k=>!allowed[route].includes(k)))fail('人工审核请求字段或操作无效。',400)
   const assembly=body.assembly,c=checked(assembly),h=await head(assembly.id)
   if(route==='status')return response(h,c)
+  if(route==='accept-diagnostic'){
+   if(!safeId(body.originId)||!readOrigin)fail('人工采用缺少可校验的 Diagnostic 来源。')
+   const origin=await readOrigin(body.originId,{acceptingDiagnostic:true})
+   if(origin.entryMode!=='human-accepted-diagnostic'||origin.authorization?.explicit!==true||origin.authorization?.scope!=='accepted-diagnostic-errors'||canonical(origin.assembly)!==c.assemblyCanonical||!origin.executionId||!origin.executionHash||!origin.diagnostic?.hash)fail('Human Accepted Diagnostic 来源或几何快照不一致。',409)
+   if(h&&same(h,c)&&h.origin?.id===origin.id&&h.acceptedDiagnostic&&await grant(h,c))return response(h,c)
+   cas(h,body.expectedVersion)
+   if(h)fail('Diagnostic 已有其他审核状态，不能覆盖。',409)
+   const policy=diagnosticAcceptanceEligibility(assembly,c.geometry)
+   if(!policy.eligible)fail('Diagnostic 包含无法可靠定位或比较的错误，不能人工采用。')
+   const acceptedDiagnostic={version:1,origin:{id:origin.id,hash:origin.hash},execution:{id:origin.executionId,hash:origin.executionHash},diagnostic:{id:origin.candidateId,hash:origin.diagnostic.hash},assembly,geometry:c.geometry}
+   const g=await publishGrant(assembly,c,acceptedDiagnostic.origin,acceptedDiagnostic)
+   const next=await commit(h,{assembly,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys:c.policy.keys,approvalId:g.id,origin:acceptedDiagnostic.origin,acceptedDiagnostic,savedTutorials:[]})
+   return response(next,c)
+  }
   cas(h,body.expectedVersion)
   if(route==='sync'){
    let origin=h?.origin
    if(body.originId){if(!safeId(body.originId)||!readOrigin)fail('来源 ID 无效');const r=await readOrigin(body.originId);if(r.assembly?.id!==assembly.id)fail('照片来源与作品 ID 不一致');origin={id:r.id,hash:r.hash}}
-   const next=await commit(h,{assembly,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys:[],approvalId:null,...(origin?{origin}:{}),savedTutorials:h?.savedTutorials??[]});return response(next,c)
+   const evidence=h?.acceptedDiagnostic&&(!origin||origin.id===h.origin?.id)?h.acceptedDiagnostic:undefined,review=acceptance(c,evidence)
+   const g=evidence&&review?.complete&&!c.geometry.valid?await publishGrant(assembly,c,origin,evidence):null
+   const acceptedKeys=review?review.accepted.filter(i=>i.code==='intersection').map(i=>canonical(i)).sort():[]
+   const next=await commit(h,{assembly,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys,approvalId:g?.id??null,...(origin?{origin}:{}),...(evidence?{acceptedDiagnostic:evidence}:{}),savedTutorials:h?.savedTutorials??[]});return response(next,c)
   }
   if(!same(h,c))fail('作品 Revision / Hash 与服务端当前快照不一致。',409)
   if(route==='revalidate'){
    if(h.diagnosticHash===c.diagnosticHash)return response(h,c)
-   const {version,hash:_,previousHash,updatedAt,...rest}=h;return response(await commit(h,{...rest,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys:[],approvalId:null}),c)
+   const {version,hash:_,previousHash,updatedAt,...rest}=h,review=acceptance(c,h.acceptedDiagnostic),g=review?.complete&&!c.geometry.valid?await publishGrant(assembly,c,h.origin,h.acceptedDiagnostic):null;return response(await commit(h,{...rest,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys:review?.accepted.filter(i=>i.code==='intersection').map(i=>canonical(i)).sort()??[],approvalId:g?.id??null}),c)
   }
   if(h.diagnosticHash!==c.diagnosticHash)fail('Validator 诊断已变化，请先重新验证并审核。',409)
   if(['accept','approve'].includes(route)){
@@ -62,11 +91,12 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin}=
    const keys=body.acceptedKeys;if(!Array.isArray(keys)||keys.some(k=>typeof k!=='string'||!c.policy.keys.includes(k))||new Set(keys).size!==keys.length)fail('接受项不属于当前碰撞集合。')
    const acceptedKeys=[...keys].sort()
    const {version,hash:_,previousHash,updatedAt,...rest}=h
-   if(route==='accept')return response(await commit(h,{...rest,acceptedKeys,approvalId:null}),c)
+   if(route==='accept'){const accepted=acceptance(c,h.acceptedDiagnostic),keepsAcceptance=accepted?.accepted.filter(i=>i.code==='intersection').every(i=>acceptedKeys.includes(canonical(i)));return response(await commit(h,{...rest,acceptedKeys,approvalId:null,...(h.acceptedDiagnostic&&!keepsAcceptance?{acceptedDiagnostic:null}:{})}),c)}
    if(canonical(acceptedKeys)!==canonical(c.policy.keys)||canonical(h.acceptedKeys)!==canonical(c.policy.keys))fail('尚未逐项接受全部当前碰撞。')
    // Record is immutable; only a successful head CAS makes it authoritative.
-   const id=randomUUID(),g=await publish(path.join(directory,'approvals',id+'.json'),{id,assemblyId:assembly.id,revision:assembly.revision,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,collisionKeys:c.policy.keys,geometry:c.geometry,approvedAt:new Date().toISOString(),actor:'local-operator',...(h.origin?{origin:h.origin}:{})})
-   return response(await commit(h,{...rest,acceptedKeys,approvalId:g.id}),c)
+   const acceptedDiagnostic=h.acceptedDiagnostic?{...h.acceptedDiagnostic,assembly,geometry:c.geometry}:undefined
+   const g=await publishGrant(assembly,c,h.origin,acceptedDiagnostic)
+   return response(await commit(h,{...rest,acceptedKeys,approvalId:g.id,...(acceptedDiagnostic?{acceptedDiagnostic}:{})}),c)
   }
   const g=await grant(h,c);if(!g||body.approvalId!==g.id)fail('当前作品没有有效的服务端 Human Approved 授权。',403)
   if(route==='generate'){

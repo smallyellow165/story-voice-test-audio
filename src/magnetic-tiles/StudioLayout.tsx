@@ -24,7 +24,8 @@ type ViewMode = StudioMode
 type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
-const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>void; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
+type Adoption3DRequest = {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D;complete:(error?:unknown)=>void}
+const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: Adoption3DRequest|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>Promise<void>; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
@@ -39,7 +40,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const viewMode=mode,intakeMode=mode==='3d'?'visible3d':'2d'
   const modeRef=useRef(mode);modeRef.current=mode
   const [opened3D,setOpened3D]=useState(modeBoot.mode==='3d'),[openedVisible3D,setOpenedVisible3D]=useState(modeBoot.mode==='3d')
-  const [adoption3D,setAdoption3D]=useState<{assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D}|null>(null)
+  const [adoption3D,setAdoption3D]=useState<Adoption3DRequest|null>(null)
   const [assembly3D,setAssembly3D]=useState<Assembly3D|null>(null)
   const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
@@ -68,7 +69,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     setMobileColumn('workspace')
     try{saveStudioMode(localStorage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
   }
-  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');setAdoption3D({assembly,origin,cameraView});setOpened3D(true);navigate('assembly');setRightTab('inspector')},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,navigate,hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
     <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode} data-studio-mode={mode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">

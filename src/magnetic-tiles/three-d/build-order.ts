@@ -84,13 +84,13 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
   const finalCheck=validateAssembly3D(input,{checkGround:true});result.stats.evaluations++
   const geometryOK=(check:ReturnType<typeof validateAssembly3D>)=>!check.issues.some(i=>i.severity==='error'&&i.code!=='ground')
   result.finalGeometryValid=geometryOK(finalCheck)
-  const approved=grantMatches(input,grant)&&collisionErrorsAccepted({...finalCheck,issues:finalCheck.issues.filter(i=>i.code!=='ground')},grant)
+  const approved=grantMatches(input,grant)&&collisionErrorsAccepted({...finalCheck,issues:finalCheck.issues.filter(i=>i.code!=='ground')},grant,input)
   if(!result.finalGeometryValid&&!approved){
     for(const i of finalCheck.issues)result.diagnostics.push({code:i.code??'FINAL_GEOMETRY',message:i.message,severity:i.severity,pieceId:i.pieceId})
     return stop('invalid-assembly','FINAL_GEOMETRY_INVALID','最终 Assembly Geometry Invalid；未生成教程。')
   }
-  if(!result.finalGeometryValid&&approved){result.humanApproved=true;for(const i of finalCheck.issues.filter(i=>i.severity==='error'&&i.code==='intersection'))result.diagnostics.push({code:'HUMAN_ACCEPTED_COLLISION',severity:'error',message:'人工已接受（严格检查仍为 Error）：'+i.message})}
-  const acceptedGeometry=(check:ReturnType<typeof validateAssembly3D>)=>geometryOK(check)||approved&&collisionErrorsAccepted({...check,issues:check.issues.filter(i=>i.code!=='ground')},grant)
+  if(!result.finalGeometryValid&&approved){result.humanApproved=true;for(const i of finalCheck.issues.filter(i=>i.severity==='error'&&i.code!=='ground'))result.diagnostics.push({code:grant?.acceptedDiagnostic?'HUMAN_ACCEPTED_DIAGNOSTIC':'HUMAN_ACCEPTED_COLLISION',severity:'error',message:'人工已接受（严格检查仍为 Error）：'+i.message})}
+  const acceptedGeometry=(check:ReturnType<typeof validateAssembly3D>,assembly:Assembly3D)=>geometryOK(check)||approved&&collisionErrorsAccepted({...check,issues:check.issues.filter(i=>i.code!=='ground')},grant,assembly,true)
   const components=componentCount(input)
   if(components!==1)return stop('no-order','DISCONNECTED_SOURCE',`最终几何合法，但有 ${components} 个组件；V1 要求从单片开始并保持累计结构连通，无法覆盖全部零件。`)
   const graph=pieces.map(()=>[] as {other:number; midY:number; angle:number}[])
@@ -110,9 +110,10 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
     const saved=cache.get(mask);if(saved){result.stats.cacheHits++;return saved}
     if(result.stats.evaluations>=config.maxEvaluations){exhausted='EVALUATION_BUDGET';return null}
     const ids=new Set(pieces.filter((_,i)=>has(mask,i)).map(p=>p.id))
-    const check=validateAssembly3D({...input,pieces:input.pieces.filter(p=>ids.has(p.id)),connections:input.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB))},{checkGround:true,requireConnected:true})
+    const partial={...input,pieces:input.pieces.filter(p=>ids.has(p.id)),connections:input.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB))}
+    const check=validateAssembly3D(partial,{checkGround:true,requireConnected:true})
     result.stats.evaluations++
-    const value={valid:acceptedGeometry(check),strict:geometryOK(check),validationWarnings:check.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}
+    const value={valid:acceptedGeometry(check,partial),strict:geometryOK(check),validationWarnings:check.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}
     cache.set(mask,value);if(!value.valid){result.stats.rejectedGeometry++;if(rejected.length<3){const issue=check.issues.find(i=>i.severity==='error'&&i.code!=='ground');if(issue)rejected.push({code:issue.code??'REJECTED_PREFIX',severity:'warning',message:`候选前缀被拒绝：${issue.message}`,pieceId:issue.pieceId})}}
     return value
   }

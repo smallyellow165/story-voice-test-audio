@@ -1,3 +1,5 @@
+import {acceptHumanDiagnostic} from '../human-collision-client.ts';
+import {DRAFT_3D_KEY} from '../draft-storage.ts';
 import {geometryIssueReferences,geometryIssueVisual} from './diagnostic-visual.ts';
 import {reconstructionInput,subsetVisibleInput,reconstructionScopeMatches} from './reconstruction-scope.ts';
 import type {ReconstructionScope} from './reconstruction-scope.ts';
@@ -34,7 +36,7 @@ import {analysisRequest,analysisDisplay,planningScope,executionScope,planningReq
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
-import {diagnosticHandoffCheck} from './diagnostic-handoff.ts';
+import {humanDiagnosticHandoffCheck} from './diagnostic-handoff.ts';
 import {assemblyValidationLayers} from '../engine-adapter.ts';
 import {executionPreviews,defaultExecutionPreview} from './execution-preview.ts';
 import {CandidateCameraViewer} from './CandidateCameraViewer.tsx';
@@ -131,7 +133,6 @@ export default function Visible3DWorkflow() {
     const [connectionOpen,setConnectionOpen]=useState(false),[edgeRefs,setEdgeRefs]=useState<string[]>([]),[edgeRange,setEdgeRange]=useState<{min:number;max:number}|null>(null);
     const [rebaseId,setRebaseId]=useState(''),[spaceRelation,setSpaceRelation]=useState<ReviewedSpatialCheck3D['relation']>('plane-angle'),[spaceMin,setSpaceMin]=useState(85),[spaceMax,setSpaceMax]=useState(90);
     const [viewRequest,setViewRequest]=useState(0);
-    const [overrideAuthorization,setOverrideAuthorization]=useState('');
     const [requests,setRequests]=useState<OperationRecord[]>([]),[requestError,setRequestError]=useState(''),[attempt,setAttempt]=useState<OperationAttempt|null>(null),[runningOperation,setRunningOperation]=useState<'plan'|'execute'|null>(null);
     const [analysisTraceSelection,setAnalysisTraceSelection]=useState('latest');
     const [analysisQuerying,setAnalysisQuerying]=useState(false),[analysisQueryError,setAnalysisQueryError]=useState('');
@@ -181,10 +182,7 @@ export default function Visible3DWorkflow() {
     function selectDiagnosticError(index:number){const issue=diagnosticErrors[index];if(!candidate||!issue)return;setIssueSelection(s=>({identity:diagnosticIdentity,index,sequence:(s?.sequence??0)+1}))}
     function selectComparisonObservation(id:string){setIssueSelection(null);setSelected(id)}
 
-    const overrideIdentity=JSON.stringify([source?.id,source?.hash,review?.id,review?.hash,plan?.id,plan?.hash,execution?.id,execution?.hash,candidateId]);
-    const overrideChecked=overrideAuthorization===overrideIdentity;
-    const overrideEligible=useMemo(()=>{try{return !!candidate&&diagnosticHandoffCheck(candidate).allowed}catch{return false}},[candidate]);
-    useEffect(()=>setOverrideAuthorization(''),[source,review,plan,execution,candidateId,stage,active]);
+    const diagnosticEligible=useMemo(()=>{try{return !!candidate&&humanDiagnosticHandoffCheck(candidate).allowed}catch{return false}},[candidate]);
     const originalExecutionInput=execution&&review&&execution.reviewId===review.id?review.input:history.reviews.find(r=>r.id===execution?.reviewId)?.input;
     const executionInput=originalExecutionInput&&execution?.reconstructionScope?subsetVisibleInput(originalExecutionInput,execution.reconstructionScope.observationIds):originalExecutionInput;
     const mapping=useMemo(()=>candidate?(candidate.observationMap??(executionInput?candidateObservationMap(candidate.assembly,executionInput):[])):[],[candidate,executionInput]);
@@ -501,11 +499,17 @@ export default function Visible3DWorkflow() {
      <details><summary>零件证据 / Pose / Profile / 法向详情</summary><p>{selectedEvidence?.evidence}</p>{selectedPieceId&&<pre>{JSON.stringify({piece:candidate.assembly.pieces.find(p=>p.id===selectedPieceId),worldNormal:selectedGeometry?.normal.toArray()},null,2)}</pre>}</details>
      <button onClick={()=>navigate('review')}>回到 Review 修正选中零件</button>
     </section>}
-    {diagnostic&&<div className="visible3d-diagnostic-override"><label className="intake-check"><input type="checkbox" aria-label="强制允许进入 Assembly Editor" checked={overrideChecked} disabled={!overrideEligible||outdated||busy||spatial?.status==='contradicted'} onChange={e=>setOverrideAuthorization(e.target.checked?overrideIdentity:'')}/>强制允许进入 Assembly Editor</label><p className="hint">仅跳过进入编辑器的限制，不代表几何验证通过。进入后为待修复 Draft；不能作为合法 Assembly 或进入 Build，必须修复并重新验证。</p>{!overrideEligible&&<p role="alert">此 Diagnostic 不满足 Ideal Geometry Valid / Solid Collision Invalid 条件，禁止强制进入。</p>}</div>}
-    <label className="intake-check"><input type="checkbox" disabled={diagnostic} aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label><button disabled={busy || outdated || (diagnostic?(!overrideEligible||!overrideChecked):!checked) || spatial?.status==='contradicted'} onClick={() => void run(async () => { if(diagnostic&&(!overrideEligible||!overrideChecked))throw Error('Diagnostic 必须明确授权且满足强制进入条件'); if (!confirm(diagnostic?'进入待修复 3D Draft 并替换当前保存草稿？几何仍为 Invalid，必须修复并复验；2D 工作与教程存档不变。':'采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))
-        return; let cameraView;try{cameraView=loadCandidateCamera(localStorage,{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id})??undefined}catch{/* Invalid view metadata does not block the existing geometry adoption. */}const origin = await api<Record<string, unknown> & {
-        assembly: Assembly3D;
-    }>(diagnostic?'open-diagnostic-draft':'adopt', { executionId: execution!.id,executionHash:execution!.hash, candidateId: candidate.id,...(diagnostic?{override:true}:{visualChecked:true}) }); await refresh(); setOverrideAuthorization('');adopt3D(origin.assembly, origin,cameraView); })}>{diagnostic?'采用当前结构进入 3D Assembly Editor':'采用候选到 3D Assembly Editor'}</button>
+    {diagnostic&&<p className="hint">人工采用只接受当前可核对的几何错误，不改变 Geometry Invalid、Photo Match 或物理稳定性结论；新增或变化的错误仍会阻断。</p>}
+    {diagnostic&&!diagnosticEligible&&<p role="alert">此 Diagnostic 包含无法可靠定位或比较的错误，不能人工采用。</p>}
+    {!diagnostic&&<label className="intake-check"><input type="checkbox" aria-label="已对照照片审核候选" checked={checked} onChange={e => setChecked(e.target.checked)}/>已对照原图，接受局部结果和未验证项</label>}
+    <button disabled={busy || outdated || (diagnostic?!diagnosticEligible:!checked) || spatial?.status==='contradicted'} onClick={() => void run(async () => {
+      if(diagnostic&&!diagnosticEligible)throw Error('Diagnostic 的错误无法安全追踪，不能人工采用');
+      if((!diagnostic||localStorage.getItem(DRAFT_3D_KEY)!==null)&&!confirm(diagnostic?'替换当前保存的 3D Draft？当前 Diagnostic 将以 Human Accepted Diagnostic 加载，几何仍为 Invalid。':'采用此候选并替换当前保存的 3D Draft？2D 工作与教程存档不变。'))return;
+      let cameraView;try{cameraView=loadCandidateCamera(localStorage,{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id})??undefined}catch{/* Camera metadata is independent of geometry. */}
+      const origin=await api<Record<string,unknown>&{assembly:Assembly3D;id:string}>(diagnostic?'open-diagnostic-draft':'adopt',{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id,...(diagnostic?{humanAccepted:true}:{visualChecked:true})});
+      if(diagnostic)await acceptHumanDiagnostic(origin.assembly,origin.id);
+      await refresh();await adopt3D(origin.assembly,origin,cameraView);
+    })}>{diagnostic?'人工采用并进入 Assembly':'采用候选到 3D Assembly Editor'}</button>
    </section>}
    {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,refinement,analysisTraceRequestId:analysisTraceSelection }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage!=='review'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, refinement:refinementRecord, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
    {trace !== null && stage==='review' && <details open><summary>实际保存的模型 Trace</summary><pre>{JSON.stringify(trace, null, 2)}</pre><button onClick={() => setTrace(null)}>关闭 Trace</button></details>}
