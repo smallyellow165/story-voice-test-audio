@@ -1,13 +1,13 @@
 import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import { matchOutline, needsOutlineConfirmation } from './profile-match.ts'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { profileSizeLabel } from '../profiles.ts'
 import type { Evidence, Observation } from './contracts.ts'
-import {filteredReviewRows,reviewStatus as status} from './review-display.ts'
+import {filteredReviewRows,reviewStatus as status,reviewImageSelection} from './review-display.ts'
 import type {ReviewDisplay} from './review-display.ts'
-export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children,spatial=false,confirmedIds=[],spatialLabels,display,imageControls,evidenceLabel}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode;spatial?:boolean;confirmedIds?:string[];spatialLabels?:Record<string,string>;display:ReviewDisplay;imageControls?:ReactNode;evidenceLabel?:string}){
+export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected,onSelect,busy,saveControl,inputControl,onAdd,addDisabled,children,spatial=false,confirmedIds=[],spatialLabels,display,imageControls,evidenceLabel,currentImageId}:{active:boolean;evidence?:Evidence;imageWidth:number;imageHeight:number;selected:string;onSelect:(id:string)=>void;busy:boolean;saveControl:ReactNode;inputControl:ReactNode;onAdd:()=>void;addDisabled:boolean;children:ReactNode;spatial?:boolean;confirmedIds?:string[];spatialLabels?:Record<string,string>;display:ReviewDisplay;imageControls?:ReactNode;evidenceLabel?:string;currentImageId:string}){
  const {registry:{profiles}}=useProfileRegistry()
  const scroll=useRef<HTMLDivElement>(null)
  useEffect(()=>{
@@ -15,12 +15,16 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
   if(box&&row){const b=box.getBoundingClientRect(),r=row.getBoundingClientRect(),header=box.querySelector('thead')?.getBoundingClientRect().height??0;if(r.top<b.top+header)box.scrollTop+=r.top-b.top-header;else if(r.bottom>b.bottom)box.scrollTop+=r.bottom-b.bottom}
  },[selected,active])
  const layout=useDefaultLayout({id:'magnetic-review-vertical-v1',onlySaveAfterUserInteractions:true})
- const [zoom,setZoom]=useState(100),{query,filter,sort,markedIds}=display.state
+ const [zoom,setZoom]=useState(100),{query,filter,sort}=display.state
  const observations=evidence?.observations??[],chosen=observations.find(o=>o.id===selected)
  const expected=observations.filter(o=>!o.excluded),pending=expected.filter(o=>!confirmedIds.includes(o.id)),confirmed=expected.length-pending.length
  const scoped=observations.filter(o=>display.visibleIds.includes(o.id)),rows=filteredReviewRows(observations,display.visibleIds,display.state,o=>profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion)?.name??'')
- const allMarked=!!rows.length&&rows.every(o=>markedIds.includes(o.id)),someMarked=rows.some(o=>markedIds.includes(o.id))
- const markAll=(checked:boolean)=>display.update({markedIds:checked?[...new Set([...markedIds,...rows.map(o=>o.id)])]:markedIds.filter(id=>!rows.some(o=>o.id===id))})
+ const selection=reviewImageSelection(display.state,currentImageId,display.idsForImage(currentImageId),rows.map(o=>o.id)),markedIds=selection.markedIds
+ const mark=(ids:string[])=>display.update({markedIds:ids,annotationScope:selection.scope})
+ const markedKey=markedIds.join('\0'),savedMarkedKey=display.state.markedIds.join('\0')
+ useLayoutEffect(()=>{if(active&&!busy&&(display.state.annotationScope!==selection.scope||markedKey!==savedMarkedKey))mark(markedIds)},[active,busy,selection.scope,display.state.annotationScope,markedKey,savedMarkedKey])
+ const allMarked=!!selection.eligibleIds.length&&selection.eligibleIds.every(id=>markedIds.includes(id)),someMarked=markedIds.length>0
+ const markAll=(checked:boolean)=>mark(checked?selection.eligibleIds:[])
  const statusContent=(o:Observation)=><>{status(o)}{spatial&&<small data-confirmation-state={o.excluded?'excluded':confirmedIds.includes(o.id)?'confirmed':'pending'} className={!o.excluded&&!confirmedIds.includes(o.id)?'review-confirmation-blocker':undefined}>{o.excluded?'已排除 · 不参与重建':confirmedIds.includes(o.id)?'人工已确认':'等待人工确认'}</small>}{o.excluded&&<small>{o.profileId==='unknown'?'Unknown':'Known'} · 证据保留</small>}</>
  if(!active)return <>{children}</>
  return <Group orientation="vertical" className="review-workspace" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
@@ -31,18 +35,18 @@ export function ReviewWorkspace({active,evidence,imageWidth,imageHeight,selected
      <div className="review-search"><input aria-label="搜索审核零件" placeholder="搜索 ID、Profile 或证据" value={query} onChange={e=>display.update({query:e.target.value})}/><select aria-label="审核零件排序" value={sort} onChange={e=>display.update({sort:e.target.value as typeof sort})}><option value="original">原始顺序</option><option value="id">ID 升序</option><option value="confidence">Confidence 从低到高</option><option value="status">状态 / ID</option></select></div>
      {imageControls}<div className="review-title-row">{!spatial&&<button disabled={addDisabled} onClick={()=>{display.update({query:'',filter:'All',imageIds:null});onAdd()}}>新增零件</button>}{saveControl}</div>{inputControl}
     </div>
-    <div className="review-display-summary"><span>显示 {rows.length}/{observations.length} · 标注：{markedIds.length?`已勾选 ${markedIds.length} 个`:'全部'}</span><button disabled={busy||!rows.length} onClick={()=>markAll(true)}>全选当前结果</button><button disabled={busy||!markedIds.length} onClick={()=>display.update({markedIds:[]})}>清空勾选</button><span className="hint">勾选仅控制标注，不代表人工确认</span></div>
+    <div className="review-display-summary"><span>显示 {rows.length}/{observations.length} · 标注：已勾选 {markedIds.length} 个</span><button disabled={busy||!selection.eligibleIds.length} title="勾选当前图片中、且在表格筛选范围内的实例" onClick={()=>markAll(true)}>全选当前结果</button><button disabled={busy||!markedIds.length} onClick={()=>mark([])}>清空勾选</button><span className="hint">切图同步勾选；勾选仅控制标注，不代表人工确认</span></div>
      {spatial&&<div className="review-confirmation-progress" data-testid="review-confirmation-progress" role={confirmed===0?'alert':'status'}>
       <b className={confirmed===0?'review-confirmation-blocker':undefined}>已确认 {confirmed}/{expected.length}</b><span> · 尚未确认 {pending.length} · 已排除 {observations.length-expected.length}</span>
       {confirmed===0?<span className="review-confirmation-blocker"> · 无法执行 Spatial Planning：请{expected.length?'确认':'保留并确认'}至少一个实例并保存 Review。</span>:pending.length?<span> · 未确认实例不参与本次部分重建</span>:<span> · 全部应审核实例已确认</span>}
      </div>}
      {chosen&&!rows.includes(chosen)&&<p role="status">当前选中 {selected} 被筛选隐藏，选中对象未改变。<button onClick={()=>display.update({query:'',filter:'All',imageIds:null})}>显示全部零件</button></p>}
     </div>
-    <div ref={scroll} className="review-table-scroll" tabIndex={0} aria-label="零件表滚动区"><table className="review-parts-table"><thead><tr><th scope="col" className="review-mark-cell"><input type="checkbox" aria-label="全选当前筛选结果" checked={allMarked} ref={el=>{if(el)el.indeterminate=someMarked&&!allMarked}} disabled={busy||!rows.length} onChange={e=>markAll(e.target.checked)}/></th>{['Observation ID','Profile / ID / Version','状态','Size · 几何规格','颜色','Confidence','最佳形状匹配','关系 / 不确定性'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{rows.map(o=>{
+    <div ref={scroll} className="review-table-scroll" tabIndex={0} aria-label="零件表滚动区"><table className="review-parts-table"><thead><tr><th scope="col" className="review-mark-cell"><input type="checkbox" aria-label="全选当前筛选结果" checked={allMarked} ref={el=>{if(el)el.indeterminate=someMarked&&!allMarked}} disabled={busy||!selection.eligibleIds.length} onChange={e=>markAll(e.target.checked)}/></th>{['Observation ID','Profile / ID / Version','状态','Size · 几何规格','颜色','Confidence','最佳形状匹配','关系 / 不确定性'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{rows.map(o=>{
      const p=profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion),xs=o.outline.map(v=>v[0]),ys=o.outline.map(v=>v[1]),links=evidence?.relations.filter(r=>r.from===o.id||r.to===o.id)??[]
      const match=spatial?{candidates:[],reason:'3D 透视证据不适用二维轮廓匹配',status:'invalid'}:matchOutline(o.outline,imageWidth,imageHeight,profiles),best=match.candidates[0],name=profiles.find(p=>p.id===best?.profileId&&p.version===best?.profileVersion)?.name
      return <tr key={o.id} data-review-id={o.id} aria-selected={selected===o.id} tabIndex={busy?-1:0} onClick={()=>{if(!busy)onSelect(o.id)}} onKeyDown={e=>{if(e.target===e.currentTarget&&!busy&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onSelect(o.id)}}}>
-      <td className="review-mark-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={'显示证据 '+o.id} checked={markedIds.includes(o.id)} disabled={busy} onChange={e=>display.update({markedIds:e.target.checked?[...markedIds,o.id]:markedIds.filter(id=>id!==o.id)})}/></td>
+      <td className="review-mark-cell" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={'显示证据 '+o.id} checked={markedIds.includes(o.id)} disabled={busy||!selection.eligibleIds.includes(o.id)} title={selection.eligibleIds.includes(o.id)?'仅控制当前图片的证据标注':'当前图片没有此实例的证据；可点击行查看详情或切换图片'} onChange={e=>mark(e.target.checked?[...markedIds,o.id]:markedIds.filter(id=>id!==o.id))}/></td>
       <td>{o.id}</td><td>{p?<>{p.name}<small>{p.id} · v{p.version}</small></>:<>Unknown<small>无正式 Profile</small></>}{spatialLabels?.[o.id]&&<small>AI 形状：{spatialLabels[o.id]}</small>}</td><td>{statusContent(o)}</td>
       <td>{p?profileSizeLabel(p):spatial?<>可见区域 / 局部边角证据<small>Profile Unknown，不能从透视轮廓推断实际尺寸</small></>:<>视觉估计：图片包围框 {((Math.max(...xs)-Math.min(...xs))*100).toFixed(1)}% × {((Math.max(...ys)-Math.min(...ys))*100).toFixed(1)}%<small>非物理尺寸，非正式规格</small></>}</td>
       <td><span className="review-color" style={{background:o.color}}/>{o.color}</td><td>{spatial?'未评估':`${Math.round(o.confidence*100)}%`}</td><td title={match.reason}>{spatial?'3D · 未作投影匹配':match.status==='invalid'?'无法评分':`${name} · ${best?.similarityScore.toFixed(1)}%${needsOutlineConfirmation(o)?' · ⚠ 仅供参考':''}`}</td><td>{links.length} 条关系 · {links.filter(r=>r.intent==='uncertain').length} 条不确定{o.uncertainty&&<small className="review-uncertainty" title={o.uncertainty}>⚑ {o.uncertainty}</small>}</td>

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {normalizeReviewDisplay,reviewDisplayDefaults,observationImageIds,imageFilteredIds,preferredReviewImage,filteredReviewRows} from '../src/magnetic-tiles/intake/review-display.ts'
+import {normalizeReviewDisplay,reviewDisplayDefaults,observationImageIds,imageFilteredIds,preferredReviewImage,filteredReviewRows,reviewImageSelection} from '../src/magnetic-tiles/intake/review-display.ts'
 const observations=[
  {id:'p01',profileId:'square',profileVersion:1,excluded:false,color:'#abcdef',confidence:.9,outline:[],evidence:'roof',uncertainty:'',origin:'observed',imageEvidence:[{imageId:'final'},{imageId:'step1'}]},
  {id:'p03',profileId:'unknown',profileVersion:1,excluded:false,color:'#abcdef',confidence:.4,outline:[],evidence:'ramp',uncertainty:'partly hidden',origin:'observed',imageEvidence:[{imageId:'step1'},{imageId:'step2'}]},
@@ -26,7 +26,7 @@ test('image, status, search and sorting compose without mutating full Recognitio
 test('only current analysis IDs are restored; empty images and no marks remain distinct from all images',()=>{
  const saved={imageIds:['final','foreign','final'],markedIds:['p01','foreign','p01'],query:'roof',filter:'Known',sort:'id',confirmed:true,excluded:true}
  const normalized=normalizeReviewDisplay(saved,['final','step1'],['p01','p03'])
- assert.deepEqual(normalized,{imageIds:['final'],markedIds:['p01'],query:'roof',filter:'Known',sort:'id'})
+ assert.deepEqual(normalized,{imageIds:['final'],markedIds:['p01'],annotationScope:null,query:'roof',filter:'Known',sort:'id'})
  assert.deepEqual(normalizeReviewDisplay(null,['final'],['p01']),reviewDisplayDefaults())
  assert.deepEqual(normalizeReviewDisplay({imageIds:[],markedIds:[]},['final'],['p01']).imageIds,[])
  assert.equal(normalizeReviewDisplay({imageIds:null},['final'],['p01']).imageIds,null)
@@ -43,4 +43,28 @@ test('display state supports future image counts without changing Canonical limi
  const ids=Array.from({length:80},(_,i)=>'image'+i),o={id:'tile',imageEvidence:ids.map(imageId=>({imageId}))}
  assert.deepEqual(normalizeReviewDisplay({imageIds:ids},ids,['tile']).imageIds,ids)
  assert.deepEqual(imageFilteredIds([o],ids,'image0'),['tile'])
+})
+test('switching images selects only evidenced AND visible rows; no evidence clears marks',()=>{
+ const s=reviewDisplayDefaults(),visible=observations.map(o=>o.id),final=reviewImageSelection(s,'final',['p01','p10'],visible)
+ assert.deepEqual(final.markedIds,['p01','p10'])
+ const saved={...s,annotationScope:final.scope,markedIds:final.markedIds}
+ assert.deepEqual(reviewImageSelection(saved,'step2',['p03'],visible).markedIds,['p03'])
+ assert.deepEqual(reviewImageSelection(saved,'no-evidence',[],visible).markedIds,[])
+ assert.deepEqual(reviewImageSelection(saved,'',visible,visible).markedIds,[])
+ assert.deepEqual(reviewImageSelection(saved,'final',['p01','p10'],['p01']).markedIds,['p01'])
+ assert.deepEqual(reviewImageSelection(saved,'final',['p01','p10'],[]).markedIds,[])
+})
+test('manual subsets and explicit empty restore for the same image; sorting does not reset, switching does',()=>{
+ const d=reviewDisplayDefaults(),first=reviewImageSelection(d,'step1',['p01','p03'],['p01','p03','p10'])
+ const manual={...d,annotationScope:first.scope,markedIds:['p03']},restored=normalizeReviewDisplay(JSON.parse(JSON.stringify(manual)),['step1','final'],['p01','p03','p10'])
+ assert.deepEqual(reviewImageSelection(restored,'step1',['p01','p03'],['p10','p03','p01']).markedIds,['p03'])
+ assert.deepEqual(reviewImageSelection({...restored,markedIds:[]},'step1',['p01','p03'],['p01','p03','p10']).markedIds,[],'empty never means show all')
+ assert.deepEqual(reviewImageSelection(restored,'final',['p01','p10'],['p01','p03','p10']).markedIds,['p01','p10'])
+ assert.deepEqual(reviewImageSelection({...restored,markedIds:['p01','p03','foreign']},'step1',['p01','p03'],['p01','p03','p10']).markedIds,['p01','p03'])
+})
+test('legacy preferences without an annotation scope migrate by current photo, with original Review untouched',()=>{
+ const before=structuredClone(observations),legacy=normalizeReviewDisplay({imageIds:null,markedIds:[]},['final','step1'],observations.map(o=>o.id))
+ const ids=imageFilteredIds(observations,['step1'],'final'),visible=filteredReviewRows(observations,ids,{...legacy,query:'ramp'}).map(o=>o.id)
+ assert.deepEqual(reviewImageSelection(legacy,'step1',ids,visible).markedIds,['p03'])
+ assert.deepEqual(observations,before)
 })
