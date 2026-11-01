@@ -101,3 +101,17 @@
 
 .review-suggestion-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .review-face-table th:first-child{width:20%}.review-face-table th:nth-child(2){width:25%}.review-face-table th:last-child{width:55%}
+.visible3d-refinement{border-top:1px solid #d9e3dc;padding:10px 0;font-size:12px;min-width:0}
+.visible3d-refinement-actions{display:flex;flex-wrap:wrap;gap:4px}
+.visible3d-refinement-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}
+.visible3d-refinement-table th,.visible3d-refinement-table td{padding:5px 3px;border-bottom:1px solid #d9e3dc;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.visible3d-refinement-table th:first-child{width:51%}.visible3d-refinement-table th:last-child{width:23%}
+.visible3d-refinement-table small{display:block}.visible3d-refinement-table button{font-size:11px;padding:4px}
+.visible3d-refinement-table tr[aria-selected=true]{background:#edf4ee}
+.visible3d-refinement-table details[open]{max-height:280px;overflow:auto}
+
+.visible3d-refinement-list{max-height:360px;overflow:auto;min-width:0}
+.review-module-controls{display:flex;gap:4px;align-items:center;flex-wrap:wrap;flex:0 1 auto;width:max-content;max-width:100%;min-width:0;font-size:12px}
+.review-module-controls>select{width:150px;max-width:40vw;margin:0;padding:4px;font-size:12px}.review-module-controls>button{margin:0;flex:none;white-space:nowrap}
+.review-module-notice{font-size:11px;overflow-wrap:anywhere}
+.review-module-cell{max-width:120px;overflow-wrap:anywhere}

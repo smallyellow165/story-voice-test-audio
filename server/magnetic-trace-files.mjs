@@ -69,6 +69,11 @@ export function createMagneticTraceFiles({projectRoot,directory,intake,enabled=f
     if(kind==='executions'){
      primary=await add('visible3d/executions',lineage.record.id,'Geometry Execution / Candidates / Diagnostic / Validator',true)
      await add('visible3d/plans',lineage.record.planId,'执行来源 Plan',true);const p=(await intake.dispatch('GET','visible3d/plans/'+lineage.record.planId)).record;check(p,'plan')
+     if(lineage.record.refinement){
+      const ref=lineage.record.refinement,r=(await intake.dispatch('GET','visible3d/refinements/'+ref.id)).record
+      if(r.hash!==ref.hash||r.planId!==p.id||r.planHash!==p.hash||r.candidateHashes[ref.candidateId]!==ref.candidateHash)fail('执行的 Refinement 来源不一致。',409)
+      await add('visible3d/refinements',r.id,'执行采用的 Constraint Refinement / 完整差异',true)
+     }
     }else if(body.requestId&&kind==='plans'){
      primary=await add('visible3d/requests',body.requestId,'Geometry Execution 请求',true);const r=JSON.parse(await readFile(primary,'utf8'));if(r.id!==body.requestId||r.kind!=='execute'||r.planId!==lineage.record.id||r.record&&r.record.planId!==lineage.record.id)fail('执行请求不属于当前 Plan。',409)
     }

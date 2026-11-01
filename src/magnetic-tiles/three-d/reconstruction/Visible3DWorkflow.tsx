@@ -1,3 +1,10 @@
+import {useModulePlan} from './useModulePlan.ts';
+import {ModulePlanControls} from './ModulePlanControls.tsx';
+import {moduleFilterIds} from './module-plan.ts';
+import {filteredReviewRows,reviewImageSelection} from '../../intake/review-display.ts';
+import {ConstraintRefinementPanel} from './ConstraintRefinementPanel.tsx';
+import type {RefinementRecord} from './ConstraintRefinementPanel.tsx';
+import type {RefinementReference} from './constraint-refinement.ts';
 import {adoptAllAIReview,planAIReview} from './review-profile-actions.ts';
 import {editReviewedPiece} from './rebase-plan.ts';
 import {VisibleEvidenceImage} from './VisibleEvidenceImage.tsx';
@@ -59,8 +66,10 @@ type Plan = Base & {
 type Execution = Base & VisibleExecution3D & {
     reviewId: string;
     planId: string;
+    refinement?:RefinementReference;
 };
 type History = {
+    refinements?:RefinementRecord[];
     origins?: Base[];
     analyses: Analysis[];
     reviews: Review[];
@@ -88,9 +97,17 @@ export default function Visible3DWorkflow() {
     const { stage, intakeMode, navigate, adopt3D } = useStudio(), { registry } = useProfileRegistry();
     const active = intakeMode === 'visible3d';
     const [config, setConfig] = useState<Config | null>(null), [history, setHistory] = useState<History>({ analyses: [], reviews: [], plans: [], executions: [] });
+    const [refinement,setRefinement]=useState<RefinementReference|null>(null);
     const [imageSource,setImageSource]=useState<'upload'|'server'>('upload');
     const [source, setSource] = useState<Source | null>(null), [, setImage] = useState(''), [analysis, setAnalysis] = useState<Analysis | null>(null), [review, setReview] = useState<Review | null>(null), [plan, setPlan] = useState<Plan | null>(null), [execution, setExecution] = useState<Execution | null>(null);
-    const reviewDisplay=useReviewDisplay(source&&analysis?`visible3d:${source.id}:${source.hash}:${analysis.id}`:'',source,analysis?.evidence.observations??[]);
+    const reviewDisplay=useReviewDisplay(source&&analysis?`visible3d:${source.id}:${source.hash}:${analysis.id}:${review?.id??'unsaved'}:${review?.hash??''}`:'',source,analysis?.evidence.observations??[]);
+    const moduleStore=useModulePlan(review,active&&stage==='review');
+    const moduleView=moduleStore.data?.record??null;
+    const reviewModules=moduleView?.modules??[];
+    const moduleIds=moduleFilterIds(reviewModules,reviewModules.some(m=>m.id===reviewDisplay.state.moduleFilter)||reviewDisplay.state.moduleFilter==='unassigned'?reviewDisplay.state.moduleFilter!:'all',formForModules());
+    function formForModules(){return review?.input.review??{pieces:analysis?.evidence.observations.map(o=>({id:o.id,confirmed:false,excluded:false,profileId:null,profileVersion:null,color:o.color}))??[],constraints:[]}}
+    const moduleDisplay={...reviewDisplay,visibleIds:reviewDisplay.visibleIds.filter(id=>moduleIds.includes(id))};
+    const moduleNames=Object.fromEntries(reviewModules.flatMap(m=>m.observationIds.map(id=>[id,m.name])));
     const frame=useSourceFrame(source,'visible3d',stage==='review'?reviewDisplay.imageIds:undefined),displayEvidence=evidenceForImage(analysis?.evidence,frame.activeId,source?.primaryImageId??source?.id??'');
     const imageStrip=<><SourceImageStrip source={source} activeId={frame.activeId} onSelect={frame.select}/>{frame.error&&<p role="alert">图片读取失败：{frame.error}</p>}</>;
     const [form, setForm] = useState<VisibleReview3D>(emptyReview), [thickness, setThickness] = useState(.06), [head, setHead] = useState({ revision: 0, reviewId: null as string | null }), [selected, setSelected] = useState(''), [candidateId, setCandidateId] = useState(''), [checked, setChecked] = useState(false);
@@ -122,7 +139,11 @@ export default function Visible3DWorkflow() {
     }
     const dirty = !!review && (JSON.stringify(form) !== JSON.stringify(review.input.review) || review.input.profiles.some(s => s.thickness !== thickness));
     const participation=review?planningParticipation(review.input.review):null;
-    const outdated = !!execution && (execution.sourceId !== source?.id || execution.reviewId !== review?.id || head.reviewId !== review?.id || dirty || execution.planId !== plan?.id);
+    const refinementRecords=(history.refinements??[]).filter(r=>r.planId===plan?.id&&r.planHash===plan?.hash&&r.reviewId===review?.id&&r.reviewHash===review?.hash&&r.sourceId===source?.id&&r.sourceHash===source?.hash);
+    const refinementRecord=refinementRecords.find(r=>r.id===refinement?.id&&r.hash===refinement.hash);
+    const refinementMismatch=!!refinement&&(!refinementRecord||refinementRecord.candidateHashes[refinement.candidateId]!==refinement.candidateHash);
+    const executionBindingMismatch=JSON.stringify(execution?.refinement??null)!==JSON.stringify(refinement);
+    const outdated = !!execution && (execution.sourceId !== source?.id || execution.reviewId !== review?.id || head.reviewId !== review?.id || dirty || execution.planId !== plan?.id || executionBindingMismatch || refinementMismatch);
     const previews=executionPreviews(execution);
     const candidate = previews.find(c => c.id === candidateId) ?? null;
     const validation=candidate?(candidate.validation??assemblyValidationLayers(candidate.geometry)):null;
@@ -139,7 +160,6 @@ export default function Visible3DWorkflow() {
     function selectPiece(id:string|null){setSelected(id?mapping.find(m=>m.pieceId===id)?.observationId??'':'')}
     const selectedReview = form.pieces.find(p => p.id === selected), selectedEvidence = analysis?.evidence.observations.find(o => o.id === selected);
     function selectReviewedObservation(id:string){setSelected(id);const next=preferredReviewImage(analysis?.evidence.observations.find(o=>o.id===id),reviewDisplay.imageIds,frame.activeId,source?.primaryImageId??source?.id??'');if(next!==frame.activeId)frame.select(next)}
-    const reviewEvidence=displayEvidence?{...displayEvidence,observations:displayEvidence.observations.filter(o=>reviewDisplay.state.markedIds.includes(o.id))}:undefined;
     const reviewImageControls=<ReviewImageFilter entries={frame.entries} imageIds={reviewDisplay.imageIds} activeId={frame.activeId} onImages={imageIds=>reviewDisplay.update({imageIds})} onActive={frame.select}/>;
     async function refreshRequests(){try{setRequests(await api<OperationRecord[]>('requests'));setRequestError('')}catch(e){setRequestError('请求记录读取失败：'+String(e))}}
     async function refresh() { const [h] = await Promise.all([api<History>('history'),refreshRequests()]); setHistory(h); return h; }
@@ -148,12 +168,12 @@ export default function Visible3DWorkflow() {
             imageBase64: string;
         }>('image/' + s.id), api<typeof head>('head/' + s.id)]); setSource(s); setImage('data:' + img.mimeType + ';base64,' + img.imageBase64); setHead(h); setChecked(false); }
     async function openSourceImage(s:Source){
-        setAnalysisTraceSelection('latest');await loadSource(s);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);
+        setRefinement(null);setAnalysisTraceSelection('latest');await loadSource(s);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);
         setCandidateId('');setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null);setAttempt(null);
     }
-    function selectAnalysis(a: Analysis) { setAnalysisTraceSelection('record');setAttempt(null);setError('');setTrace(null);setAnalysis(a); setReview(null); setPlan(null); setExecution(null); setCandidateId(''); setChecked(false); setForm({ pieces: a.evidence.observations.map(o => ({ id: o.id, confirmed: false, excluded: false, profileId: null, profileVersion: null, color: o.color })), constraints: [] }); setSelected(a.evidence.observations[0]?.id ?? ''); setAnnotation(JSON.stringify(a.evidence, null, 2)); }
-    function selectReview(r: Review) { setAttempt(null);setError('');setTrace(null);setReview(r); setForm(structuredClone(r.input.review)); setThickness(r.input.profiles[0]?.thickness ?? .06); setChecked(false); }
-    async function run(work: () => Promise<void>,kind?:'plan'|'execute') { const scope=kind==='plan'?planningScope(source,review):executionScope(plan);setBusy(true); setError(''); setNotice('');if(kind){setRunningOperation(kind);setAttempt({kind,scope})}try {
+    function selectAnalysis(a: Analysis) { setRefinement(null); setAnalysisTraceSelection('record');setAttempt(null);setError('');setTrace(null);setAnalysis(a); setReview(null); setPlan(null); setExecution(null); setCandidateId(''); setChecked(false); setForm({ pieces: a.evidence.observations.map(o => ({ id: o.id, confirmed: false, excluded: false, profileId: null, profileVersion: null, color: o.color })), constraints: [] }); setSelected(a.evidence.observations[0]?.id ?? ''); setAnnotation(JSON.stringify(a.evidence, null, 2)); }
+    function selectReview(r: Review) { setRefinement(null); setAttempt(null);setError('');setTrace(null);setReview(r); setForm(structuredClone(r.input.review)); setThickness(r.input.profiles[0]?.thickness ?? .06); setChecked(false); }
+    async function run(work: () => Promise<void>,kind?:'plan'|'execute') { const scope=kind==='plan'?planningScope(source,review):JSON.stringify([executionScope(plan),refinement]);setBusy(true); setError(''); setNotice('');if(kind){setRunningOperation(kind);setAttempt({kind,scope})}try {
         await work();
     }
     catch (e) {
@@ -183,16 +203,20 @@ export default function Visible3DWorkflow() {
                         selectReview(r);
                         const p = h.plans.find(p => p.id === saved.planId && p.reviewId === r.id);
                         if (p) {
-                            setPlan(p);
+                            setRefinement(null);setPlan(p);
                             setManual(JSON.stringify(p.plan, null, 2));
                             const x = h.executions.find(x => x.id === saved.executionId && x.planId === p.id);
                             if (x) {
-                                setExecution(x);
+                                setExecution(x);setRefinement(x.refinement??null);
                                 setCandidateId(executionPreviews(x).some(c=>c.id===saved.candidateId)?saved.candidateId:defaultExecutionPreview(x));
                             }
                         }
                     }
                 }
+            }
+            if(saved?.refinement&&['id','hash','candidateId','candidateHash'].every(k=>typeof saved.refinement[k]==='string')){
+                setRefinement(saved.refinement);
+                if(!h.refinements?.some(r=>r.id===saved.refinement.id&&r.hash===saved.refinement.hash&&r.planId===saved.planId&&r.reviewId===saved.reviewId&&r.candidateHashes[saved.refinement.candidateId]===saved.refinement.candidateHash))setError('保存的 Refinement 不可用或来源已变化；未回退到原始 Plan，请明确重新选择。');
             }
             setAnalysisTraceSelection(typeof saved?.analysisTraceRequestId==='string'?saved.analysisTraceRequestId:'latest');
             booted.current = true;
@@ -200,14 +224,17 @@ export default function Visible3DWorkflow() {
     }, []);
     useEffect(() => { if (booted.current)
         try {
-            localStorage.setItem(key, JSON.stringify({ sourceId: source?.id, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,analysisTraceRequestId:analysisTraceSelection }));
+            localStorage.setItem(key, JSON.stringify({ sourceId: source?.id, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,refinement,analysisTraceRequestId:analysisTraceSelection }));
         }
         catch (e) {
             setError('Visible 3D 恢复索引保存失败：' + String(e));
-        } }, [source, analysis, review, plan, execution,candidateId, busy,model,analysisTraceSelection]);
+        } }, [source, analysis, review, plan, execution,candidateId, busy,model,analysisTraceSelection,refinement]);
     useEffect(() => { if (!active || !source)
         return; const update = () => {if(stage==='source')void refreshRequests();void api<typeof head>('head/' + source.id).then(setHead).catch(e => setError(String(e)))}; update(); window.addEventListener('focus', update); return () => window.removeEventListener('focus', update); }, [active, stage, source]);
     const projectedReview = useMemo<Evidence | undefined>(() => analysis ? { sourceKind: 'unsupported', reason: '只供共享 Review 表展示；不是 2D Reconstruction 输入', relations: form.constraints.map(c => ({ from: c.pieceA, to: c.pieceB, intent: c.intent, evidence: c.evidence })), observations: analysis.evidence.observations.map(o => { const p = form.pieces.find(p => p.id === o.id), b = o.bbox; return { id: o.id, profileId: p?.profileId ?? 'unknown', profileVersion: p?.profileVersion ?? 1, color: p?.color ?? o.color, outline: b ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : [], confidence: 0, evidence: o.evidence, uncertainty: o.uncertainty, origin: 'observed', excluded: !!p?.excluded }; }) } : undefined, [analysis, form]);
+    const reviewRows=filteredReviewRows(projectedReview?.observations??[],moduleDisplay.visibleIds,reviewDisplay.state,o=>registry.profiles.find(p=>p.id===o.profileId&&p.version===o.profileVersion)?.name??'');
+    const reviewSelection=reviewImageSelection(reviewDisplay.state,frame.activeId,reviewDisplay.idsForImage(frame.activeId),reviewRows.map(o=>o.id),true);
+    const reviewEvidence=displayEvidence?{...displayEvidence,observations:displayEvidence.observations.filter(o=>reviewSelection.markedIds.includes(o.id)&&reviewRows.some(r=>r.id===o.id))}:undefined;
     function editPiece(update: Partial<VisibleReview3D['pieces'][number]>) { setBulkNotice('');setForm(f=>editReviewedPiece(f,selected,update));if(update.excluded||update.confirmed===false)setNotice('当前审核草稿已移除该片相关人工连接/空间检查；原保存快照未改变。');else if(update.profileId!==undefined||update.profileVersion!==undefined)setNotice('Profile 已更新；相关 Port 需重新核对。');setChecked(false); }
     const ports = (id: string) => { const p = form.pieces.find(p => p.id === id), profile = registry.profiles.find(s => s.id === p?.profileId && s.version === p?.profileVersion); return profile ? adaptProfile({ profile, thickness }).shape.ports : []; };
     function chooseVisualConnection(c:VisualConnection3D){
@@ -217,7 +244,7 @@ export default function Visible3DWorkflow() {
     async function usePlanVariant(connections:ConnectionHypothesis3D[]){
       if(!plan||!review)return
       const p=await api<Plan>('manual-plan',{reviewId:review.id,basedOnPlanId:plan.id,plan:{...plan.plan,connections,alternatives:[]}})
-      setPlan(p);setExecution(null);setManual(JSON.stringify(p.plan,null,2));await refresh();setNotice('已创建独立的人工选择计划；原模型计划与 Trace 保留，尚未执行几何。')
+      setRefinement(null);setPlan(p);setExecution(null);setManual(JSON.stringify(p.plan,null,2));await refresh();setNotice('已创建独立的人工选择计划；原模型计划与 Trace 保留，尚未执行几何。')
     }
     const seedPlan = (): SpatialHypothesis3D => ({ version: 1, parts: form.pieces.filter(p => p.confirmed && !p.excluded).map(p => ({ id: p.id, profileId: p.profileId, profileVersion: p.profileVersion, orientationEvidence: '人工待审核；世界朝向未知' })), connections: structuredClone(form.constraints), alternatives: [], relations: [], unknowns: ['相机与世界朝向尚未标定'] });
     async function modelAction(kind: 'analyze' | 'plan') {
@@ -247,7 +274,7 @@ export default function Visible3DWorkflow() {
             navigate('review');
         }
         else {
-            setPlan(r.record as Plan);
+            setRefinement(null);setPlan(r.record as Plan);
             setExecution(null);
             setManual(JSON.stringify((r.record as Plan).plan, null, 2));
         }
@@ -277,16 +304,16 @@ export default function Visible3DWorkflow() {
       const started=Date.now(),timer=window.setInterval(()=>{if(Date.now()-started>20*60*1000){window.clearInterval(timer);setAnalysisQueryError('自动查询已暂停；可继续手动查询同一任务，不会重新生成。');return}void queryAnalysis()},5000);
       return()=>window.clearInterval(timer);
     },[active,stage,source?.id,source?.hash,analysisModelRequest?.id,analysisBackground?.state,analysisBackground?.responseId,analysisQueryError]);
-    const planRequest=planningRequest(requests,source,review,plan,attempt),executeRequest=executionRequest(requests,plan,execution,attempt);
+    const planRequest=planningRequest(requests,source,review,plan,attempt),executeRequest=executionRequest(requests,plan,execution,attempt,refinement);
     const planStatus=planningDisplay(plan,planRequest,runningOperation==='plan',attempt?.kind==='plan'&&attempt.scope===planningScope(source,review)?attempt.error:undefined);
-    const executeStatus=executionDisplay(plan,execution,executeRequest,runningOperation==='execute',attempt?.kind==='execute'&&attempt.scope===executionScope(plan)?attempt.error:undefined);
+    const executeStatus=executionDisplay(plan,execution,executeRequest,runningOperation==='execute',attempt?.kind==='execute'&&attempt.scope===JSON.stringify([executionScope(plan),refinement])?attempt.error:undefined);
     const planOutdated=!!plan&&(plan.sourceId!==source?.id||plan.sourceHash!==source?.hash||plan.reviewId!==review?.id||dirty||head.reviewId!==review?.id);
     const traceSource=useMemo<TraceSource>(()=>{
       const references={sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,planId:plan?.id,planHash:plan?.hash,executionId:execution?.id,executionHash:execution?.hash,candidateId};
       const partsRequest=stage==='source'?analysisModelRequest:undefined;
       const partsRecordMatches=!!analysis&&partsRequest?.record?.id===analysis.id&&analysis.sourceId===source?.id&&analysis.sourceHash===source?.hash;
       return {identity:JSON.stringify([stage,analysisTraceSelection,partsRequest?.id,partsRequest?.state,partsRequest?.trace?.latestPollId,references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:stage==='source'?'parts':'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>tab==='parts'&&partsRequest?{mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,requestId:partsRequest.id,...(partsRecordMatches?{analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash}:{})}:({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
-        if(tab==='execution')return {references,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,candidateValidation:validation,candidateCollisions:candidate?.collisions??null,candidateConstruction:candidate?.construction??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
+        if(tab==='execution')return {references,selectedRefinement:refinementRecord??null,refinementSelection:refinement,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,candidateValidation:validation,candidateCollisions:candidate?.collisions??null,candidateConstruction:candidate?.construction??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
         const record=tab==='parts'?analysis:plan,request=tab==='spatial'?planRequest:partsRequest;
         const pinnedMissing=tab==='parts'&&stage==='source'&&!['latest','record'].includes(analysisTraceSelection)&&!request;
         const recordMatches=tab!=='parts'||record?.sourceId===source?.id&&record?.sourceHash===source?.hash;
@@ -295,7 +322,7 @@ export default function Visible3DWorkflow() {
         if(tab==='parts'&&stage==='source'&&savedTrace&&!savedTrace.sources?.some(s=>s.sourceId===source?.id&&s.sourceHash===source?.hash))throw Error('Analysis Trace 的 Source ID / Hash 与当前图片集合不一致；未显示其他记录。');
         return {references,request:request??null,trace:savedTrace,wire,availability:savedTrace?'实际保存的模型 Trace':'尚无 Trace',requestOrigin:'trace.request 是保存的应用请求；实际 HTTP 正文见 wire.request，未保存时不补齐。',...(tab==='parts'?{analysis:partsRequest&&!partsRecordMatches?null:analysis,review:partsRequest&&!partsRecordMatches?null:review,...(partsRequest&&!partsRecordMatches?{retainedAnalysis:analysis?{id:analysis.id,hash:analysis.hash}:null,note:partsRequest.record?'该调用对应另一条已保存 Analysis；工作区的原选中记录未自动更改。':'该调用未生成有效 Recognition Result；原有 Analysis / Review 未被失败结果覆盖。'}:{})}:{selectedPlan:plan,diagnostics:plan?.diagnostics??[],note:'Plan Ready 不代表照片语义正确或 Geometry Valid；失败请求按 Source / Review ID 与 Hash 关联。'}),requestReadError:requestError||null};
       }};
-    },[stage,analysisTraceSelection,analysisModelRequest,source,analysis,review,plan,execution,candidateId,candidate,spatial,planRequest,executeRequest,requestError]);
+    },[stage,analysisTraceSelection,analysisModelRequest,source,analysis,review,plan,execution,candidateId,candidate,spatial,planRequest,executeRequest,requestError,refinementRecord,refinement]);
     function openReconstructionTrace(tab:string){setTraceOpenRequest(r=>({tab,sequence:(r?.sequence??0)+1}))}
     const imageView=<>{imageStrip}<VisibleEvidenceImage source={frame.displaySource} image={frame.image} evidence={displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/></>;
     return <>
@@ -310,12 +337,12 @@ export default function Visible3DWorkflow() {
         } }}><option value="">选择 Review</option>{history.reviews.filter(r => r.analysisId === analysis?.id).map(r => <option key={r.id} value={r.id}>{r.id.slice(0, 8)}{head.reviewId === r.id ? ' · Current' : ' · Outdated'}</option>)}</select></label>
    <label>Spatial Planning History<select aria-label="Spatial Planning History" value={plan?.id ?? ''} disabled={busy} onChange={e => { const p = history.plans.find(p => p.id === e.target.value); if (p) {
             setAttempt(null);setError('');setTrace(null);
-            setPlan(p);
+            setRefinement(null);setPlan(p);
             setExecution(null);
         } }}><option value="">选择 Plan</option>{history.plans.filter(p => p.reviewId === review?.id).map(p => <option key={p.id} value={p.id}>{p.origin} · {p.id.slice(0, 8)}</option>)}</select></label>
    <label>Geometry Execution History<select aria-label="Geometry Execution History" value={execution?.id ?? ''} disabled={busy} onChange={e => { const x = history.executions.find(x => x.id === e.target.value); if (x) {
             setAttempt(null);setError('');setTrace(null);
-            setExecution(x);
+            setExecution(x);setRefinement(x.refinement??null);
             setCandidateId(defaultExecutionPreview(x));setChecked(false);setViewRequest(n=>n+1);
         } }}><option value="">选择 Execution</option>{history.executions.filter(x => x.planId === plan?.id).map(x => <option key={x.id} value={x.id}>{x.status} · {x.id.slice(0, 8)}</option>)}</select></label></>}
   </StudioSlot>
@@ -324,7 +351,7 @@ export default function Visible3DWorkflow() {
    {imageStrip}<VisibleEvidenceImage fit source={frame.displaySource} image={frame.image} evidence={displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>
    {selected&&<p className="hint">当前零件：{selected} <button onClick={()=>navigate('review')}>修正选中零件</button></p>}
   </section></StudioSlot>
-  <StudioSlot column="workspace" stages={['review']} intake="visible3d"><ReviewWorkspace spatial bulkControl={<><button disabled={busy||!bulkPlan?.adopted} onClick={adoptAllSuggestions}>采用所有 AI 建议</button>{bulkNotice&&<span role="status" className="review-bulk-summary">{bulkNotice}</span>}</>} inputHelp={!review?'请先保存完整 Review。进入下一页不会执行模型；Spatial Planning 仅使用已保存、已确认且未排除的实例。':dirty?'当前 Review 有未保存修改，请先保存。Planning 不会使用未保存的草稿。':head.reviewId!==review.id?'当前 Review 已过期，请重新加载最新审核记录后执行 Planning。':`已保存 Review。${participation?.blocker??'可进入 Reconstruction；未确认或已排除实例不参与 Spatial Planning。'}`} currentImageId={frame.activeId} display={reviewDisplay} imageControls={reviewImageControls} evidenceLabel={frame.displaySource?.name} spatialLabels={Object.fromEntries((analysis?.evidence.observations??[]).map(o=>[o.id,o.shapeAssessment?familyLabels[o.shapeAssessment.family]:'V1 未记录 Shape Family']))} confirmedIds={form.pieces.filter(p => p.confirmed && !p.excluded).map(p => p.id)} active={active && stage === 'review'} evidence={projectedReview} imageWidth={source?.view.width ?? 1} imageHeight={source?.view.height ?? 1} selected={selected} onSelect={selectReviewedObservation} busy={busy} saveControl={<button disabled={busy || !analysis} onClick={() => void run(async () => { const r = await api<{
+  <StudioSlot column="workspace" stages={['review']} intake="visible3d"><ReviewWorkspace spatial moduleNames={moduleNames} moduleControls={selection=><ModulePlanControls key={review?.id??'unsaved'} store={moduleStore} display={reviewDisplay} selection={selection} busy={busy}/>}  bulkControl={<><button disabled={busy||!bulkPlan?.adopted} onClick={adoptAllSuggestions}>采用所有 AI 建议</button>{bulkNotice&&<span role="status" className="review-bulk-summary">{bulkNotice}</span>}</>} inputHelp={!review?'请先保存完整 Review。进入下一页不会执行模型；Spatial Planning 仅使用已保存、已确认且未排除的实例。':dirty?'当前 Review 有未保存修改，请先保存。Planning 不会使用未保存的草稿。':head.reviewId!==review.id?'当前 Review 已过期，请重新加载最新审核记录后执行 Planning。':`已保存 Review。${participation?.blocker??'可进入 Reconstruction；未确认或已排除实例不参与 Spatial Planning。'}`} currentImageId={frame.activeId} display={moduleDisplay} imageControls={reviewImageControls} evidenceLabel={frame.displaySource?.name} spatialLabels={Object.fromEntries((analysis?.evidence.observations??[]).map(o=>[o.id,o.shapeAssessment?familyLabels[o.shapeAssessment.family]:'V1 未记录 Shape Family']))} confirmedIds={form.pieces.filter(p => p.confirmed && !p.excluded).map(p => p.id)} active={active && stage === 'review'} evidence={projectedReview} imageWidth={source?.view.width ?? 1} imageHeight={source?.view.height ?? 1} selected={selected} onSelect={selectReviewedObservation} busy={busy} saveControl={<button disabled={busy || !analysis} onClick={() => void run(async () => { const r = await api<{
         record: Review;
         head: typeof head;
     }>('reviews', { analysisId: analysis!.id, review: form, thickness, expectedRevision: head.revision }); setRebaseId(plan?.id??rebaseId); selectReview(r.record); setHead(r.head); setPlan(null); setExecution(null); await refresh(); setNotice('3D Review 已保存，实例集固定；下一步 Spatial Planning'); })}>保存 3D Review</button>} inputControl={<button disabled={!review || dirty} onClick={() => navigate('reconstruction')}>进入 3D Reconstruction</button>} onAdd={() => { }} addDisabled>{frame.error&&<p role="alert">图片读取失败：{frame.error}</p>}{!reviewDisplay.imageIds.length?<p className="studio-empty">尚未选择图片；请在顶部图片筛选中选择图片或恢复全部。</p>:<><VisibleEvidenceImage fit source={frame.displaySource} image={frame.image} evidence={reviewEvidence?{...reviewEvidence,observations:reviewEvidence.observations.filter(o=>o.bbox||o.features.length)}:undefined} selected={selected} onSelect={selectReviewedObservation} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>{!reviewEvidence?.observations.some(o=>o.bbox||o.features.length)&&<p role="status" className="review-image-empty">{reviewEvidence?.observations.length?'该图片有关联实例，但没有可显示的边框或顶点标注。':displayEvidence?.observations.length?'当前图片没有勾选可显示的实例；请勾选表格或调整筛选。':'当前图片没有 Observation Evidence；这与是否人工确认无关。'}</p>}</>}</ReviewWorkspace></StudioSlot>
@@ -380,27 +407,29 @@ export default function Visible3DWorkflow() {
    <label>3D Spatial Planning 模型<select disabled={busy} value={planningModel} onChange={e => setPlanningModel(e.target.value)}><option value="">选择模型</option>{config?.planningModels.map(m => <option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}</option>)}</select></label>
    {participation&&<div data-testid="visible3d-planning-participation" role={participation.blocker?'alert':'status'}>{participation.blocker??`已保存 Review：${participation.confirmed}/${participation.total} 个实例已确认并参与 Planning，其中 ${participation.knownProfiles} 个具有 Exact Profile。未确认或已排除实例不参与重建。`}</div>}
    <button disabled={busy || !review || dirty || head.reviewId !== review.id || !planningModel || !!participation?.blocker} onClick={() => void run(() => modelAction('plan'),'plan')}>Spatial Planning（调用模型）</button>
-   <details><summary>沿用已有空间假设（不调用模型）</summary><p>修正 Review 后可明确创建新计划；原 Analysis、Plan、Trace 与旧候选保留。</p><label>来源计划<select aria-label="沿用来源计划" value={rebaseId} disabled={busy} onChange={e=>setRebaseId(e.target.value)}><option value="">明确选择已有计划</option>{history.plans.filter(p=>p.sourceId===source?.id).map(p=><option key={p.id} value={p.id}>{p.id.slice(0,8)} · Review {p.reviewId.slice(0,8)} · {p.origin}</option>)}</select></label><button disabled={busy||!rebaseId||!review||dirty||head.reviewId!==review.id} onClick={()=>void run(async()=>{const p=await api<Plan>('rebase-plan',{reviewId:review!.id,planId:rebaseId});setPlan(p);setExecution(null);setManual(JSON.stringify(p.plan,null,2));await refresh();setNotice('已按当前 Review 创建人工计划；请明确执行 Geometry Execution，不会自动替换 Draft。')})}>按当前 Review 创建人工计划</button></details>
-   <details><summary>人工 Spatial Hypothesis / 修改后保存新版本</summary><button disabled={!review || dirty} onClick={() => setManual(JSON.stringify(plan && plan.reviewId === review?.id ? plan.plan : seedPlan(), null, 2))}>准备人工假设模板</button><textarea spellCheck={false} aria-label="3D Spatial Hypothesis JSON" value={manual} onChange={e => setManual(e.target.value)}/><button disabled={busy || !review || dirty || head.reviewId !== review.id} onClick={() => void run(async () => { const p = await api<Plan>('manual-plan', { reviewId: review!.id, plan: JSON.parse(manual) }); setPlan(p); setExecution(null); await refresh(); })}>保存人工 Spatial Hypothesis</button></details>
+   <details><summary>沿用已有空间假设（不调用模型）</summary><p>修正 Review 后可明确创建新计划；原 Analysis、Plan、Trace 与旧候选保留。</p><label>来源计划<select aria-label="沿用来源计划" value={rebaseId} disabled={busy} onChange={e=>setRebaseId(e.target.value)}><option value="">明确选择已有计划</option>{history.plans.filter(p=>p.sourceId===source?.id).map(p=><option key={p.id} value={p.id}>{p.id.slice(0,8)} · Review {p.reviewId.slice(0,8)} · {p.origin}</option>)}</select></label><button disabled={busy||!rebaseId||!review||dirty||head.reviewId!==review.id} onClick={()=>void run(async()=>{const p=await api<Plan>('rebase-plan',{reviewId:review!.id,planId:rebaseId});setRefinement(null);setPlan(p);setExecution(null);setManual(JSON.stringify(p.plan,null,2));await refresh();setNotice('已按当前 Review 创建人工计划；请明确执行 Geometry Execution，不会自动替换 Draft。')})}>按当前 Review 创建人工计划</button></details>
+   <details><summary>人工 Spatial Hypothesis / 修改后保存新版本</summary><button disabled={!review || dirty} onClick={() => setManual(JSON.stringify(plan && plan.reviewId === review?.id ? plan.plan : seedPlan(), null, 2))}>准备人工假设模板</button><textarea spellCheck={false} aria-label="3D Spatial Hypothesis JSON" value={manual} onChange={e => setManual(e.target.value)}/><button disabled={busy || !review || dirty || head.reviewId !== review.id} onClick={() => void run(async () => { const p = await api<Plan>('manual-plan', { reviewId: review!.id, plan: JSON.parse(manual) }); setRefinement(null);setPlan(p); setExecution(null); await refresh(); })}>保存人工 Spatial Hypothesis</button></details>
 
      {plan&&<p>当前 Plan · {plan.origin??'已保存'} · {plan.plan.parts.length} 个实例 · {plan.plan.connections.length} 条主连接 · {plan.plan.alternatives.length} 个其他解释</p>}
      {!!plan?.diagnostics?.length&&<div role="status"><b>当前人工计划适配 Diagnostic</b>{plan.diagnostics.map((d,i)=><p key={i}>{d}</p>)}</div>}
    {plan&&<section aria-label="Planning 连接候选审核"><details aria-label="Planning 推断详情"><summary>Planning 空间理解与连接解释（模型推断）</summary><SpatialUnderstandingPanel label="Planning 空间解释" value={plan.plan.spatialInterpretation}/><details aria-label="3D Planning 连接审核"><summary>模型 Connection / Port / Dihedral / Flip 候选</summary><p>可回到 Review 核对或修改单条连接；这里选择完整解释，保留原计划。</p>{[{label:'主解释',connections:plan.plan.connections},...plan.plan.alternatives].map((v,i)=><article key={i}><b>{v.label}</b>{v.connections.map((c,j)=><p key={j}>{c.pieceA}/{c.portA??'Unknown'} ↔ {c.pieceB}/{c.portB??'Unknown'}<br/>角度 {c.angles.join(', ')||'Unknown'}° · flip {c.flip===null?'Unknown':String(c.flip)}<br/>{c.evidence}<br/><small>{c.uncertainty}</small></p>)}<button disabled={busy||dirty||head.reviewId!==review?.id||plan.reviewId!==review?.id} onClick={()=>void run(()=>usePlanVariant(v.connections))}>选择解释 {i+1} 并保存人工计划</button></article>)}</details></details></section>}
 
     </section>
-    <section className="intake-controls visible3d-control-section" aria-label="Geometry Execution 操作"><h3>2 · Geometry Execution</h3>
+    <ConstraintRefinementPanel key={plan?.id??'no-plan'} records={refinementRecords} selection={refinement} executions={history.executions} busy={busy} blocked={!plan||planOutdated} onGenerate={async()=>{let id='';await run(async()=>{const r=await api<RefinementRecord>('refine-constraints',{planId:plan!.id,planHash:plan!.hash});id=r.id;await refresh();setNotice('修正候选已保存；尚未采用，执行输入保持不变。')});return id}} onSelect={r=>{setRefinement(r);setExecution(null);setCandidateId('');setChecked(false);setAttempt(null);setError('');setNotice(r?'已选择修正方案；请明确执行 Geometry Execution。原 Plan 未改变。':'已切回原始 Plan；请明确执行 Geometry Execution。')}}/>
+    <section className="intake-controls visible3d-control-section" aria-label="Geometry Execution 操作"><h3>2 · Geometry Execution</h3><p data-testid="visible3d-execution-input">执行输入：{refinement?`Refinement ${refinement.candidateId} · ${refinement.id.slice(0,8)}`:`原始 Plan ${plan?.id.slice(0,8)??'未选择'}`}</p>{refinementMismatch&&<p role="alert">Refinement 来源或快照不匹配，请重新选择当前 Plan 的方案；未回退到原始输入。</p>}
      <ExecutionStatus value={executeStatus} testId="visible3d-execution-state"/>
-   <div className="visible3d-budget"><label>连接组合预算<input aria-label="3D 连接组合预算" type="number" min="0" max="2048" value={maxAssignments} onChange={e => setMaxAssignments(+e.target.value)}/></label><label>几何检查预算<input aria-label="3D 几何检查预算" type="number" min="0" max="4096" value={maxGeometryChecks} onChange={e => setMaxGeometryChecks(+e.target.value)}/></label><label>局部子图预算<input aria-label="3D 局部子图预算" type="number" min="0" max="8192" value={maxLocalSubsets} onChange={e=>setMaxLocalSubsets(+e.target.value)}/></label><button disabled={busy || !plan || plan.reviewId !== review?.id || dirty || head.reviewId !== review?.id} onClick={() => void run(async () => { const r = await api<{
+   <div className="visible3d-budget"><label>连接组合预算<input aria-label="3D 连接组合预算" type="number" min="0" max="2048" value={maxAssignments} onChange={e => setMaxAssignments(+e.target.value)}/></label><label>几何检查预算<input aria-label="3D 几何检查预算" type="number" min="0" max="4096" value={maxGeometryChecks} onChange={e => setMaxGeometryChecks(+e.target.value)}/></label><label>局部子图预算<input aria-label="3D 局部子图预算" type="number" min="0" max="8192" value={maxLocalSubsets} onChange={e=>setMaxLocalSubsets(+e.target.value)}/></label><button disabled={busy || !plan || refinementMismatch || plan.reviewId !== review?.id || dirty || head.reviewId !== review?.id} onClick={() => void run(async () => { const r = await api<{
         id:string;
         state: string;
         error?: string;
         record: Execution;
-    }>('execute', { planId: plan!.id, requestId: crypto.randomUUID(), options: { maxAssignments, maxGeometryChecks,maxLocalSubsets } });setAttempt({id:r.id,kind:'execute',scope:executionScope(plan)});await refreshRequests(); if (r.state !== 'complete')
+    }>('execute', { planId: plan!.id,...(refinement?{refinement}:{}), requestId: crypto.randomUUID(), options: { maxAssignments, maxGeometryChecks,maxLocalSubsets } });setAttempt({id:r.id,kind:'execute',scope:JSON.stringify([executionScope(plan),refinement])});await refreshRequests(); if (r.state !== 'complete')
         throw Error(r.error); setExecution(r.record); setCandidateId(defaultExecutionPreview(r.record)); setChecked(false); await refresh(); },'execute')}>Geometry Execution（不调用模型）</button></div>
 
      {execution&&<><p role="status" data-testid="visible3d-execution-status">{execution.status} · {execution.candidates.length} 合法 Candidates · {execution.diagnosticCandidates?.length??0} Diagnostic · {execution.search.assignments}/{execution.search.maxAssignments} 组合 · {execution.search.geometryChecks}/{execution.search.maxGeometryChecks} 检查</p>
       {outdated&&<p role="alert">Outdated：来源、Review 或 Plan 已变化，禁止采用旧候选。</p>}
       {execution.status!=='candidates_found'&&execution.diagnostics.length>0&&<ul className="visible3d-failure-diagnostics" aria-label="执行失败原因">{execution.diagnostics.map((d,i)=><li key={i}>{d}</li>)}</ul>}
+      {execution.search.progressive&&<><p role="status" data-testid="progressive-search-status">Progressive Partial · {execution.search.progressive.termination} · 搜索{execution.completeSearch?'已结束':'未完成'}，已验证部分结果可审核采用。最大连通 {execution.search.progressive.maxConnected}/{candidate?.coverage.totalConfirmed??form.pieces.filter(p=>p.confirmed&&!p.excluded).length}；独立组件覆盖 {execution.search.progressive.independentComponentCoverage.length}（相对位置未知，未合并）；Photo Match Unverified。</p><details><summary>渐进搜索预算、组件与失败诊断</summary><pre>{JSON.stringify(execution.search.progressive,null,2)}</pre><p>并集可能来自不同候选和姿态，不是同一完整 Assembly；单片验证不计入连通覆盖。所有未覆盖 Observation 均保留来源。</p></details></>}
       {execution.search.localSearch&&<details><summary>局部搜索预算与终止情况</summary><pre>{JSON.stringify(execution.search.localSearch,null,2)}</pre><p>completeSearch 仅表示预算内离散组合及已选父组件的子图枚举完成，不表示穷尽连续角度或重建完整。</p></details>}
       <details><summary>执行 Diagnostic · {execution.diagnostics.length} 条</summary><pre>{JSON.stringify(execution.diagnostics,null,2)}</pre></details>
      </>}
@@ -433,7 +462,7 @@ export default function Visible3DWorkflow() {
         assembly: Assembly3D;
     }>(diagnostic?'open-diagnostic-draft':'adopt', { executionId: execution!.id,executionHash:execution!.hash, candidateId: candidate.id,...(diagnostic?{override:true}:{visualChecked:true}) }); await refresh(); setOverrideAuthorization('');adopt3D(origin.assembly, origin,cameraView); })}>{diagnostic?'采用当前结构进入 3D Assembly Editor':'采用候选到 3D Assembly Editor'}</button>
    </section>}
-   {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,analysisTraceRequestId:analysisTraceSelection }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage!=='review'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
+   {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,refinement,analysisTraceRequestId:analysisTraceSelection }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage!=='review'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, refinement:refinementRecord, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
    {trace !== null && stage==='review' && <details open><summary>实际保存的模型 Trace</summary><pre>{JSON.stringify(trace, null, 2)}</pre><button onClick={() => setTrace(null)}>关闭 Trace</button></details>}
   </section></StudioSlot>
  </>;

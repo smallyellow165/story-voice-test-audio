@@ -1,3 +1,5 @@
+import {executeProgressive} from './progressive-search.ts';
+import type {ProgressiveStatistics} from './progressive-search.ts';
 import {executeConflictedComponents} from './conflict-search.ts';
 import {candidateObservationMap,inspectSpatialConsistency} from './spatial-consistency.ts';
 import type {ObservationPieceMap3D,SpatialConsistency3D} from './spatial-consistency.ts';
@@ -10,7 +12,7 @@ export type VisibleCandidate3D = {
     kind?:'candidate'|'diagnostic';
     validation?:ReturnType<typeof assemblyValidationLayers>;
     collisions?:ReturnType<typeof inspectAssemblyCollisions>;
-    construction?:{variantIndex:number;combinationIndex:number;componentPieceIds:string[];source:'component'|'local-subgraph';omittedHypotheses:ConnectionHypothesis3D[];parentConnections:Connection[]};
+    construction?:{variantIndex:number;combinationIndex:number;componentPieceIds:string[];source:'component'|'local-subgraph'|'progressive-growth';growthPath?:string[];omittedHypotheses:ConnectionHypothesis3D[];parentConnections:Connection[]};
     observationMap?:ObservationPieceMap3D;
     spatialConsistency?:SpatialConsistency3D;
     id: string;
@@ -33,7 +35,7 @@ export type VisibleCandidate3D = {
     interpretation: string;
 };
 export type VisibleExecution3D = {
-    version: 1 | 2 | 3 | 4;
+    version: 1 | 2 | 3 | 4 | 5;
     status: 'candidates_found' | 'no_valid_candidate' | 'budget_exhausted';
     /** Completion of the declared finite search scope, not an exhaustive photo/angle proof. */
     completeSearch: boolean;
@@ -42,6 +44,7 @@ export type VisibleExecution3D = {
         geometryChecks: number;
         maxAssignments: number;
         maxGeometryChecks: number;
+        progressive?:ProgressiveStatistics;
         componentSearch?:{scope:'nominal-fixed-pose-component-subgraphs';fullHypothesisSearchComplete:false;fullGraphsProvenInvalid:true;cacheHits:number;mandatoryPortConflicts:{variantIndex:number;ports:{port:string;pairs:string[]}[]}[]};
         localSearch?:{considered:number;geometryChecks:number;deduplicated:number;maxSubsets:number;parents:number;parentLimit:number;parentsTruncated:boolean;complete:boolean;proofPruned?:number;componentSplits?:number};
     };
@@ -53,7 +56,8 @@ export type VisibleExecutionOptions={
     maxAssignments?: number;
     maxGeometryChecks?: number;
     topK?: number;
-    algorithmVersion?:2|3|4;
+    algorithmVersion?:2|3|4|5;
+    protectPlanConnections?:boolean;
     maxLocalSubsets?:number;
     maxLocalParents?:number;
     maxDiagnosticCandidates?:number;
@@ -188,7 +192,10 @@ function assemblyKey(a:Assembly3D){return JSON.stringify({pieces:[...a.pieces].s
   return [p.id,p.profileId,p.profileVersion,p.pose.position.map(v=>Math.round(v*1e8)/1e8),p.pose.quaternion.map(v=>Math.round(v*sign*1e8)/1e8)];
 }),connections:[...a.connections].sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))});}
 
+/** New service runs explicitly select V5; keep existing unspecified callers and
+ * versioned V2/V3/V4 history on their original computation paths. */
 export function executeVisible3D(planValue:SpatialHypothesis3D,inputValue:VisibleInput3D,options:VisibleExecutionOptions={}):VisibleExecution3D{
+  if(options.algorithmVersion===5)return executeProgressive(planValue,inputValue,options);
   if(options.algorithmVersion===2)return executeBase(planValue,inputValue,options);
   // Opt in only new runs. Inputs without a proved conflict retain the frozen V3
   // output/version so historical hashes and adoption replay stay unchanged.

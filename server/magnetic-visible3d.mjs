@@ -1,3 +1,4 @@
+import {assertModules,changeModules} from '../src/magnetic-tiles/three-d/reconstruction/module-plan.ts'
 import {rebaseSpatialPlan,exactProfileReview} from '../src/magnetic-tiles/three-d/reconstruction/rebase-plan.ts'
 import {candidateObservationMap,inspectSpatialConsistency} from '../src/magnetic-tiles/three-d/reconstruction/spatial-consistency.ts'
 // Shared DUPLO request lifecycle + immutable magnetic evidence records; no brick geometry.
@@ -12,12 +13,13 @@ import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {runVisibleModel,resumeVisibleAnalysis,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
 import {adaptProfile} from '../src/magnetic-tiles/three-d/profile-adapter.ts'
+import {refineConstraints} from '../src/magnetic-tiles/three-d/reconstruction/constraint-refinement.ts'
 import {executeVisible3D} from '../src/magnetic-tiles/three-d/reconstruction/execute.ts'
 import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
 import {diagnosticHandoffCheck} from '../src/magnetic-tiles/three-d/reconstruction/diagnostic-handoff.ts'
 const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{statusCode})}
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
-const kinds=['analyses','reviews','plans','executions','origins']
+const kinds=['analyses','reviews','plans','executions','origins','refinements','module-plans']
 const identifier=x=>{if(typeof x!=='string'||!/^([a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(x))fail('Visible 3D 记录 ID 无效');return x}
 export function createVisible3DWorkflow(directory,{readSource,readImage,readImages,getRegistry,runModel=runVisibleModel}){
  const operation=recordedSpatialOperation(path.join(directory,'requests'))
@@ -36,14 +38,52 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(hash(trace)!==r.traceHash||trace.status!=='plan_ready_for_review'||trace.wireStatus!=='response_saved'||hash(trace.plan)!==hash(r.evidence??r.plan)||hash(JSON.parse(trace.rawOutput))!==hash(trace.plan)||trace.requestInput.source.hash!==r.sourceHash||trace.requestInput.source.id!==r.sourceId)fail('模型 Trace 与正式记录不一致',409)
  }
  async function lineage(kind,id){
-  const r=await read(kind,id),review=kind==='reviews'?r:kind==='plans'?await read('reviews',r.reviewId):kind==='executions'?await read('reviews',r.reviewId):null
+  const r=await read(kind,id),review=kind==='reviews'?r:kind==='plans'?await read('reviews',r.reviewId):['executions','refinements','module-plans'].includes(kind)?await read('reviews',r.reviewId):null
   const analysis=kind==='analyses'?r:await read('analyses',review.analysisId),source=await readSource(analysis.sourceId)
   if(analysis.sourceHash!==source.hash||review&&(review.analysisHash!==analysis.hash||review.sourceHash!==source.hash)||r.sourceHash!==source.hash)fail('来源关联不一致',409)
-  if(kind==='plans'&&r.reviewHash!==review.hash||kind==='executions'&&r.reviewHash!==review.hash)fail('Review Hash 不一致',409)
-  if(kind==='executions'){const p=await read('plans',r.planId);if(p.hash!==r.planHash||p.reviewId!==review.id||p.reviewHash!==review.hash)fail('Execution Plan 来源不一致',409)}
-  await verifyModelRecord(analysis);if(kind==='plans')await verifyModelRecord(r);if(kind==='executions')await verifyModelRecord(await read('plans',r.planId))
+  if(kind==='plans'&&r.reviewHash!==review.hash||['executions','refinements','module-plans'].includes(kind)&&r.reviewHash!==review.hash)fail('Review Hash 不一致',409)
+  if(['executions','refinements'].includes(kind)){const p=await read('plans',r.planId);if(p.hash!==r.planHash||p.reviewId!==review.id||p.reviewHash!==review.hash)fail('Execution Plan 来源不一致',409)}
+  await verifyModelRecord(analysis);if(kind==='plans')await verifyModelRecord(r);if(['executions','refinements'].includes(kind))await verifyModelRecord(await read('plans',r.planId))
+  if(kind==='module-plans'){if(r.kind!=='magnetic-module-plan'||r.schemaVersion!==1||r.analysisId!==analysis.id||r.analysisHash!==analysis.hash||r.sourceId!==source.id||r.reviewId!==review.id)fail('Module Plan 来源不一致',409);assertModules(r.modules,review.input.review)}
   const current=await head(source.id)
   return {record:r,review,analysis,source,head:current,outdated:!!review&&current.reviewId!==review.id}
+ }
+ // A view preference is never trusted as executable input. Re-derive every
+ // immutable refinement from the exact Plan + Review on execution and adoption.
+ async function executionPlan(p,review,reference){
+  if(reference===undefined||reference===null)return p.plan
+  const r=await read('refinements',reference.id).catch(e=>{if(e.code==='ENOENT')fail('Refinement 文件不存在，不能回退到原始 Plan',409);throw e})
+  if(r.version!==1||r.refinement.version!==1||r.refinement.algorithm!=='port-conflict-subsets-v1')fail('Refinement 版本不支持',409)
+  if(r.hash!==reference.hash||r.planId!==p.id||r.planHash!==p.hash||r.reviewId!==review.id||r.reviewHash!==review.hash||r.sourceId!==p.sourceId||r.sourceHash!==p.sourceHash)fail('Refinement 来源或 Hash 不一致',409)
+  const actual=refineConstraints(p.plan,review.input,{...r.refinement.options,protectPlan:p.origin!=='model'})
+  if(hash(actual)!==hash(r.refinement))fail('Refinement 差异复核失败',409)
+  const c=actual.candidates.find(c=>c.id===reference.candidateId)
+  if(!c||hash(c)!==reference.candidateHash||c.consistency.portConflicts.length)fail('Refinement Candidate 身份或约束复核失败',409)
+  return c.plan
+ }
+ function executePlan(plan,review,options,refined){
+  const result=executeVisible3D(plan,review.input,options)
+  if(!refined)return result
+  const pair=c=>[c.pieceA,c.pieceB].sort().join('|')
+  const allowed=c=>review.input.review.constraints.filter(c=>c.intent==='connect').every(required=>c.assembly.connections.some(edge=>pair(edge)===pair(required)))&&
+   (review.input.review.spatialChecks??[]).filter(s=>s.relation==='plane-angle'||s.relation==='shared-edge').every(s=>[s.pieceA,s.pieceB].every(id=>c.assembly.pieces.some(p=>p.id===id)))&&c.spatialConsistency?.status!=='contradicted'
+  const rejected=result.candidates.filter(c=>!allowed(c))
+  if(rejected.length){result.candidates=result.candidates.filter(allowed);result.diagnostics.push('REFINEMENT_REVIEW_BLOCKED: 局部候选缺少或违反人工硬约束，不能采用：'+rejected.map(c=>c.id).join(', '));if(result.status==='candidates_found'&&!result.candidates.length)result.status='no_valid_candidate'}
+  return result
+ }
+ async function replayExecution(r,p,review){
+  const plan=await executionPlan(p,review,r.refinement)
+  if(r.refinement&&r.effectivePlanHash!==hash(plan))fail('Execution Refinement 快照不一致',409)
+  return executePlan(plan,review,{...r.options,...(r.version===5?{protectPlanConnections:p.origin!=='model'}:{}),algorithmVersion:r.version===5?5:r.version===4?4:r.version>=3?3:2},!!r.refinement)
+ }
+ async function moduleHead(reviewId){try{return JSON.parse(await readFile(filename('module-heads',reviewId),'utf8'))}catch(e){if(e.code==='ENOENT')return {revision:0,recordId:null,recordHash:null,modulePlanId:null};throw e}}
+ async function moduleState(reviewId){
+  const l=await lineage('reviews',identifier(reviewId)),h=await moduleHead(l.review.id),history=[]
+  for(const f of await readdir(path.join(directory,'module-plans')).catch(e=>{if(e.code==='ENOENT')return [];throw e})){if(!/^[a-f0-9-]+\.json$/.test(f))continue;const r=await read('module-plans',f.slice(0,-5));if(r.reviewId===l.review.id){await lineage('module-plans',r.id);history.push(r)}}
+  history.sort((a,b)=>b.revision-a.revision||b.createdAt.localeCompare(a.createdAt))
+  const record=h.recordId?history.find(r=>r.id===h.recordId):null
+  if(h.recordId&&(!record||record.hash!==h.recordHash||record.revision!==h.revision||record.modulePlanId!==h.modulePlanId))fail('Module Plan Head / Hash 不一致',409)
+  return {head:h,record,history,outdated:l.outdated,reviewId:l.review.id,reviewHash:l.review.hash}
  }
  async function modelRecord(kind,body,checkpoint){
   const source=kind==='analysis'?await readSource(body.sourceId):(await lineage('reviews',body.reviewId)).source
@@ -100,6 +140,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    if(trace.latestPollId){const pollId=identifier(trace.latestPollId);response=await (async()=>{try{return {available:true,origin:traceId+'.polls/'+pollId+'.response.txt',...shareText(await readFile(path.join(directory,'model-traces',traceId+'.polls',pollId+'.response.txt'),'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'该次 GET 未收到实际响应；不会用之前的响应冒充。'};throw e}})()}
    return {traceId,request:await wire('.request.json'),response,...(trace.background?{submissionResponse:submission,pollingNote:'每次查询的 GET 元数据与原始响应保存在同一 Trace 的 .polls 目录；不是重新生成。'}:{})}
   }
+  if(method==='GET'&&route.startsWith('module-state/'))return moduleState(route.slice(13))
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}
   if(method!=='POST')fail('未知 Visible 3D 操作',404)
@@ -130,6 +171,28 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     const next={revision:current.revision+1,reviewId:review.id,reviewHash:review.hash},f=filename('heads',source.id),temp=f+'.tmp';await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,f);return {record:review,head:next}
    })
   }
+  if(route==='module-plans'){
+   const initial=await lineage('reviews',body.reviewId)
+   return locked(initial.source.id,async()=>{
+    const l=await lineage('reviews',body.reviewId)
+    // Grouping an immutable Review is independent of whether it is the latest geometry input.
+    if(body.reviewHash!==l.review.hash)fail('Review Hash 不一致，不能保存模块',409)
+    if(l.outdated&&!['create','rename'].includes(body.command?.kind))fail('Review 已过期，不能修改历史模块成员',409)
+    const current=await moduleHead(l.review.id)
+    if(body.expectedRevision!==current.revision||body.expectedHash!==current.recordHash)fail('Module Plan 已被其他页面更新；请重新加载，未覆盖',409)
+    const previous=current.recordId?await read('module-plans',current.recordId):null
+    if(previous&&(previous.hash!==current.recordHash||previous.revision!==current.revision||previous.reviewId!==l.review.id||previous.reviewHash!==l.review.hash||previous.modulePlanId!==current.modulePlanId))fail('Module Plan 当前快照不一致',409)
+    let next
+    if(body.command?.kind==='restore'){
+     const old=await lineage('module-plans',body.command.recordId)
+     if(old.record.reviewId!==l.review.id||old.record.reviewHash!==l.review.hash||old.record.modulePlanId!==current.modulePlanId)fail('不能跨 Review 恢复 Module Plan',409)
+     next={modules:structuredClone(old.record.modules),change:{kind:'restore',moved:[],restoredFrom:old.record.id}}
+    }else next=changeModules(previous?.modules??[],l.review.input.review,body.command,randomUUID())
+    const record=await put('module-plans',{kind:'magnetic-module-plan',schemaVersion:1,modulePlanId:current.modulePlanId??randomUUID(),revision:current.revision+1,parent:previous?{id:previous.id,hash:previous.hash}:null,sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,...next})
+    const nextHead={revision:record.revision,recordId:record.id,recordHash:record.hash,modulePlanId:record.modulePlanId},f=filename('module-heads',l.review.id),tmp=f+'.'+randomUUID()+'.tmp';await mkdir(path.dirname(f),{recursive:true});await writeFile(tmp,JSON.stringify(nextHead),{mode:0o600});await rename(tmp,f)
+    return {record,head:nextHead}
+   })
+  }
   if(route==='manual-plan'){
    const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409)
    let base=null;if(body.basedOnPlanId){const b=await lineage('plans',body.basedOnPlanId);if(b.outdated||b.review.id!==l.review.id)fail('人工计划的来源 Plan 已过期或不属于当前 Review',409);base=b.record}
@@ -141,10 +204,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const rebased=rebaseSpatialPlan(old.record.plan,old.review.input,current.review.input)
    return put('plans',{sourceId:current.source.id,sourceHash:current.source.hash,reviewId:current.review.id,reviewHash:current.review.hash,...rebased,origin:'human-rebased-hypothesis',traceId:null,basedOnPlanId:old.record.id,basedOnPlanHash:old.record.hash,basedOnReviewId:old.review.id,basedOnReviewHash:old.review.hash})
   }
+  if(route==='refine-constraints'){
+   const l=await lineage('plans',body.planId)
+   if(l.outdated||body.planHash!==l.record.hash)fail('Plan 已过期或 Hash 不一致，不能生成修正候选',409)
+   const refinement=refineConstraints(l.record.plan,l.review.input,{maxNodes:body.options?.maxNodes,maxCandidates:body.options?.maxCandidates,protectPlan:l.record.origin!=='model'})
+   return put('refinements',{version:1,planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash,refinement,candidateHashes:Object.fromEntries(refinement.candidates.map(c=>[c.id,hash(c)]))})
+  }
   if(route==='execute')return operation(body,route,async()=>{
    const l=await lineage('plans',body.planId);if(l.outdated)fail('Review 已改变，旧 Plan 不可执行',409)
-   const execution=executeVisible3D(l.record.plan,l.review.input,{...body.options,algorithmVersion:4})
-   return {record:await put('executions',{...execution,options:body.options??{},planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash})}
+   const effectivePlan=await executionPlan(l.record,l.review,body.refinement)
+   const execution=executePlan(effectivePlan,l.review,{...body.options,algorithmVersion:5,protectPlanConnections:l.record.origin!=='model'},!!body.refinement)
+   return {record:await put('executions',{...execution,options:body.options??{},...(body.refinement?{refinement:body.refinement,effectivePlanHash:hash(effectivePlan)}:{}),planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash})}
   })
   if(route==='open-diagnostic-draft'){
    const initial=await lineage('executions',body.executionId)
@@ -155,7 +225,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     if(body.executionHash!==r.hash)fail('Diagnostic Execution Hash 不一致',409)
     const p=await read('plans',r.planId)
     if(r.sourceId!==l.source.id||l.review.sourceId!==l.source.id||p.sourceId!==l.source.id||p.reviewId!==l.review.id)fail('Diagnostic 来源身份不一致',409)
-    const verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version===4?4:3})
+    const verified=await replayExecution(r,p,l.review)
     const c=r.diagnosticCandidates?.find(c=>c.id===body.candidateId),actual=verified.diagnosticCandidates?.find(c=>c.id===body.candidateId)
     if(r.version<3||!c||!actual||hash(c)!==hash(actual))fail('Diagnostic 身份或快照复核失败')
     const check=diagnosticHandoffCheck(c)
@@ -163,7 +233,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     const observationMap=c.observationMap??candidateObservationMap(c.assembly,l.review.input),spatialConsistency=inspectSpatialConsistency(c.assembly,l.review.input,observationMap)
     if(spatialConsistency.status==='contradicted')fail('违反已审核空间关系，不能通过实体碰撞 Override 进入编辑器')
     const assembly={...structuredClone(c.assembly),id:'visible-'+randomUUID(),revision:0}
-    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'pending'},observationMap,spatialConsistency,
+    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.review.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.review.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.review.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'pending'},observationMap,spatialConsistency,
      entryMode:'diagnostic-override',authorization:{scope:'editor-draft-only',explicit:true,at:new Date().toISOString()},diagnostic:{id:c.id,hash:hash(c),geometry:c.geometry,validation:c.validation??check.validation,recheckedGeometry:check.geometry,collisions:c.collisions??[],construction:c.construction??null}})
    })
   }
@@ -174,16 +244,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     if(body.visualChecked!==true)fail('请先对照原图，确认候选及未验证项')
     const r=l.record;
     if(r.diagnosticCandidates?.some(c=>c.id===body.candidateId))fail('Diagnostic Candidate 未通过严格 Validator，仅供观察，禁止普通采用',422)
-    const p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version===4?4:r.version>=3?3:2})
+    const p=await read('plans',r.planId),verified=await replayExecution(r,p,l.review)
     const c=r.candidates.find(c=>c.id===body.candidateId),actual=verified.candidates.find(c=>c.id===body.candidateId)
     const {observationMap:_mapping,spatialConsistency:_spatial,...legacyActual}=actual??{}
     const matches=c&&actual&&hash(c)===hash(r.version===1?legacyActual:actual)
-    if(!r.completeSearch||!c||!actual||!matches||!validateAssembly3D(c.assembly).valid)fail('Candidate 复核失败或不是 Geometry Valid',422)
+    if(r.version===5&&(!c||!actual)&&verified.diagnostics.some(d=>d.startsWith('REVIEW_BLOCKED')))fail('Candidate 未满足人工硬约束或已审核空间关系；请核对 Review',422)
+    if((!r.completeSearch&&r.version!==5)||!c||!actual||!matches||!validateAssembly3D(c.assembly).valid)fail('Candidate 复核失败或不是 Geometry Valid',422)
     const observationMap=c.observationMap??candidateObservationMap(c.assembly,l.review.input),spatialConsistency=inspectSpatialConsistency(c.assembly,l.review.input,observationMap)
     if(spatialConsistency.status==='contradicted')fail('Geometry Valid 但违反已审核空间关系；请修正 Review 后重新执行',422)
     // Identity is unique per adoption, all authoritative poses/profiles remain exact.
     const assembly={...c.assembly,id:'visible-'+randomUUID(),revision:0}
-    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'accepted',at:new Date().toISOString()},observationMap,spatialConsistency})
+    return put('origins',{sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.review.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.review.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.review.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'accepted',at:new Date().toISOString()},observationMap,spatialConsistency})
    })
   }
   fail('未知 Visible 3D 操作',404)

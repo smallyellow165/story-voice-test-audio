@@ -1,7 +1,8 @@
+import type {RefinementReference} from './constraint-refinement.ts'
 // Read-only presentation of existing request/record states. No planning or geometry.
 type Ref={id:string;hash:string}
 export type ModelTrace={id:string;status?:string;error?:unknown;validation?:{valid:boolean;issues?:unknown[]}|null;background?:{state:string;responseId:string|null;providerStatus?:string|null};sources?:{sourceId:string;sourceHash:string;reviewId?:string|null;reviewHash?:string|null}[];[key:string]:unknown}
-export type OperationRecord={id:string;kind:string;state:string;createdAt:string;sourceId?:string;sourceHash?:string;planId?:string|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
+export type OperationRecord={id:string;kind:string;state:string;createdAt:string;sourceId?:string;sourceHash?:string;planId?:string|null;refinement?:RefinementReference|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
 export type OperationAttempt={id?:string;kind:'plan'|'execute';scope:string;error?:string}
 export const planningScope=(source:Ref|null,review:Ref|null)=>JSON.stringify([source?.id,source?.hash,review?.id,review?.hash])
 export const executionScope=(plan:Ref|null)=>JSON.stringify([plan?.id,plan?.hash])
@@ -23,10 +24,10 @@ export function planningRequest(requests:OperationRecord[],source:Ref|null,revie
  // trace provenance they cannot safely be attributed to the selected Review.
  return latest(requests.filter(r=>r.kind==='plan'&&!r.record&&r.trace?.sources?.some(s=>s.sourceId===source?.id&&s.sourceHash===source?.hash&&s.reviewId===review?.id&&s.reviewHash===review?.hash)))
 }
-export function executionRequest(requests:OperationRecord[],plan:Ref|null,execution:Ref|null,attempt:OperationAttempt|null){
- if(attempt?.kind==='execute'&&attempt.scope===executionScope(plan)&&attempt.id)return requests.find(r=>r.id===attempt.id&&r.kind==='execute')
+export function executionRequest(requests:OperationRecord[],plan:Ref|null,execution:Ref|null,attempt:OperationAttempt|null,refinement:RefinementReference|null=null){
+ if(attempt?.kind==='execute'&&(attempt.scope===JSON.stringify([executionScope(plan),refinement])||!refinement&&attempt.scope===executionScope(plan))&&attempt.id)return requests.find(r=>r.id===attempt.id&&r.kind==='execute')
  if(execution)return requests.find(r=>r.kind==='execute'&&r.record?.id===execution.id)
- return plan?latest(requests.filter(r=>r.kind==='execute'&&!r.record&&r.planId===plan.id)):undefined
+ return plan?latest(requests.filter(r=>r.kind==='execute'&&!r.record&&r.planId===plan.id&&JSON.stringify(r.refinement??null)===JSON.stringify(refinement))):undefined
 }
 export type DisplayStatus={tone:'neutral'|'running'|'error'|'review'|'valid';label:string;message:string}
 export function analysisDisplay(request:OperationRecord|undefined):DisplayStatus{

@@ -1,3 +1,6 @@
+import {PendingObservations} from './reconstruction/PendingObservations.tsx';
+import {placePendingObservation} from './reconstruction/pending-observations.ts';
+import type {PendingObservation} from './reconstruction/pending-observations.ts';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
 import { parseAssembly3D, serializeAssembly3D } from './assembly.ts'
@@ -307,6 +310,7 @@ export default function ThreeDWorkspace() {
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <div><p role="alert">{error.length>200?error.slice(0,200)+'…':error}</p>{error.length>200&&<details><summary>操作错误详情</summary><p>{error}</p></details>}</div>}
         {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
+        {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&Array.isArray(photoOrigin.origin.pendingObservations)&&<PendingObservations assembly={current} values={photoOrigin.origin.pendingObservations as PendingObservation[]} disabled={!editing||operationBusy} onPlace={(p,pose)=>apply(h=>{const next=placePendingObservation(h,p,pose);setSelection({kind:'piece',id:p.id});return next})}/>}
         <AssemblySelectionTable symmetrySources={editing&&symmetryOpen?symmetrySources:undefined} onSymmetrySource={(id,checked)=>{setSymmetryPreview(null);setSymmetrySources(ids=>checked?[...ids,id]:ids.filter(x=>x!==id))}} collisionIds={selectedCollision?.evidence.pieceIds} assembly={assembly} selection={selection} select={setSelection} busy={operationBusy}/>
         <EditorInspector editing={editing} selectionInfo={<>
         {selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>

@@ -19,7 +19,9 @@ test('V3 history preserves diagnostics; strict adoption rejects diagnostic IDs a
  const dir=await mkdtemp(path.join(tmpdir(),'magnetic-execution-v3-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const api=createMagneticIntake(dir),post=(route,body)=>api.dispatch('POST','visible3d/'+route,body),f=structuredClone(fixture),source=await api.dispatch('POST','sources',{name:'orange geometry fixture.png',original:png,view:png});
  const a=await post('annotate',{sourceId:source.id,evidence:f.input.evidence}),r=await post('reviews',{analysisId:a.id,review:f.input.review,thickness:.06,expectedRevision:0}),p=await post('manual-plan',{reviewId:r.record.id,plan:f.plan});
- const x=await post('execute',{planId:p.id,requestId:randomUUID(),options:{algorithmVersion:2}});assert.equal(x.record.version,3,'client cannot choose legacy mode for a new run');assert.equal(x.record.diagnosticCandidates[0].assembly.pieces.length,6);
+ const x=await post('execute',{planId:p.id,requestId:randomUUID(),options:{algorithmVersion:2}});assert.equal(x.record.version,5,'client cannot choose legacy mode for a new run');assert.equal(x.record.diagnosticCandidates[0].assembly.pieces.length,6);
+ // Freeze the historical V3 artifact: new V5 runs conservatively protect manual Plan constraints.
+ const saved={...x.record,...executeVisible3D(p.plan,r.record.input,{algorithmVersion:3})};delete saved.hash;saved.hash=createHash('sha256').update(JSON.stringify(saved)).digest('hex');await writeFile(path.join(dir,'visible3d/executions',saved.id+'.json'),JSON.stringify(saved));x.record=saved;
  const reboot=createMagneticIntake(dir);assert.deepEqual((await reboot.dispatch('GET','visible3d/executions/'+x.record.id)).record,x.record);
  await assert.rejects(post('adopt',{executionId:x.record.id,candidateId:'diagnostic-1',visualChecked:true}),/Diagnostic/);
  assert.equal((await api.dispatch('GET','visible3d/history')).origins.length,0);
