@@ -5,7 +5,7 @@ import type {ReviewedSpatialCheck3D} from './spatial-consistency.ts';
 import {inspectPieceGeometry} from './pose-inspection.ts';
 import {SpatialUnderstandingPanel,familyLabels} from './SpatialUnderstandingPanel.tsx';
 import type {VisualConnection3D} from './spatial-understanding.ts';
-import {profileSizeLabel} from '../../profiles.ts';
+import {ReviewObservationInspector} from './ReviewObservationInspector.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StudioSlot, useStudio, imageStages } from '../../StudioLayout.tsx';
 import { useProfileRegistry } from '../../ProfileRegistry.tsx';
@@ -197,7 +197,7 @@ export default function Visible3DWorkflow() {
     useEffect(() => { if (!active || !source)
         return; const update = () => {if(stage==='source')void refreshRequests();void api<typeof head>('head/' + source.id).then(setHead).catch(e => setError(String(e)))}; update(); window.addEventListener('focus', update); return () => window.removeEventListener('focus', update); }, [active, stage, source]);
     const projectedReview = useMemo<Evidence | undefined>(() => analysis ? { sourceKind: 'unsupported', reason: '只供共享 Review 表展示；不是 2D Reconstruction 输入', relations: form.constraints.map(c => ({ from: c.pieceA, to: c.pieceB, intent: c.intent, evidence: c.evidence })), observations: analysis.evidence.observations.map(o => { const p = form.pieces.find(p => p.id === o.id), b = o.bbox; return { id: o.id, profileId: p?.profileId ?? 'unknown', profileVersion: p?.profileVersion ?? 1, color: p?.color ?? o.color, outline: b ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : [], confidence: 0, evidence: o.evidence, uncertainty: o.uncertainty, origin: 'observed', excluded: !!p?.excluded }; }) } : undefined, [analysis, form]);
-    function editPiece(update: Partial<VisibleReview3D['pieces'][number]>) { setForm(f=>editReviewedPiece(f,selected,update));if(update.excluded||update.confirmed===false)setNotice('当前审核草稿已移除该片相关人工连接/空间检查；原保存快照未改变。');else if(update.profileId!==undefined||update.profileVersion!==undefined)setNotice('Profile 已修改，相关人工端口置为 Unknown，请重新核对。');setChecked(false); }
+    function editPiece(update: Partial<VisibleReview3D['pieces'][number]>) { setForm(f=>editReviewedPiece(f,selected,update));if(update.excluded||update.confirmed===false)setNotice('当前审核草稿已移除该片相关人工连接/空间检查；原保存快照未改变。');else if(update.profileId!==undefined||update.profileVersion!==undefined)setNotice('Profile 已更新；相关 Port 需重新核对。');setChecked(false); }
     const ports = (id: string) => { const p = form.pieces.find(p => p.id === id), profile = registry.profiles.find(s => s.id === p?.profileId && s.version === p?.profileVersion); return profile ? adaptProfile({ profile, thickness }).shape.ports : []; };
     function chooseVisualConnection(c:VisualConnection3D){
       if(!form.pieces.some(p=>p.id===c.pieceA&&p.confirmed&&!p.excluded)||!form.pieces.some(p=>p.id===c.pieceB&&p.confirmed&&!p.excluded)){setError('请先确认建议所涉及的两个可见实例。');return}
@@ -325,7 +325,7 @@ export default function Visible3DWorkflow() {
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{analysis?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
   </StudioSlot>
-  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector'}>{stage==='source'||stage==='reconstruction'?<div className={stage==='source'?'review-inspector-heading visible3d-analysis-heading':'review-inspector-heading visible3d-reconstruction-heading'}>{stage==='reconstruction'&&<h2>{workflowTerms.reconstruction.label}</h2>}{active&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</div>:<h3>Visible 3D Inspector</h3>}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector visible3d-review-inspector'}>{stage==='source'||stage==='reconstruction'?<div className={stage==='source'?'review-inspector-heading visible3d-analysis-heading':'review-inspector-heading visible3d-reconstruction-heading'}>{stage==='reconstruction'&&<h2>{workflowTerms.reconstruction.label}</h2>}{active&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</div>:null}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
    {stage==='source'&&<section className="intake-controls source-inspector" aria-label="Visible 3D 图片与识别操作">
     <SourceImagePicker onPendingChange={setImagePending} onSelectImage={frame.select} activeImageId={frame.activeId} sourceType={imageSource} onSourceTypeChange={setImageSource} currentSource={source} disabled={busy}
      onSource={async s=>{if(s)await openSourceImage(s);else{setAnalysisTraceSelection('latest');setSource(null);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null)}}}
@@ -343,35 +343,13 @@ export default function Visible3DWorkflow() {
         void f.text().then(setAnnotation); }}/><button disabled={busy || !source} onClick={() => void run(async () => { const a = await api<Analysis>('annotate', { sourceId: source!.id, evidence: parseVisibleEvidence(JSON.parse(annotation)) }); selectAnalysis(a); await refresh(); navigate('review'); })}>保存人工标注并 Review</button></details>
 
    </section>}
-   {stage === 'review' && <>{selectedReview ? <><h4>{selectedReview.id}</h4>{selectedEvidence?.imageEvidence&&<div role="group" aria-label="零件相关来源图片"><b>来源证据</b>{selectedEvidence.imageEvidence.map(e=><button key={e.imageId} aria-pressed={frame.activeId===e.imageId} disabled={!reviewDisplay.imageIds.includes(e.imageId)} title={reviewDisplay.imageIds.includes(e.imageId)?"查看此来源证据":"请先在顶部图片筛选中选择此图"} onClick={()=>frame.select(e.imageId)}>{frame.entries.find(i=>i.sourceId===e.imageId)?.name??e.imageId}</button>)}<p>{selectedEvidence.imageEvidence.find(e=>e.imageId===frame.activeId)?.evidence??'当前图片没有该零件的直接观察证据。'}</p></div>}<p>{selectedEvidence?.evidence}</p><p>{selectedEvidence?.occlusion} · {selectedEvidence?.uncertainty}</p><label><input type="checkbox" checked={selectedReview.confirmed} disabled={busy||selectedReview.excluded} onChange={e => editPiece({ confirmed: e.target.checked })}/>确认可见实例</label><label><input type="checkbox" checked={selectedReview.excluded} disabled={busy} onChange={e => editPiece({ excluded: e.target.checked })}/>排除实例（保留证据）</label><div className="visible3d-shape" aria-label="AI 形状与 Profile 建议">
-        <h4>AI 建议 · 只读识别证据</h4>
-        {selectedEvidence?.shapeAssessment ? <>
-          <p><b>{familyLabels[selectedEvidence.shapeAssessment.family]}</b> · 其他可能：{selectedEvidence.shapeAssessment.alternativeFamilies.map(f=>familyLabels[f]).join(', ')||'无'}</p>
-          <details><summary>形状判断与透视依据</summary>
-            <p>{selectedEvidence.shapeAssessment.evidence}</p>
-            <p>透视 / 遮挡：{selectedEvidence.shapeAssessment.perspectiveUncertainty}</p>
-            <p>准确规格：{selectedEvidence.shapeAssessment.exactProfileUncertainty}</p>
-          </details>
-        </> : <p>未记录独立的 AI 基础形状判断。</p>}
-        {selectedEvidence?.profileCandidates.map(p=>{
-          const profile=registry.profiles.find(r=>r.id===p.profileId&&r.version===p.profileVersion);
-          return <article key={`${p.profileId}@${p.profileVersion}`}>
-            <b>{p.profileId}@{p.profileVersion}</b>
-            <p>{profile?profileSizeLabel(profile):'Catalog 当前不可用'}</p>
-            <details><summary>建议依据</summary><p>{p.reason}</p></details>
-            <button disabled={busy||!profile} aria-label={`采用 AI 建议 ${p.profileId}@${p.profileVersion}`} onClick={()=>editPiece({profileId:p.profileId,profileVersion:p.profileVersion})}>采用 AI 建议</button>
-          </article>;
-        })}
-        {!selectedEvidence?.profileCandidates.length&&<p>无明确的 Exact Profile 建议；保持 Unknown，可手动选择审核 Profile。</p>}
-      </div>
-      <label>审核 Profile<select aria-label="3D Review Profile" value={selectedReview.profileId ? `${selectedReview.profileId}@${selectedReview.profileVersion}` : ''} disabled={busy} onChange={e=>{
-        const p=registry.profiles.find(p=>`${p.id}@${p.version}`===e.target.value);
-        editPiece({profileId:p?.id??null,profileVersion:p?.version??null});
-      }}><option value="">Unknown</option>{registry.profiles.map(p=><option key={`${p.id}@${p.version}`} value={`${p.id}@${p.version}`}>{p.name} · {p.id}@{p.version}</option>)}</select></label><label>颜色<input aria-label="3D Review 颜色" type="color" value={selectedReview.color} onChange={e => editPiece({ color: e.target.value })}/></label><details><summary>模型 Profile 候选 / 可见边角</summary><pre>{JSON.stringify(selectedEvidence, null, 2)}</pre></details></> : <p>请先在图片阶段分析或导入标注。</p>}
-    <SpatialUnderstandingPanel label="Vision 整体空间理解" value={analysis?.evidence.spatialInterpretation} onChoose={chooseVisualConnection} disabled={busy}/>
+   {stage === 'review' && <>{selectedReview ? <ReviewObservationInspector key={`${analysis?.id}/${selectedReview.id}`} piece={selectedReview} evidence={selectedEvidence} profiles={registry.profiles} busy={busy} currentImageId={frame.activeId} onEdit={editPiece} onImage={frame.select} images={(selectedEvidence?.imageEvidence??[]).map(e=>({id:e.imageId,name:frame.entries.find(i=>i.sourceId===e.imageId)?.name??e.imageId,selected:frame.activeId===e.imageId,available:reviewDisplay.imageIds.includes(e.imageId)}))}/> : <p>请先在图片阶段分析或导入标注。</p>}
+    <details className="review-spatial-evidence" data-testid="review-spatial-evidence"><summary>空间解释与证据 · {analysis?.evidence.spatialInterpretation?.connections.length??0} 条可见连接</summary>
+     <SpatialUnderstandingPanel key={analysis?.id} compact label="Vision 整体空间理解" value={analysis?.evidence.spatialInterpretation} onChoose={chooseVisualConnection} disabled={busy}/>
     <label>整体解释人工审核<select aria-label="3D 整体解释审核" disabled={busy} value={form.interpretationReview?.status??'unreviewed'} onChange={e=>setForm(f=>({...f,interpretationReview:{status:e.target.value as 'unreviewed'|'accepted'|'corrected'|'rejected',note:f.interpretationReview?.note??''}}))}><option value="unreviewed">未确认</option><option value="accepted">接受为待几何验证的解释</option><option value="corrected">已纠正（填写说明）</option><option value="rejected">拒绝此解释</option></select></label><label>空间解释修正说明<textarea aria-label="3D 空间解释修正说明" disabled={busy} value={form.interpretationReview?.note??''} onChange={e=>setForm(f=>({...f,interpretationReview:{status:f.interpretationReview?.status??'corrected',note:e.target.value}}))}/></label>
-    <label>Profile 单位厚度<input aria-label="3D Review 厚度" type="number" min="0.001" step="0.01" value={thickness} onChange={e => setThickness(+e.target.value)}/></label>
-    <details open={connectionOpen} onToggle={e=>setConnectionOpen(e.currentTarget.open)}><summary>确认连接边 / 二面角（可 Unknown）</summary>{['A', 'B'].map((side, i) => <div key={side}><label>实例 {side}<select aria-label={`3D 连接实例 ${side}`} value={i ? edgeB : edgeA} onChange={e => { if (i) {
+    </details>
+    <details className="review-geometry-settings"><summary>审核设置</summary><label>Profile 单位厚度<input aria-label="3D Review 厚度" type="number" min="0.001" step="0.01" value={thickness} onChange={e => setThickness(+e.target.value)}/></label></details>
+    <details className="review-connection-form" open={connectionOpen} onToggle={e=>setConnectionOpen(e.currentTarget.open)}><summary>确认连接边 / 二面角（可 Unknown）</summary>{['A', 'B'].map((side, i) => <div key={side}><label>实例 {side}<select aria-label={`3D 连接实例 ${side}`} value={i ? edgeB : edgeA} onChange={e => { if (i) {
             setEdgeB(e.target.value);
             setPortB('');setEdgeRefs([]);setEdgeRange(null);
         }

@@ -49,3 +49,55 @@
 .visible3d-analysis-heading{position:sticky;top:44px;z-index:2;justify-content:flex-end;background:#fffdf7;padding:8px 0}
 /* The base inspector's overflow:auto must not capture this sticky entrance. */
 .visible3d-inspector.visible3d-analysis-inspector{overflow:visible}
+/* Review-only density: use the Studio pane as the sole outer scroll surface. */
+.visible3d-inspector.visible3d-review-inspector{padding:0;overflow:visible;font-size:12px;line-height:1.45;container-type:inline-size;color:#243e3a}
+.visible3d-review-inspector h3,.visible3d-review-inspector h4{font-size:12px;margin:5px 0}
+.visible3d-review-inspector p,.visible3d-review-inspector label,.visible3d-review-inspector details,.visible3d-review-inspector li{margin:5px 0}
+.visible3d-review-inspector button,.visible3d-review-inspector select,.visible3d-review-inspector input{font-size:12px;box-sizing:border-box;min-width:0;max-width:100%}
+.visible3d-review-inspector button{padding:5px 7px;min-height:28px;margin:0;line-height:1.25}
+.visible3d-review-inspector select,.visible3d-review-inspector input:not([type=checkbox]):not([type=color]){padding:5px;min-height:28px}
+.visible3d-review-inspector summary{cursor:pointer;font-weight:600;padding:5px 0;overflow-wrap:anywhere}
+.visible3d-review-inspector>details,.review-observation-inspector>details{border-top:1px solid #d9e3dc;padding-top:3px}
+.visible3d-review-inspector [role=alert],.visible3d-review-inspector .review-observation-blocker{color:#a12626}
+.review-observation-core{display:grid;gap:6px;padding-bottom:6px}
+.review-observation-suggestion{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.review-observation-ai{flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.visible3d-review-inspector label.review-inline-field{display:flex;align-items:center;gap:6px;margin:0;white-space:nowrap}
+.review-inline-field select{flex:1;width:0;min-width:0}
+.review-observation-toggles{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.visible3d-review-inspector .review-observation-toggles label{display:flex;align-items:center;gap:4px;margin:0}
+.review-observation-toggles input{width:auto;margin:0}
+.visible3d-review-inspector .review-observation-blocker{margin:0}
+.review-observation-meta{display:flex;align-items:center;gap:8px;min-width:0}
+.visible3d-review-inspector label.review-color-field{display:flex;gap:5px;align-items:center;margin:0;flex:none;font-variant-numeric:tabular-nums}
+.review-color-field input[type=color]{width:22px;height:22px;min-height:0;padding:0;border:0;background:none}
+.review-observation-size{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review-observation-images{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.review-observation-images button{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:12px;padding:3px 7px;min-height:24px}
+.review-observation-images button[aria-pressed=true]{border-color:#286650;font-weight:600}
+.visible3d-review-inspector dl{margin:5px 0;overflow-wrap:anywhere}
+.visible3d-review-inspector dt{font-weight:600;margin-top:7px}
+.visible3d-review-inspector dd{margin:2px 0}
+.visible3d-review-inspector ul{padding-left:17px}
+.visible3d-review-inspector textarea{font-size:12px;line-height:1.45;min-height:55px;padding:5px}
+.visible3d-review-inspector p,.visible3d-review-inspector dd{overflow-wrap:anywhere}
+.review-connection-heading{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:5px 0}
+.review-connection-heading input{flex:1;min-width:90px;width:90px}
+.review-suggestion-table-scroll{max-height:280px;max-width:100%;overflow:auto;scrollbar-gutter:stable}
+.review-suggestion-table{border-collapse:collapse;table-layout:fixed;width:100%;font-size:11px}
+.review-suggestion-table th,.review-suggestion-table td{text-align:left;padding:4px 3px;border-bottom:1px solid #d9e3dc;vertical-align:middle;overflow-wrap:anywhere}
+.review-suggestion-table th{position:sticky;top:0;z-index:1;background:#edf3ee;font-weight:600}
+.review-suggestion-table th:first-child{width:25%}.review-suggestion-table th:nth-child(2){width:24%}.review-suggestion-table th:last-child{width:36px}
+.review-suggestion-table tbody tr[data-visual-connection]{cursor:pointer}
+.review-suggestion-table tr[aria-selected=true]{background:#e3eee7}
+.visible3d-review-inspector .review-suggestion-table button{font-size:11px;padding:3px 4px;min-height:24px}
+.review-spatial-selection{margin:7px 0;padding:6px 0;border-block:1px solid #d9e3dc}
+.review-spatial-detail-heading{display:flex;gap:5px;justify-content:space-between;align-items:start}
+.review-shape-hypotheses button{width:100%;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review-connection-form>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.review-connection-form>div label{min-width:0}
+.review-connection-form select,.review-connection-form input:not([type=checkbox]){width:100%}
+@container(max-width:300px){.review-observation-ai{min-width:110px}.review-observation-suggestion button{margin-left:auto}.review-suggestion-table{font-size:10px}.review-connection-form>div{grid-template-columns:1fr}}
+
+.review-suggestion-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review-face-table th:first-child{width:20%}.review-face-table th:nth-child(2){width:25%}.review-face-table th:last-child{width:55%}
