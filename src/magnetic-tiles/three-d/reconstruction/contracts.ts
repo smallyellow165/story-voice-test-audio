@@ -27,6 +27,7 @@ export type VisibleObservation3D = {
     evidence: string;
     uncertainty: string;
     shapeAssessment?: ShapeAssessment3D;
+    imageEvidence?: {imageId:string;bbox:VisibleObservation3D['bbox'];features:Feature3D[];occlusion:string;evidence:string;uncertainty:string}[];
     profileCandidates: {
         profileId: string;
         profileVersion: number;
@@ -35,6 +36,7 @@ export type VisibleObservation3D = {
 };
 export type VisibleEvidence3D = {
     version: 1 | 2;
+    referenceImageId?:string;
     spatialInterpretation?: SpatialUnderstanding3D;
     observations: VisibleObservation3D[];
     unknowns: string[];
@@ -117,14 +119,15 @@ const color = (x: unknown): void => { if (typeof x !== 'string' || !/^#[a-fA-F0-
 function strings(x: unknown): void { list(x); (x as unknown[]).forEach(text); }
 export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
     const v = value as VisibleEvidence3D;
-    fields(v, ['version', 'observations', 'unknowns'],v.version === 2 ? ['spatialInterpretation'] : []);
+    fields(v, ['version', 'observations', 'unknowns'],v.version === 2 ? ['spatialInterpretation','referenceImageId'] : []);
     if (![1,2].includes(v.version))
         fail('Visible Evidence 版本错误');
-    list(v.observations, 12);
+    list(v.observations, v.referenceImageId?25:12);
     strings(v.unknowns);
+    if(v.referenceImageId!==undefined&&!visibleId(v.referenceImageId))fail('参考图片 ID 无效');
     const ids = new Set<string>();
     for (const o of v.observations) {
-        fields(o, ['id', 'color', 'bbox', 'features', 'occlusion', 'evidence', 'uncertainty', 'profileCandidates'],v.version === 2 ? ['shapeAssessment'] : []);
+        fields(o, ['id', 'color', 'bbox', 'features', 'occlusion', 'evidence', 'uncertainty', 'profileCandidates'],v.version === 2 ? ['shapeAssessment','imageEvidence'] : []);
         if(v.version === 2)assertShapeAssessment(o.shapeAssessment!);
         if (!visibleId(o.id) || ids.has(o.id))
             fail('Observation ID 重复或无效');
@@ -150,7 +153,18 @@ export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
             if (f.points.length < 1 || f.points.some(p => !Array.isArray(p) || p.length !== 2 || p.some(n => !Number.isFinite(n) || n < 0 || n > 1)))
                 fail('Feature 坐标需要归一化至 0..1');
         }
-        if (!o.bbox && !o.features.some(f => f.visibility === 'visible'))
+        if(o.imageEvidence!==undefined){
+            list(o.imageEvidence,4);const imageIds=new Set<string>();
+            for(const e of o.imageEvidence){
+                obj(e,['imageId','bbox','features','occlusion','evidence','uncertainty']);
+                if(!visibleId(e.imageId)||imageIds.has(e.imageId))fail('图片证据 ID 无效或重复');imageIds.add(e.imageId);
+                // Reuse the same bounded coordinate/feature validation; no new geometry engine.
+                parseVisibleEvidence({version:1,observations:[{id:o.id,color:o.color,bbox:e.bbox,features:e.features,occlusion:e.occlusion,evidence:e.evidence,uncertainty:e.uncertainty,profileCandidates:[]}],unknowns:[]});
+            }
+            if(v.referenceImageId){const anchor=o.imageEvidence.find(e=>e.imageId===v.referenceImageId);
+                const features=anchor?.features??[];if(JSON.stringify(o.bbox)!==JSON.stringify(anchor?.bbox??null)||o.features.length!==features.length||o.features.some(f=>!features.some(e=>e.id===f.id&&e.visibility===f.visibility&&JSON.stringify(e.points)===JSON.stringify(f.points))))fail('主图坐标必须与对应图片证据一致');}
+        }
+        if (!o.bbox && !o.features.some(f => f.visibility === 'visible') && !o.imageEvidence?.length)
             fail('不得添加没有可见区域或边角证据的零件');
         list(o.profileCandidates, 8);
         for (const p of o.profileCandidates) {
@@ -207,8 +221,8 @@ export function validateVisibleInput(input: VisibleInput3D): VisibleInput3D {
     parseVisibleEvidence(input.evidence);
     fields(input.review, ['pieces', 'constraints'], ['interpretationReview','spatialChecks']);
     if(input.review.interpretationReview!==undefined)assertInterpretationReview(input.review.interpretationReview);
-    list(input.review.pieces, 12);
-    list(input.profiles, 12);
+    list(input.review.pieces, input.evidence.referenceImageId?25:12);
+    list(input.profiles, input.evidence.referenceImageId?25:12);
     const ids = new Set<string>(), keys = new Set<string>();
     for (const s of input.profiles) {
         adaptProfile(s);
@@ -242,7 +256,7 @@ export function parseSpatialHypothesis(value: unknown, input: VisibleInput3D): S
     fields(v, ['version', 'parts', 'connections', 'alternatives', 'relations', 'unknowns'],v.version === 2 ? ['spatialInterpretation'] : []);
     if (![1,2].includes(v.version))
         fail('Spatial Hypothesis 版本错误');
-    list(v.parts, 12);
+    list(v.parts, input.evidence.referenceImageId?25:12);
     const confirmed = input.review.pieces.filter(p => p.confirmed && !p.excluded), ids = new Set<string>();
     for (const p of v.parts) {
         obj(p, ['id', 'profileId', 'profileVersion', 'orientationEvidence']);
@@ -269,6 +283,7 @@ export function parseSpatialHypothesis(value: unknown, input: VisibleInput3D): S
         text(r.evidence);
     }
     strings(v.unknowns);
+
     if(v.version === 2)assertSpatialUnderstanding(v.spatialInterpretation!,input.evidence.observations.filter(o=>ids.has(o.id)));
     return structuredClone(v);
 }

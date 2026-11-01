@@ -36,7 +36,7 @@ export function resolveIntakePreferences(href:string, saved:unknown, config:Mode
  const params=new URL(href).searchParams
  const previous=(saved&&typeof saved==='object'?saved:{}) as Record<string,unknown>
  const source=params.has('sourceType')?params.get('sourceType'):previous.sourceType??'uploaded'
- const wanted=params.has('model')?params.get('model'):previous.model??config.models.find(m=>m.id==='gpt-4.1'&&config.providers[m.provider])?.id??config.models.find(m=>config.providers[m.provider])?.id??''
+ const wanted=params.has('model')?params.get('model'):previous.model??config.models.find(m=>m.id==='gpt-6.1-sol'&&config.providers[m.provider])?.id??config.models.find(m=>config.providers[m.provider])?.id??''
  const sourceValid=source==='server'||source==='uploaded'
  const modelValid=typeof wanted==='string'&&config.models.some(m=>m.id===wanted&&config.providers[m.provider])
  return {sourceType:sourceValid?source as 'server'|'uploaded':'' as const,model:modelValid?wanted as string:'',warnings:{

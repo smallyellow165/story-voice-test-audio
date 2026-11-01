@@ -2,13 +2,14 @@ import type { DiagnosticCandidate, ExecutionTrace } from './execution-trace.ts'
 import { profiles } from '../profiles.ts'
 import type { Assembly, Vec, WorkMode, Profile } from '../geometry.ts'
 export type Observation = {
+  imageEvidence?: {imageId:string;outline:Vec[];evidence:string;uncertainty:string}[];
   id: string; profileId: string; profileVersion: number
   color: string; outline: Vec[]; confidence: number; evidence: string; uncertainty: string
   origin: 'observed' | 'manual'; excluded: boolean
 }
 export type Relation = { from: string; to: string; intent: 'connect' | 'separate' | 'uncertain'; evidence: string }
-export type Evidence = { sourceKind: 'flat_photo' | 'diagram' | 'unsupported'; reason: string; observations: Observation[]; relations: Relation[] }
-export type Source = { schemaVersion: 1; id: string; hash: string; name: string; createdAt: string; originalHash: string; view: { hash: string; width: number; height: number; mimeType: string; orientation: 'display'; transform: 'oriented-resize' } }
+export type Evidence = { referenceImageId?:string; sourceKind: 'flat_photo' | 'diagram' | 'unsupported'; reason: string; observations: Observation[]; relations: Relation[] }
+export type Source = { images?: import('./image-set.ts').AnalysisImage[]; primaryImageId?:string; schemaVersion: 1; id: string; hash: string; name: string; createdAt: string; originalHash: string; view: { hash: string; width: number; height: number; mimeType: string; orientation: 'display'; transform: 'oriented-resize' } }
 export type Analysis = { schemaVersion: 1; id: string; hash: string; sourceId: string; sourceHash: string; status: 'processing' | 'complete' | 'failed'; model: string; provider: string; modelVersion?: string; usageMetadata?: unknown; rawOutput?: string; evidence?: Evidence; error?: string; createdAt: string }
 export type Review = { schemaVersion: 1; id: string; hash: string; analysisId: string; analysisHash: string; evidence: Evidence; createdAt: string }
 export type Candidate = { id: string; assembly: Assembly; imageError: number; fidelity: 'close' | 'needs_review'; connections: number; components?: string[][] }
@@ -26,6 +27,10 @@ export function parseEvidence(input: unknown, catalog: readonly Profile[] = prof
   const ids = new Set<string>()
   for (const o of e.observations) {
     if (!o || !idPattern.test(o.id) || ids.has(o.id) || !(o.profileId === 'unknown' ? o.profileVersion === 1 : catalog.some(p => p.id === o.profileId && p.version === o.profileVersion)) || !/^#[0-9a-fA-F]{6}$/.test(o.color) || !Array.isArray(o.outline) || o.outline.length < 3 || o.outline.length > 8 || o.outline.some(p => !Array.isArray(p) || p.length !== 2 || p.some(v => !Number.isFinite(v) || v < 0 || v > 1)) || !Number.isFinite(o.confidence) || o.confidence < 0 || o.confidence > 1 || !boundedText(o.evidence,2000) || !boundedText(o.uncertainty,2000) || !['observed','manual'].includes(o.origin) || typeof o.excluded !== 'boolean') fail('零件证据无效：'+String(o?.id))
+    if(o.imageEvidence!==undefined){
+      if(!Array.isArray(o.imageEvidence)||o.imageEvidence.length<1||o.imageEvidence.length>4)fail('图片证据数量无效');const imageIds=new Set<string>();
+      for(const v of o.imageEvidence){if(!/^[a-f0-9]{64}$/.test(v.imageId)||imageIds.has(v.imageId))fail('图片证据来源无效');imageIds.add(v.imageId);parseEvidence({sourceKind:e.sourceKind,reason:'',relations:[],observations:[{...o,imageEvidence:undefined,outline:v.outline,evidence:v.evidence,uncertainty:v.uncertainty}]},catalog)}
+    }
     ids.add(o.id)
   }
   const pairs = new Set<string>()

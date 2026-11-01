@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // One real saved 2D case + saved purple 3D records, copied to an isolated API.
 // No model calls, no production mutations, no runtime application state injection.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -50,7 +51,7 @@ try{
  const saved2=await data(),twoDPlayback=await page.getByTestId('build-playback-source').textContent()
  await studioMode(page,'3d');assert.equal(await mode(),'3d');await page.getByTestId('tutorial-source').waitFor()
  assert.deepEqual(Object.fromEntries(Object.entries(await data()).filter(([k])=>k in saved2)),saved2,'first 3D switch preserves every 2D save')
- await modeStage('3d','source');await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s3.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s3.id)
+ await modeStage('3d','source');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s3.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s3.id)
  await field('3D Analysis 历史').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption('candidate-2');await camera()
  await page.locator('[data-linked-observation]').filter({visible:true}).first().click();await button('以所选面为上方观察').click();await button('保存当前视角').click();const savedCamera=await camera()
  await field('已对照照片审核候选').check();await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();assert.equal(await mode(),'3d');assert.equal(await active(),'assembly')

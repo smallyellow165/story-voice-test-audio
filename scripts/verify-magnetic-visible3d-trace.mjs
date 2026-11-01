@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Real saved model records + explicitly replayed UI request fixtures. All writes
 // target a temporary API; POST model requests are intercepted, never executed.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -47,7 +48,7 @@ try{
  page=await browser.newPage({viewport:{width:1650,height:1050}});page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'){if(filesTest&&m.location().url.includes('/api/magnetic-trace-files/'))debugFailures.push(m.text());else consoleErrors.push(m.text())}})
  const base=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html`,field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true}),dialog=()=>page.getByRole('dialog',{name:'Magnetic Tiles Trace',exact:true}),state=id=>page.getByTestId(id)
  async function openSource(s,a,r){
-  await stage(page,'source','inspector');await field('图片来源').selectOption('upload');await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s.id)
+  await stage(page,'source','inspector');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s.id)
   await page.locator('select[aria-label="3D Analysis 历史"]').locator(`option[value="${a.id}"]`).waitFor({state:'attached'});await field('3D Analysis 历史').selectOption(a.id);await field('3D Review 历史').selectOption(r.id);await stage(page,'reconstruction','inspector')
  }
  async function trace(tab='Spatial Planning'){

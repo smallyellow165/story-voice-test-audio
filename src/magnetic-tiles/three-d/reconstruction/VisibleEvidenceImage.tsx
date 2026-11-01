@@ -3,7 +3,7 @@ import type {VisibleEvidence3D} from './contracts.ts'
 /** Existing Visible3D overlay extracted for Source, Review and Candidate comparison.
  * Reuses the 2D Review's Observation-ID selection/classes; no annotation editor.
  */
-export function VisibleEvidenceImage({source,image,evidence,selected,onSelect,excluded=[],fit=false}:{source:Source|null;image:string;evidence?:VisibleEvidence3D;selected:string;onSelect:(id:string)=>void;excluded?:string[];fit?:boolean}){
+export function VisibleEvidenceImage({source,image,evidence,selected,onSelect,excluded=[],fit=false}:{source:Pick<Source,'view'>|null;image:string;evidence?:VisibleEvidence3D;selected:string;onSelect:(id:string)=>void;excluded?:string[];fit?:boolean}){
  // Analysis and Review opt into a pixel viewBox and a uniform contain transform.
  // Reconstruction retains its existing normalized viewport and zoom/scroll behavior.
  const width=fit?(source?.view.width??1000):1000,height=fit?(source?.view.height??1000):1000,unit=Math.min(width,height)/1000

@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Actual Review UI + temporary persisted API; providers are in-process spies.
 // Synthetic evidence and traces are labelled fixtures, never real model results.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -47,7 +48,7 @@ try{
   assert.equal(await progress.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)');if(!pending&&confirmed>0)assert.equal(await progress.locator('.review-confirmation-blocker').count(),0)
   await stage(page,'review','inspector')
  }
- await page.goto(base+'?stage=source');await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor();await studioMode(page,'3d');await stage(page,'source','inspector');await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').locator(`option[value="${analyzed.record.id}"]`).waitFor({state:'attached'});await field('3D Analysis 历史').selectOption(analyzed.record.id)
+ await page.goto(base+'?stage=source');await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor();await studioMode(page,'3d');await stage(page,'source','inspector');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').locator(`option[value="${analyzed.record.id}"]`).waitFor({state:'attached'});await field('3D Analysis 历史').selectOption(analyzed.record.id)
  for(const id of ids){await choose(id);assert.equal(await field('确认可见实例').isChecked(),false);assert.equal(await field('3D Review Profile').inputValue(),'')}
  await reviewProgress(0,6,6,0);await stage(page,'review','workspace');assert.match(await page.locator(`[data-review-id="${first}"]`).innerText(),/Unknown.*等待人工确认/s);await page.screenshot({path:out+'/review-unknown-blockers.png'});await stage(page,'review','inspector')
  await choose(first);await button('采用 AI 形状判断').click();assert.equal(await field('确认可见实例').isChecked(),false,'shape-family acceptance is not Exact Profile acceptance');await field('3D Review Profile').focus();assert.equal(await field('确认可见实例').isChecked(),false)

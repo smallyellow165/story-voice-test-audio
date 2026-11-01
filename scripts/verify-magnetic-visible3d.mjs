@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Actual Chrome + WebGL, isolated real APIs, synthetic image/annotations. No paid requests.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {createServer} from 'vite'
@@ -116,7 +117,7 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
  await step('build');await button('3D').click();await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:v2?'已生成 · 3 步':'已生成 · 6 步'}).waitFor({timeout:20000})
  await step('source');await button('2D').click();assert.equal(await page.locator('.visible3d-workspace').filter({visible:true}).count(),0);assert.equal((await api.dispatch('GET','history')).analyses.length,0)
  if(live){
-  await step('source');await button('3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
+  await step('source');await button('3D').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
   await button('刷新 3D 历史').click()
   const h=await api.dispatch('GET','visible3d/history'),a=h.analyses.find(a=>a.sourceId===live.sourceId),r=h.reviews.find(r=>r.analysisId===a.id),p=h.plans.find(p=>p.reviewId===r.id),x=h.executions.find(x=>x.planId===p.id)
   await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)

@@ -1,3 +1,4 @@
+import {multiImagePrompt,multiImagePromptVersion,multiImageSchema,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
 import {profiles, profileSpec} from '../src/magnetic-tiles/profiles.ts'
 import {buildOpenaiRequest} from './openai-responses.mjs'
 import {callBrickModel} from './brick-model-call.mjs'
@@ -24,9 +25,21 @@ export function recognitionRequest(model,view,catalog=profiles){
  }
  return {model,contents:[{role:'user',parts:[{text:promptText+`\nImage dimensions ${view.width} x ${view.height}.`},{inlineData:{mimeType:view.mimeType,data:view.imageBase64}}]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:schema}}
 }
-export async function recognize(model,view,record,catalog=profiles){
- const request=recognitionRequest(model,view,catalog)
- record.promptVersion=promptVersion;record.request=request
+export function multiRecognitionRequest(model,images,source,catalog=profiles){
+ const schema=multiImageSchema(recognitionSchema,'2d',images.map(i=>i.sourceId),source.primaryImageId),p=schema.properties.observations.items.properties
+ p.profileId.enum=[...new Set(catalog.map(p=>p.id)),'unknown'];p.profileVersion.enum=[...new Set([1,...catalog.map(p=>p.version)])]
+ const instruction=multiImagePrompt+'\nAuthoritative Catalog: '+JSON.stringify(catalog.map(profileSpec)),text=JSON.stringify({analysisMode:'planar',referenceImageId:source.primaryImageId,images:source.images})
+ if(resolveModel(model,'reverse').provider==='openai'){
+  const request=buildOpenaiRequest({model,task:'reverse',prompt:instruction,schema,content:[{type:'input_text',text},...openaiImageParts(images)]})
+  const lower=n=>({...n,type:n.type.toLowerCase(),...(n.properties?{properties:Object.fromEntries(Object.entries(n.properties).map(([k,v])=>[k,lower(v)])),additionalProperties:false}:{}),...(n.items?{items:lower(n.items)}:{})})
+  request.text={format:{type:'json_schema',name:'magnetic_multi_image_observation',strict:true,schema:lower(schema)}};return request
+ }
+ return {model,contents:[{role:'user',parts:[{text:instruction+'\n'+text},...imageRequestParts(images)]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:schema}}
+}
+export async function recognize(model,view,record,catalog=profiles,images=[],source=null){
+ const multi=images.length>1,request=multi?multiRecognitionRequest(model,images,source,catalog):recognitionRequest(model,view,catalog)
+ record.promptVersion=multi?multiImagePromptVersion:promptVersion;record.request=request
+ if(source?.images)record.inputImages=source.images
  await callBrickModel({model,task:'reverse',request,record})
  if(record.provider==='gemini'&&record.finishReason!=='STOP')throw Error('模型输出未完整结束：'+record.finishReason)
  return JSON.parse(record.rawOutput)

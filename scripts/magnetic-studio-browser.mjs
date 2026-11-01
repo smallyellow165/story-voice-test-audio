@@ -52,3 +52,14 @@ export async function studioMode(page,mode){
  if(await button.getAttribute('aria-pressed')!=='true')await button.click()
  if((page.viewportSize()?.width??1500)<=760&&await page.locator('.studio-workflow').isVisible())await page.getByRole('button',{name:'查看工作区',exact:true}).click()
 }
+
+// Image input now uses tabs. Open the existing collection picker explicitly;
+// this changes only the input tab, never the selected collection or Analysis.
+export async function openSavedImageSources(page){
+ await stage(page,'source','inspector')
+ const pane=page.locator('.studio-inspector .source-inspector:visible')
+ const upload=pane.getByRole('tab',{name:'上传图片',exact:true})
+ if(await upload.getAttribute('aria-selected')!=='true')await upload.click()
+ const details=pane.locator('details').filter({has:page.getByText('重新打开图片集合',{exact:true})})
+ if(!await details.evaluate(e=>e.open))await details.locator(':scope > summary').click()
+}

@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Isolated browser/layout regression. Synthetic image evidence is not a Vision
 // accuracy test. Saved real-photo records are copied read-only into a temp API.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -33,7 +34,7 @@ try{
  await page.reload();await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor();await studioMode(page,'3d')
  const field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true})
  async function openFixture(f){
-  await stage(page,'source','inspector');await field('图片来源').selectOption('upload');await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${f.source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(f.source.id)
+  await stage(page,'source','inspector');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${f.source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(f.source.id)
   await page.locator('select[aria-label="3D Analysis 历史"]').locator(`option[value="${f.analysis.id}"]`).waitFor({state:'attached'})
   if(!await field('3D Analysis 历史').count())await button('工作阶段').click()
   await field('3D Analysis 历史').selectOption(f.analysis.id);await stage(page,'review','workspace')

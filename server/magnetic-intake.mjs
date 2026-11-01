@@ -1,3 +1,4 @@
+import {assertImageMetadata,assertImageEvidence,sourceImages} from '../src/magnetic-tiles/intake/image-set.ts'
 import {createHumanCollisionReview} from './magnetic-human-collision.mjs'
 import {createVisible3DWorkflow} from './magnetic-visible3d.mjs'
 import {inspectDiagnosticConflicts} from '../src/magnetic-tiles/intake/candidate-conflicts.ts'
@@ -11,6 +12,7 @@ import path from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {validateImage} from './brick-image-validation.mjs'
 import {modelOptions,providerStatus,resolveModel,providerConfigured} from './brick-model-registry.mjs'
+import {multiImagePromptVersion} from './magnetic-multi-image-vision.mjs'
 import {recognize,promptVersion} from './magnetic-intake-vision.mjs'
 import {contentHash} from '../src/magnetic-tiles/build-plan.ts'
 import {createProfileRegistry} from './magnetic-profile-registry.mjs'
@@ -25,7 +27,7 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
  const registry=createProfileRegistry(directory)
  const library=createMagneticImageLibrary(libraryDirectory)
  const selectedSnapshots=createSelectedSnapshots(directory,{read})
- const visible3D=createVisible3DWorkflow(path.join(directory,"visible3d"),{readSource:id=>read("sources",id),readImage:view,getRegistry:()=>registry.get()})
+ const visible3D=createVisible3DWorkflow(path.join(directory,"visible3d"),{readSource:id=>read("sources",id),readImage:view,readImages:sourceViews,getRegistry:()=>registry.get()})
  const humanCollision=createHumanCollisionReview(path.join(directory,'assembly3d-review'),{enabled:enableHumanReview,readOrigin:id=>visible3D.dispatch('GET','origins/'+id)})
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
  async function put(kind,value,{replace=false}={}){
@@ -36,6 +38,7 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
  }
  async function read(kind,id){const r=JSON.parse(await readFile(file(kind,id),'utf8'));const {hash,...payload}=r;if(hash!==await contentHash(payload)||r.id!==id)fail('记录内容 Hash 不一致');return r}
  async function asset(input){const img=validateImage(input),id=img.sha256;const existing=await read('assets',id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(existing)return existing;return put('assets',{schemaVersion:1,id,mimeType:img.mimeType,imageBase64:img.imageBase64,bytes:img.bytes})}
+ async function sourceViews(source){return Promise.all(sourceImages(source).map(async entry=>{const s=await read('sources',entry.sourceId);if(s.images||s.hash!==entry.sourceHash)fail('图片集合来源不一致',409);return {...entry,...await view(s)}}))}
  async function view(source){const a=await read('assets',source.view.hash);if(validateImage(a).sha256!==source.view.hash)fail('图片字节 Hash 不一致');return {...a,...source.view}}
  async function reviewed(id){const r=await read('reviews',id),a=await read('analyses',r.analysisId);if(a.hash!==r.analysisHash||a.status!=='complete')fail('Review 来源不一致');const s=await read('sources',a.sourceId);if(s.hash!==a.sourceHash)fail('Analysis 来源不一致');return {review:r,analysis:a,source:s}}
  async function result(id){
@@ -86,6 +89,20 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
   if(method==='POST'&&route==='selected')return selectedSnapshots.set(body)
   if(method==='GET'&&route.startsWith('image/')){const s=await read('sources',route.slice(6));return view(s)}
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kinds.includes(kind))return read(kind,id)}
+  if(method==='POST'&&route==='source-sets'){
+   assertImageMetadata(body.images)
+   const images=[],seenViews=new Set()
+   for(const entry of body.images){
+    const s=await read('sources',entry.sourceId)
+    if(s.images||s.hash!==entry.sourceHash)fail('图片集合来源已变化或包含嵌套集合',409)
+    if(seenViews.has(s.view.hash))fail('图片集合包含相同图片内容');seenViews.add(s.view.hash)
+    images.push({sourceId:s.id,sourceHash:s.hash,name:entry.name,view:s.view,origin:entry.origin,role:entry.role,direction:entry.direction,note:entry.note})
+   }
+   const primary=images.find(e=>e.role==='Final')??images[0],s=await read('sources',primary.sourceId)
+   const id=await contentHash({kind:'analysis-image-set-v1',images,primaryImageId:s.id})
+   const old=await read('sources',id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(old)return old
+   return put('sources',{schemaVersion:1,id,name:primary.name+(images.length>1?' + '+(images.length-1)+' images':''),createdAt:new Date().toISOString(),originalHash:s.originalHash,view:s.view,images,primaryImageId:s.id})
+  }
   if(method==='POST'&&route==='sources'){
    const original=await asset(body.original),image=validateImage(body.view),bytes=Buffer.from(image.imageBase64,'base64')
    if(image.mimeType!=='image/png'||bytes.length<24)fail('识别视图必须是浏览器方向归一化 PNG')
@@ -98,14 +115,14 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
   if(method==='POST'&&route==='recognize'){
    const source=await read('sources',body.sourceId),definition=resolveModel(body.model,'reverse')
    if(!providerConfigured(definition.provider))fail('服务端未配置 '+definition.provider+' 凭据',503)
-   const id=validId(body.requestId),fingerprint=await contentHash({sourceHash:source.hash,model:body.model,promptVersion})
+   const id=validId(body.requestId),fingerprint=await contentHash({sourceHash:source.hash,model:body.model,promptVersion:source.images?.length>1?multiImagePromptVersion:promptVersion})
    const previous=await read('analyses',id).catch(e=>{if(e.code==='ENOENT')return null;throw e})
    if(previous){if(previous.fingerprint!==fingerprint)fail('请求 ID 已用于其他识别',409);return previous}
    await mkdir(path.join(directory,'requests'),{recursive:true})
    try{await writeFile(path.join(directory,'requests',id),fingerprint,{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('识别请求已提交；请加载历史，不会重复调用模型',409);throw e}
-   const record={schemaVersion:1,id,fingerprint,sourceId:source.id,sourceHash:source.hash,status:'processing',model:body.model,provider:definition.provider,promptVersion,createdAt:new Date().toISOString()}
+   const record={schemaVersion:1,id,fingerprint,sourceId:source.id,sourceHash:source.hash,status:'processing',model:body.model,provider:definition.provider,promptVersion:source.images?.length>1?multiImagePromptVersion:promptVersion,createdAt:new Date().toISOString()}
    await put('analyses',record)
-   try {record.evidence=parseEvidence(await recognize(body.model,await view(source),record,profiles),profiles);for(const o of record.evidence.observations){if(o.origin!=='observed'||o.excluded)fail('模型输出了非观察来源或排除项')}record.status='complete'}catch(e){record.status='failed';record.error=String(e.message).slice(0,3000)}
+   try {record.evidence=parseEvidence(await recognize(body.model,await view(source),record,profiles,await sourceViews(source),source),profiles);assertImageEvidence(record.evidence,source);if(source.images?.length>1&&record.evidence.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致');for(const o of record.evidence.observations){if(o.origin!=='observed'||o.excluded)fail('模型输出了非观察来源或排除项')}record.status='complete'}catch(e){record.status='failed';record.error=String(e.message).slice(0,3000)}
    return put('analyses',record,{replace:true})
   }
   if(method==='POST'&&route==='reviews'){

@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Replay immutable real records in a temporary API; no model calls or production writes.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {createServer} from 'vite'
@@ -34,7 +35,7 @@ try{
  const camera=async()=>JSON.parse(await comparison.getByLabel('3D 相机状态',{exact:true}).textContent())
  function sameCamera(a,b){for(const key of ['position','quaternion','up','target'])a[key].forEach((v,i)=>assert.ok(Math.abs(v-b[key][i])<1e-7,key));assert.ok(Math.abs(a.zoom-b.zoom)<1e-7)}
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=source`)
- await button('3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id)
+ await button('3D').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id)
  await field('3D Analysis 历史').selectOption(review.analysisId);await field('3D Review 历史').selectOption(reviewId);await page.locator('[data-stage="reconstruction"]').click();await field('Spatial Planning History').selectOption(planId)
  // Old V2 remains partial, correctly marked, and is not rewritten.
  await field('Geometry Execution History').selectOption(oldId);await settled();assert.match(await page.getByTestId('visible3d-execution-state').innerText(),/1\/6.*5/)
@@ -58,7 +59,7 @@ try{
   await button('刷新 3D 历史').click();await field('Spatial Planning History').locator(`option[value="${otherPlan.id}"]`).waitFor({state:'attached'});await force().check();await field('Spatial Planning History').selectOption(otherPlan.id);await field('Spatial Planning History').selectOption(planId);await field('Geometry Execution History').selectOption(executionId);await settled();assert.equal(await force().isChecked(),false)
   await force().check();if(otherReview){await field('3D Review 历史').selectOption(otherReview.id);await field('3D Review 历史').selectOption(reviewId)}else{await field('3D Analysis 历史').selectOption(review.analysisId)}
   await field('Spatial Planning History').selectOption(planId);await field('Geometry Execution History').selectOption(executionId);await settled();assert.equal(await force().isChecked(),false)
-  await force().check();await page.locator('[data-stage="source"]').click();await field('已有图片来源').focus();await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').selectOption(review.analysisId);await field('3D Review 历史').selectOption(reviewId);await page.locator('[data-stage="reconstruction"]').click();await field('Spatial Planning History').selectOption(planId);await field('Geometry Execution History').selectOption(executionId);await settled();assert.equal(await force().isChecked(),false)
+  await force().check();await page.locator('[data-stage="source"]').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').selectOption(review.analysisId);await field('3D Review 历史').selectOption(reviewId);await page.locator('[data-stage="reconstruction"]').click();await field('Spatial Planning History').selectOption(planId);await field('Geometry Execution History').selectOption(executionId);await settled();assert.equal(await force().isChecked(),false)
   await comparison.locator('[data-linked-observation="tile1"]').click();await button('以所选面为上方观察').click();await settled();await button('保存当前视角').click();const handoffCamera=await camera()
   await force().check();await enter().click();await button('Edit Draft').waitFor();await page.waitForFunction(()=>document.querySelector('[aria-label="3D Editor 相机状态"]')?.textContent!=='null')
   sameCamera(JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),handoffCamera)

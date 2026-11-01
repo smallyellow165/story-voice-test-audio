@@ -1,3 +1,5 @@
+import {multiImagePrompt,multiImagePromptVersion,multiImagePromptStatus,multiImageSchema,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
+import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {readFile} from 'node:fs/promises'
 import {resolveModel,modelSettings} from './brick-model-registry.mjs'
 import {buildOpenaiRequest} from './openai-responses.mjs'
@@ -36,12 +38,19 @@ ENGINE CONVENTION: each Profile is a centered local XY polygon, original vertice
 All engine angles are -180..180. Empty angles and null range mean Unknown, never default to 0/90. Preserve reasonable intervals with uncertainty. Base connections are one interpretation; each alternative is a FULL replacement connection set, preferably 2–4 informative graphs rather than many unconstrained independent choices. Geometry-valid does not mean photo-matched, stable or physically buildable. Keep all inferred world/camera orientation qualitative and unverified.
 `+interpretationGuidance
 const sourceFile=new URL('./magnetic-visible3d-vision.mjs',import.meta.url),loaded=await readFile(sourceFile,'utf8')
-export async function visiblePromptStatus(){return {version:visiblePromptVersion,current:loaded===await readFile(sourceFile,'utf8')}}
+export async function visiblePromptStatus(){return {version:visiblePromptVersion,current:loaded===await readFile(sourceFile,'utf8')&&(await multiImagePromptStatus()).current}}
 export function buildVisibleRequest(model,prepared,kind){
+ if(prepared.images?.length>1){
+  const task=kind==='analysis'?'reverse':'design',prompt=kind==='analysis'?multiImagePrompt:planningPrompt,
+   schema=kind==='analysis'?multiImageSchema(evidenceSchema,'3d',prepared.images.map(i=>i.sourceId),prepared.source?.primaryImageId??prepared.input.referenceImageId):spatialSchema,content=JSON.stringify(prepared.input)
+  if(resolveModel(model,task).provider==='openai')return buildOpenaiRequest({model,task,prompt,schema,content:[{type:'input_text',text:'Return JSON only.\n'+content},...openaiImageParts(prepared.images)]})
+  return {model,contents:[{role:'user',parts:[{text:content},...imageRequestParts(prepared.images)]}],config:{systemInstruction:prompt,responseMimeType:'application/json',responseSchema:schema,...modelSettings(model,task)}}
+ }
+
  const task=kind==='analysis'?'reverse':'design',prompt=kind==='analysis'?observationPrompt:planningPrompt,schema=kind==='analysis'?evidenceSchema:spatialSchema,content=JSON.stringify(prepared.input)
  if(resolveModel(model,task).provider==='openai')return buildOpenaiRequest({model,task,prompt,schema,content:[{type:'input_text',text:'Return JSON only.\n'+content},{type:'input_image',image_url:'data:'+prepared.image.mimeType+';base64,'+prepared.image.imageBase64}]})
  return {model,contents:[{role:'user',parts:[{text:content},{inlineData:{mimeType:prepared.image.mimeType,data:prepared.image.imageBase64}}]}],config:{systemInstruction:prompt,responseMimeType:'application/json',responseSchema:schema,...modelSettings(model,task)}}
 }
 export function runVisibleModel(prepared,options,kind){
- return runStructuredSpatialModel(prepared,options,{runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');if(kind==='analysis')parseVisibleEvidence(value);else parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}})
+ return runStructuredSpatialModel(prepared,options,{runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:kind==='analysis'&&prepared.images?.length>1?multiImagePromptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');if(kind==='analysis'){parseVisibleEvidence(value);if(prepared.source)assertImageEvidence(value,prepared.source);if(prepared.images?.length>1&&value.referenceImageId!==prepared.source.primaryImageId)throw Error('参考图片来源不一致')}else parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}})
 }

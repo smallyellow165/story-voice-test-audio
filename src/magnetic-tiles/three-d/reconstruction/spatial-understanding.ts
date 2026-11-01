@@ -39,7 +39,7 @@ export function assertSpatialUnderstanding(s:SpatialUnderstanding3D,observations
   function evidence(values:string[]){array(values,32);values.forEach(r=>{if(typeof r!=='string'||!refs.has(r))fail('空间解释证据引用不存在')})}
   function piece(id:string){if(!ids.has(id))fail('空间解释只能引用可见实例，禁止引入隐藏 Piece ID')}
   fields(s.camera,['viewpoint','evidence','uncertainty']);if(!['above','level','below','oblique','unknown'].includes(s.camera.viewpoint))fail('相机定性方向无效');text(s.camera.evidence);text(s.camera.uncertainty)
-  array(s.faces,12);const faces=new Set<string>()
+  array(s.faces,25);const faces=new Set<string>()
   for(const f of s.faces){fields(f,['pieceId','orientation','evidenceRefs','reasoning','uncertainty']);piece(f.pieceId);if(faces.has(f.pieceId))fail('重复面方向解释');faces.add(f.pieceId);if(!['horizontal','vertical','inclined','unknown'].includes(f.orientation))fail('面方向解释无效');evidence(f.evidenceRefs);text(f.reasoning);text(f.uncertainty)}
   array(s.connections);const pairs=new Set<string>()
   for(const c of s.connections){
@@ -51,7 +51,7 @@ export function assertSpatialUnderstanding(s:SpatialUnderstanding3D,observations
     if(c.angleRange!==null){fields(c.angleRange,['min','max']);if(![c.angleRange.min,c.angleRange.max].every(n=>Number.isFinite(n)&&Math.abs(n)<=180)||c.angleRange.min>c.angleRange.max)fail('视觉折角区间无效')}
     evidence(c.evidenceRefs);text(c.reasoning);text(c.uncertainty)
   }
-  array(s.overallShapeHypotheses,8);for(const h of s.overallShapeHypotheses){fields(h,['label','visiblePieceIds','evidenceRefs','reasoning','uncertainty']);array(h.visiblePieceIds,12);h.visiblePieceIds.forEach(piece);evidence(h.evidenceRefs);[h.label,h.reasoning,h.uncertainty].forEach(text)}
+  array(s.overallShapeHypotheses,8);for(const h of s.overallShapeHypotheses){fields(h,['label','visiblePieceIds','evidenceRefs','reasoning','uncertainty']);array(h.visiblePieceIds,25);h.visiblePieceIds.forEach(piece);evidence(h.evidenceRefs);[h.label,h.reasoning,h.uncertainty].forEach(text)}
   array(s.hiddenStructureHypotheses,8);for(const h of s.hiddenStructureHypotheses){fields(h,['description','reasoning','uncertainty']);[h.description,h.reasoning,h.uncertainty].forEach(text)}
   array(s.alternatives,8);for(const a of s.alternatives){fields(a,['label','description','evidenceRefs','uncertainty']);evidence(a.evidenceRefs);[a.label,a.description,a.uncertainty].forEach(text)}
   array(s.unknowns,32);s.unknowns.forEach(text)

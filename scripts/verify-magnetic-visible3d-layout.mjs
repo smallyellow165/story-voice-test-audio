@@ -1,3 +1,4 @@
+import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Saved real-photo records are copied into a temporary API. No model calls or production writes.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {createServer} from 'vite'
@@ -36,7 +37,7 @@ try{
  function sameCamera(actual,saved){for(const key of ['position','quaternion','up','target'])actual[key].forEach((v,i)=>assert.ok(Math.abs(v-saved[key][i])<1e-7,key));assert.ok(Math.abs(actual.zoom-saved.zoom)<1e-7);for(const key of ['top','bottom','near','far'])assert.ok(Math.abs(actual.frustum[key]-saved.frustum[key])<1e-7,key)}
  const select=async id=>{await field('3D Reconstruction Candidate').selectOption(id);await settled();assert.match(await comparison.innerText(),new RegExp(id));assert.match(await page.getByRole('region',{name:'Candidate Review 与 Assembly',exact:true}).innerText(),new RegExp(id))}
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=source`)
- await button('3D').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id)
+ await button('3D').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id)
  await field('3D Analysis 历史').selectOption(analysis.id);await field('3D Review 历史').selectOption(review.id);await step('reconstruction');await field('Spatial Planning History').selectOption(plan.id);await field('Geometry Execution History').selectOption(execution.id);await settled()
  assert.equal(await field('3D Reconstruction Candidate').locator('option').count(),5)
  for(const name of ['Spatial Planning（调用模型）','Geometry Execution（不调用模型）'])assert.equal(await inspector.getByRole('button',{name,exact:true}).count(),1)

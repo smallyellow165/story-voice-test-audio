@@ -8,6 +8,7 @@ import {recordedSpatialOperation} from './spatial-operation.mjs'
 import {shareText} from './llm-traces.mjs'
 import {planningParticipation} from '../src/magnetic-tiles/three-d/reconstruction/planning-preflight.ts'
 import {modelOptions,providerStatus} from './brick-model-registry.mjs'
+import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {runVisibleModel,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
 import {adaptProfile} from '../src/magnetic-tiles/three-d/profile-adapter.ts'
@@ -18,7 +19,7 @@ const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{status
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const kinds=['analyses','reviews','plans','executions','origins']
 const identifier=x=>{if(typeof x!=='string'||!/^([a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(x))fail('Visible 3D 记录 ID 无效');return x}
-export function createVisible3DWorkflow(directory,{readSource,readImage,getRegistry,runModel=runVisibleModel}){
+export function createVisible3DWorkflow(directory,{readSource,readImage,readImages,getRegistry,runModel=runVisibleModel}){
  const operation=recordedSpatialOperation(path.join(directory,'requests'))
  const filename=(kind,id)=>path.join(directory,kind,identifier(id)+'.json')
  async function put(kind,data){
@@ -50,14 +51,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
   if(kind==='plan'){const l=await lineage('reviews',body.reviewId);if(l.outdated)fail('Review 已过期',409);review=l.review;const {blocker}=planningParticipation(review.input.review);if(blocker)fail(blocker,422)}
   const image=await readImage(source),registry=await getRegistry()
   const geometryInput=review?.input
-  const prepared={image,input:{source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
+  if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
+  const images=readImages?await readImages(source):null
+  const prepared={image,source,...(images?{images}:{}),input:{source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
   const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true},kind==='analysis'?'analysis':'plan')
   // A parsed object alone is insufficient: require complete saved wire provenance.
   const usable=trace.status==='plan_ready_for_review'&&trace.parseStatus==='parsed'&&trace.validation?.valid&&trace.wireStatus==='response_saved'&&['STOP','completed'].includes(trace.finishReason)&&hash(JSON.parse(trace.rawOutput))===hash(trace.plan)
   if(!usable)return {trace,usable:false}
+  if(kind==='analysis'){assertImageEvidence(trace.plan,source);if(source.images?.length>1&&trace.plan.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')}
   if(kind==='analysis')for(const o of parseVisibleEvidence(trace.plan).observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('模型候选 Profile 不在 Registry')
   const data=kind==='analysis'?{evidence:parseVisibleEvidence(trace.plan)}:{plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash}
-  const r=await put(kind==='analysis'?'analyses':'plans',{...data,sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
+  const r=await put(kind==='analysis'?'analyses':'plans',{...data,sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
   return {record:r,trace,usable:true}
  }
  return {read,head,lineage,async dispatch(method,route,body={}){
@@ -82,6 +86,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,getRegis
   if(route==='analyze'||route==='plan')return operation(body,route,()=>modelRecord(route==='analyze'?'analysis':'plan',body))
   if(route==='annotate'){
    const source=await readSource(body.sourceId),evidence=parseVisibleEvidence(body.evidence),registry=await getRegistry()
+   assertImageEvidence(evidence,source);if(source.images?.length>1&&evidence.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')
    for(const o of evidence.observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('Observation 引用了未知 Catalog Profile')
    return put('analyses',{sourceId:source.id,sourceHash:source.hash,evidence,origin:'human-annotation',traceId:null,warning:'人工标注，不代表模型识别测试成功'})
   }
