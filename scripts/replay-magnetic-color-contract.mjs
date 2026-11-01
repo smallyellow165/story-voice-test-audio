@@ -1,0 +1,29 @@
+// Deterministic, read-only audit of a SAVED call. No model/Review/geometry API.
+// The color placeholder is test data, never a color-name normalization policy.
+import assert from 'node:assert/strict'
+import {readFile,writeFile,mkdir} from 'node:fs/promises'
+import {createHash} from 'node:crypto'
+import {fileURLToPath} from 'node:url'
+import path from 'node:path'
+import {parseVisibleEvidence} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
+import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
+import {contentHash} from '../src/magnetic-tiles/build-plan.ts'
+import {buildVisibleRequest} from '../server/magnetic-visible3d-vision.mjs'
+import {multiImagePromptVersion} from '../server/magnetic-multi-image-vision.mjs'
+const root=fileURLToPath(new URL('..',import.meta.url)),input=process.argv[2]??path.join(root,'generated/magnetic-intake/visible3d/model-traces/9be836a5-870c-448e-a89f-f7e8f3cc0688.json'),out='/tmp/magnetic-color-contract-audit',sha=data=>createHash('sha256').update(data).digest('hex')
+const prefix=input.replace(/\.json$/,''),files=[input,prefix+'.request.json',prefix+'.response.txt'],before=await Promise.all(files.map(f=>readFile(f))),trace=JSON.parse(before[0]),wireRequest=JSON.parse(before[1]),wireResponse=JSON.parse(before[2]),original=JSON.parse(trace.rawOutput)
+assert.equal(trace.promptVersion,'magnetic-multi-image-analysis-v1','this audit targets the recorded V1 failure');assert.deepEqual(trace.request,wireRequest);assert.deepEqual(trace.plan,original)
+assert.equal((wireResponse.output??[]).flatMap(o=>o.content??[]).filter(p=>p.type==='output_text').map(p=>p.text).join(''),trace.rawOutput,'read actual captured Raw Response')
+const s=trace.requestInput.source;assert.match(s.id,/^[a-f0-9]{64}$/);const sourceFile=path.join(root,'generated/magnetic-intake/sources',s.id+'.json'),sourceBefore=await readFile(sourceFile),source=JSON.parse(sourceBefore),{hash,...payload}=source;assert.equal(source.hash,s.hash);assert.equal(await contentHash(payload),hash)
+const inputImages=wireRequest.input.flatMap(m=>m.content).filter(p=>p.type==='input_image'),images=trace.requestInput.images.map((meta,i)=>{const match=/^data:([^;]+);base64,([\s\S]+)$/.exec(inputImages[i].image_url);assert.ok(match);return {...meta,...meta.view,mimeType:match[1],imageBase64:match[2]}})
+const prepared={source,image:images.find(i=>i.sourceId===source.primaryImageId),images,input:trace.requestInput},next=buildVisibleRequest(trace.model,prepared,'analysis')
+assert.deepEqual(next.input.flatMap(m=>m.content).filter(p=>p.type==='input_image').map(p=>p.image_url),inputImages.map(p=>p.image_url),'keep saved image payloads/order exactly')
+const schemaMarker='Follow this business output contract (type names describe fields, not output values):\n',oldSchema=JSON.parse(wireRequest.instructions.split(schemaMarker)[1]),violations=original.observations.flatMap((o,i)=>/^#[a-fA-F0-9]{6}$/.test(o.color)?[]:[{path:`$.observations[${i}].color`,id:o.id,value:o.color}])
+let originalError=null;try{parseVisibleEvidence(original)}catch(e){originalError=e.message}
+const copy=structuredClone(original),edits=[];for(const o of copy.observations)if(!/^#[a-fA-F0-9]{6}$/.test(o.color)){edits.push({id:o.id,original:o.color,testOnlyPlaceholder:'#808080'});o.color='#808080'}
+let canonicalError=null;try{parseVisibleEvidence(copy);assertImageEvidence(copy,source);for(const o of copy.observations)for(const p of o.profileCandidates)assert.ok(trace.requestInput.catalog.some(c=>c.id===p.profileId&&c.version===p.profileVersion),'Profile outside recorded Catalog')}catch(e){canonicalError=e.message}
+assert.deepEqual({...copy,observations:copy.observations.map((o,i)=>({...o,color:original.observations[i].color}))},original,'change ONLY colors in the test copy')
+await mkdir(out,{recursive:true,mode:0o700});await writeFile(path.join(out,'test-only-neutral-colors.json'),JSON.stringify({kind:'magnetic-color-contract-test-copy',testOnly:true,notForImport:true,originTraceId:trace.id,notice:'Every replacement is the SAME neutral schema-test placeholder. No physical colors inferred or corrected; no name-to-hex mapping; not a model or formal Recognition Result.',edits,evidence:copy},null,2),{mode:0o600});await writeFile(path.join(out,'openai-output-schema.json'),JSON.stringify(next.text.format.schema,null,2),{mode:0o600})
+for(let i=0;i<files.length;i++)assert.deepEqual(await readFile(files[i]),before[i]);assert.deepEqual(await readFile(sourceFile),sourceBefore)
+const report={testOnly:true,originTraceId:trace.id,originalPromptVersion:trace.promptVersion,newPromptVersion:multiImagePromptVersion,originalTraceStatus:trace.status,originalParseStatus:trace.parseStatus,originalObservationCount:original.observations.length,originalTraceSha256:sha(before[0]),originalOutputFormat:wireRequest.text.format.type,originalColorSchema:oldSchema.properties.observations.items.properties.color,originalPromptHexRule:wireRequest.instructions.includes('#RRGGBB'),violations,colorCounts:Object.fromEntries([...new Set(violations.map(v=>v.value))].map(c=>[c,violations.filter(v=>v.value===c).length])),originalError,newOutputFormat:next.text.format.type,newStrict:next.text.format.strict,newColorSchema:next.text.format.schema.properties.observations.items.properties.color,offlineCanonicalValidation:canonicalError?{passed:false,error:canonicalError}:{passed:true,includes:['full Visible Evidence V2','image IDs and primary-image coordinates','versioned recorded Catalog candidates']},placeholder:'#808080 (test only; NOT actual color)',imagePayloadsAndOrderUnchanged:true,originalFilesUnchanged:true,formalRecognitionCreated:false,reviewCreated:false,modelCalls:0,artifacts:out}
+await writeFile(path.join(out,'replay-report.json'),JSON.stringify(report,null,2),{mode:0o600});console.log(JSON.stringify(report,null,2));if(canonicalError)process.exitCode=1

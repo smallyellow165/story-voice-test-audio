@@ -47,11 +47,17 @@ export function createMagneticTraceFiles({projectRoot,directory,intake,enabled=f
    const kind=body.tab==='parts'?(body.reviewId?'reviews':body.analysisId?'analyses':null):body.tab==='spatial'?(body.planId?'plans':body.reviewId?'reviews':null):(body.executionId?'executions':body.planId?'plans':null)
    let lineage=null
    if(kind){const id=body[kind==='analyses'?'analysisId':kind==='reviews'?'reviewId':kind==='plans'?'planId':'executionId'];await add('visible3d/'+kind,id,'当前阶段记录',true);lineage=await intake.dispatch('GET','visible3d/'+kind+'/'+id)}
-   const review=lineage?.review,analysis=lineage?.analysis,source=lineage?.source
+   const review=lineage?.review,analysis=lineage?.analysis;let source=lineage?.source
    if(lineage){check(source,'source');check(analysis,'analysis');if(review)check(review,'review');if(kind==='plans')check(lineage.record,'plan');if(kind==='executions')check(lineage.record,'execution')}
    if(body.tab==='parts'){
-    primary=kind?await add('visible3d/'+kind,lineage.record.id,kind==='reviews'?'Review 快照':'Vision Analysis',true):null
-    if(analysis){await add('visible3d/analyses',analysis.id,'Vision Analysis',true);if(analysis.traceId)await traceFiles(analysis.traceId)}
+    if(body.requestId){
+     if(!body.sourceId||!body.sourceHash)fail('Analysis 请求需要准确的 Source ID / Hash。',409)
+     source=source??await intake.dispatch('GET','sources/'+body.sourceId);check(source,'source')
+     const requestPath=await add('visible3d/requests',body.requestId,'Analysis 请求记录',true),request=JSON.parse(await readFile(requestPath,'utf8'))
+     if(request.id!==body.requestId||request.kind!=='analyze'||!request.trace?.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash)||body.analysisId&&request.record?.id!==body.analysisId)fail('Analysis 请求缺少匹配的 Source 来源，不能定位其他记录。',409)
+     primary=await traceFiles(request.trace.id);if(hash(JSON.parse(await readFile(primary,'utf8')))!==hash(request.trace))fail('请求与模型 Trace 内容不一致。',409)
+    }else primary=kind?await add('visible3d/'+kind,lineage.record.id,kind==='reviews'?'Review 快照':'Vision Analysis',true):null
+    if(analysis){await add('visible3d/analyses',analysis.id,'Vision Analysis',true);if(!body.requestId&&analysis.traceId)await traceFiles(analysis.traceId)}
    }else if(body.tab==='spatial'){
     if(body.requestId){
      const requestPath=await add('visible3d/requests',body.requestId,'Spatial Planning 请求记录',true),request=JSON.parse(await readFile(requestPath,'utf8'))

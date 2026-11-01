@@ -1,4 +1,4 @@
-import {multiImagePrompt,multiImagePromptVersion,multiImagePromptStatus,multiImageSchema,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
+import {multiImagePrompt,multiImagePromptVersion,multiImagePromptStatus,multiImageSchema,openaiMultiImageFormat,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
 import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {readFile} from 'node:fs/promises'
 import {resolveModel,modelSettings} from './brick-model-registry.mjs'
@@ -43,7 +43,11 @@ export function buildVisibleRequest(model,prepared,kind){
  if(prepared.images?.length>1){
   const task=kind==='analysis'?'reverse':'design',prompt=kind==='analysis'?multiImagePrompt:planningPrompt,
    schema=kind==='analysis'?multiImageSchema(evidenceSchema,'3d',prepared.images.map(i=>i.sourceId),prepared.source?.primaryImageId??prepared.input.referenceImageId):spatialSchema,content=JSON.stringify(prepared.input)
-  if(resolveModel(model,task).provider==='openai')return buildOpenaiRequest({model,task,prompt,schema,content:[{type:'input_text',text:'Return JSON only.\n'+content},...openaiImageParts(prepared.images)]})
+  if(resolveModel(model,task).provider==='openai'){
+   const request=buildOpenaiRequest({model,task,prompt,schema,content:[{type:'input_text',text:'Return JSON only.\n'+content},...openaiImageParts(prepared.images)]})
+   if(kind==='analysis')request.text={format:openaiMultiImageFormat(schema,'magnetic_visible3d_multi_image_observation')}
+   return request
+  }
   return {model,contents:[{role:'user',parts:[{text:content},...imageRequestParts(prepared.images)]}],config:{systemInstruction:prompt,responseMimeType:'application/json',responseSchema:schema,...modelSettings(model,task)}}
  }
 

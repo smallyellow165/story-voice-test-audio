@@ -65,3 +65,17 @@ test('file-manager calls use fixed argv without a shell; GUI failures are explic
  await assert.rejects(revealTraceFile(file,{env:{},run,platform:'linux'}),/图形桌面/)
  await assert.rejects(revealTraceFile(file,{env,platform:'linux',run:async()=>{throw Error('no FileManager1 service')}}),/no FileManager1/)
 })
+
+test('failed Analysis without Recognition has real Trace files, exact source binding and tamper protection',async t=>{
+ const f=await setup(t),id=randomUUID(),requestId=randomUUID(),trace={id,status:'invalid_plan',sources:[{sourceId:f.s.id,sourceHash:f.s.hash,reviewId:null,reviewHash:null}],validation:{valid:false,issues:['颜色需要 #RRGGBB']}}
+ await mkdir(path.join(f.directory,'visible3d/model-traces'));await writeFile(path.join(f.directory,'visible3d/model-traces',id+'.json'),JSON.stringify(trace));await writeFile(path.join(f.directory,'visible3d/model-traces',id+'.request.json'),'{}');await writeFile(path.join(f.directory,'visible3d/model-traces',id+'.response.txt'),'actual failed response')
+ const record={id:requestId,kind:'analyze',state:'complete',usable:false,trace};await writeFile(path.join(f.directory,'visible3d/requests',requestId+'.json'),JSON.stringify(record))
+ const body={mode:'visible3d',tab:'parts',sourceId:f.s.id,sourceHash:f.s.hash,requestId},location=await f.service.dispatch(request(),'files',body)
+ assert.equal(location.primary,path.join(f.directory,'visible3d/model-traces',id+'.json'));assert.ok(location.files.some(f=>f.path.endsWith('.request.json')));assert.ok(location.files.some(f=>f.path.endsWith('.response.txt')));assert.ok(location.files.some(p=>p.path.endsWith('sources/'+f.s.id+'.json')))
+ await f.service.dispatch(request(),'reveal',body);assert.deepEqual(f.revealed,[location.primary])
+ await assert.rejects(f.service.dispatch(request(),'files',{...body,sourceHash:'a'.repeat(64)}),/Hash/)
+ await assert.rejects(f.service.dispatch(request(),'files',{...body,analysisId:f.a.id}),/来源/)
+ await assert.rejects(f.service.dispatch(request(),'files',{...body,sourceHash:undefined}),/无效|Source/)
+ record.kind='plan';await writeFile(path.join(f.directory,'visible3d/requests',requestId+'.json'),JSON.stringify(record));await assert.rejects(f.service.dispatch(request(),'files',body),/来源/)
+ record.kind='analyze';record.trace.validation.issues=['tampered'];await writeFile(path.join(f.directory,'visible3d/requests',requestId+'.json'),JSON.stringify(record));await assert.rejects(f.service.dispatch(request(),'files',body),/Trace 内容不一致/)
+})

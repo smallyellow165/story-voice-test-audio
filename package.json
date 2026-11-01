@@ -99,7 +99,10 @@
     "test:magnetic-visible3d:v21": "node --experimental-strip-types --test test/magnetic-visible3d-v21.test.mjs",
     "test:magnetic-visible3d:v21:browser": "node --experimental-strip-types scripts/verify-magnetic-visible3d.mjs --v21",
     "test:magnetic-multi-image": "node --experimental-strip-types --test test/magnetic-multi-image.test.mjs",
-    "test:magnetic-multi-image:browser": "node --experimental-strip-types scripts/verify-magnetic-multi-image.mjs"
+    "test:magnetic-multi-image:browser": "node --experimental-strip-types scripts/verify-magnetic-multi-image.mjs",
+    "test:magnetic-analysis-trace:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-trace.mjs",
+    "test:magnetic-multi-image-color": "node --experimental-strip-types --test test/magnetic-multi-image-color.test.mjs",
+    "replay:magnetic-multi-image-color": "node --experimental-strip-types scripts/replay-magnetic-color-contract.mjs"
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^7.0.0",

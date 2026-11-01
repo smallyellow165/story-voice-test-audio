@@ -6,6 +6,16 @@ export type OperationAttempt={id?:string;kind:'plan'|'execute';scope:string;erro
 export const planningScope=(source:Ref|null,review:Ref|null)=>JSON.stringify([source?.id,source?.hash,review?.id,review?.hash])
 export const executionScope=(plan:Ref|null)=>JSON.stringify([plan?.id,plan?.hash])
 const latest=(requests:OperationRecord[])=>[...requests].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id))[0]
+/** Analysis has a saved request even when no Recognition record was produced.
+ * latest follows the current source; record pins an explicitly selected history.
+ * A request ID is a view preference only and still needs exact saved provenance. */
+export function analysisRequest(requests:OperationRecord[],source:Ref|null,analysis:{id:string;sourceId:string;sourceHash:string;traceId?:string|null}|null,selection='latest'){
+ if(!source)return undefined
+ const related=requests.filter(r=>r.kind==='analyze'&&r.trace?.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash))
+ if(selection==='record')return analysis?.sourceId===source.id&&analysis.sourceHash===source.hash?related.find(r=>r.record?.id===analysis.id||!!analysis.traceId&&r.trace?.id===analysis.traceId):undefined
+ if(selection!=='latest')return related.find(r=>r.id===selection)
+ return latest(related)
+}
 export function planningRequest(requests:OperationRecord[],source:Ref|null,review:Ref|null,plan:Ref|null,attempt:OperationAttempt|null){
  if(attempt?.kind==='plan'&&attempt.scope===planningScope(source,review)&&attempt.id)return requests.find(r=>r.id===attempt.id&&r.kind==='plan')
  if(plan)return requests.find(r=>r.kind==='plan'&&r.record?.id===plan.id)

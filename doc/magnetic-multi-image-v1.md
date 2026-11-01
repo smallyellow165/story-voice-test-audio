@@ -30,6 +30,8 @@ primaryImageId: string
 
 元数据在服务端集合文件中保存，Studio 复用现有 URL / Visible 3D context 索引恢复集合。当前查看哪张图仅保存为分模式的本地 View Preference。旧单图 Source 无需迁移；旧记录未记载的上传 / 图库来源显示为历史图片，不猜测来源。
 
+> 颜色契约后续修复：当前多图 Prompt 为 `magnetic-multi-image-analysis-v1.1-color-contract`，明确要求 `#RRGGBB`，并在 OpenAI 多图 Analysis 请求中启用严格 `json_schema`。单图 Prompt 不变。原 `v1` 失败 Trace 保留；详见 [颜色契约调查与离线回放](magnetic-multi-image-color-contract.md)。
+
 ## Prompt 与证据契约
 
 - **一张图片**：继续走原有单图 Prompt 和请求分支；2D / 3D 单图 Prompt 指纹均与修改前 HEAD 一致。

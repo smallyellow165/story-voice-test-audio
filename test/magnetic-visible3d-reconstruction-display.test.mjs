@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {createVisible3DWorkflow} from '../server/magnetic-visible3d.mjs'
-import {planningScope,executionScope,planningRequest,executionRequest,requestFailure,planningDisplay,executionDisplay} from '../src/magnetic-tiles/three-d/reconstruction/reconstruction-display.ts'
+import {analysisRequest,planningScope,executionScope,planningRequest,executionRequest,requestFailure,planningDisplay,executionDisplay} from '../src/magnetic-tiles/three-d/reconstruction/reconstruction-display.ts'
 const source={id:'s',hash:'source-hash'},review={id:'r',hash:'review-hash'},plan={id:'p',hash:'plan-hash'},execution={id:'x',hash:'execution-hash'}
 const refs={sourceId:source.id,sourceHash:source.hash,reviewId:review.id,reviewHash:review.hash}
 const failed={id:'failed',kind:'plan',state:'complete',usable:false,createdAt:'2026-10-31',trace:{id:'failed-trace',status:'invalid_plan',sources:[refs],validation:{valid:false,issues:['空间关系无效']}}}
@@ -56,4 +56,18 @@ test('read-only wire adapter serves captured files with existing redaction, neve
   assert.deepEqual(await workflow.dispatch('GET','trace/'+id),trace);assert.deepEqual(JSON.parse(await readFile(path.join(traceDir,id+'.request.json'),'utf8')),request)
   await assert.rejects(workflow.dispatch('GET','trace/'+id+'/wire/other'));await assert.rejects(workflow.dispatch('GET','trace/../wire'))
  }finally{await rm(directory,{recursive:true,force:true})}
+})
+
+test('Analysis Trace recovers failed no-result requests and isolates source hashes and explicit history selection',()=>{
+ const a={id:'analysis',sourceId:source.id,sourceHash:source.hash,traceId:'success-trace'},success={...ready,kind:'analyze',record:{id:a.id},trace:{...ready.trace,id:a.traceId}},failure={...failed,kind:'analyze'}
+ assert.equal(analysisRequest([success,failure],source,null),failure)
+ assert.equal(analysisRequest([success,failure],source,a),failure,'latest failure is recoverable without a new Recognition Result')
+ assert.equal(analysisRequest([success,failure],source,a,'record'),success,'explicit history pins its own trace')
+ assert.equal(analysisRequest([success,failure],source,a,failure.id),failure,'failure selection survives refresh with retained older success')
+ assert.equal(analysisRequest([success,failure],{...source,hash:'other'},a,failure.id),undefined)
+ assert.equal(analysisRequest([success,failure],{id:'other',hash:source.hash},a,failure.id),undefined)
+ assert.equal(analysisRequest([success,failure],source,a,'missing-request'),undefined,'never fall back from an unavailable explicit request')
+ assert.equal(analysisRequest([failure],source,{...a,id:'manual',traceId:null},'record'),undefined)
+ assert.equal(analysisRequest([{...failure,trace:{...failure.trace,sources:[]}}],source,null),undefined)
+ assert.equal(analysisRequest([failure],null,null),undefined)
 })

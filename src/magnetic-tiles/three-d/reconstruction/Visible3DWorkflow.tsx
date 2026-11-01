@@ -18,7 +18,7 @@ import {SourceImagePicker} from '../../intake/SourceImagePicker.tsx';
 import {workflowTerms} from '../../studio-terms.ts';
 import {TraceViewer} from '../../intake/TraceViewer.tsx';
 import type {TraceSource} from '../../intake/TraceViewer.tsx';
-import {planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
+import {analysisRequest,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
@@ -100,9 +100,10 @@ export default function Visible3DWorkflow() {
     const [viewRequest,setViewRequest]=useState(0);
     const [overrideAuthorization,setOverrideAuthorization]=useState('');
     const [requests,setRequests]=useState<OperationRecord[]>([]),[requestError,setRequestError]=useState(''),[attempt,setAttempt]=useState<OperationAttempt|null>(null),[runningOperation,setRunningOperation]=useState<'plan'|'execute'|null>(null);
+    const [analysisTraceSelection,setAnalysisTraceSelection]=useState('latest');
     const [traceOpenRequest,setTraceOpenRequest]=useState<{tab:string;sequence:number}>();
     useEffect(()=>{setAttempt(null)},[source?.id,review?.id,plan?.id,execution?.id]);
-    useEffect(()=>{if(stage!=='reconstruction'||!active)setTraceOpenRequest(undefined)},[stage,active]);
+    useEffect(()=>{setTraceOpenRequest(undefined)},[stage,active]);
     const booted = useRef(false);
     const dirty = !!review && (JSON.stringify(form) !== JSON.stringify(review.input.review) || review.input.profiles.some(s => s.thickness !== thickness));
     const participation=review?planningParticipation(review.input.review):null;
@@ -129,10 +130,10 @@ export default function Visible3DWorkflow() {
             imageBase64: string;
         }>('image/' + s.id), api<typeof head>('head/' + s.id)]); setSource(s); setImage('data:' + img.mimeType + ';base64,' + img.imageBase64); setHead(h); setChecked(false); }
     async function openSourceImage(s:Source){
-        await loadSource(s);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);
+        setAnalysisTraceSelection('latest');await loadSource(s);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);
         setCandidateId('');setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null);setAttempt(null);
     }
-    function selectAnalysis(a: Analysis) { setAttempt(null);setError('');setTrace(null);setAnalysis(a); setReview(null); setPlan(null); setExecution(null); setCandidateId(''); setChecked(false); setForm({ pieces: a.evidence.observations.map(o => ({ id: o.id, confirmed: false, excluded: false, profileId: null, profileVersion: null, color: o.color })), constraints: [] }); setSelected(a.evidence.observations[0]?.id ?? ''); setAnnotation(JSON.stringify(a.evidence, null, 2)); }
+    function selectAnalysis(a: Analysis) { setAnalysisTraceSelection('record');setAttempt(null);setError('');setTrace(null);setAnalysis(a); setReview(null); setPlan(null); setExecution(null); setCandidateId(''); setChecked(false); setForm({ pieces: a.evidence.observations.map(o => ({ id: o.id, confirmed: false, excluded: false, profileId: null, profileVersion: null, color: o.color })), constraints: [] }); setSelected(a.evidence.observations[0]?.id ?? ''); setAnnotation(JSON.stringify(a.evidence, null, 2)); }
     function selectReview(r: Review) { setAttempt(null);setError('');setTrace(null);setReview(r); setForm(structuredClone(r.input.review)); setThickness(r.input.profiles[0]?.thickness ?? .06); setChecked(false); }
     async function run(work: () => Promise<void>,kind?:'plan'|'execute') { const scope=kind==='plan'?planningScope(source,review):executionScope(plan);setBusy(true); setError(''); setNotice('');if(kind){setRunningOperation(kind);setAttempt({kind,scope})}try {
         await work();
@@ -175,18 +176,19 @@ export default function Visible3DWorkflow() {
                     }
                 }
             }
+            setAnalysisTraceSelection(typeof saved?.analysisTraceRequestId==='string'?saved.analysisTraceRequestId:'latest');
             booted.current = true;
         });
     }, []);
     useEffect(() => { if (booted.current)
         try {
-            localStorage.setItem(key, JSON.stringify({ sourceId: source?.id, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model }));
+            localStorage.setItem(key, JSON.stringify({ sourceId: source?.id, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,analysisTraceRequestId:analysisTraceSelection }));
         }
         catch (e) {
             setError('Visible 3D 恢复索引保存失败：' + String(e));
-        } }, [source, analysis, review, plan, execution,candidateId, busy,model]);
+        } }, [source, analysis, review, plan, execution,candidateId, busy,model,analysisTraceSelection]);
     useEffect(() => { if (!active || !source)
-        return; const update = () => void api<typeof head>('head/' + source.id).then(setHead).catch(e => setError(String(e))); update(); window.addEventListener('focus', update); return () => window.removeEventListener('focus', update); }, [active, stage, source]);
+        return; const update = () => {if(stage==='source')void refreshRequests();void api<typeof head>('head/' + source.id).then(setHead).catch(e => setError(String(e)))}; update(); window.addEventListener('focus', update); return () => window.removeEventListener('focus', update); }, [active, stage, source]);
     const projectedReview = useMemo<Evidence | undefined>(() => analysis ? { sourceKind: 'unsupported', reason: '只供共享 Review 表展示；不是 2D Reconstruction 输入', relations: form.constraints.map(c => ({ from: c.pieceA, to: c.pieceB, intent: c.intent, evidence: c.evidence })), observations: analysis.evidence.observations.map(o => { const p = form.pieces.find(p => p.id === o.id), b = o.bbox; return { id: o.id, profileId: p?.profileId ?? 'unknown', profileVersion: p?.profileVersion ?? 1, color: p?.color ?? o.color, outline: b ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : [], confidence: 0, evidence: o.evidence, uncertainty: o.uncertainty, origin: 'observed', excluded: !!p?.excluded }; }) } : undefined, [analysis, form]);
     function editPiece(update: Partial<VisibleReview3D['pieces'][number]>) { setForm(f=>editReviewedPiece(f,selected,update));if(update.excluded||update.confirmed===false)setNotice('当前审核草稿已移除该片相关人工连接/空间检查；原保存快照未改变。');else if(update.profileId!==undefined||update.profileVersion!==undefined)setNotice('Profile 已修改，相关人工端口置为 Unknown，请重新核对。');setChecked(false); }
     const ports = (id: string) => { const p = form.pieces.find(p => p.id === id), profile = registry.profiles.find(s => s.id === p?.profileId && s.version === p?.profileVersion); return profile ? adaptProfile({ profile, thickness }).shape.ports : []; };
@@ -205,6 +207,7 @@ export default function Visible3DWorkflow() {
             if(!review)throw Error('请先保存或选择 Review。');
             const {blocker}=planningParticipation(review.input.review);if(blocker)throw Error(blocker);
         }
+        const requestId=crypto.randomUUID();if(kind==='analyze')setAnalysisTraceSelection(requestId);
         const r = await api<{
             id: string;
             state: string;
@@ -213,8 +216,9 @@ export default function Visible3DWorkflow() {
             trace?: {
                 id: string;
             };
-        }>(kind, { sourceId: source?.id, reviewId: review?.id, model: kind === 'analyze' ? model : planningModel, requestId: crypto.randomUUID() });
-        if(kind==='plan'){setAttempt({id:r.id,kind:'plan',scope:planningScope(source,review)});await refreshRequests()}
+        }>(kind, { sourceId: source?.id, reviewId: review?.id, model: kind === 'analyze' ? model : planningModel, requestId });
+        if(kind==='plan')setAttempt({id:r.id,kind:'plan',scope:planningScope(source,review)});
+        await refreshRequests();
         if (r.trace)
             setTrace(await api('trace/' + r.trace.id));
         if (r.state !== 'complete' || !r.record)
@@ -230,20 +234,26 @@ export default function Visible3DWorkflow() {
         }
         await refresh();
     }
+    const analysisModelRequest=analysisRequest(requests,source,analysis,analysisTraceSelection);
     const planRequest=planningRequest(requests,source,review,plan,attempt),executeRequest=executionRequest(requests,plan,execution,attempt);
     const planStatus=planningDisplay(plan,planRequest,runningOperation==='plan',attempt?.kind==='plan'&&attempt.scope===planningScope(source,review)?attempt.error:undefined);
     const executeStatus=executionDisplay(plan,execution,executeRequest,runningOperation==='execute',attempt?.kind==='execute'&&attempt.scope===executionScope(plan)?attempt.error:undefined);
     const planOutdated=!!plan&&(plan.sourceId!==source?.id||plan.sourceHash!==source?.hash||plan.reviewId!==review?.id||dirty||head.reviewId!==review?.id);
     const traceSource=useMemo<TraceSource>(()=>{
       const references={sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,planId:plan?.id,planHash:plan?.hash,executionId:execution?.id,executionHash:execution?.hash,candidateId};
-      return {identity:JSON.stringify([references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
+      const partsRequest=stage==='source'?analysisModelRequest:undefined;
+      const partsRecordMatches=!!analysis&&partsRequest?.record?.id===analysis.id&&analysis.sourceId===source?.id&&analysis.sourceHash===source?.hash;
+      return {identity:JSON.stringify([stage,analysisTraceSelection,partsRequest?.id,partsRequest?.state,references,planRequest?.id,planRequest?.state,executeRequest?.id,executeRequest?.state]),initialTab:stage==='source'?'parts':'spatial',tabs:[['parts','Parts / Review'],['spatial','Spatial Planning'],['execution','Geometry Execution']],fileReference:tab=>tab==='parts'&&partsRequest?{mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,requestId:partsRequest.id,...(partsRecordMatches?{analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash}:{})}:({mode:'visible3d',tab,sourceId:source?.id,sourceHash:source?.hash,analysisId:analysis?.id,analysisHash:analysis?.hash,reviewId:review?.id,reviewHash:review?.hash,...(tab==='parts'?{}:{planId:plan?.id,planHash:plan?.hash}),...(tab==='spatial'?{requestId:planRequest?.id}:tab==='execution'?{executionId:execution?.id,executionHash:execution?.hash,requestId:executeRequest?.id}:{})}),load:async tab=>{
         if(tab==='execution')return {references,request:executeRequest??null,execution:execution?await api('executions/'+execution.id):null,candidateValidator:candidate?.geometry??null,candidateValidation:validation,candidateCollisions:candidate?.collisions??null,candidateConstruction:candidate?.construction??null,spatialConsistency:spatial,availability:execution?'已保存的确定性几何执行记录；无额外模型调用':'尚无 Trace：尚未选择 Geometry Execution',requestReadError:requestError||null};
-        const record=tab==='parts'?analysis:plan,request=tab==='spatial'?planRequest:undefined;
-        const traceId=request?.trace?.id??record?.traceId;
+        const record=tab==='parts'?analysis:plan,request=tab==='spatial'?planRequest:partsRequest;
+        const pinnedMissing=tab==='parts'&&stage==='source'&&!['latest','record'].includes(analysisTraceSelection)&&!request;
+        const recordMatches=tab!=='parts'||record?.sourceId===source?.id&&record?.sourceHash===source?.hash;
+        const traceId=request?.trace?.id??(!pinnedMissing&&recordMatches?record?.traceId:null);
         const [savedTrace,wire]=traceId?await Promise.all([api<ModelTrace>('trace/'+traceId),api('trace/'+traceId+'/wire')]):[null,null];
-        return {references,request:request??null,trace:savedTrace,wire,availability:savedTrace?'实际保存的模型 Trace':'尚无 Trace',requestOrigin:'trace.request 是保存的应用请求；实际 HTTP 正文见 wire.request，未保存时不补齐。',...(tab==='parts'?{analysis,review}:{selectedPlan:plan,diagnostics:plan?.diagnostics??[],note:'Plan Ready 不代表照片语义正确或 Geometry Valid；失败请求按 Source / Review ID 与 Hash 关联。'}),requestReadError:requestError||null};
+        if(tab==='parts'&&stage==='source'&&savedTrace&&!savedTrace.sources?.some(s=>s.sourceId===source?.id&&s.sourceHash===source?.hash))throw Error('Analysis Trace 的 Source ID / Hash 与当前图片集合不一致；未显示其他记录。');
+        return {references,request:request??null,trace:savedTrace,wire,availability:savedTrace?'实际保存的模型 Trace':'尚无 Trace',requestOrigin:'trace.request 是保存的应用请求；实际 HTTP 正文见 wire.request，未保存时不补齐。',...(tab==='parts'?{analysis:partsRequest&&!partsRecordMatches?null:analysis,review:partsRequest&&!partsRecordMatches?null:review,...(partsRequest&&!partsRecordMatches?{retainedAnalysis:analysis?{id:analysis.id,hash:analysis.hash}:null,note:partsRequest.record?'该调用对应另一条已保存 Analysis；工作区的原选中记录未自动更改。':'该调用未生成有效 Recognition Result；原有 Analysis / Review 未被失败结果覆盖。'}:{})}:{selectedPlan:plan,diagnostics:plan?.diagnostics??[],note:'Plan Ready 不代表照片语义正确或 Geometry Valid；失败请求按 Source / Review ID 与 Hash 关联。'}),requestReadError:requestError||null};
       }};
-    },[source,analysis,review,plan,execution,candidateId,candidate,spatial,planRequest,executeRequest,requestError]);
+    },[stage,analysisTraceSelection,analysisModelRequest,source,analysis,review,plan,execution,candidateId,candidate,spatial,planRequest,executeRequest,requestError]);
     function openReconstructionTrace(tab:string){setTraceOpenRequest(r=>({tab,sequence:(r?.sequence??0)+1}))}
     const imageView=<>{imageStrip}<VisibleEvidenceImage source={frame.displaySource} image={frame.image} evidence={displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/></>;
     return <>
@@ -284,10 +294,10 @@ export default function Visible3DWorkflow() {
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{analysis?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
   </StudioSlot>
-  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector'}>{stage==='reconstruction'?<div className="review-inspector-heading visible3d-reconstruction-heading"><h2>{workflowTerms.reconstruction.label}</h2>{active&&<TraceViewer source={traceSource} openRequest={traceOpenRequest}/>}</div>:stage!=='source'&&<h3>Visible 3D Inspector</h3>}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector'}>{stage==='source'||stage==='reconstruction'?<div className={stage==='source'?'review-inspector-heading visible3d-analysis-heading':'review-inspector-heading visible3d-reconstruction-heading'}>{stage==='reconstruction'&&<h2>{workflowTerms.reconstruction.label}</h2>}{active&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</div>:<h3>Visible 3D Inspector</h3>}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
    {stage==='source'&&<section className="intake-controls source-inspector" aria-label="Visible 3D 图片与识别操作">
     <SourceImagePicker onPendingChange={setImagePending} onSelectImage={frame.select} activeImageId={frame.activeId} sourceType={imageSource} onSourceTypeChange={setImageSource} currentSource={source} disabled={busy}
-     onSource={async s=>{if(s)await openSourceImage(s);else{setSource(null);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null)}}}
+     onSource={async s=>{if(s)await openSourceImage(s);else{setAnalysisTraceSelection('latest');setSource(null);setAnalysis(null);setReview(null);setPlan(null);setExecution(null);setForm(emptyReview);setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null)}}}
      onOpenSource={id=>void run(async()=>{const s=await intakeApi<Source>('sources/'+id);await openSourceImage(s)})}/>
     <label className="compact-field">下次识别模型<select aria-label="3D Vision 模型" value={model} onChange={e=>setModel(e.target.value)} disabled={busy}><option value="">选择已配置模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
     <button className="primary" disabled={busy||!source||!model} onClick={()=>void run(()=>modelAction('analyze'))}>Analyze Visible 3D（调用模型）</button>
@@ -374,8 +384,8 @@ export default function Visible3DWorkflow() {
         assembly: Assembly3D;
     }>(diagnostic?'open-diagnostic-draft':'adopt', { executionId: execution!.id,executionHash:execution!.hash, candidateId: candidate.id,...(diagnostic?{override:true}:{visualChecked:true}) }); await refresh(); setOverrideAuthorization('');adopt3D(origin.assembly, origin,cameraView); })}>{diagnostic?'采用当前结构进入 3D Assembly Editor':'采用候选到 3D Assembly Editor'}</button>
    </section>}
-   {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage==='reconstruction'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
-   {trace !== null && stage!=='reconstruction' && <details open><summary>实际保存的模型 Trace</summary><pre>{JSON.stringify(trace, null, 2)}</pre><button onClick={() => setTrace(null)}>关闭 Trace</button></details>}
+   {(analysis || plan || execution) && <details><summary>来源、Trace 与导出</summary><pre>{JSON.stringify({ sourceId: source?.id, sourceHash: source?.hash, analysisId: analysis?.id, reviewId: review?.id, planId: plan?.id, executionId: execution?.id,candidateId,model,analysisTraceRequestId:analysisTraceSelection }, null, 2)}</pre>{[analysis, plan].filter(Boolean).map(r => r!.traceId ? <button key={r!.id} onClick={() => stage!=='review'?openReconstructionTrace(r===analysis?'parts':'spatial'):void run(async () => setTrace(await api('trace/' + r!.traceId)))}>查看 {r!.id.slice(0, 8)} 原始 Trace</button> : <p key={r!.id}>{r!.origin} · 无模型调用 Trace</p>)}<button onClick={() => download('visible3d-evidence.json', analysis?.evidence)}>导出 Visible Evidence</button>{plan && <button onClick={() => download('visible3d-hypothesis.json', plan.plan)}>导出 Spatial Hypothesis</button>}<button onClick={() => download('visible3d-provenance.json', { source, analysis, review, plan, execution, origins: history.origins?.filter(o => o.sourceId === source?.id) })}>导出完整来源记录</button></details>}
+   {trace !== null && stage==='review' && <details open><summary>实际保存的模型 Trace</summary><pre>{JSON.stringify(trace, null, 2)}</pre><button onClick={() => setTrace(null)}>关闭 Trace</button></details>}
   </section></StudioSlot>
  </>;
 }

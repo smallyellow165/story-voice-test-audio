@@ -1,4 +1,4 @@
-import {multiImagePrompt,multiImagePromptVersion,multiImageSchema,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
+import {multiImagePrompt,multiImagePromptVersion,multiImageSchema,openaiMultiImageFormat,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
 import {profiles, profileSpec} from '../src/magnetic-tiles/profiles.ts'
 import {buildOpenaiRequest} from './openai-responses.mjs'
 import {callBrickModel} from './brick-model-call.mjs'
@@ -31,8 +31,7 @@ export function multiRecognitionRequest(model,images,source,catalog=profiles){
  const instruction=multiImagePrompt+'\nAuthoritative Catalog: '+JSON.stringify(catalog.map(profileSpec)),text=JSON.stringify({analysisMode:'planar',referenceImageId:source.primaryImageId,images:source.images})
  if(resolveModel(model,'reverse').provider==='openai'){
   const request=buildOpenaiRequest({model,task:'reverse',prompt:instruction,schema,content:[{type:'input_text',text},...openaiImageParts(images)]})
-  const lower=n=>({...n,type:n.type.toLowerCase(),...(n.properties?{properties:Object.fromEntries(Object.entries(n.properties).map(([k,v])=>[k,lower(v)])),additionalProperties:false}:{}),...(n.items?{items:lower(n.items)}:{})})
-  request.text={format:{type:'json_schema',name:'magnetic_multi_image_observation',strict:true,schema:lower(schema)}};return request
+  request.text={format:openaiMultiImageFormat(schema)};return request
  }
  return {model,contents:[{role:'user',parts:[{text:instruction+'\n'+text},...imageRequestParts(images)]}],config:{...modelSettings(model,'reverse'),responseMimeType:'application/json',responseSchema:schema}}
 }

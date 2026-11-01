@@ -1,0 +1,2654 @@
+{
+  "testOnly": true,
+  "notForImport": true,
+  "purpose": "Original 23-observation color-contract regression. Test copies use ONE neutral placeholder for every invalid color; no physical color inference, no name-to-hex mapping, no Review approval.",
+  "originTraceId": "9be836a5-870c-448e-a89f-f7e8f3cc0688",
+  "originTraceSha256": "5c56c593dad449794eb816422d626dacb64d9ef1eafe120f7bab021c79a8cf41",
+  "originalPromptVersion": "magnetic-multi-image-analysis-v1",
+  "originalOutputFormat": {
+    "type": "json_object"
+  },
+  "source": {
+    "schemaVersion": 1,
+    "id": "7fbf104261d876bcfb1c55333252806aa396030a84129222a869e23a87d59f26",
+    "name": "car-all.png + 3 images",
+    "createdAt": "2026-11-01T00:04:56.305Z",
+    "originalHash": "04239248ca2f6e1b43d0d4401993040a8c9af648203c5c1b87088a7095c22bab",
+    "view": {
+      "hash": "6a66c9c5ab8878115df3f48bf7335d615cac800e9d16b7acfbda5bedef20a415",
+      "width": 867,
+      "height": 1123,
+      "mimeType": "image/png",
+      "orientation": "display",
+      "transform": "oriented-resize"
+    },
+    "images": [
+      {
+        "sourceId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+        "sourceHash": "a5c6fc85e05bd91fbbbb8bbb887b0be4d4be598d7e81ecac5d440bfad4e4d814",
+        "name": "car-1.png",
+        "view": {
+          "hash": "baffb2bb688c97749c2f6f65a552d699070dacea7ec8877f572d7d2bbc02c688",
+          "width": 1260,
+          "height": 1124,
+          "mimeType": "image/png",
+          "orientation": "display",
+          "transform": "oriented-resize"
+        },
+        "origin": "server",
+        "role": "Step",
+        "direction": "Oblique",
+        "note": ""
+      },
+      {
+        "sourceId": "d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a",
+        "sourceHash": "f43f31a46cf769c97c25acc7f6dd1b7e3a31d62679c92bff0d485c4237adcec0",
+        "name": "car-2.png",
+        "view": {
+          "hash": "b70a5b0566d57a29397d361b5a7321f771c2fa51573e466bbf072164ddb3915d",
+          "width": 849,
+          "height": 1112,
+          "mimeType": "image/png",
+          "orientation": "display",
+          "transform": "oriented-resize"
+        },
+        "origin": "server",
+        "role": "Step",
+        "direction": "Oblique",
+        "note": ""
+      },
+      {
+        "sourceId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+        "sourceHash": "9a42917a55c5d7012705cce707b9ca579652809999e66b24c81173ee43242d09",
+        "name": "car-3.png",
+        "view": {
+          "hash": "4c641aee2c1742242cb7ccd3e53629c04198cbd79ab581bc044b4d0c26218d05",
+          "width": 854,
+          "height": 1136,
+          "mimeType": "image/png",
+          "orientation": "display",
+          "transform": "oriented-resize"
+        },
+        "origin": "server",
+        "role": "Step",
+        "direction": "Oblique",
+        "note": ""
+      },
+      {
+        "sourceId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+        "sourceHash": "391b16c6d40f25ce64571ee6e74b0579a5c29d01d8dfd0d5fbbb6806bbef8b65",
+        "name": "car-all.png",
+        "view": {
+          "hash": "6a66c9c5ab8878115df3f48bf7335d615cac800e9d16b7acfbda5bedef20a415",
+          "width": 867,
+          "height": 1123,
+          "mimeType": "image/png",
+          "orientation": "display",
+          "transform": "oriented-resize"
+        },
+        "origin": "server",
+        "role": "Final",
+        "direction": "Oblique",
+        "note": ""
+      }
+    ],
+    "primaryImageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+    "hash": "fec0844b0c2681f7d5b689d1f3083587b887719bdb72c3a4657770ac847dccc2"
+  },
+  "catalog": [
+    {
+      "id": "square",
+      "version": 1,
+      "name": "正方形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "id": "right-triangle",
+      "version": 1,
+      "name": "等腰直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "equilateral-triangle",
+      "version": 1,
+      "name": "等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          0.8660254037844386
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "large-equilateral-triangle",
+      "version": 1,
+      "name": "大型等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          1.7320508075688772
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。边长约 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "tall-right-triangle",
+      "version": 1,
+      "name": "细长直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。直角边约 7.5 × 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "narrow-isosceles-triangle",
+      "name": "细长等腰三角形",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          1.8660254
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "isosceles-triangle",
+        "dimensions": {
+          "base": 1,
+          "height": 1.8660254
+        }
+      },
+      "geometrySource": "项目 V1 估计几何规格，非官方实测",
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "项目 V1 估计几何规格，非官方实测"
+      }
+    }
+  ],
+  "originalEvidence": {
+    "version": 2,
+    "referenceImageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+    "observations": [
+      {
+        "id": "t01",
+        "color": "purple",
+        "bbox": [
+          0.142,
+          0.287,
+          0.366,
+          0.374
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.196,
+                0.37
+              ],
+              [
+                0.36,
+                0.339
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Roof edge beside the left upper ramp panel."
+          }
+        ],
+        "occlusion": "Almost unobstructed.",
+        "evidence": "Left of two purple roof panels in the final image; its position within the rear assembly matches the first step.",
+        "uncertainty": "Cross-frame identity is inferred from the paired roof and adjoining blue side, not color alone.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Four-sided framed panel comparable to the adjacent square panels.",
+          "perspectiveUncertainty": "Foreshortened horizontal face.",
+          "exactProfileUncertainty": "Square profile is supported; physical size is not measured."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Square panel under perspective."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.142,
+              0.287,
+              0.366,
+              0.374
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.196,
+                    0.37
+                  ],
+                  [
+                    0.36,
+                    0.339
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Front roof edge."
+              }
+            ],
+            "occlusion": "Minor adjoining-rim overlap.",
+            "evidence": "Distinct left purple roof perimeter.",
+            "uncertainty": "None material to panel count."
+          },
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.101,
+              0.292,
+              0.248,
+              0.37
+            ],
+            "features": [],
+            "occlusion": "Nearly clear.",
+            "evidence": "Left purple roof over blue side and purple rear wall.",
+            "uncertainty": "Identity inferred through assembly continuity."
+          }
+        ]
+      },
+      {
+        "id": "t02",
+        "color": "purple",
+        "bbox": [
+          0.291,
+          0.271,
+          0.508,
+          0.345
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.365,
+                0.34
+              ],
+              [
+                0.499,
+                0.317
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Roof edge beside the right upper ramp panel."
+          }
+        ],
+        "occlusion": "Almost unobstructed.",
+        "evidence": "Right purple roof panel, consistently adjacent to t01.",
+        "uncertainty": "Identity across frames is contextual.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Complete framed quadrilateral matching t01.",
+          "perspectiveUncertainty": "Horizontal foreshortening.",
+          "exactProfileUncertainty": "No physical dimension established."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Square roof panel."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.291,
+              0.271,
+              0.508,
+              0.345
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.365,
+                    0.34
+                  ],
+                  [
+                    0.499,
+                    0.317
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Front roof edge."
+              }
+            ],
+            "occlusion": "Minor rim overlap.",
+            "evidence": "Separate right purple roof panel.",
+            "uncertainty": "None material to count."
+          },
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.204,
+              0.272,
+              0.351,
+              0.347
+            ],
+            "features": [],
+            "occlusion": "Nearly clear.",
+            "evidence": "Right roof over right blue side.",
+            "uncertainty": "Identity inferred from neighbors."
+          }
+        ]
+      },
+      {
+        "id": "t03",
+        "color": "blue",
+        "bbox": [
+          0.133,
+          0.321,
+          0.22,
+          0.484
+        ],
+        "features": [
+          {
+            "id": "outerEdge",
+            "points": [
+              [
+                0.137,
+                0.329
+              ],
+              [
+                0.169,
+                0.429
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Exposed rear-left side edge."
+          }
+        ],
+        "occlusion": "Front edge partly covered by the orange triangle and green ramp.",
+        "evidence": "Blue upright outer side beneath t01 is visible in both final and first step.",
+        "uncertainty": "Lower/front corner is partly obscured.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "First step shows the framed side panel more clearly.",
+          "perspectiveUncertainty": "Strong sideways foreshortening.",
+          "exactProfileUncertainty": "Square candidate supported by neighboring panel scale."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Upright square side panel."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.133,
+              0.321,
+              0.22,
+              0.484
+            ],
+            "features": [
+              {
+                "id": "outerEdge",
+                "points": [
+                  [
+                    0.137,
+                    0.329
+                  ],
+                  [
+                    0.169,
+                    0.429
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Blue exposed side edge."
+              }
+            ],
+            "occlusion": "Partial orange and green overlap.",
+            "evidence": "Distinct blue side frame.",
+            "uncertainty": "Some perimeter hidden."
+          },
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.096,
+              0.318,
+              0.15,
+              0.483
+            ],
+            "features": [],
+            "occlusion": "Orange triangle covers front edge.",
+            "evidence": "Blue square outer side of rear module.",
+            "uncertainty": "Perspective compresses width."
+          }
+        ]
+      },
+      {
+        "id": "t04",
+        "color": "blue",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Not independently distinguishable in the reference image.",
+        "evidence": "The first step exposes the opposite blue side beneath t02. Retention in the final rear module is inferred from the unchanged paired roof and ramp support context.",
+        "uncertainty": "Final retention is probable, not directly verified; removal or replacement cannot be excluded.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Visible upright four-sided blue panel in the first step.",
+          "perspectiveUncertainty": "Oblique side view.",
+          "exactProfileUncertainty": "Square candidate; size unmeasured."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Rear module side panel."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.29,
+              0.317,
+              0.348,
+              0.421
+            ],
+            "features": [],
+            "occlusion": "Partly behind roof and orange triangle.",
+            "evidence": "Blue upright side at right of rear assembly.",
+            "uncertainty": "Final presence is inferred, not observed here."
+          }
+        ]
+      },
+      {
+        "id": "t05",
+        "color": "blue",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Hidden by the ramp/rear assembly in the reference image.",
+        "evidence": "First step shows a left blue floor panel, separated from the neighboring floor by a seam. Final retention is inferred from rear-module continuity.",
+        "uncertainty": "Final membership is conditional; this step-only floor must not be treated as directly observed in the final.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Framed left floor quadrilateral in the open rear assembly.",
+          "perspectiveUncertainty": "Horizontal foreshortening and transparent overlap.",
+          "exactProfileUncertainty": "Square candidate; no measured size."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "One of two blue floor panels visible before the ramp covers them."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.151,
+              0.393,
+              0.259,
+              0.478
+            ],
+            "features": [],
+            "occlusion": "Rear boundary partially overlapped by upright panels.",
+            "evidence": "Left blue horizontal floor with distinct outer rim.",
+            "uncertainty": "Part of perimeter is obscured; retention later is inferred."
+          }
+        ]
+      },
+      {
+        "id": "t06",
+        "color": "blue",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Hidden in the reference image.",
+        "evidence": "Right blue floor is exposed in the first step beside t05; rear-module continuity supports possible final retention.",
+        "uncertainty": "Final retention is not directly verified.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Separate right floor frame in the first step.",
+          "perspectiveUncertainty": "Horizontal perspective and rear-wall overlap.",
+          "exactProfileUncertainty": "Square candidate without measured dimensions."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Right square floor panel."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.218,
+              0.369,
+              0.347,
+              0.453
+            ],
+            "features": [],
+            "occlusion": "Rear edge partly hidden.",
+            "evidence": "Right blue floor separated from left floor by a panel boundary.",
+            "uncertainty": "Final membership inferred."
+          }
+        ]
+      },
+      {
+        "id": "t07",
+        "color": "purple",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Not separately resolvable beneath the final roof and ramp.",
+        "evidence": "First step shows an upright purple rear panel below t01, distinct from the horizontal roof.",
+        "uncertainty": "Retained as a conditional final member through assembly continuity; no independent final perimeter.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [
+            "rectangle"
+          ],
+          "evidence": "Upright purple face with a separate vertical boundary beneath the left roof.",
+          "perspectiveUncertainty": "Only part of its height is exposed.",
+          "exactProfileUncertainty": "Square is plausible; incomplete perimeter prevents a firm exact-profile assignment."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Candidate consistent with roof-width rear panel; incomplete view."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.134,
+              0.348,
+              0.217,
+              0.407
+            ],
+            "features": [],
+            "occlusion": "Upper portion hidden behind roof rim.",
+            "evidence": "Left upright purple rear face.",
+            "uncertainty": "Full height and final retention unresolved."
+          }
+        ]
+      },
+      {
+        "id": "t08",
+        "color": "purple",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Not independently visible in the reference image.",
+        "evidence": "First step exposes a second upright purple rear face below t02, separated from t07 by a vertical seam.",
+        "uncertainty": "Final retention inferred from continuity; exact perimeter unavailable.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [
+            "rectangle"
+          ],
+          "evidence": "Separate upright quadrilateral region matching the neighboring rear face.",
+          "perspectiveUncertainty": "Partially hidden behind roof.",
+          "exactProfileUncertainty": "Square candidate rather than confirmed exact profile."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Candidate rear square matching the adjacent roof width."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.211,
+              0.33,
+              0.296,
+              0.391
+            ],
+            "features": [],
+            "occlusion": "Roof covers upper boundary.",
+            "evidence": "Right purple upright rear panel.",
+            "uncertainty": "Final presence and complete shape remain inferred."
+          }
+        ]
+      },
+      {
+        "id": "t09",
+        "color": "orange",
+        "bbox": [
+          0.191,
+          0.38,
+          0.272,
+          0.496
+        ],
+        "features": [
+          {
+            "id": "outerEdge",
+            "points": [
+              [
+                0.197,
+                0.385
+              ],
+              [
+                0.214,
+                0.486
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Exposed edge of left ramp-side triangle."
+          }
+        ],
+        "occlusion": "Partly covered by the upper green ramp panel.",
+        "evidence": "Orange triangular side support remains beside t03 and the left ramp; first step shows its triangular outline.",
+        "uncertainty": "Identity strongly supported by position; intrinsic triangle proportions are less certain.",
+        "shapeAssessment": {
+          "family": "triangle",
+          "alternativeFamilies": [],
+          "evidence": "Three-sided orange frame, clearer before green panels are added.",
+          "perspectiveUncertainty": "Viewed nearly edge-on in final.",
+          "exactProfileUncertainty": "A right-triangle profile is plausible, but perspective does not establish exact proportions."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "right-triangle",
+            "profileVersion": 1,
+            "reason": "Candidate triangular side support; exact angles not verified."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.191,
+              0.38,
+              0.272,
+              0.496
+            ],
+            "features": [
+              {
+                "id": "outerEdge",
+                "points": [
+                  [
+                    0.197,
+                    0.385
+                  ],
+                  [
+                    0.214,
+                    0.486
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Exposed orange frame edge."
+              }
+            ],
+            "occlusion": "Green ramp covers inner side.",
+            "evidence": "Distinct orange triangular support.",
+            "uncertainty": "Full perimeter partly hidden."
+          },
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.132,
+              0.374,
+              0.187,
+              0.489
+            ],
+            "features": [],
+            "occlusion": "Mostly exposed.",
+            "evidence": "Triangular orange frame on the left side of the open rear module.",
+            "uncertainty": "Oblique projection affects intrinsic angle estimates."
+          }
+        ]
+      },
+      {
+        "id": "t10",
+        "color": "orange",
+        "bbox": null,
+        "features": [],
+        "occlusion": "Hidden behind the right upper green ramp in the reference image.",
+        "evidence": "First step directly shows the right orange triangular support. Its continued presence is inferred from the retained roof/ramp arrangement.",
+        "uncertainty": "No independently distinguishable final orange perimeter; removal is not excluded.",
+        "shapeAssessment": {
+          "family": "triangle",
+          "alternativeFamilies": [],
+          "evidence": "Three-sided orange frame exposed at right in the first step.",
+          "perspectiveUncertainty": "Oblique side view.",
+          "exactProfileUncertainty": "Right-triangle candidate, not exact dimensional identification."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "right-triangle",
+            "profileVersion": 1,
+            "reason": "Candidate matching the left ramp-side triangle."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc",
+            "bbox": [
+              0.342,
+              0.321,
+              0.397,
+              0.423
+            ],
+            "features": [],
+            "occlusion": "Minor blue-side overlap.",
+            "evidence": "Right orange triangle with visible outer frame.",
+            "uncertainty": "Final retention inferred."
+          }
+        ]
+      },
+      {
+        "id": "t11",
+        "color": "green",
+        "bbox": [
+          0.208,
+          0.339,
+          0.438,
+          0.494
+        ],
+        "features": [
+          {
+            "id": "lowerEdge",
+            "points": [
+              [
+                0.272,
+                0.487
+              ],
+              [
+                0.433,
+                0.456
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Edge joining the lower-left green panel."
+          }
+        ],
+        "occlusion": "Mostly exposed.",
+        "evidence": "Upper-left square of the two-by-two green ramp, unchanged in adjacency from the second step.",
+        "uncertainty": "Panel identity inferred from its position in the connected ramp.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Four distinct framed green panels are fully exposed in the second step.",
+          "perspectiveUncertainty": "Inclined plane projects as a quadrilateral.",
+          "exactProfileUncertainty": "Square profile supported; size not measured."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "One square in the green ramp array."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.208,
+              0.339,
+              0.438,
+              0.494
+            ],
+            "features": [
+              {
+                "id": "lowerEdge",
+                "points": [
+                  [
+                    0.272,
+                    0.487
+                  ],
+                  [
+                    0.433,
+                    0.456
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Lower panel edge."
+              }
+            ],
+            "occlusion": "Small rim overlaps.",
+            "evidence": "Upper-left green ramp face.",
+            "uncertainty": "No material count ambiguity."
+          },
+          {
+            "imageId": "d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a",
+            "bbox": [
+              0.219,
+              0.354,
+              0.449,
+              0.501
+            ],
+            "features": [],
+            "occlusion": "Nearly clear.",
+            "evidence": "Upper-left framed green square.",
+            "uncertainty": "Identity based on connected array."
+          }
+        ]
+      },
+      {
+        "id": "t12",
+        "color": "green",
+        "bbox": [
+          0.368,
+          0.318,
+          0.58,
+          0.455
+        ],
+        "features": [
+          {
+            "id": "lowerEdge",
+            "points": [
+              [
+                0.437,
+                0.453
+              ],
+              [
+                0.573,
+                0.424
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Edge beside the lower-right ramp panel."
+          }
+        ],
+        "occlusion": "Mostly exposed.",
+        "evidence": "Upper-right green ramp panel beside t11 and below t02.",
+        "uncertainty": "Transparent shadows do not indicate additional pieces.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Separate four-sided frame within the ramp.",
+          "perspectiveUncertainty": "Inclined foreshortened plane.",
+          "exactProfileUncertainty": "Square candidate well supported."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Upper-right ramp square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.368,
+              0.318,
+              0.58,
+              0.455
+            ],
+            "features": [
+              {
+                "id": "lowerEdge",
+                "points": [
+                  [
+                    0.437,
+                    0.453
+                  ],
+                  [
+                    0.573,
+                    0.424
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Lower edge of upper-right green face."
+              }
+            ],
+            "occlusion": "Minor red-roof overlap near lower corner.",
+            "evidence": "Distinct right upper green face.",
+            "uncertainty": "None material to count."
+          },
+          {
+            "imageId": "d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a",
+            "bbox": [
+              0.384,
+              0.332,
+              0.595,
+              0.465
+            ],
+            "features": [],
+            "occlusion": "Nearly clear.",
+            "evidence": "Upper-right square of green ramp.",
+            "uncertainty": "Foreshortening only."
+          }
+        ]
+      },
+      {
+        "id": "t13",
+        "color": "green",
+        "bbox": [
+          0.272,
+          0.456,
+          0.455,
+          0.621
+        ],
+        "features": [
+          {
+            "id": "leftEdge",
+            "points": [
+              [
+                0.277,
+                0.492
+              ],
+              [
+                0.33,
+                0.606
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Exposed outer edge descending behind the front module."
+          }
+        ],
+        "occlusion": "Most of the lower-left green panel is covered by the front module.",
+        "evidence": "Exposed green strip continues from t11 behind the front assembly; second step resolves this as a separate lower-left square.",
+        "uncertainty": "Final full extent is estimated; panel could have changed fold relative to the earlier step.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Second step exposes the complete lower-left frame.",
+          "perspectiveUncertainty": "Final face largely hidden.",
+          "exactProfileUncertainty": "Square profile supported by earlier direct outline."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Lower-left green ramp square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.272,
+              0.456,
+              0.455,
+              0.621
+            ],
+            "features": [
+              {
+                "id": "leftEdge",
+                "points": [
+                  [
+                    0.277,
+                    0.492
+                  ],
+                  [
+                    0.33,
+                    0.606
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Visible green outside rim segment."
+              }
+            ],
+            "occlusion": "Heavy front-module occlusion.",
+            "evidence": "Green framed continuation below t11.",
+            "uncertainty": "Bounding extent includes an estimated hidden portion."
+          },
+          {
+            "imageId": "d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a",
+            "bbox": [
+              0.272,
+              0.46,
+              0.52,
+              0.629
+            ],
+            "features": [],
+            "occlusion": "Small video icon overlap near inner corner.",
+            "evidence": "Separate lower-left green square.",
+            "uncertainty": "Its earlier pose is not imposed on the final arrangement."
+          }
+        ]
+      },
+      {
+        "id": "t14",
+        "color": "green",
+        "bbox": [
+          0.435,
+          0.423,
+          0.599,
+          0.495
+        ],
+        "features": [
+          {
+            "id": "upperEdge",
+            "points": [
+              [
+                0.439,
+                0.459
+              ],
+              [
+                0.576,
+                0.43
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Exposed upper rim of the mostly hidden lower-right ramp panel."
+          }
+        ],
+        "occlusion": "Almost entirely covered by the red-roof front module.",
+        "evidence": "A green framed band immediately below t12 corresponds to the lower-right panel exposed in the second step.",
+        "uncertainty": "Final bbox covers only the distinguishable exposed region, not a fabricated complete perimeter. Identity and final fold are less secure than for t11/t12.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Complete square frame visible in the second step.",
+          "perspectiveUncertainty": "Final face almost entirely occluded.",
+          "exactProfileUncertainty": "Square profile inferred through cross-frame identity."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Lower-right green square directly visible in the second step."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.435,
+              0.423,
+              0.599,
+              0.495
+            ],
+            "features": [
+              {
+                "id": "upperEdge",
+                "points": [
+                  [
+                    0.439,
+                    0.459
+                  ],
+                  [
+                    0.576,
+                    0.43
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Green band below upper-right panel."
+              }
+            ],
+            "occlusion": "Very heavy red-roof overlap.",
+            "evidence": "Narrow lower green panel region.",
+            "uncertainty": "Small visible area makes identity moderately uncertain."
+          },
+          {
+            "imageId": "d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a",
+            "bbox": [
+              0.441,
+              0.437,
+              0.671,
+              0.584
+            ],
+            "features": [],
+            "occlusion": "Video play icon covers part of inner region.",
+            "evidence": "Distinct lower-right green frame.",
+            "uncertainty": "Final pose not established by this earlier view alone."
+          }
+        ]
+      },
+      {
+        "id": "t15",
+        "color": "red",
+        "bbox": [
+          0.337,
+          0.444,
+          0.643,
+          0.597
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.439,
+                0.589
+              ],
+              [
+                0.634,
+                0.537
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Roof edge above left yellow triangle."
+          }
+        ],
+        "occlusion": "Play icon covers part of face, not its perimeter.",
+        "evidence": "Left red roof panel of front module; same neighbor configuration in third step.",
+        "uncertainty": "Internal triangular reflections are not extra tiles.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Complete four-sided red outer frame.",
+          "perspectiveUncertainty": "Horizontal foreshortening.",
+          "exactProfileUncertainty": "Square profile supported."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Front-left roof square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.337,
+              0.444,
+              0.643,
+              0.597
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.439,
+                    0.589
+                  ],
+                  [
+                    0.634,
+                    0.537
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Front roof edge."
+              }
+            ],
+            "occlusion": "Central icon.",
+            "evidence": "Distinct left red roof panel.",
+            "uncertainty": "Perimeter sufficient for identification."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.347,
+              0.445,
+              0.651,
+              0.601
+            ],
+            "features": [],
+            "occlusion": "Play icon.",
+            "evidence": "Left red roof above blue left side.",
+            "uncertainty": "Identity inferred from unchanged module."
+          }
+        ]
+      },
+      {
+        "id": "t16",
+        "color": "red",
+        "bbox": [
+          0.515,
+          0.404,
+          0.817,
+          0.535
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.641,
+                0.53
+              ],
+              [
+                0.809,
+                0.484
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Roof edge above right yellow triangle."
+          }
+        ],
+        "occlusion": "Mostly unobstructed.",
+        "evidence": "Right red roof panel adjoining t15.",
+        "uncertainty": "Transparent interior outlines belong to underlying structure or reflections.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Four-sided panel matching t15.",
+          "perspectiveUncertainty": "Horizontal oblique view.",
+          "exactProfileUncertainty": "Square profile supported without physical dimensions."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Front-right roof square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.515,
+              0.404,
+              0.817,
+              0.535
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.641,
+                    0.53
+                  ],
+                  [
+                    0.809,
+                    0.484
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Front roof edge."
+              }
+            ],
+            "occlusion": "Minor adjoining rims.",
+            "evidence": "Separate right red roof.",
+            "uncertainty": "No material count ambiguity."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.525,
+              0.411,
+              0.833,
+              0.54
+            ],
+            "features": [],
+            "occlusion": "Nearly clear.",
+            "evidence": "Right red roof above the right opening.",
+            "uncertainty": "Identity inferred by matching neighbors."
+          }
+        ]
+      },
+      {
+        "id": "t17",
+        "color": "blue",
+        "bbox": [
+          0.326,
+          0.499,
+          0.438,
+          0.729
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.426,
+                0.599
+              ],
+              [
+                0.433,
+                0.72
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Upright edge at the front-left opening."
+          }
+        ],
+        "occlusion": "Top edge covered by red roof.",
+        "evidence": "Large blue outer-left upright side, visible in final and third step.",
+        "uncertainty": "Transparent face includes background colors but is one panel.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Four-sided outer frame supported by third-step view.",
+          "perspectiveUncertainty": "Side face strongly foreshortened.",
+          "exactProfileUncertainty": "Square candidate strongly supported."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Blue outer side square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.326,
+              0.499,
+              0.438,
+              0.729
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.426,
+                    0.599
+                  ],
+                  [
+                    0.433,
+                    0.72
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Front upright rim."
+              }
+            ],
+            "occlusion": "Roof hides upper rim.",
+            "evidence": "Blue left side frame.",
+            "uncertainty": "Rear upper corner partly hidden."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.326,
+              0.501,
+              0.443,
+              0.725
+            ],
+            "features": [],
+            "occlusion": "Red roof covers top edge.",
+            "evidence": "Same blue outer-left side.",
+            "uncertainty": "Matching based on outline and adjacent roof/floor."
+          }
+        ]
+      },
+      {
+        "id": "t18",
+        "color": "blue",
+        "bbox": [
+          0.767,
+          0.481,
+          0.818,
+          0.615
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.811,
+                0.49
+              ],
+              [
+                0.776,
+                0.605
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Exposed blue upright rim at the far right."
+          }
+        ],
+        "occlusion": "Most of face hidden by roof and right yellow triangle.",
+        "evidence": "Distinct blue outside rim continues from the right roof corner to the right floor corner.",
+        "uncertainty": "Only a narrow portion is visible; a full square side is inferred rather than directly outlined.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [
+            "rectangle",
+            "unknown"
+          ],
+          "evidence": "Outer upright frame beneath the right roof, comparable to the opposite side.",
+          "perspectiveUncertainty": "Near edge-on and heavily occluded.",
+          "exactProfileUncertainty": "Square is a candidate, not a confirmed complete perimeter."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Plausible outer-right side square from visible blue rim and module context."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.767,
+              0.481,
+              0.818,
+              0.615
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.811,
+                    0.49
+                  ],
+                  [
+                    0.776,
+                    0.605
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Separate blue outer upright rim."
+              }
+            ],
+            "occlusion": "Yellow triangle covers most of the face.",
+            "evidence": "Blue side member outside the yellow frame.",
+            "uncertainty": "Complete extent and intrinsic shape partly inferred."
+          }
+        ]
+      },
+      {
+        "id": "t19",
+        "color": "blue",
+        "bbox": [
+          0.424,
+          0.594,
+          0.625,
+          0.73
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.435,
+                0.722
+              ],
+              [
+                0.617,
+                0.663
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Left front floor rim."
+          }
+        ],
+        "occlusion": "Partly covered by left yellow triangle and center divider.",
+        "evidence": "Blue floor in the left front opening, clearer before the yellow triangle is attached.",
+        "uncertainty": "Rear boundary hidden; bounding box describes visible floor region.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Floor frame beneath the left roof and side.",
+          "perspectiveUncertainty": "Horizontal face partly hidden.",
+          "exactProfileUncertainty": "Square candidate supported by front-module panel arrangement."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Left blue floor square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.424,
+              0.594,
+              0.625,
+              0.73
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.435,
+                    0.722
+                  ],
+                  [
+                    0.617,
+                    0.663
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Exposed front floor edge."
+              }
+            ],
+            "occlusion": "Yellow triangle and divider overlap.",
+            "evidence": "Left blue floor surface and rim.",
+            "uncertainty": "Hidden rear extent not measured."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.429,
+              0.579,
+              0.633,
+              0.727
+            ],
+            "features": [],
+            "occlusion": "Center divider covers inner rear region.",
+            "evidence": "Open left bay exposes blue floor.",
+            "uncertainty": "Partial perimeter only."
+          }
+        ]
+      },
+      {
+        "id": "t20",
+        "color": "blue",
+        "bbox": [
+          0.616,
+          0.532,
+          0.79,
+          0.666
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.621,
+                0.663
+              ],
+              [
+                0.775,
+                0.61
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Right front floor rim."
+          }
+        ],
+        "occlusion": "Partly hidden by right yellow triangle.",
+        "evidence": "Separate blue floor region to the right of the red divider.",
+        "uncertainty": "Rear extent is hidden by roof and other faces.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [],
+          "evidence": "Independent floor panel bounded by central divider and outer side.",
+          "perspectiveUncertainty": "Foreshortened, partly occluded face.",
+          "exactProfileUncertainty": "Square candidate, no measurement."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Right blue floor square."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.616,
+              0.532,
+              0.79,
+              0.666
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.621,
+                    0.663
+                  ],
+                  [
+                    0.775,
+                    0.61
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Right floor front rim."
+              }
+            ],
+            "occlusion": "Yellow panel covers upper/right region.",
+            "evidence": "Right blue floor and lower frame.",
+            "uncertainty": "Only exposed region localized."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.62,
+              0.548,
+              0.786,
+              0.671
+            ],
+            "features": [],
+            "occlusion": "Hand and triangle partly overlap right edge.",
+            "evidence": "Right floor adjacent to central red divider.",
+            "uncertainty": "Partial perimeter."
+          }
+        ]
+      },
+      {
+        "id": "t21",
+        "color": "red/pink",
+        "bbox": [
+          0.566,
+          0.53,
+          0.645,
+          0.665
+        ],
+        "features": [
+          {
+            "id": "frontEdge",
+            "points": [
+              [
+                0.637,
+                0.545
+              ],
+              [
+                0.619,
+                0.656
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Upright front edge of the center divider."
+          }
+        ],
+        "occlusion": "Face largely hidden by roof and yellow triangles.",
+        "evidence": "Red/pink upright middle divider separates the two front openings; third step exposes more of its receding lower frame.",
+        "uncertainty": "Its full upper/back outline is hidden; it is not an additional red roof or a reflection.",
+        "shapeAssessment": {
+          "family": "square",
+          "alternativeFamilies": [
+            "rectangle"
+          ],
+          "evidence": "Upright front rim and receding lower rim define a separate divider plane.",
+          "perspectiveUncertainty": "Near edge-on and partly covered.",
+          "exactProfileUncertainty": "Square likely, but complete perimeter unavailable."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "square",
+            "profileVersion": 1,
+            "reason": "Candidate square divider between the two front bays."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.566,
+              0.53,
+              0.645,
+              0.665
+            ],
+            "features": [
+              {
+                "id": "frontEdge",
+                "points": [
+                  [
+                    0.637,
+                    0.545
+                  ],
+                  [
+                    0.619,
+                    0.656
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Central pink upright."
+              }
+            ],
+            "occlusion": "Heavy roof/triangle overlap.",
+            "evidence": "Central pink frame and receding edge.",
+            "uncertainty": "Complete face not visible."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.527,
+              0.537,
+              0.656,
+              0.663
+            ],
+            "features": [],
+            "occlusion": "Top behind red roof.",
+            "evidence": "Pink divider front upright and diagonal projected lower edge.",
+            "uncertainty": "Part of the face may be seen through overlapping transparent panels."
+          }
+        ]
+      },
+      {
+        "id": "t22",
+        "color": "yellow",
+        "bbox": [
+          0.441,
+          0.541,
+          0.641,
+          0.677
+        ],
+        "features": [
+          {
+            "id": "topEdge",
+            "points": [
+              [
+                0.451,
+                0.605
+              ],
+              [
+                0.634,
+                0.548
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Attachment-side edge beneath left red roof."
+          },
+          {
+            "id": "tip",
+            "points": [
+              [
+                0.535,
+                0.671
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Downward triangle vertex."
+          }
+        ],
+        "occlusion": "Mostly exposed.",
+        "evidence": "Separate downward yellow triangular panel across the left front opening in the final image.",
+        "uncertainty": "Not present in the exposed left opening of the third step; no earlier yellow tile is assigned to this instance.",
+        "shapeAssessment": {
+          "family": "triangle",
+          "alternativeFamilies": [],
+          "evidence": "Three distinct outer edges and a downward vertex.",
+          "perspectiveUncertainty": "Oblique projection changes apparent side lengths.",
+          "exactProfileUncertainty": "Equilateral profile is plausible; exact intrinsic angles and size are unverified."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "equilateral-triangle",
+            "profileVersion": 1,
+            "reason": "Compact approximately equilateral triangular flap; perspective prevents certainty."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.441,
+              0.541,
+              0.641,
+              0.677
+            ],
+            "features": [
+              {
+                "id": "topEdge",
+                "points": [
+                  [
+                    0.451,
+                    0.605
+                  ],
+                  [
+                    0.634,
+                    0.548
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Upper attachment-side edge."
+              },
+              {
+                "id": "tip",
+                "points": [
+                  [
+                    0.535,
+                    0.671
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Lower vertex."
+              }
+            ],
+            "occlusion": "Minor edge overlap with roof.",
+            "evidence": "Complete left yellow triangle.",
+            "uncertainty": "Exact profile not established by projected proportions alone."
+          }
+        ]
+      },
+      {
+        "id": "t23",
+        "color": "yellow",
+        "bbox": [
+          0.64,
+          0.487,
+          0.815,
+          0.633
+        ],
+        "features": [
+          {
+            "id": "topEdge",
+            "points": [
+              [
+                0.652,
+                0.544
+              ],
+              [
+                0.805,
+                0.495
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Upper edge under right roof."
+          },
+          {
+            "id": "tip",
+            "points": [
+              [
+                0.72,
+                0.625
+              ]
+            ],
+            "visibility": "visible",
+            "note": "Downward vertex."
+          }
+        ],
+        "occlusion": "Mostly exposed in final.",
+        "evidence": "Right yellow triangular flap; the third step shows a matching triangle held at this same opening before final positioning.",
+        "uncertainty": "Cross-frame identity is likely from shape, scale and opening location, but the hand obscures part of the earlier piece.",
+        "shapeAssessment": {
+          "family": "triangle",
+          "alternativeFamilies": [],
+          "evidence": "Three-sided yellow frame in final and third step.",
+          "perspectiveUncertainty": "Panel pose differs between step and final.",
+          "exactProfileUncertainty": "Equilateral candidate; no exact size or angles measured."
+        },
+        "profileCandidates": [
+          {
+            "profileId": "equilateral-triangle",
+            "profileVersion": 1,
+            "reason": "Compact triangular panel similar to t22."
+          }
+        ],
+        "imageEvidence": [
+          {
+            "imageId": "9323d94098bd82ddda439413ba85cdfba36322b804f6b11c1332ed814837b79d",
+            "bbox": [
+              0.64,
+              0.487,
+              0.815,
+              0.633
+            ],
+            "features": [
+              {
+                "id": "topEdge",
+                "points": [
+                  [
+                    0.652,
+                    0.544
+                  ],
+                  [
+                    0.805,
+                    0.495
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Upper attachment-side edge."
+              },
+              {
+                "id": "tip",
+                "points": [
+                  [
+                    0.72,
+                    0.625
+                  ]
+                ],
+                "visibility": "visible",
+                "note": "Lower vertex."
+              }
+            ],
+            "occlusion": "Minor roof-edge overlap.",
+            "evidence": "Right yellow triangle spans part of the front opening.",
+            "uncertainty": "Fold not measured."
+          },
+          {
+            "imageId": "c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae",
+            "bbox": [
+              0.664,
+              0.489,
+              0.847,
+              0.64
+            ],
+            "features": [],
+            "occlusion": "Hand covers lower/right tip region.",
+            "evidence": "Yellow triangular panel being held at the right opening.",
+            "uncertainty": "This hand-held pose is not its final fold."
+          }
+        ]
+      }
+    ],
+    "spatialInterpretation": {
+      "camera": {
+        "viewpoint": "oblique",
+        "evidence": "The reference image shows top faces, left outer sides and front openings, with the camera elevated above the table.",
+        "uncertainty": "No calibrated camera or metric depth is available."
+      },
+      "faces": [
+        {
+          "pieceId": "t01",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t01"
+          ],
+          "reasoning": "Rear left roof lies approximately parallel to the tabletop.",
+          "uncertainty": "Small tilt cannot be measured."
+        },
+        {
+          "pieceId": "t02",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t02"
+          ],
+          "reasoning": "Rear right roof appears coplanar with t01.",
+          "uncertainty": "Approximate orientation."
+        },
+        {
+          "pieceId": "t03",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "t03:outerEdge"
+          ],
+          "reasoning": "Exposed outer rear side descends from roof to table.",
+          "uncertainty": "Some perimeter occluded."
+        },
+        {
+          "pieceId": "t04",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t04"
+          ],
+          "reasoning": "Upright in a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc, but not directly located in final.",
+          "uncertainty": "Likely vertical if retained unchanged; final membership conditional."
+        },
+        {
+          "pieceId": "t05",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t05"
+          ],
+          "reasoning": "Earlier floor position is not independently verified in final.",
+          "uncertainty": "Likely horizontal if retained."
+        },
+        {
+          "pieceId": "t06",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t06"
+          ],
+          "reasoning": "Earlier floor is hidden by final ramp.",
+          "uncertainty": "Likely horizontal if retained."
+        },
+        {
+          "pieceId": "t07",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t07"
+          ],
+          "reasoning": "Earlier upright rear wall is not independently visible in final.",
+          "uncertainty": "Final retention and orientation inferred only."
+        },
+        {
+          "pieceId": "t08",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t08"
+          ],
+          "reasoning": "Earlier upright rear face is occluded in final.",
+          "uncertainty": "Likely vertical if unchanged."
+        },
+        {
+          "pieceId": "t09",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "t09"
+          ],
+          "reasoning": "Orange ramp-side support appears upright beside the blue side.",
+          "uncertainty": "Near edge-on view."
+        },
+        {
+          "pieceId": "t10",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t10"
+          ],
+          "reasoning": "Earlier right support is not independently resolved in final.",
+          "uncertainty": "Likely vertical if retained."
+        },
+        {
+          "pieceId": "t11",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "t11"
+          ],
+          "reasoning": "Green face slopes from rear roof toward the lower central area.",
+          "uncertainty": "Slope not measured."
+        },
+        {
+          "pieceId": "t12",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "t12"
+          ],
+          "reasoning": "Right upper ramp face shares the apparent slope of t11.",
+          "uncertainty": "Small inter-panel fold unresolved."
+        },
+        {
+          "pieceId": "t13",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t13:leftEdge"
+          ],
+          "reasoning": "Visible strip descends behind front module, but too little face remains to establish final inclination.",
+          "uncertainty": "Could continue the ramp or change slope at its upper joint."
+        },
+        {
+          "pieceId": "t14",
+          "orientation": "unknown",
+          "evidenceRefs": [
+            "t14:upperEdge"
+          ],
+          "reasoning": "Only an upper green band remains exposed.",
+          "uncertainty": "Final lower-panel pose unresolved."
+        },
+        {
+          "pieceId": "t15",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t15"
+          ],
+          "reasoning": "Front left roof appears parallel to tabletop.",
+          "uncertainty": "Approximate."
+        },
+        {
+          "pieceId": "t16",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t16"
+          ],
+          "reasoning": "Front right roof appears coplanar with t15.",
+          "uncertainty": "Approximate."
+        },
+        {
+          "pieceId": "t17",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "t17:frontEdge"
+          ],
+          "reasoning": "Blue side rises between floor and roof.",
+          "uncertainty": "Possible small lean."
+        },
+        {
+          "pieceId": "t18",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "t18:frontEdge"
+          ],
+          "reasoning": "Blue outer rim links right floor and roof levels.",
+          "uncertainty": "Most of face hidden."
+        },
+        {
+          "pieceId": "t19",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t19:frontEdge"
+          ],
+          "reasoning": "Left front floor lies close to tabletop.",
+          "uncertainty": "Rear region hidden."
+        },
+        {
+          "pieceId": "t20",
+          "orientation": "horizontal",
+          "evidenceRefs": [
+            "t20:frontEdge"
+          ],
+          "reasoning": "Right front floor is near table level.",
+          "uncertainty": "Rear region hidden."
+        },
+        {
+          "pieceId": "t21",
+          "orientation": "vertical",
+          "evidenceRefs": [
+            "t21:frontEdge"
+          ],
+          "reasoning": "Central divider rises between the two floor/roof pairs.",
+          "uncertainty": "Near edge-on view limits plane estimate."
+        },
+        {
+          "pieceId": "t22",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "t22:topEdge",
+            "t22:tip"
+          ],
+          "reasoning": "Triangle hangs downward from front roof edge, apparently tilted across the opening.",
+          "uncertainty": "A nearly vertical pose remains possible."
+        },
+        {
+          "pieceId": "t23",
+          "orientation": "inclined",
+          "evidenceRefs": [
+            "t23:topEdge",
+            "t23:tip"
+          ],
+          "reasoning": "Downward triangular flap beneath right roof.",
+          "uncertainty": "Exact inclination, including near vertical, unresolved."
+        }
+      ],
+      "connections": [
+        {
+          "pieceA": "t01",
+          "pieceB": "t02",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            180
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t01",
+            "t02"
+          ],
+          "reasoning": "Purple roofs meet along a continuous central seam and appear approximately coplanar.",
+          "uncertainty": "180 denotes flat continuation; exact fold unmeasured."
+        },
+        {
+          "pieceA": "t01",
+          "pieceB": "t03",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t01",
+            "t03"
+          ],
+          "reasoning": "Rear left roof meets the blue outer side.",
+          "uncertainty": "Approximately perpendicular; joint partly covered."
+        },
+        {
+          "pieceA": "t01",
+          "pieceB": "t11",
+          "featureA": "frontEdge",
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t01:frontEdge",
+            "t11"
+          ],
+          "reasoning": "Green upper-left ramp starts along the purple roof's front edge.",
+          "uncertainty": "Fold angle cannot be reliably recovered."
+        },
+        {
+          "pieceA": "t02",
+          "pieceB": "t12",
+          "featureA": "frontEdge",
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t02:frontEdge",
+            "t12"
+          ],
+          "reasoning": "Right upper ramp adjoins right rear roof.",
+          "uncertainty": "Exact edge contact partly overlapped by rims."
+        },
+        {
+          "pieceA": "t11",
+          "pieceB": "t12",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            180
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t11",
+            "t12"
+          ],
+          "reasoning": "Central ramp seam separates two apparently coplanar upper panels.",
+          "uncertainty": "A small fold is possible."
+        },
+        {
+          "pieceA": "t11",
+          "pieceB": "t13",
+          "featureA": "lowerEdge",
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t11:lowerEdge",
+            "t13:leftEdge"
+          ],
+          "reasoning": "Final green strip continues below the upper-left ramp at its lower framed edge.",
+          "uncertainty": "Final fold is hidden; earlier ramp pose is not copied."
+        },
+        {
+          "pieceA": "t12",
+          "pieceB": "t14",
+          "featureA": "lowerEdge",
+          "featureB": "upperEdge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t12:lowerEdge",
+            "t14:upperEdge"
+          ],
+          "reasoning": "Exposed green band lies immediately below the right upper panel seam.",
+          "uncertainty": "Heavy occlusion reduces confidence in exact contact and lower-panel pose."
+        },
+        {
+          "pieceA": "t09",
+          "pieceB": "t11",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t09",
+            "t11"
+          ],
+          "reasoning": "Orange support is alongside the left ramp boundary.",
+          "uncertainty": "Contact versus close overlap is unresolved."
+        },
+        {
+          "pieceA": "t15",
+          "pieceB": "t16",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            180
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t15",
+            "t16"
+          ],
+          "reasoning": "Red roofs meet along the central seam.",
+          "uncertainty": "Approximately flat continuation."
+        },
+        {
+          "pieceA": "t15",
+          "pieceB": "t17",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t15",
+            "t17"
+          ],
+          "reasoning": "Left blue side supports the outer edge of left red roof.",
+          "uncertainty": "Joint partly hidden by thick rims."
+        },
+        {
+          "pieceA": "t17",
+          "pieceB": "t19",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t17",
+            "t19"
+          ],
+          "reasoning": "Blue outer side meets the left floor along the lower side rim.",
+          "uncertainty": "Approximate right angle."
+        },
+        {
+          "pieceA": "t16",
+          "pieceB": "t18",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t16",
+            "t18"
+          ],
+          "reasoning": "Visible blue upright reaches the right roof corner.",
+          "uncertainty": "Most of connection hidden by yellow triangle."
+        },
+        {
+          "pieceA": "t18",
+          "pieceB": "t20",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t18:frontEdge",
+            "t20:frontEdge"
+          ],
+          "reasoning": "Blue right upright terminates near the right floor rim.",
+          "uncertainty": "Full shared edge not visible."
+        },
+        {
+          "pieceA": "t21",
+          "pieceB": "t19",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t21",
+            "t19"
+          ],
+          "reasoning": "Central divider borders left floor.",
+          "uncertainty": "Occlusion prevents confirming a complete magnetic edge connection."
+        },
+        {
+          "pieceA": "t21",
+          "pieceB": "t20",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "uncertain",
+          "foldAngleCandidatesDeg": [
+            90
+          ],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t21",
+            "t20"
+          ],
+          "reasoning": "Central divider also borders the right floor.",
+          "uncertainty": "Contact geometry partly hidden."
+        },
+        {
+          "pieceA": "t15",
+          "pieceB": "t22",
+          "featureA": "frontEdge",
+          "featureB": "topEdge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t15:frontEdge",
+            "t22:topEdge"
+          ],
+          "reasoning": "Left yellow triangle is aligned beneath the left roof front edge.",
+          "uncertainty": "Fold cannot be measured; inclined or nearly vertical alternatives remain."
+        },
+        {
+          "pieceA": "t16",
+          "pieceB": "t23",
+          "featureA": "frontEdge",
+          "featureB": "topEdge",
+          "relationship": "shared_edge",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t16:frontEdge",
+            "t23:topEdge"
+          ],
+          "reasoning": "Right yellow triangle hangs from the right roof edge in final.",
+          "uncertainty": "Hand-held angle in c661173e076f29bdde6dd11b80992ebd756703617b0480afd2498fce1cd4f4ae is not used as final fold evidence."
+        },
+        {
+          "pieceA": "t15",
+          "pieceB": "t13",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "occlusion",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t15",
+            "t13"
+          ],
+          "reasoning": "Front roof/module hides much of the lower-left green panel.",
+          "uncertainty": "Overlap does not establish attachment."
+        },
+        {
+          "pieceA": "t16",
+          "pieceB": "t14",
+          "featureA": null,
+          "featureB": null,
+          "relationship": "occlusion",
+          "foldAngleCandidatesDeg": [],
+          "angleRange": null,
+          "evidenceRefs": [
+            "t16",
+            "t14"
+          ],
+          "reasoning": "Front right roof hides lower-right ramp.",
+          "uncertainty": "No final ramp-to-front-module connection is proven."
+        }
+      ],
+      "overallShapeHypotheses": [
+        {
+          "label": "Two paired-panel platforms with an intervening green ramp",
+          "visiblePieceIds": [
+            "t01",
+            "t02",
+            "t03",
+            "t09",
+            "t11",
+            "t12",
+            "t13",
+            "t14",
+            "t15",
+            "t16",
+            "t17",
+            "t18",
+            "t19",
+            "t20",
+            "t21",
+            "t22",
+            "t23"
+          ],
+          "evidenceRefs": [
+            "t01",
+            "t02",
+            "t11",
+            "t12",
+            "t13",
+            "t14",
+            "t15",
+            "t16",
+            "t17",
+            "t21",
+            "t22",
+            "t23"
+          ],
+          "reasoning": "Final shows a purple-roof rear assembly, green descending panels, and a red-roof two-bay front assembly with downward yellow flaps. This is consistent with a toy-car ramp context, not evidence of wheels or a vehicle body.",
+          "uncertainty": "The lower ramp and rear interior are obscured; exact final contacts and enclosure completeness are unresolved."
+        }
+      ],
+      "hiddenStructureHypotheses": [
+        {
+          "description": "The first-step rear blue floors, right side, purple rear faces and right orange support may remain behind the final ramp.",
+          "reasoning": "t04–t08 and t10 are directly observed in a46687756c575adb7d1401d31d0e8c667c794f80bc483644c4601b25cb03fbcc. The same paired purple roof, left blue side and left orange support persist in final, supporting assembly continuity.",
+          "uncertainty": "These six entries have conditional final membership. Their retention is not equivalent to direct final visibility; removals or replacements remain possible."
+        },
+        {
+          "description": "Additional rear-facing panels or a central divider could be hidden within either platform.",
+          "reasoning": "Roofs and opaque-looking transparent overlaps conceal some internal boundaries.",
+          "uncertainty": "No additional physical tiles are added for these possibilities; symmetry or a familiar box construction is insufficient evidence."
+        }
+      ],
+      "alternatives": [
+        {
+          "label": "Rear assembly modified between steps",
+          "description": "Some of t04–t08 or t10 may have been removed or replaced while the visible roof and outer-left side were retained. The canonical inventory therefore carries these observed physical instances conditionally, rather than asserting 23 confirmed final tiles.",
+          "evidenceRefs": [
+            "t04",
+            "t05",
+            "t06",
+            "t07",
+            "t08",
+            "t10"
+          ],
+          "uncertainty": "The supplied frames do not resolve this."
+        },
+        {
+          "label": "Lower green panels fold differently behind the front assembly",
+          "description": "The four-panel ramp is clearly exposed in d3677ba6109be40b4613ac19f113a588951f305a4e2d93eef078884493419b8a, but the final lower panels may continue the upper slope or hinge to a different inclination.",
+          "evidenceRefs": [
+            "t11",
+            "t12",
+            "t13",
+            "t14"
+          ],
+          "uncertainty": "Final occlusion prevents choosing a precise lower-ramp pose."
+        },
+        {
+          "label": "Yellow flaps nearly vertical",
+          "description": "The yellow triangles may lie close to vertical rather than being substantially tilted; perspective and transparent overlap allow both readings.",
+          "evidenceRefs": [
+            "t22",
+            "t23"
+          ],
+          "uncertainty": "No reliable numerical fold-angle estimate."
+        }
+      ],
+      "unknowns": [
+        "Final membership is conditional for six step-only observations: t04, t05, t06, t07, t08 and t10.",
+        "Seventeen instances have distinguishable final-image evidence; six additional previously observed instances are retained conditionally. This is not a verified exact total for all hidden tiles.",
+        "The front outer-right blue panel t18 is identifiable mainly by its exposed upright frame; full shape and extent are uncertain.",
+        "The final ramp-to-front-platform attachment, if any, is not established.",
+        "Complete enclosure, hidden middle panels and unseen bottoms are not assumed.",
+        "Numerical fold angles other than approximate flat/right-angle candidates are not recoverable from these views."
+      ]
+    },
+    "unknowns": [
+      "All coordinates are normalized top-left image coordinates; bbox values are [xmin, ymin, xmax, ymax].",
+      "Reference-image boxes are null for pieces without independently distinguishable final-image evidence. Their actual step evidence remains in imageEvidence.",
+      "The supplied Final image determines the target state. Step images support identity and occlusion reasoning, not additional stage inventories.",
+      "Cross-frame identities rely on outline, relative scale, neighbors and construction context; identical color alone is not used as proof.",
+      "The catalog provides candidate intrinsic profiles, not measured physical dimensions. Triangle subtypes and partially hidden quadrilateral profiles remain uncertain.",
+      "No metric reconstruction, complete geometry validation or planar reconstruction safety is asserted."
+    ]
+  }
+}

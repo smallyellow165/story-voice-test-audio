@@ -45,3 +45,7 @@
 .visible3d-execution-state p{margin:5px 0 0}
 .visible3d-execution-state[data-tone=error],.visible3d-reconstruction-inspector [role=alert],.visible3d-failure-diagnostics{color:#a12626;border-color:#bd3838;background:#fff0ed}
 .visible3d-reconstruction-inspector>[role=alert]{padding:8px;border-left:4px solid #bd3838}
+
+.visible3d-analysis-heading{position:sticky;top:44px;z-index:2;justify-content:flex-end;background:#fffdf7;padding:8px 0}
+/* The base inspector's overflow:auto must not capture this sticky entrance. */
+.visible3d-inspector.visible3d-analysis-inspector{overflow:visible}
