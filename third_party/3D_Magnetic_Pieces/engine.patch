@@ -26,98 +26,126 @@
 +  }
 +  return points
 +}
+--- /dev/null
++++ b/src/engine/port-compatibility.ts
+@@ -0,0 +1,71 @@
++// Local extension of the MIT 3D_Magnetic_Pieces engine. See third_party/3D_Magnetic_Pieces/PATCHES.md.
++import {Vector3} from 'three';
++import {getPort} from './shapes.ts';
++import type {Connection,PieceTransform,ShapeDef} from './types.ts';
++
++export type PortConflict = {
++  pieceId:string;portId:string;edgeId?:string;connectionIndices:number[];
++  relatedPieceIds:[string,string];reason:'duplicate-connection'|'same-direction';
++};
++/** A pair of actual ports, independent of declaration direction, angle or flip.
++ * Declaring that same joint twice is not an additional spatial attachment. */
++export function portPairKey(c:Pick<Connection,'pieceA'|'pieceB'|'portA'|'portB'>):string {
++  return JSON.stringify([[c.pieceA,c.portA],[c.pieceB,c.portB]].sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
++}
++
++/** Only tests shared-port occupancy. This never replaces endpoint, length,
++ * signed-angle, loop or solid collision validation. No thickness compensation.
++ * CCW profiles occupy the left half-plane of each directed boundary edge.
++ * Their world inward rays distinguish opposite coplanar panels from overlays.
++ * Missing/misaligned frames remain unverified, never proof of compatibility. */
++export function inspectPortCompatibility(
++  connections:readonly Connection[],getShape:(id:string)=>ShapeDef|undefined,
++  transforms:Readonly<Record<string,PieceTransform>>,
++):{status:'compatible'|'conflict'|'unverified';conflicts:PortConflict[];unverifiedPorts:string[]} {
++  const groups=new Map<string,{pieceId:string;portId:string;indices:number[]}>();
++  connections.forEach((c,index)=>{
++    for(const [pieceId,portId]of [[c.pieceA,c.portA],[c.pieceB,c.portB]]){
++      const key=JSON.stringify([pieceId,portId]),group=groups.get(key)??{pieceId,portId,indices:[]};
++      group.indices.push(index);groups.set(key,group);
++    }
++  });
++  function frame(id:string,portId:string){
++    const shape=getShape(id),port=shape&&getPort(shape,portId),tf=transforms[id];
++    if(!port||!tf)return null;
++    const p0=new Vector3(port.p0.x,port.p0.y,0).applyQuaternion(tf.quaternion).add(tf.position);
++    const p1=new Vector3(port.p1.x,port.p1.y,0).applyQuaternion(tf.quaternion).add(tf.position);
++    const local=new Vector3(port.p1.x-port.p0.x,port.p1.y-port.p0.y,0);
++    const inward=new Vector3(-local.y,local.x,0).normalize().applyQuaternion(tf.quaternion);
++    if(![...p0.toArray(),...p1.toArray(),...inward.toArray()].every(Number.isFinite)||local.lengthSq()<1e-20)return null;
++    return {p0,p1,inward,edgeId:port.edgeId};
++  }
++  const conflicts:PortConflict[]=[],unverifiedPorts:string[]=[];
++  for(const {pieceId,portId,indices}of groups.values()){
++    if(indices.length<2)continue;
++    const own=frame(pieceId,portId),label=`${pieceId}:${portId}`;
++    const occupants:{id:string;index:number;ray:Vector3}[]=own?[{id:pieceId,index:-1,ray:own.inward}]:[];
++    let pending=!own;
++    const report=(reason:PortConflict['reason'],ids:[string,string],is:number[])=>conflicts.push({pieceId,portId,edgeId:own?.edgeId,reason,relatedPieceIds:ids,connectionIndices:[...new Set(is)].filter(i=>i>=0)});
++    for(let i=0;i<indices.length;i++){
++      const index=indices[i],c=connections[index];
++      for(const previous of indices.slice(0,i))if(portPairKey(c)===portPairKey(connections[previous]))report('duplicate-connection',[c.pieceA,c.pieceB],[previous,index]);
++      const isA=c.pieceA===pieceId,otherId=isA?c.pieceB:c.pieceA,other=frame(otherId,isA?c.portB:c.portA);
++      if(!own||!other){pending=true;continue;}
++      const a=c.flip?other.p1:other.p0,b=c.flip?other.p0:other.p1;
++      // Use the existing validator's endpoint/direction tolerances solely to
++      // establish the shared axis. Residual validation still checks the joint.
++      const axis=own.p1.clone().sub(own.p0).normalize(),otherAxis=b.clone().sub(a).normalize();
++      if((own.p0.distanceTo(a)+own.p1.distanceTo(b))/2>.01||axis.dot(otherAxis)<.999){pending=true;continue;}
++      const ray=other.inward.clone().addScaledVector(axis,-other.inward.dot(axis)).normalize();
++      for(const previous of occupants){
++        if(previous.id===otherId)continue; // duplicate declarations handled above
++        if(previous.ray.dot(ray)>0&&new Vector3().crossVectors(previous.ray,ray).length()<1e-6){
++          report('same-direction',[previous.id,otherId],[previous.index,index]);
++        }
++      }
++      occupants.push({id:otherId,index,ray});
++    }
++    if(pending)unverifiedPorts.push(label);
++  }
++  return {status:conflicts.length?'conflict':unverifiedPorts.length?'unverified':'compatible',conflicts,unverifiedPorts};
++}
 --- a/src/engine/shapes.ts
 +++ b/src/engine/shapes.ts
-@@ -1,4 +1,6 @@
+@@ -1 +1,3 @@
 -import { ShapeDef, EdgeDef, ConnectorPort, Vec2, Polarity } from './types';
 +// Vendored from 3D_Magnetic_Pieces (MIT, Copyright 2026 Saitamile).
 +// Source and local changes: third_party/3D_Magnetic_Pieces/.
 +import type { ShapeDef, EdgeDef, ConnectorPort, Vec2, Polarity } from './types.ts';
- 
- const SQ3 = Math.sqrt(3);
- 
-@@ -31,7 +33,9 @@
-   return Math.abs(area) / 2;
- }
- 
+@@ -34 +36,3 @@
 -interface ShapeOptions {
 +export interface ShapeOptions {
 +  /** Explicit, disjoint sub-edge intervals. Unspecified edges retain the original default. */
 +  portRanges?: Record<string, readonly (readonly [number, number])[]>;
-   /** 每条边划分为几个端口 */
-   portsPerEdge?: Record<string, number>;
-   /** 默认每条边几个端口 */
-@@ -40,7 +44,7 @@
-   polarities?: Record<string, Polarity>;
- }
- 
+@@ -43 +47 @@
 -function buildPorts(
 +export function buildPorts(
-   edges: EdgeDef[],
-   options: ShapeOptions = {}
- ): ConnectorPort[] {
-@@ -48,9 +52,9 @@
-   
-   for (const edge of edges) {
-     const count = options.portsPerEdge?.[edge.edgeId] ?? options.defaultPortsPerEdge ?? 1;
+@@ -51,3 +55,3 @@
 -    for (let i = 0; i < count; i++) {
 -      const t0 = i / count;
 -      const t1 = (i + 1) / count;
 +    const ranges = options.portRanges?.[edge.edgeId] ?? Array.from({ length: count }, (_, i) => [i / count, (i + 1) / count] as const);
 +    for (let i = 0; i < ranges.length; i++) {
 +      const [t0, t1] = ranges[i];
-       const p0 = lerp(edge.v0, edge.v1, t0);
-       const p1 = lerp(edge.v0, edge.v1, t1);
-       const dir = normalize({ x: p1.x - p0.x, y: p1.y - p0.y });
-@@ -75,7 +79,7 @@
-   return ports;
- }
- 
+@@ -78 +82 @@
 -function makeShape(
 +export function makeShape(
-   id: string,
-   vertices: Vec2[],
-   thickness: number,
-@@ -152,7 +156,7 @@
-   let area = polygonArea(vertices);
-   for (const curved of options.curvedEdges || []) {
-     const angleDiff = curved.endAngle - curved.startAngle;
+@@ -155 +159 @@
 -    const sectorArea = 0.5 * curved.radius * curved.radius * Math.abs(angleDiff);
 +    const sectorArea = 0.5 * curved.radius * curved.radius * (Math.abs(angleDiff) - Math.sin(Math.abs(angleDiff)));
-     if (angleDiff > 0) {
-       area += sectorArea;
-     } else {
-@@ -332,7 +336,7 @@
-     defaultPortsPerEdge: 1,
-     curvedEdges: [
-       {
+@@ -335 +339 @@
 -        edgeId: 'e2',
 +        edgeId: 'e1',
-         center: { x: 0, y: 0 },
-         radius: 0.5,
-         startAngle: 0,
 --- a/src/engine/solver.ts
 +++ b/src/engine/solver.ts
-@@ -1,6 +1,9 @@
+@@ -0,0 +1,2 @@
 +// Vendored from 3D_Magnetic_Pieces (MIT, Copyright 2026 Saitamile).
 +// Source and local changes: third_party/3D_Magnetic_Pieces/.
- import { Vector3, Quaternion, Matrix4 } from 'three';
+@@ -2,2 +4,3 @@
 -import { Connection, PieceRef, PieceTransform, SolverResult, ShapeDef, LoopResidual } from './types';
 -import { getPort } from './shapes';
 +import type { Connection, PieceRef, PieceTransform, SolverResult, ShapeDef, LoopResidual } from './types.ts';
 +import { getPort } from './shapes.ts';
 +import { shapeOutline } from './outline.ts';
- 
- export interface SolverContext {
-   pieces: PieceRef[];
-@@ -42,9 +45,22 @@
- export function solveConnections(ctx: SolverContext): SolverResult {
-   const { pieces, connections, rootPieceId, getShapeForPiece, rootTransform, groundLock = true } = ctx;
- 
+@@ -45 +48 @@
 -  const transforms: Record<string, PieceTransform> = {};
 +  const transforms: Record<string, PieceTransform> = Object.create(null);
-   const visited = new Set<string>();
-   const spanningTreeConnectionIndices = new Set<number>();
+@@ -47,0 +51,13 @@
 +
 +  const pieceIds = new Set(pieces.map(p => p.id));
 +  if (!pieceIds.has(rootPieceId) || pieceIds.size !== pieces.length) {
@@ -131,55 +159,20 @@
 +      Math.abs(rootTransform.quaternion.lengthSq() - 1) > 1e-6)) {
 +    return { transforms, error: '根零件位姿无效', spanningTreeConnectionIndices, loopResiduals: [] };
 +  }
- 
-   const rootShape = getShapeForPiece(rootPieceId);
-   if (!rootShape) {
-@@ -64,7 +80,7 @@
-   }
-   visited.add(rootPieceId);
- 
+@@ -67 +83 @@
 -  const adj: Record<string, { conn: Connection; neighbor: string; connIndex: number }[]> = {};
 +  const adj: Record<string, { conn: Connection; neighbor: string; connIndex: number }[]> = Object.create(null);
-   connections.forEach((conn, idx) => {
-     if (!adj[conn.pieceA]) adj[conn.pieceA] = [];
-     if (!adj[conn.pieceB]) adj[conn.pieceB] = [];
-@@ -98,13 +114,14 @@
-         return { transforms, error: `Piece ${attachPieceId} 缺少形状定义`, spanningTreeConnectionIndices, loopResiduals: [] };
-       }
- 
+@@ -100,0 +117 @@
 +      // B→A negates the angle unless flip also reverses the raw hinge axis.
-       const nextTf = computeTransformFromConnection(
-         currentTf,
-         baseShape,
-         basePortId,
-         attachShape,
-         attachPortId,
+@@ -107 +124 @@
 -        conn.dihedralDeg,
 +        isA || flip ? conn.dihedralDeg : -conn.dihedralDeg,
-         flip
-       );
- 
-@@ -153,7 +170,7 @@
-     if (!shape || !tf) continue;
-     const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
-     const halfThick = shape.thickness / 2;
+@@ -156 +173 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       for (const z of [-halfThick, halfThick]) {
-         const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
-         if (world.y < minY) minY = world.y;
-@@ -172,6 +189,7 @@
-   dihedralDeg: number,
-   flip: boolean
- ): PieceTransform | null {
+@@ -174,0 +192 @@
 +  if (!Number.isFinite(dihedralDeg) || Math.abs(dihedralDeg) > 180) return null;
-   const basePort = getPort(baseShape, basePortId);
-   const attachPort = getPort(attachShape, attachPortId);
-   if (!basePort) return null;
-@@ -273,14 +291,13 @@
-     const normalA = new Vector3(0, 0, 1).applyQuaternion(tfA.quaternion).normalize();
-     const normalB = new Vector3(0, 0, 1).applyQuaternion(tfB.quaternion).normalize();
- 
+@@ -276,8 +294,7 @@
 -    const dihedralAngleRad = Math.acos(Math.max(-1, Math.min(1, normalA.dot(normalB))));
 -    const dihedralDegActual = (dihedralAngleRad * 180) / Math.PI;
 -    const dihedralError = Math.abs(dihedralDegActual - conn.dihedralDeg);
@@ -195,62 +188,34 @@
 +    ) * 180 / Math.PI;
 +    const delta = (signedDihedral - conn.dihedralDeg) * Math.PI / 180;
 +    const finalDihedralError = Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))) * 180 / Math.PI;
- 
-     residuals.push({
-       connectionIndex: idx,
 --- a/src/engine/types.ts
 +++ b/src/engine/types.ts
-@@ -1,4 +1,6 @@
+@@ -1 +1,3 @@
 -import { Vector3, Quaternion } from 'three';
 +// Vendored from 3D_Magnetic_Pieces (MIT, Copyright 2026 Saitamile).
 +// Source and local changes: third_party/3D_Magnetic_Pieces/.
 +import type { Vector3, Quaternion } from 'three';
- 
- export type BuildMode = 'flat' | 'standing' | 'solid';
- 
-@@ -82,7 +84,9 @@
-   portA: string;
-   pieceB: string;
-   portB: string;
+@@ -85 +87,3 @@
 -  /** 二面角（度）：0 = 共面，90 = 垂直，180 = 反向共面 */
 +  /** 二面角 [-180,180] 度，绕 A 原始端口方向按右手定则从 A 法向转到 B 法向。
 +   * 0 = 同法向共面，±90 = 垂直，±180 = 反法向共面；flip 不改变此符号约定。
 +   */
-   dihedralDeg: number;
-   /** 是否翻转 pieceB 的端口方向（p0<->p1） */
-   flip?: boolean;
-@@ -209,12 +213,15 @@
-   error?: string;
-   /** 生成树边集合（BFS 中使用的连接） */
-   spanningTreeConnectionIndices: Set<number>;
+@@ -212 +216 @@
 -  /** 所有非生成树连接的残差（闭环检查） */
 +  /** 所有连接的残差；校验器据调用模式选择检查树边/非树边。 */
-   loopResiduals: LoopResidual[];
- }
- 
- /** 校验器发现的单个问题 */
- export interface ValidationIssue {
+@@ -217,0 +222,3 @@
 +  /** Optional structured collision provenance; does not change validity. */
 +  relatedPieceIds?: [string, string];
 +  penetrationDepth?: number;
-   modelId: string;
-   pieceId?: string;
-   edgeId?: string;
 --- a/src/engine/validator.ts
 +++ b/src/engine/validator.ts
-@@ -1,5 +1,7 @@
+@@ -0,0 +1,2 @@
 +// Vendored from 3D_Magnetic_Pieces (MIT, Copyright 2026 Saitamile).
 +// Source and local changes: third_party/3D_Magnetic_Pieces/.
- import { Vector3, Matrix4 } from 'three';
+@@ -2 +4 @@
 -import {
 +import type {
-   PhysicalModel,
-   ShapeDef,
-   ValidationIssue,
-@@ -9,10 +11,12 @@
-   PieceTransform,
-   ConnectorPort,
-   Vec2,
+@@ -12,4 +14,7 @@
 -  ValidationIssueCode,
 -} from './types';
 -import { solveConnections, SolverContext, computeAllConnectionResiduals } from './solver';
@@ -261,31 +226,14 @@
 +import type { SolverContext } from './solver.ts';
 +import { getPort } from './shapes.ts';
 +import { shapeOutline } from './outline.ts';
- 
- const EPS = 1e-6;
- const POSITION_ERROR_TOLERANCE = 0.01;
-@@ -141,7 +145,7 @@
-   const bottomVerts: Vec3[] = [];
-   const topVerts: Vec3[] = [];
- 
++import { inspectPortCompatibility } from './port-compatibility.ts';
+@@ -144 +149 @@
 -  for (const v of shape.vertices) {
 +  for (const v of shapeOutline(shape)) {
-     const bottom = new Vector3(v.x, v.y, -halfThick).applyMatrix4(matrix);
-     const top = new Vector3(v.x, v.y, halfThick).applyMatrix4(matrix);
-     // P0-2: Vector3 结构兼容 Vec3 接口,无需转换
-@@ -150,7 +154,7 @@
-   }
- 
-   const vertices = bottomVerts.concat(topVerts);
+@@ -153 +158 @@
 -  const n = shape.vertices.length;
 +  const n = bottomVerts.length;
- 
-   const faces: { normal: Vec3; vertices: Vec3[] }[] = [];
- 
-@@ -305,9 +309,20 @@
-   return { modelId, message, severity, ...extra };
- }
- 
+@@ -307,0 +313,10 @@
 +export interface ValidationOptions {
 +  /** Actual world poses. Supplied snapshots are checked, never re-grounded or re-solved. */
 +  transforms?: Record<string, PieceTransform>;
@@ -296,18 +244,11 @@
 +  checkSemantics?: boolean;
 +}
 +
- export function validatePhysicalModel(
-   model: PhysicalModel,
+@@ -310 +325,2 @@
 -  getShapeForPiece: (pieceId: string) => ShapeDef | undefined
 +  getShapeForPiece: (pieceId: string) => ShapeDef | undefined,
 +  options: ValidationOptions = {},
- ): ValidationResult {
-   const issues: ValidationIssue[] = [];
-   const modelId = model.id;
-@@ -326,7 +341,25 @@
-     getShapeForPiece,
-   };
- 
+@@ -329 +345,19 @@
 -  const solverResult = solveConnections(ctx);
 +  for (const p of model.pieces) {
 +    if (!getShapeForPiece(p.id) || (options.transforms && !options.transforms[p.id])) {
@@ -328,13 +269,10 @@
 +    loopResiduals: computeAllConnectionResiduals(model.connections, options.transforms, getShapeForPiece),
 +    error: undefined,
 +  } : solveConnections(ctx);
-   if (solverResult.error) {
-     issues.push(issue(modelId, `约束求解失败: ${solverResult.error}`, 'error', { code: 'other' }));
-     return { valid: issues.length === 0, issues };
-@@ -343,21 +376,19 @@
- 
-   checkPortLengthCompatibility(modelId, model.connections, getShapeForPiece, issues);
- 
+@@ -340 +374 @@
+-  checkPortReuse(modelId, model.connections, getShapeForPiece, issues);
++  checkPortReuse(modelId, model.connections, getShapeForPiece, transforms, issues);
+@@ -346,9 +380,7 @@
 -  checkSingleConnectedComponent(modelId, model.pieces, model.connections, issues);
 -
 -  checkStepReachability(modelId, model, issues);
@@ -351,22 +289,14 @@
 +  if (options.checkSteps !== false) checkPieceAddedOnce(modelId, model, issues);
 +
 +  if (options.checkSteps !== false) checkConnectionStepCoverage(modelId, model, getShapeForPiece, issues);
- 
-   checkIntersectionsSAT(modelId, model.pieces, model.connections, transforms, getShapeForPiece, issues);
- 
+@@ -358,3 +390,3 @@
 -  checkGroundPlaneWithThickness(modelId, model.buildMode, model.pieces, transforms, getShapeForPiece, issues);
 -
 -  if (model.buildMode !== 'flat') {
 +  if (options.checkGround !== false) checkGroundPlaneWithThickness(modelId, model.buildMode, model.pieces, transforms, getShapeForPiece, issues);
 +
 +  if (model.buildMode !== 'flat' && options.checkStability !== false) {
-     checkSupportAndStabilityConvexHull(modelId, model, transforms, getShapeForPiece, issues);
-   }
- 
-@@ -366,10 +397,10 @@
-   }
- 
-   // P0-4: 语义校验（步骤覆盖完整性 / 最终步完整性 / 零件数一致性 / 结构宣称一致性）
+@@ -369,4 +401,4 @@
 -  checkSemanticPieceCoverage(modelId, model, issues);
 -  checkSemanticFinalStepComplete(modelId, model, issues);
 -  checkSemanticPartsCount(modelId, model, issues);
@@ -375,33 +305,60 @@
 +  if (options.checkSemantics !== false) checkSemanticFinalStepComplete(modelId, model, issues);
 +  if (options.checkSemantics !== false) checkSemanticPartsCount(modelId, model, issues);
 +  if (options.checkSemantics !== false) checkSemanticStructureClaims(modelId, model, transforms, getShapeForPiece, issues);
- 
-   return { valid: issues.filter((i) => i.severity === 'error').length === 0, issues };
- }
-@@ -562,7 +593,7 @@
-     halfThickList.push(halfThick);
-     // 检查是否触地：最低顶点 y <= tolerance
-     let pieceMinY = Infinity;
+@@ -565 +597 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       for (const z of [-halfThick, halfThick]) {
-         // 顶点局部 (v.x, v.y, z) 经过 tf 变换
-         const world = new Vector3(v.x, v.y, z).applyQuaternion(tf.quaternion).add(tf.position);
-@@ -884,9 +915,7 @@
-       issues.push(issue(modelId, `连接中 dihedralDeg 不是有限数: ${conn.dihedralDeg}`, 'error', { code: ValidationIssueCode.DIHEDRAL_INVALID }));
-       continue;
-     }
+@@ -687,2 +719 @@
+-  modelId: string,
+-  connections: Connection[],
++  modelId: string, connections: Connection[],
+@@ -690,30 +721,10 @@
+-  issues: ValidationIssue[]
+-) {
+-  const portUsage: Record<string, number[]> = {};
+-
+-  connections.forEach((conn, idx) => {
+-    const keyA = `${conn.pieceA}:${conn.portA}`;
+-    const keyB = `${conn.pieceB}:${conn.portB}`;
+-    if (!portUsage[keyA]) portUsage[keyA] = [];
+-    if (!portUsage[keyB]) portUsage[keyB] = [];
+-    portUsage[keyA].push(idx);
+-    portUsage[keyB].push(idx);
+-  });
+-
+-  for (const key of Object.keys(portUsage)) {
+-    const indices = portUsage[key];
+-    if (indices.length > 1) {
+-      const [pieceId, portId] = key.split(':');
+-      const shape = getShape(pieceId);
+-      const port = shape ? getPort(shape, portId) : undefined;
+-      const edgeId = port?.edgeId;
+-      issues.push(
+-        issue(modelId, `端口 ${pieceId}:${portId} 被多次使用 (连接 ${indices.join(', ')})`, 'error', {
+-          pieceId,
+-          portId,
+-          edgeId,
+-          code: ValidationIssueCode.PORT_REUSE,
+-        })
+-      );
+-    }
+-  }
++  transforms: Record<string, PieceTransform>, issues: ValidationIssue[],
++) {
++  for (const conflict of inspectPortCompatibility(connections, getShape, transforms).conflicts) {
++    issues.push(issue(modelId,
++      `端口 ${conflict.pieceId}:${conflict.portId} 连接冲突：${conflict.reason === 'duplicate-connection' ? '重复连接声明' : '相同空间方向占位'} (连接 ${conflict.connectionIndices.join(', ')})`,
++      'error', { pieceId: conflict.pieceId, portId: conflict.portId, edgeId: conflict.edgeId,
++        relatedPieceIds: conflict.relatedPieceIds, code: ValidationIssueCode.PORT_REUSE }));
++  }
++  // Unresolved port frames are not approved here. Existing missing-port and
++  // all-connection residual checks independently reject them below.
+@@ -887,3 +898 @@
 -    const normalized = ((conn.dihedralDeg % 360) + 360) % 360;
 -    const signedNormalized = normalized > 180 ? normalized - 360 : normalized;
 -    if (Math.abs(signedNormalized) > 180 + EPS) {
 +    if (Math.abs(conn.dihedralDeg) > 180) {
-       issues.push(issue(modelId, `连接中 dihedralDeg 超出合理范围 [-180, 180]: ${conn.dihedralDeg}`, 'error', { code: ValidationIssueCode.DIHEDRAL_INVALID }));
-     }
-   }
-@@ -1011,6 +1040,25 @@
-       if (!result.intersects) continue;
- 
-       const avgThickness = (shapeA.thickness + shapeB.thickness) / 2;
+@@ -1013,0 +1023,19 @@
 +
 +      // A shallow SAT depth can be the entire plate thickness, not a seam.
 +      // For parallel faces, project onto in-plane edge normals using the same
@@ -421,30 +378,14 @@
 +          continue;
 +        }
 +      }
- 
-       const tfA = transforms[a];
-       const tfB = transforms[b];
-@@ -1020,6 +1068,7 @@
-         if (posDist < 0.01 && rotDist < 0.01) {
-         issues.push(
-           issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (完全重叠)`, 'error', {
+@@ -1022,0 +1051 @@
 +            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
-             pieceId: a,
-             code: ValidationIssueCode.INTERSECTION,
-           })
-@@ -1047,9 +1096,10 @@
-         }
-       }
- 
+@@ -1050 +1079 @@
 -      if (result.penetrationDepth > PENETRATION_DEPTH_TOLERANCE) {
 +      if (result.penetrationDepth > Math.min(PENETRATION_DEPTH_TOLERANCE, Math.min(shapeA.thickness, shapeB.thickness) * 0.1)) {
-         issues.push(
-           issue(modelId, `零件 ${a} 与 ${b} 发生穿透 (穿透深度 ${result.penetrationDepth.toFixed(4)})`, 'error', {
+@@ -1052,0 +1082 @@
 +            relatedPieceIds: [a,b], penetrationDepth: result.penetrationDepth,
-             pieceId: a,
-             code: ValidationIssueCode.INTERSECTION,
-           })
-@@ -1062,3 +1112,37 @@
+@@ -1061,0 +1092,34 @@
 +/** Read-only evidence from the SAME prism/SAT primitives. Proximity labels never
 + * waive an intersection and are not material or magnetic-joint rules. */
 +export function inspectCollisionPair(shapeA:ShapeDef,tfA:PieceTransform,shapeB:ShapeDef,tfB:PieceTransform){
@@ -479,51 +420,18 @@
 +    proximityRadius:radius,note:'接触位置仅为诊断证据；不放行碰撞，不证明真实接合或物理稳定。'};
 +}
 +
- function checkGroundPlaneWithThickness(
-   modelId: string,
-   _buildMode: string,
-@@ -1077,7 +1161,7 @@
-     let hasBelowGround = false;
-     let lowestY = Infinity;
- 
+@@ -1080 +1144 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       for (const z of [-halfThick, 0, halfThick]) {
-         const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
-         if (world.y < lowestY) lowestY = world.y;
-@@ -1115,7 +1199,7 @@
-     const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
-     let touchesGround = false;
-     const halfThick = shape.thickness / 2;
+@@ -1118 +1182 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       for (const z of [-halfThick, halfThick]) {
-         const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
-         if (world.y < GROUND_TOUCH_TOLERANCE) {
-@@ -1189,7 +1273,7 @@
- 
-     const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
-     const halfThick = shape.thickness / 2;
+@@ -1192 +1256 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       for (const z of [-halfThick, halfThick]) {
-         const world = new Vector3(v.x, v.y, z).applyMatrix4(matrix);
-         if (world.y < GROUND_TOUCH_TOLERANCE + 0.05) {
-@@ -1258,7 +1342,7 @@
-     if (!shape || !tf) continue;
- 
-     const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
+@@ -1261 +1325 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       allPoints.push(new Vector3(v.x, v.y, 0).applyMatrix4(matrix));
-     }
-   }
-@@ -1304,7 +1388,7 @@
-     const matrix = new Matrix4().compose(tf.position, tf.quaternion, new Vector3(1, 1, 1));
-     let maxDistance = 0;
- 
+@@ -1307 +1371 @@
 -    for (const v of shape.vertices) {
 +    for (const v of shapeOutline(shape)) {
-       const world = new Vector3(v.x, v.y, 0).applyMatrix4(matrix);
-       const dist = Math.abs(normal.dot(world) + d);
-       if (dist > maxDistance) maxDistance = dist;

@@ -13,17 +13,14 @@ import {visibleFixture,png} from './magnetic-visible3d-fixtures.mjs'
 const car=JSON.parse(await readFile(new URL('../checks/magnetic-3d/fixtures/car-reviewed-geometry.json',import.meta.url),'utf8')),hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex')
 async function conflict(){const f=await visibleFixture();for(const list of [f.review.pieces,f.evidence.observations,f.plan.parts])list.push({...structuredClone(list[1]),id:'third'});f.plan.connections.push({...structuredClone(f.plan.connections[0]),pieceB:'third',evidenceRefs:[f.plan.parts[0].id,'third']});return f}
 const options={maxAssignments:128,maxGeometryChecks:256,maxLocalSubsets:1024,algorithmVersion:4}
-test('real car: bounded deterministic alternatives resolve target port conflicts without mutating evidence or geometry contracts',()=>{
+test('real car: uncertain multi-direction shared ports are deferred, not deleted by cardinality',()=>{
  const before=JSON.stringify(car),r=refineConstraints(car.plan,car.input)
- assert.equal(r.candidates.length,12);assert.equal(r.search.considered,46);assert.equal(r.search.complete,true)
- assert.ok(r.conflicts.every(v=>v.conflicts.some(c=>c.port==='p15:e1-p0')))
- assert.ok(r.candidates.some(c=>c.retained.some(x=>connectionPair(x)==='p15|p16')&&!c.retained.some(x=>connectionPair(x)==='p15|p21')))
- assert.ok(r.candidates.some(c=>c.retained.some(x=>connectionPair(x)==='p15|p21')&&!c.retained.some(x=>connectionPair(x)==='p15|p16')))
- for(const c of r.candidates){assert.equal(c.removed.length,4);assert.equal(c.retained.length,18);assert.deepEqual(c.plan.parts,car.plan.parts);assert.equal(c.plan.alternatives.length,0);assert.deepEqual(c.consistency.portConflicts,[]);assert.equal(c.consistency.geometry,'not-executed');assert.equal(c.consistency.photoMatch,'unverified');for(const d of c.removed)assert.ok(d.conflicts.length)}
+ assert.equal(r.candidates.length,0);assert.equal(r.search.considered,0);assert.equal(r.search.complete,true)
+ assert.ok(r.conflicts.every(v=>v.conflicts.length===0&&v.unverifiedPorts.includes('p15:e1-p0')))
  assert.deepEqual(refineConstraints(car.plan,car.input),r);assert.equal(JSON.stringify(car),before)
- // The same strict executor actually consumes the selected refined constraints.
- const x=executeVisible3D(r.candidates[0].plan,car.input,options)
- assert.equal(x.status,'budget_exhausted');assert.equal(x.candidates.length,0);assert.equal(x.search.geometryChecks,256);assert.ok(!x.diagnostics.some(d=>d.includes('port-reuse')));assert.ok(x.diagnostics.some(d=>d.includes('intersection')))
+ const x=executeVisible3D(car.plan,car.input,{...options,algorithmVersion:5})
+ assert.ok(x.candidates.length);assert.ok(x.candidates.every(c=>validateAssembly3D(c.assembly).valid))
+ assert.ok(x.diagnosticCandidates.some(d=>d.geometry.issues.some(i=>i.code==='intersection')))
 })
 test('hard human edges and shared-edge reviews never disappear; mutually hard conflicts block',async()=>{
  const f=await conflict();f.input.review.constraints=[structuredClone(f.plan.connections[0])];let r=refineConstraints(f.plan,f.input);assert.equal(r.candidates.length,1);assert.ok(r.candidates[0].retained.some(c=>connectionPair(c)===connectionPair(f.plan.connections[0])));assert.deepEqual(r.candidates[0].removed[0].constraint,f.plan.connections[1])
@@ -35,7 +32,7 @@ test('uncertain conflicting edges are selectable alternatives; Unknown stays Unk
  const f=await conflict();f.plan.connections[1].intent='uncertain';const r=refineConstraints(f.plan,f.input);assert.equal(r.candidates.length,2);assert.equal(r.candidates.find(c=>c.retained.some(x=>x.intent==='uncertain')).retained[0].intent,'uncertain')
  f.plan.connections[1].portB=null;assert.equal(refineConstraints(f.plan,f.input).candidates.length,0)
  const clean=await visibleFixture(),before=executeVisible3D(clean.plan,clean.input,options);assert.equal(refineConstraints(clean.plan,clean.input).candidates.length,0);assert.deepEqual(executeVisible3D(clean.plan,clean.input,options),before)
- const partial=refineConstraints(car.plan,car.input,{maxNodes:1});assert.equal(partial.search.complete,false);assert.ok(partial.search.considered<=1);assert.throws(()=>refineConstraints(car.plan,car.input,{maxNodes:9000}),/预算/)
+ f.plan.connections[1].portB=f.plan.connections[0].portB;const partial=refineConstraints(f.plan,f.input,{maxNodes:1});assert.equal(partial.search.complete,false);assert.ok(partial.search.considered<=1);assert.throws(()=>refineConstraints(car.plan,car.input,{maxNodes:9000}),/预算/)
 })
 async function setup(t){
  const dir=await mkdtemp(path.join(tmpdir(),'magnetic-refine-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));const f=await conflict(),source={id:'a'.repeat(64),hash:'b'.repeat(64),view:{width:1,height:1,hash:'c'.repeat(64)}}

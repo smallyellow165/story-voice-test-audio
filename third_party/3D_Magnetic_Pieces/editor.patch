@@ -1,6 +1,6 @@
 --- a/src/editor/state.ts
 +++ b/src/editor/state.ts
-@@ -1,26 +1,19 @@
+@@ -1,10 +1,10 @@
 -import { EditorProject } from './types';
 -import { SCHEMA_VERSION } from './types';
 -import { defaultMetadata } from './types';
@@ -11,7 +11,17 @@
 -  StepCamera, PieceEntranceConfig, EasingName, EntranceType,
 -} from '../engine/types';
 -import { resnapshotTransforms, resnapshotTransformsForConnection } from './serialization';
--
++// Adapted MIT upstream snapshot history and piece/connection mutations.
++// Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
++import type { Assembly3D, Pose3D } from '../../assembly.ts'
++import { assertAssembly3D } from '../../assembly.ts'
++import { canonical } from '../../../build-plan.ts'
++import { profileKey3D } from '../../profile-adapter.ts'
++import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
++import { solveAssembly3D } from '../../engine-adapter.ts'
++import type { Connection } from '../engine/types.ts'
++import { uniqueId, uid } from './id.ts'
+@@ -12,15 +12,4 @@
 -/**
 - * 编辑器状态模型 + 撤销/重做。
 - * 纯数据逻辑,无 React / DOM 依赖,便于未来小程序复用。
@@ -27,26 +37,11 @@
 -  past: EditorProject[];
 -  current: EditorProject;
 -  future: EditorProject[];
-+// Adapted MIT upstream snapshot history and piece/connection mutations.
-+// Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
-+import type { Assembly3D, Pose3D } from '../../assembly.ts'
-+import { assertAssembly3D } from '../../assembly.ts'
-+import { canonical } from '../../../build-plan.ts'
-+import { profileKey3D } from '../../profile-adapter.ts'
-+import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
-+import { solveAssembly3D } from '../../engine-adapter.ts'
-+import type { Connection } from '../engine/types.ts'
-+import { uniqueId, uid } from './id.ts'
-+
 +export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[] }
 +export const MAX_HISTORY = 100
 +export function createEmptyProject(): Assembly3D {
 +  return { kind: 'magnetic-assembly-3d', schemaVersion: 1, id: uid('draft'), revision: 0, profiles: [], pieces: [], connections: [] }
-+}
-+export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
-+  assertAssembly3D(assembly)
-+  return { past: [], current: structuredClone(assembly), future: [] }
-@@ -28,29 +21 @@
+@@ -28,22 +17,3 @@
 -
 -export const MAX_HISTORY = 100;
 -
@@ -69,7 +64,10 @@
 -    createdAt: now,
 -    updatedAt: now,
 -  };
--}
++export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
++  assertAssembly3D(assembly)
++  return { past: [], current: structuredClone(assembly), future: [] }
+@@ -51,6 +21 @@
 -
 -export function createInitialHistory(): EditorHistory {
 -  return { past: [], current: createEmptyProject(), future: [] };
@@ -107,9 +105,9 @@
 @@ -133 +102 @@
 -export function replaceProject(_h: EditorHistory, project: EditorProject): EditorHistory {
 +export function replaceProject(_h: EditorHistory, project: Assembly3D): EditorHistory {
-@@ -137,20 +105,0 @@
+@@ -137 +105,0 @@
 -/* ----------------- 零件与连接操作 ----------------- */
--
+@@ -139,17 +107,12 @@
 -/** 找到或创建一个 partId(同形状同颜色复用)。 */
 -function findOrCreatePart(project: EditorProject, shape: MagnetShape, color: MagnetColor): PartDef {
 -  const existing = project.parts.find((p) => p.shape === shape && p.color === color);
@@ -127,8 +125,20 @@
 -  };
 -  project.parts.push(part);
 -  return part;
--}
-@@ -158,35 +107,12 @@
++export function addPieceAction(h: EditorHistory, snapshot: ProfileSnapshot3D, color: string, placePosition?: [number, number, number]) {
++  const pieceId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const key = profileKey3D(snapshot.profile), existing = p.profiles.find(s => profileKey3D(s.profile) === key)
++    if (existing && canonical(existing) !== canonical(snapshot)) throw Error('该 Profile 版本已有不同的快照/厚度配置；请使用原配置或明确修改快照厚度。')
++    if (!existing) p.profiles.push(structuredClone(snapshot))
++    p.pieces.push({ id: pieceId, profileId: snapshot.profile.id, profileVersion: snapshot.profile.version, color,
++      pose: { position: placePosition ?? [0, snapshot.thickness * (snapshot.scale ?? 1) / 2, 0],
++        quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } })
++    return p
++  })
++  return { history, pieceId }
+@@ -157,30 +120,35 @@
+-
 -/**
 - * 添加一个零件到方案。
 - * @param placePosition 可选放置位置(世界坐标)。不传时根零件放原点,其他零件放视野中心附近(由调用方计算)。
@@ -158,28 +168,55 @@
 -        position: placePosition ?? [0.5, 0, 0.5],
 -        quaternion: [0, 0, 0, 1],
 -      };
--    }
++export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
++  return commit(h, p => {
++    p.pieces = p.pieces.filter(piece => piece.id !== pieceId)
++    p.connections = p.connections.filter(c => c.pieceA !== pieceId && c.pieceB !== pieceId)
++    return p
++  })
++}
++export function duplicatePieceAction(h: EditorHistory, pieceId: string) {
++  const newId = uniqueId('piece', h.current.pieces.map(p => p.id))
++  const history = commit(h, p => {
++    const src = p.pieces.find(piece => piece.id === pieceId)
++    if (!src) throw Error('找不到要复制的零件')
++    const copy = structuredClone(src); copy.id = newId; copy.pose.position[0] += 1
++    p.pieces.push(copy); return p
++  })
++  return { history, newId }
++}
++export function setPieceColorAction(h: EditorHistory, pieceId: string, color: string): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.color = color; return p })
++}
++export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
++  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
++}
++export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
++  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
++}
++// Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
++export function solveComponent(p: Assembly3D, root: string): Assembly3D {
++  if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
++  const members = new Set([root]), queue = [root]
++  while (queue.length) {
++    const id = queue.shift()!
++    for (const c of p.connections) {
++      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
++      if (next && !members.has(next)) { members.add(next); queue.push(next) }
+@@ -188,5 +156,4 @@
 -    // 自动同步 parts.count
 -    part.count = p.pieces.filter((pp) => pp.partId === part.id).length;
 -    return p;
 -  });
 -  return { history, pieceId };
-+export function addPieceAction(h: EditorHistory, snapshot: ProfileSnapshot3D, color: string, placePosition?: [number, number, number]) {
-+  const pieceId = uniqueId('piece', h.current.pieces.map(p => p.id))
-+  const history = commit(h, p => {
-+    const key = profileKey3D(snapshot.profile), existing = p.profiles.find(s => profileKey3D(s.profile) === key)
-+    if (existing && canonical(existing) !== canonical(snapshot)) throw Error('该 Profile 版本已有不同的快照/厚度配置；请使用原配置或明确修改快照厚度。')
-+    if (!existing) p.profiles.push(structuredClone(snapshot))
-+    p.pieces.push({ id: pieceId, profileId: snapshot.profile.id, profileVersion: snapshot.profile.version, color,
-+      pose: { position: placePosition ?? [0, snapshot.thickness * (snapshot.scale ?? 1) / 2, 0],
-+        quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } })
-+    return p
-+  })
-+  return { history, pieceId }
-@@ -194,2 +119,0 @@
++  }
++  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
++  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
++  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
+@@ -194,18 +161,2 @@
 -
 -/** 删除零件(级联清理连接和步骤引用)。 */
-@@ -197,299 +121,34 @@
+-export function deletePieceAction(h: EditorHistory, pieceId: string): EditorHistory {
 -  return commit(h, (p) => {
 -    p.pieces = p.pieces.filter((pp) => pp.id !== pieceId);
 -    p.connections = p.connections.filter((c) => c.pieceA !== pieceId && c.pieceB !== pieceId);
@@ -195,7 +232,9 @@
 -    p.parts = p.parts.filter((part) => part.count > 0);
 -    return p;
 -  });
--}
++export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
++  return commit(h, p => solveComponent(p, root))
+@@ -213,22 +164,2 @@
 -
 -/** 复制一个零件(同 part,新 piece ID)。 */
 -export function duplicatePieceAction(h: EditorHistory, pieceId: string): { history: EditorHistory; newId: string } {
@@ -218,7 +257,9 @@
 -    return p;
 -  });
 -  return { history, newId };
--}
++export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
++  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
+@@ -236,17 +167,2 @@
 -
 -/** 修改零件颜色(改 partId 指向,或新建 part)。 */
 -export function setPieceColorAction(h: EditorHistory, pieceId: string, color: MagnetColor): EditorHistory {
@@ -236,7 +277,9 @@
 -    p.parts = p.parts.filter((part) => part.count > 0);
 -    return p;
 -  });
--}
++export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
++  return commit(h, p => { p.connections.splice(index, 1); return p })
+@@ -254,8 +170,2 @@
 -
 -/** 直接设置零件的 editor transform(自由移动 / 旋转,不创建连接)。 */
 -export function setPieceTransformAction(
@@ -245,7 +288,9 @@
 -  transform: { position: [number, number, number]; quaternion: [number, number, number, number] },
 -): EditorHistory {
 -  return commit(h, (p) => setPieceTransformMutation(p, pieceId, transform));
--}
++export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
++  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
+@@ -263,424 +172,0 @@
 -
 -/** P0-2: setPieceTransform 的纯 mutation,供 commitBatch 组合。 */
 -export function setPieceTransformMutation(
@@ -479,48 +524,10 @@
 -      delete step.camera;
 -    } else {
 -      step.camera = { ...camera };
-+  return commit(h, p => {
-+    p.pieces = p.pieces.filter(piece => piece.id !== pieceId)
-+    p.connections = p.connections.filter(c => c.pieceA !== pieceId && c.pieceB !== pieceId)
-+    return p
-+  })
-+}
-+export function duplicatePieceAction(h: EditorHistory, pieceId: string) {
-+  const newId = uniqueId('piece', h.current.pieces.map(p => p.id))
-+  const history = commit(h, p => {
-+    const src = p.pieces.find(piece => piece.id === pieceId)
-+    if (!src) throw Error('找不到要复制的零件')
-+    const copy = structuredClone(src); copy.id = newId; copy.pose.position[0] += 1
-+    p.pieces.push(copy); return p
-+  })
-+  return { history, newId }
-+}
-+export function setPieceColorAction(h: EditorHistory, pieceId: string, color: string): EditorHistory {
-+  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.color = color; return p })
-+}
-+export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
-+  return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
-+}
-+export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
-+  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
-+}
-+// Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
-+export function solveComponent(p: Assembly3D, root: string): Assembly3D {
-+  if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
-+  const members = new Set([root]), queue = [root]
-+  while (queue.length) {
-+    const id = queue.shift()!
-+    for (const c of p.connections) {
-+      const next = c.pieceA === id ? c.pieceB : c.pieceB === id ? c.pieceA : undefined
-+      if (next && !members.has(next)) { members.add(next); queue.push(next) }
-@@ -497,2 +156,4 @@
+-    }
 -    return p;
 -  });
-+  }
-+  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
-+  const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
-+  return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
-@@ -500,37 +161,2 @@
+-}
 -
 -/** 把当前编辑器视图(相机位置/target/zoom)保存为本步镜头。 */
 -export function captureCurrentViewAsStepCameraAction(
@@ -558,9 +565,7 @@
 -    }
 -    return p;
 -  });
-+export function solveComponentAction(h: EditorHistory, root: string): EditorHistory {
-+  return commit(h, p => solveComponent(p, root))
-@@ -538,100 +164,2 @@
+-}
 -
 -/** 批量设置步骤内多片零件的入场类型(快速给同批零件统一设置 drop/side/fade 等)。 */
 -export function batchSetEntranceTypeAction(
@@ -661,9 +666,7 @@
 -    }
 -    return p;
 -  });
-+export function createConnectionAction(h: EditorHistory, connection: Connection, solve = false): EditorHistory {
-+  return commit(h, p => { p.connections.push(structuredClone(connection)); return solve ? solveComponent(p, connection.pieceA) : p })
-@@ -639,26 +167,2 @@
+-}
 -
 -/* ----------------- 镜头预设 ----------------- */
 -
@@ -690,9 +693,7 @@
 -    p.metadata = { ...p.metadata, ...patch };
 -    return p;
 -  });
-+export function removeConnectionAction(h: EditorHistory, index: number): EditorHistory {
-+  return commit(h, p => { p.connections.splice(index, 1); return p })
-@@ -666,20 +170,2 @@
+-}
 -
 -/* ----------------- P2: 缩略图/封面 ----------------- */
 -
@@ -713,11 +714,10 @@
 -    };
 -    return p;
 -  });
-+export function updateConnectionAction(h: EditorHistory, index: number, patch: Partial<Connection>): EditorHistory {
-+  return commit(h, p => { if (!p.connections[index]) throw Error('连接不存在'); Object.assign(p.connections[index], patch); return p })
+-}
 --- a/src/editor/snap.ts
 +++ b/src/editor/snap.ts
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
 -import { Vector3, Quaternion, Matrix4 } from 'three';
 -import { Connection, ShapeDef, PieceTransform } from '../engine/types';
 -import { getPort, getShapeDef } from '../engine/shapes';
@@ -728,27 +728,57 @@
 +import { Vector3, Quaternion } from 'three';
 +import type { Connection, ShapeDef, PieceTransform } from '../engine/types.ts';
 +import { getPort } from '../engine/shapes.ts';
++import { inspectPortCompatibility, portPairKey } from '../engine/port-compatibility.ts';
 +import { computeTransformFromConnection } from '../engine/solver.ts';
 +import type { EditorProject } from '../../editor-project.ts';
 +import { toEnginePose as transformFromSerializable } from '../../assembly.ts';
-@@ -14 +15 @@
+@@ -14 +16 @@
 -const PORT_LENGTH_TOLERANCE_RATIO = 0.05;
 +const PORT_LENGTH_TOLERANCE_RATIO = 0.01; // Match the shared validator.
-@@ -23 +24 @@
+@@ -23 +25 @@
 -    return part ? getShapeDef(part.shape) : undefined;
 +    return part ? project.shapes.get(part.shape) : undefined;
-@@ -44,2 +45 @@
+@@ -27 +29 @@
+-/** 某零件某端口是否已被任何连接占用。 */
++/** Usage only, not exclusivity: callers must check proposed spatial compatibility. */
+@@ -44,2 +46 @@
 - * 计算显示用变换:可由 solver 推导的零件用 solver 结果,
 - * 浮动(未连通到根)的零件用 editor transforms 缓存。
 + * 计算显示用变换：仅转换 Assembly3D 的保存 Pose，不执行求解。
-@@ -48 +48 @@
+@@ -48 +49 @@
 -  const solverTfs = resnapshotTransforms(project);
 +  const solverTfs = project.transforms; // Stored poses are authoritative; no implicit solve.
-@@ -67,2 +67 @@
+@@ -67,2 +68 @@
 - * 拖拽期间 project.connections 不变,project.transforms 是上次 commit 后
 - * resnapshotTransforms 的结果,等价于 solver 输出,可安全复用。
 + * 拖拽期间 project.connections 不变，使用保存 Pose 加实时拖动覆盖。
-@@ -266,87 +264,0 @@
+@@ -96 +96 @@
+-/** 列出与源端口兼容且未占用的目标端口。 */
++/** Potential length-compatible targets. The chosen angle/Pose is verified at preview. */
+@@ -102 +102 @@
+-  // P0-三.2: 修复空 portId 问题。portId 为空时,枚举源零件所有未占用端口,
++  // P0-三.2: 修复空 portId 问题。portId 为空时,枚举源零件所有端口,
+@@ -106 +106 @@
+-    : sourceShape.ports.filter((p) => !isPortOccupied(source.pieceId, p.portId, project.connections));
++    : sourceShape.ports;
+@@ -111 +110,0 @@
+-    if (isPortOccupied(source.pieceId, sourcePort.portId, project.connections)) continue;
+@@ -117 +116 @@
+-        if (isPortOccupied(piece.id, port.portId, project.connections)) continue;
++        if (project.connections.some(c => portPairKey(c) === portPairKey({pieceA:source.pieceId,portA:sourcePort.portId,pieceB:piece.id,portB:port.portId}))) continue;
+@@ -205 +203,0 @@
+-    if (isPortOccupied(attachPieceId, attachPort.portId, project.connections)) continue;
+@@ -214 +211,0 @@
+-        if (isPortOccupied(basePiece.id, basePort.portId, project.connections)) continue;
+@@ -228,0 +226,7 @@
++          const savedAttach = display[attachPieceId];
++          if (savedAttach && project.connections.some(c => c.pieceA === attachPieceId || c.pieceB === attachPieceId) &&
++              (tf.position.distanceTo(savedAttach.position)>1e-8 || 1-Math.abs(tf.quaternion.dot(savedAttach.quaternion))>1e-10)) continue;
++          const connection = {pieceA:basePiece.id,portA:basePort.portId,pieceB:attachPieceId,portB:attachPort.portId,dihedralDeg:cand.dihedralDeg,flip:cand.flip};
++          const compatibility = inspectPortCompatibility([...project.connections,connection],getShape,{...display,[attachPieceId]:tf});
++          if (compatibility.conflicts.some(c => c.connectionIndices.includes(project.connections.length)) ||
++              compatibility.unverifiedPorts.some(p => p === `${basePiece.id}:${basePort.portId}` || p === `${attachPieceId}:${attachPort.portId}`)) continue;
+@@ -266,87 +269,0 @@
 -/* ----------------- P0-3: 连接组件语义 ----------------- */
 -
 -/**
@@ -1200,7 +1230,7 @@
 +const colorSwatch = (c: string) => c
 +let fieldIdCounter = 0
 +const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
-@@ -14,21 +12,6 @@
+@@ -14,23 +12,7 @@
 -  project: EditorProject;
 -  selection: Selection;
 -  validation: EditorValidationResult | null;
@@ -1222,15 +1252,16 @@
 -  // P1-10: 大纲列表选择回调(键盘可达)
 -  onSelectPiece?: (id: string) => void;
 -  onSelectConnection?: (index: number) => void;
+-}
+-
 +  project: EditorProject; selection: Selection
 +  onSetPieceColor: (id: string, color: string) => void
 +  onDuplicatePiece: () => void; onDeleteSelected: () => void
 +  onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
 +  onRemoveConnection: (index: number) => void
 +  onSetPieceTransform: (id:string, pose:SerializableTransform) => void
-@@ -36 +18,0 @@
--
-@@ -38,59 +20,3 @@
++}
+@@ -38,141 +20,4 @@
 -  const { project, validation } = props;
 -  const [tab, setTab] = useState<'props' | 'validation' | 'info'>('props');
 -
@@ -1290,10 +1321,7 @@
 -      </div>
 -    </div>
 -  );
-+  return <div className="magnetic-3d-editor-properties">
-+    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
-+  </div>
-@@ -98,81 +23,0 @@
+-}
 -
 -/** P1-10: 键盘可达的零件/连接大纲列表。 */
 -function OutlineList({ project, selection, onSelectPiece, onSelectConnection }: Props) {
@@ -1375,6 +1403,10 @@
 -  );
 -}
 -
++  return <div className="magnetic-3d-editor-properties">
++    {props.selection.kind==='piece' ? <PieceProps key={props.selection.id} {...props}/> : props.selection.kind==='connection' ? <ConnectionProps key={props.selection.index} {...props}/> : <p>选择零件或连接进行编辑。</p>}
++  </div>
++}
 @@ -180 +25 @@
 -  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onAddPieceToStep, currentStepId, onSetPieceTransform } = props;
 +  const { project, selection, onSetPieceColor, onDuplicatePiece, onDeleteSelected, onSetPieceTransform } = props;

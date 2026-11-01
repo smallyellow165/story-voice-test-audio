@@ -7,7 +7,8 @@ import type { EditorHistory } from './vendor/editor/state.ts'
 import * as actions from './vendor/editor/state.ts'
 import { profileKey3D } from './profile-adapter.ts'
 import { PropertyPanel } from './vendor/components/editor/PropertyPanel.tsx'
-import { findCompatibleTargets, isPortOccupied, portsCompatible } from './vendor/editor/snap.ts'
+import { findCompatibleTargets, portsCompatible } from './vendor/editor/snap.ts'
+import { portPairKey } from './vendor/engine/port-compatibility.ts'
 import type { Connection } from './vendor/engine/types.ts'
 import {disconnectPieceForSnap} from './editor-snap.ts'
 import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
@@ -36,7 +37,7 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
   const effectiveBase = baseShape?.ports.find(p => p.portId === basePort) ?? baseShape?.ports[0]
   const compatible = selectedId && effectiveOwn ? findCompatibleTargets({ pieceId: selectedId, portId: effectiveOwn.portId }, project) : []
   const canSnap = !!(base && effectiveOwn && effectiveBase && portsCompatible(effectiveOwn, effectiveBase) &&
-    !isPortOccupied(selectedId, effectiveOwn.portId, assembly.connections) && !isPortOccupied(base.id, effectiveBase.portId, assembly.connections))
+    !assembly.connections.some(c=>portPairKey(c)===portPairKey({pieceA:base.id,portA:effectiveBase.portId,pieceB:selectedId,portB:effectiveOwn.portId})))
   const [snapshotThickness, setSnapshotThickness] = useState('')
   const selectedKey = piece ? profileKey3D({ id: piece.profileId, version: piece.profileVersion }) : ''
   const snapshot = assembly.profiles.find(s => profileKey3D(s.profile) === selectedKey)

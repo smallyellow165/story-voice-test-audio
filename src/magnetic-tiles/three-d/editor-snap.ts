@@ -4,7 +4,8 @@ import type {Assembly3D} from './assembly.ts';
 import type {Connection} from './vendor/engine/types.ts';
 import type {EditorHistory} from './vendor/editor/state.ts';
 import {commit} from './vendor/editor/state.ts';
-import {computeSnapTransform,isPortOccupied,portsCompatible} from './vendor/editor/snap.ts';
+import {computeSnapTransform,portsCompatible} from './vendor/editor/snap.ts';
+import {portPairKey} from './vendor/engine/port-compatibility.ts';
 import {editorProject} from './editor-project.ts';
 import {validateAssembly3D} from './engine-adapter.ts';
 
@@ -17,7 +18,7 @@ export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeS
  const shape=(id:string)=>project.shapes.get(project.parts.find(p=>p.id===id)!.shape)!;
  const pa=shape(a.id).ports.find(p=>p.portId===c.portA),pb=shape(b.id).ports.find(p=>p.portId===c.portB);
  if(!pa||!pb||!portsCompatible(pa,pb))throw Error('Port 不存在或实际边长不兼容');
- if(isPortOccupied(a.id,c.portA,assembly.connections)||isPortOccupied(b.id,c.portB,assembly.connections))throw Error('连接边已占用；请先明确解除原连接，再重新吸附');
+ if(assembly.connections.some(existing=>portPairKey(existing)===portPairKey(c)))throw Error('重复连接：该 Port Pair 已占用；请先解除原连接');
  const tf=computeSnapTransform(a.id,c.portA,b.id,c.portB,c.dihedralDeg,c.flip??false,project);
  if(!tf)throw Error('无法计算吸附 Pose；检查 Port、Dihedral 和 flip');
  const moving=tf.position.distanceTo(new Vector3(...b.pose.position))>1e-8||1-Math.abs(tf.quaternion.dot(new Quaternion(...b.pose.quaternion)))>1e-10;

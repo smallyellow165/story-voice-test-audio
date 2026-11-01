@@ -126,7 +126,7 @@ describe('engine.validator', () => {
     const result = validatePhysicalModel(model, (pid) => getShapeForPiece(pid, pieces));
 
     expect(result.valid).toBe(false);
-    expect(result.issues.some((i) => i.message.includes('被多次使用'))).toBe(true);
+    expect(result.issues.some((i) => i.code === 'port-reuse')).toBe(true);
   });
 
   it('多个不连通分量报错', () => {

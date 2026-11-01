@@ -113,7 +113,7 @@ describe('reused snap functions resolve actual Profile geometry and poses', () =
     expect(findBestSnapCandidate(child, project, [{ dihedralDeg: 90, flip: false }], near)?.connection).toBeDefined()
     const used = editorProject(next.current)
     expect(buildPortUsage(used).has(`${base}:e0-p0`)).toBe(true)
-    expect(findCompatibleTargets({ pieceId: child, portId: 'e0-p0' }, used)).toEqual([])
+    expect(findCompatibleTargets({ pieceId: child, portId: 'e0-p0' }, used).some(t => t.pieceId === base && t.portId === 'e0-p0')).toBe(false) // duplicate pair, not exclusive source port
     expect(portsCompatible({ length: 1 }, { length: 1.04 })).toBe(false)
   })
 })

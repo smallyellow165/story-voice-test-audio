@@ -4,6 +4,7 @@ import {fromEnginePose,toEnginePose} from '../assembly.ts'
 import {createShapeCatalog,profileKey3D} from '../profile-adapter.ts'
 import {solveAssembly3D,validateAssembly3D,assemblyValidationLayers,inspectAssemblyCollisions} from '../engine-adapter.ts'
 import {computeTransformFromConnection,computeAllConnectionResiduals} from '../vendor/engine/solver.ts'
+import {inspectPortCompatibility} from '../vendor/engine/port-compatibility.ts'
 import type {Connection} from '../vendor/engine/types.ts'
 import {parseSpatialHypothesis,validateVisibleInput} from './contracts.ts'
 import type {ConnectionHypothesis3D,SpatialHypothesis3D,VisibleInput3D} from './contracts.ts'
@@ -26,7 +27,6 @@ type Recovery={parent:State;ids:string[]}
 type Growth={state:State;choices:Connection[];cursor:number;component:string}
 const pair=(c:{pieceA:string;pieceB:string})=>[c.pieceA,c.pieceB].sort().join('|')
 const has=(a:Assembly3D,id:string)=>a.pieces.some(p=>p.id===id)
-const occupied=(cs:Connection[],id:string,port:string)=>cs.some(c=>c.pieceA===id&&c.portA===port||c.pieceB===id&&c.portB===port)
 const domain=(c:ConnectionHypothesis3D):Connection[]=>!c.portA||!c.portB||c.intent==='separate'?[]:[...new Set([...c.angles,...(c.angleRange?[c.angleRange.min,(c.angleRange.min+c.angleRange.max)/2,c.angleRange.max]:[])])].flatMap(dihedralDeg=>(c.flip===null?[false,true]:[c.flip]).map(flip=>({pieceA:c.pieceA,pieceB:c.pieceB,portA:c.portA!,portB:c.portB!,dihedralDeg,flip})))
 function components(ids:string[],cs:{pieceA:string;pieceB:string}[]):string[][]{
     const pending=new Set(ids),out:string[][]=[]
@@ -58,6 +58,7 @@ export function executeProgressive(planValue:SpatialHypothesis3D,inputValue:Visi
     const confirmed=input.review.pieces.filter(p=>p.confirmed&&!p.excluded),known=confirmed.filter(p=>p.profileId),excluded=input.review.pieces.filter(p=>p.excluded).map(p=>p.id)
     const catalog=createShapeCatalog(input.profiles),piece=(id:string):Piece3D=>{const p=known.find(p=>p.id===id)!;return {id,profileId:p.profileId!,profileVersion:p.profileVersion!,color:p.color,pose:{position:[0,0,0],quaternion:[0,0,0,1]}}}
     const shape=(a:Assembly3D,id:string)=>{const p=a.pieces.find(p=>p.id===id)!;return catalog.get(profileKey3D({id:p.profileId,version:p.profileVersion}))!.shape}
+    const portCompatibility=(a:Assembly3D)=>inspectPortCompatibility(a.connections,id=>shape(a,id),Object.fromEntries(a.pieces.map(p=>[p.id,toEnginePose(p.pose)])))
     const assembly=(ids:string[],cs:Connection[]):Assembly3D=>({kind:'magnetic-assembly-3d',schemaVersion:1,id:'visible-candidate',revision:0,profiles:structuredClone(input.profiles),pieces:ids.map(piece),connections:structuredClone(cs)})
     const overrides=input.review.constraints,overridden=new Set(overrides.map(pair)),variants=[{label:'primary',connections:plan.connections},...plan.alternatives].map(v=>({...v,connections:[...v.connections.filter(c=>!overridden.has(pair(c))),...overrides]}))
     const stats:ProgressiveStatistics={scope:'bounded-progressive-connected-subgraphs',termination:'frontier-exhausted',nodes:0,maxNodes,checks:{nominal:0,seed:0,recovery:0,growth:0},cacheHits:0,deduplicated:0,portPruned:0,proofPruned:0,beamPruned:0,beamWidth,nominalGraphs:0,acceptedStates:0,growthExpansions:0,reusedPosePieces:0,maxConnected:0,verifiedConnectedUnion:[],returnedUnion:[],standaloneVerified:[],unplaced:[],independentComponentCoverage:[],componentResults:[],graphComponents:components(known.map(p=>p.id),variants.flatMap(v=>v.connections.filter(c=>domain(c).length))),failureCounts:{}}
@@ -111,6 +112,7 @@ export function executeProgressive(planValue:SpatialHypothesis3D,inputValue:Visi
         for(const i of parent.geometry.issues.filter(i=>i.severity==='error')){
             let members:string[]=[]
             if(i.code==='intersection')members=i.relatedPieceIds??[]
+            else if(i.code==='port-reuse'&&i.relatedPieceIds?.length)members=[...new Set([i.pieceId!,...i.relatedPieceIds])]
             else if(i.code==='port-reuse'&&i.pieceId&&i.portId){const cs=parent.assembly.connections.filter(c=>c.pieceA===i.pieceId&&c.portA===i.portId||c.pieceB===i.pieceId&&c.portB===i.portId).slice(0,2);if(cs.length===2)members=[...new Set(cs.flatMap(c=>[c.pieceA,c.pieceB]))]}
             else if(i.connectionIndex!==undefined){const c=parent.assembly.connections[i.connectionIndex];if(c)members=[c.pieceA,c.pieceB]}
             if(members.length&&members.every(id=>ids.includes(id)))return members
@@ -131,8 +133,13 @@ export function executeProgressive(planValue:SpatialHypothesis3D,inputValue:Visi
             const values=domain(h).map(c=>({c,r:computeAllConnectionResiduals([c],transforms,id=>shape(a,id))[0]})).filter(x=>x.r).sort((a,b)=>(a.r.positionError+a.r.dihedralError/180)-(b.r.positionError+b.r.dihedralError/180))
             // This tight match is only a proposal filter, never a replacement
             // tolerance. The complete strict Validator checks every proposal.
-            const chosen=values.find(({c,r})=>!occupied(a.connections,c.pieceA,c.portA)&&!occupied(a.connections,c.pieceB,c.portB)&&r.positionError<1e-7&&r.directionDot>1-1e-8&&r.dihedralError<1e-6)?.c
-            if(chosen)a.connections.push(chosen)
+            const chosen=values.find(({r})=>r.positionError<1e-7&&r.directionDot>1-1e-8&&r.dihedralError<1e-6)?.c
+            if(chosen){
+                // With actual poses, reject only proved directional conflicts.
+                const proposed={...a,connections:[...a.connections,chosen]}
+                if(portCompatibility(proposed).status!=='conflict')a.connections.push(chosen)
+                else if(required.has(pair(h)))a.connections.push(chosen)
+            }
             else if(required.has(pair(h))&&values.length)a.connections.push(values[0].c)
         }
         return a
@@ -141,8 +148,8 @@ export function executeProgressive(planValue:SpatialHypothesis3D,inputValue:Visi
         const groups=[...new Set(growth.map(g=>g.component))].sort();const group=groups[componentTurn++%groups.length]
         const pool=growth.filter(g=>g.component===group).sort((a,b)=>(score(b.state)-b.cursor*.2)-(score(a.state)-a.cursor*.2)||stateKey(a.state.assembly).localeCompare(stateKey(b.state.assembly))),job=pool[0],c=job.choices[job.cursor++]
         if(job.cursor>=job.choices.length)growth.splice(growth.indexOf(job),1)
-        if(occupied(job.state.assembly.connections,c.pieceA,c.portA)||occupied(job.state.assembly.connections,c.pieceB,c.portB)){stats.portPruned++;return}
         try{const id=has(job.state.assembly,c.pieceA)?c.pieceB:c.pieceA,proposal=addClosures(attachProgressivePiece(job.state.assembly,piece(id),c),job.state.context)
+            if(portCompatibility(proposal).status==='conflict'){stats.portPruned++;return}
             stats.growthExpansions++;stats.reusedPosePieces+=job.state.assembly.pieces.length
             register(proposal,job.state.context,[...job.state.path,`attach:${id}:${JSON.stringify(c)}`],'growth')
         }catch(e){diagnostics.add('ATTACH_REJECTED: '+String(e))}

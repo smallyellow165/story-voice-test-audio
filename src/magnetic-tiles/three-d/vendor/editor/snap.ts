@@ -2,6 +2,7 @@
 import { Vector3, Quaternion } from 'three';
 import type { Connection, ShapeDef, PieceTransform } from '../engine/types.ts';
 import { getPort } from '../engine/shapes.ts';
+import { inspectPortCompatibility, portPairKey } from '../engine/port-compatibility.ts';
 import { computeTransformFromConnection } from '../engine/solver.ts';
 import type { EditorProject } from '../../editor-project.ts';
 import { toEnginePose as transformFromSerializable } from '../../assembly.ts';
@@ -25,7 +26,7 @@ function makeGetShape(project: EditorProject) {
   };
 }
 
-/** 某零件某端口是否已被任何连接占用。 */
+/** Usage only, not exclusivity: callers must check proposed spatial compatibility. */
 export function isPortOccupied(pieceId: string, portId: string, connections: Connection[]): boolean {
   return connections.some(
     (c) =>
@@ -92,28 +93,27 @@ export interface CompatibleTarget {
   length: number;
 }
 
-/** 列出与源端口兼容且未占用的目标端口。 */
+/** Potential length-compatible targets. The chosen angle/Pose is verified at preview. */
 export function findCompatibleTargets(source: PortRef, project: EditorProject): CompatibleTarget[] {
   const getShape = makeGetShape(project);
   const sourceShape = getShape(source.pieceId);
   if (!sourceShape) return [];
 
-  // P0-三.2: 修复空 portId 问题。portId 为空时,枚举源零件所有未占用端口,
+  // P0-三.2: 修复空 portId 问题。portId 为空时,枚举源零件所有端口,
   // 对每个端口查找兼容目标并合并去重。
   const sourcePorts = source.portId
     ? [getPort(sourceShape, source.portId)].filter(Boolean) as typeof sourceShape.ports
-    : sourceShape.ports.filter((p) => !isPortOccupied(source.pieceId, p.portId, project.connections));
+    : sourceShape.ports;
 
   const results: CompatibleTarget[] = [];
   const seen = new Set<string>();
   for (const sourcePort of sourcePorts) {
-    if (isPortOccupied(source.pieceId, sourcePort.portId, project.connections)) continue;
     for (const piece of project.pieces) {
       if (piece.id === source.pieceId) continue;
       const shape = getShape(piece.id);
       if (!shape) continue;
       for (const port of shape.ports) {
-        if (isPortOccupied(piece.id, port.portId, project.connections)) continue;
+        if (project.connections.some(c => portPairKey(c) === portPairKey({pieceA:source.pieceId,portA:sourcePort.portId,pieceB:piece.id,portB:port.portId}))) continue;
         if (!portsCompatible(sourcePort, port)) continue;
         const key = `${piece.id}:${port.portId}`;
         if (seen.has(key)) continue;
@@ -201,7 +201,6 @@ export function findBestSnapCandidate(
   let bestDist = SNAP_DISTANCE;
 
   for (const attachPort of attachShape.ports) {
-    if (isPortOccupied(attachPieceId, attachPort.portId, project.connections)) continue;
 
     for (const basePiece of project.pieces) {
       if (basePiece.id === attachPieceId) continue;
@@ -210,7 +209,6 @@ export function findBestSnapCandidate(
       const baseTf = display[basePiece.id];
       if (!baseTf) continue;
       for (const basePort of baseShape.ports) {
-        if (isPortOccupied(basePiece.id, basePort.portId, project.connections)) continue;
         if (!portsCompatible(attachPort, basePort)) continue;
 
         for (const cand of candidates) {
@@ -225,6 +223,13 @@ export function findBestSnapCandidate(
             cand.flip,
           );
           if (!tf) continue;
+          const savedAttach = display[attachPieceId];
+          if (savedAttach && project.connections.some(c => c.pieceA === attachPieceId || c.pieceB === attachPieceId) &&
+              (tf.position.distanceTo(savedAttach.position)>1e-8 || 1-Math.abs(tf.quaternion.dot(savedAttach.quaternion))>1e-10)) continue;
+          const connection = {pieceA:basePiece.id,portA:basePort.portId,pieceB:attachPieceId,portB:attachPort.portId,dihedralDeg:cand.dihedralDeg,flip:cand.flip};
+          const compatibility = inspectPortCompatibility([...project.connections,connection],getShape,{...display,[attachPieceId]:tf});
+          if (compatibility.conflicts.some(c => c.connectionIndices.includes(project.connections.length)) ||
+              compatibility.unverifiedPorts.some(p => p === `${basePiece.id}:${basePort.portId}` || p === `${attachPieceId}:${attachPort.portId}`)) continue;
           const dist = tf.position.distanceTo(attachTf.position);
           if (dist < bestDist) {
             bestDist = dist;

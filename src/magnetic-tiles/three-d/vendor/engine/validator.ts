@@ -17,6 +17,7 @@ import { solveConnections, computeAllConnectionResiduals } from './solver.ts';
 import type { SolverContext } from './solver.ts';
 import { getPort } from './shapes.ts';
 import { shapeOutline } from './outline.ts';
+import { inspectPortCompatibility } from './port-compatibility.ts';
 
 const EPS = 1e-6;
 const POSITION_ERROR_TOLERANCE = 0.01;
@@ -370,7 +371,7 @@ export function validatePhysicalModel(
 
   checkPortOverlap(modelId, model.pieces, getShapeForPiece, issues);
 
-  checkPortReuse(modelId, model.connections, getShapeForPiece, issues);
+  checkPortReuse(modelId, model.connections, getShapeForPiece, transforms, issues);
 
   checkLoopResiduals(modelId, model, solverResult.loopResiduals, spanningTreeIndices, issues);
 
@@ -715,39 +716,18 @@ function checkPortOverlap(
 }
 
 function checkPortReuse(
-  modelId: string,
-  connections: Connection[],
+  modelId: string, connections: Connection[],
   getShape: (pid: string) => ShapeDef | undefined,
-  issues: ValidationIssue[]
+  transforms: Record<string, PieceTransform>, issues: ValidationIssue[],
 ) {
-  const portUsage: Record<string, number[]> = {};
-
-  connections.forEach((conn, idx) => {
-    const keyA = `${conn.pieceA}:${conn.portA}`;
-    const keyB = `${conn.pieceB}:${conn.portB}`;
-    if (!portUsage[keyA]) portUsage[keyA] = [];
-    if (!portUsage[keyB]) portUsage[keyB] = [];
-    portUsage[keyA].push(idx);
-    portUsage[keyB].push(idx);
-  });
-
-  for (const key of Object.keys(portUsage)) {
-    const indices = portUsage[key];
-    if (indices.length > 1) {
-      const [pieceId, portId] = key.split(':');
-      const shape = getShape(pieceId);
-      const port = shape ? getPort(shape, portId) : undefined;
-      const edgeId = port?.edgeId;
-      issues.push(
-        issue(modelId, `端口 ${pieceId}:${portId} 被多次使用 (连接 ${indices.join(', ')})`, 'error', {
-          pieceId,
-          portId,
-          edgeId,
-          code: ValidationIssueCode.PORT_REUSE,
-        })
-      );
-    }
+  for (const conflict of inspectPortCompatibility(connections, getShape, transforms).conflicts) {
+    issues.push(issue(modelId,
+      `端口 ${conflict.pieceId}:${conflict.portId} 连接冲突：${conflict.reason === 'duplicate-connection' ? '重复连接声明' : '相同空间方向占位'} (连接 ${conflict.connectionIndices.join(', ')})`,
+      'error', { pieceId: conflict.pieceId, portId: conflict.portId, edgeId: conflict.edgeId,
+        relatedPieceIds: conflict.relatedPieceIds, code: ValidationIssueCode.PORT_REUSE }));
   }
+  // Unresolved port frames are not approved here. Existing missing-port and
+  // all-connection residual checks independently reject them below.
 }
 
 function checkLoopResiduals(

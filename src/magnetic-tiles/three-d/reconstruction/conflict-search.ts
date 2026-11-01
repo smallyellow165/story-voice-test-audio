@@ -1,3 +1,4 @@
+import {hypothesisPortConflicts} from './port-constraints.ts'
 import type {Assembly3D} from '../assembly.ts'
 import type {Connection} from '../vendor/engine/types.ts'
 import {solveAssembly3D,validateAssembly3D,assemblyValidationLayers,inspectAssemblyCollisions} from '../engine-adapter.ts'
@@ -17,17 +18,12 @@ function groups(ids:string[],connections:Connection[]){
  const rest=new Set(ids),out:string[][]=[]
  while(rest.size){const group=[rest.values().next().value!];rest.delete(group[0]);for(let i=0;i<group.length;i++)for(const c of connections){const next=c.pieceA===group[i]?c.pieceB:c.pieceB===group[i]?c.pieceA:null;if(next&&rest.has(next)){rest.delete(next);group.push(next)}}out.push(group.sort())}return out
 }
-function portConflicts(connections:ConnectionHypothesis3D[]){
- const used=new Map<string,ConnectionHypothesis3D[]>()
- for(const c of connections.filter(c=>c.intent==='connect'&&c.portA&&c.portB&&(c.angles.length||c.angleRange)))for(const [id,port] of [[c.pieceA,c.portA],[c.pieceB,c.portB]])if(port){const key=`${id}:${port}`;used.set(key,[...used.get(key)??[],c])}
- return [...used].filter(([,cs])=>cs.length>1).map(([port,cs])=>({port,pairs:cs.map(pair)}))
-}
 /** This path is only applicable when EVERY supplied full interpretation has a
- * proved mandatory port conflict. No angle/flip can repair that topology. Keep
+ * proved mandatory directional conflict. No angle/flip can repair that topology. Keep
  * its nominal poses visible, then search induced, fixed-pose local structures.
  * This is explicitly NOT an exhaustive search of angle ranges or photo poses. */
 export function executeConflictedComponents(plan:SpatialHypothesis3D,input:VisibleInput3D,options:VisibleExecutionOptions,key:(a:Assembly3D)=>string):VisibleExecution3D|null{
- const variants=effective(plan,input),conflicts=variants.map(v=>portConflicts(v.connections))
+ const variants=effective(plan,input),conflicts=variants.map(v=>hypothesisPortConflicts(v.connections.filter(c=>c.intent==='connect'),input).conflicts)
  if(!conflicts.every(c=>c.length))return null
  const maxAssignments=options.maxAssignments??128,maxGeometryChecks=options.maxGeometryChecks??256,topK=options.topK??5,maxSubsets=options.maxLocalSubsets??1024,parentLimit=options.maxLocalParents??32,maxDiagnostics=options.maxDiagnosticCandidates??8
  for(const [value,min,max]of [[maxAssignments,0,2048],[maxGeometryChecks,0,4096],[topK,1,20],[maxSubsets,0,8192],[parentLimit,1,64],[maxDiagnostics,1,20]])if(!Number.isSafeInteger(value)||value<min||value>max)throw Error('Geometry Execution 搜索预算无效')
@@ -37,7 +33,7 @@ export function executeConflictedComponents(plan:SpatialHypothesis3D,input:Visib
  const componentSearch={scope:'nominal-fixed-pose-component-subgraphs' as const,fullHypothesisSearchComplete:false as const,fullGraphsProvenInvalid:true as const,cacheHits:0,mandatoryPortConflicts:conflicts.map((ports,variantIndex)=>({variantIndex,ports}))}
  const search={assignments:0,geometryChecks:0,maxAssignments,maxGeometryChecks,localSearch:local,componentSearch}
  let exhausted=false
- diagnostics.add('FULL_GRAPH_PORT_CONFLICT: 每个完整解释都存在强制 Port 复用；角度枚举无法修复，原假设保留。')
+ diagnostics.add('FULL_GRAPH_PORT_CONFLICT: 每个完整解释都存在已证明的 Port 方向冲突；角度枚举无法修复，原假设保留。')
  diagnostics.add('SEARCH_SCOPE: 已终止被证明非法的完整图搜索；仅检查模型明确角度/区间中点的名义组件与继承 Pose 的连通局部子图。未穷尽角度、flip 或照片空间解释。completeSearch 只对应此有限局部搜索范围。')
  if(input.review.constraints.length)diagnostics.add('REVIEW_CONSTRAINTS: 人工同对约束优先；合法局部候选仍须包含所有人工 connect 约束。')
  const notes=(hypotheses:ConnectionHypothesis3D[],uncertain:boolean)=>hypotheses.flatMap(c=>c.intent==='separate'?[`${pair(c)}: separate 的空间距离未标定`]:!c.portA||!c.portB||!c.angles.length&&!c.angleRange?[`${pair(c)}: Unknown Port/二面角，未执行连接`]:c.intent==='uncertain'&&!uncertain?[`${pair(c)}: uncertain 连接在此名义解释中未采用`]:c.angleRange||c.angles.length>1||c.flip===null?[`${pair(c)}: 名义角度/flip 仅为搜索种子；其他候选和连续区间未穷尽`]:[])
@@ -80,6 +76,7 @@ export function executeConflictedComponents(plan:SpatialHypothesis3D,input:Visib
   for(const issue of parent.geometry.issues.filter(i=>i.severity==='error')){
    let members:string[]=[]
    if(issue.code==='intersection')members=issue.relatedPieceIds??[]
+   else if(issue.code==='port-reuse'&&issue.relatedPieceIds?.length)members=[...new Set([issue.pieceId!,...issue.relatedPieceIds])]
    else if(issue.code==='port-reuse'&&issue.portId&&issue.pieceId){const cs=parent.assembly.connections.filter(c=>c.pieceA===issue.pieceId&&c.portA===issue.portId||c.pieceB===issue.pieceId&&c.portB===issue.portId).slice(0,2);if(cs.length===2)members=[...new Set(cs.flatMap(c=>[c.pieceA,c.pieceB]))]}
    else if(issue.connectionIndex!==undefined){const c=parent.assembly.connections[issue.connectionIndex];if(c)members=[c.pieceA,c.pieceB]}
    if(members.length&&members.every(id=>ids.has(id)))return members
