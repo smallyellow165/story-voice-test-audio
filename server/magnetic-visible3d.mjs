@@ -143,7 +143,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   }
   if(route==='execute')return operation(body,route,async()=>{
    const l=await lineage('plans',body.planId);if(l.outdated)fail('Review 已改变，旧 Plan 不可执行',409)
-   const execution=executeVisible3D(l.record.plan,l.review.input,{...body.options,algorithmVersion:3})
+   const execution=executeVisible3D(l.record.plan,l.review.input,{...body.options,algorithmVersion:4})
    return {record:await put('executions',{...execution,options:body.options??{},planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash})}
   })
   if(route==='open-diagnostic-draft'){
@@ -155,7 +155,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     if(body.executionHash!==r.hash)fail('Diagnostic Execution Hash 不一致',409)
     const p=await read('plans',r.planId)
     if(r.sourceId!==l.source.id||l.review.sourceId!==l.source.id||p.sourceId!==l.source.id||p.reviewId!==l.review.id)fail('Diagnostic 来源身份不一致',409)
-    const verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:3})
+    const verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version===4?4:3})
     const c=r.diagnosticCandidates?.find(c=>c.id===body.candidateId),actual=verified.diagnosticCandidates?.find(c=>c.id===body.candidateId)
     if(r.version<3||!c||!actual||hash(c)!==hash(actual))fail('Diagnostic 身份或快照复核失败')
     const check=diagnosticHandoffCheck(c)
@@ -174,7 +174,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     if(body.visualChecked!==true)fail('请先对照原图，确认候选及未验证项')
     const r=l.record;
     if(r.diagnosticCandidates?.some(c=>c.id===body.candidateId))fail('Diagnostic Candidate 未通过严格 Validator，仅供观察，禁止普通采用',422)
-    const p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version>=3?3:2})
+    const p=await read('plans',r.planId),verified=executeVisible3D(p.plan,l.review.input,{...r.options,algorithmVersion:r.version===4?4:r.version>=3?3:2})
     const c=r.candidates.find(c=>c.id===body.candidateId),actual=verified.candidates.find(c=>c.id===body.candidateId)
     const {observationMap:_mapping,spatialConsistency:_spatial,...legacyActual}=actual??{}
     const matches=c&&actual&&hash(c)===hash(r.version===1?legacyActual:actual)

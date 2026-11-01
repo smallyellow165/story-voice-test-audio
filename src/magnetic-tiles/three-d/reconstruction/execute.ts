@@ -1,3 +1,4 @@
+import {executeConflictedComponents} from './conflict-search.ts';
 import {candidateObservationMap,inspectSpatialConsistency} from './spatial-consistency.ts';
 import type {ObservationPieceMap3D,SpatialConsistency3D} from './spatial-consistency.ts';
 import type { Assembly3D } from '../assembly.ts';
@@ -32,15 +33,17 @@ export type VisibleCandidate3D = {
     interpretation: string;
 };
 export type VisibleExecution3D = {
-    version: 1 | 2 | 3;
+    version: 1 | 2 | 3 | 4;
     status: 'candidates_found' | 'no_valid_candidate' | 'budget_exhausted';
+    /** Completion of the declared finite search scope, not an exhaustive photo/angle proof. */
     completeSearch: boolean;
     search: {
         assignments: number;
         geometryChecks: number;
         maxAssignments: number;
         maxGeometryChecks: number;
-        localSearch?:{considered:number;geometryChecks:number;deduplicated:number;maxSubsets:number;parents:number;parentLimit:number;parentsTruncated:boolean;complete:boolean};
+        componentSearch?:{scope:'nominal-fixed-pose-component-subgraphs';fullHypothesisSearchComplete:false;fullGraphsProvenInvalid:true;cacheHits:number;mandatoryPortConflicts:{variantIndex:number;ports:{port:string;pairs:string[]}[]}[]};
+        localSearch?:{considered:number;geometryChecks:number;deduplicated:number;maxSubsets:number;parents:number;parentLimit:number;parentsTruncated:boolean;complete:boolean;proofPruned?:number;componentSplits?:number};
     };
     candidates: VisibleCandidate3D[];
     diagnosticCandidates?:VisibleCandidate3D[];
@@ -50,7 +53,7 @@ export type VisibleExecutionOptions={
     maxAssignments?: number;
     maxGeometryChecks?: number;
     topK?: number;
-    algorithmVersion?:2|3;
+    algorithmVersion?:2|3|4;
     maxLocalSubsets?:number;
     maxLocalParents?:number;
     maxDiagnosticCandidates?:number;
@@ -187,6 +190,9 @@ function assemblyKey(a:Assembly3D){return JSON.stringify({pieces:[...a.pieces].s
 
 export function executeVisible3D(planValue:SpatialHypothesis3D,inputValue:VisibleInput3D,options:VisibleExecutionOptions={}):VisibleExecution3D{
   if(options.algorithmVersion===2)return executeBase(planValue,inputValue,options);
+  // Opt in only new runs. Inputs without a proved conflict retain the frozen V3
+  // output/version so historical hashes and adoption replay stay unchanged.
+  if(options.algorithmVersion===4){const input=validateVisibleInput(inputValue),plan=parseSpatialHypothesis(planValue,input);const result=executeConflictedComponents(plan,input,options,assemblyKey);if(result)return result;}
   const input=validateVisibleInput(inputValue),plan=parseSpatialHypothesis(planValue,input),maxLocalSubsets=options.maxLocalSubsets??1024,maxLocalParents=options.maxLocalParents??32,maxDiagnosticCandidates=options.maxDiagnosticCandidates??8;
   if(!Number.isSafeInteger(maxLocalSubsets)||maxLocalSubsets<0||maxLocalSubsets>8192||!Number.isSafeInteger(maxLocalParents)||maxLocalParents<1||maxLocalParents>64||!Number.isSafeInteger(maxDiagnosticCandidates)||maxDiagnosticCandidates<1||maxDiagnosticCandidates>20)throw Error('局部搜索 / Diagnostic 预算无效');
   const valid=new Map<string,VisibleCandidate3D>(),failed=new Map<string,{assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>;context:AttemptContext}>();
