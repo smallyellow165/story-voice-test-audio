@@ -16,7 +16,7 @@ test('six approved → symmetry 9/12 → old authorization revoked → eight col
   const api=createHumanCollisionReview(dir,{enabled:true}),{token}=await api.dispatch('POST','session',{}, {request}),context={request:{...request,headers:{...request.headers,authorization:'Bearer '+token}}},call=(route,body)=>api.dispatch('POST',route,body,context)
   async function approve(assembly,state){for(const key of state.collisionKeys)state=await call('accept',{assembly,expectedVersion:state.version,acceptedKeys:[...state.acceptedKeys,key]});return call('approve',{assembly,expectedVersion:state.version,acceptedKeys:state.acceptedKeys})}
   let s=await call('sync',{assembly:a,expectedVersion:null});s=await approve(a,s);const oldGrant=s.grant
-  const ids=['tile2','tile3','tile4'],preview=previewSymmetryFill(a,{sourceIds:ids,plane:proposeSymmetryPlane(a,ids),planeMode:'auto',confirmedPlane:true}),h=confirmSymmetryFill(createInitialHistory(a),preview),nine=h.current
+  const ids=['tile2','tile3','tile4'],preview=previewSymmetryFill(a,{sourceIds:ids,plane:proposeSymmetryPlane(a,ids),planeMode:'auto'}),h=confirmSymmetryFill(createInitialHistory(a),preview),nine=h.current
   assert.equal(nine.pieces.length,9);assert.equal(nine.connections.length,12);assert.deepEqual(nine.pieces.slice(0,6),a.pieces);assert.deepEqual(nine.connections.slice(0,7),a.connections)
   s=await call('sync',{assembly:nine,expectedVersion:s.version});assert.equal(s.grant,null);assert.deepEqual(s.acceptedKeys,[]);assert.equal(s.collisionKeys.length,8)
   await assert.rejects(call('generate',{assembly:nine,expectedVersion:s.version,approvalId:oldGrant.id}),e=>e.statusCode===403)

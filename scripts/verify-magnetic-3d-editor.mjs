@@ -106,7 +106,7 @@ try {
  await button('保存 3D Draft').click();const repaired=await exported();await tools();await button('重新加载已保存 Draft').click();assert.deepEqual(await exported(),repaired)
  console.log('PASS Catalog, edge snap, three-piece structure, color/thickness, invalid draft save/refresh, read-only view')
  // Existing cube becomes an editable Draft without losing any of its twelve constraints.
- await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click();await button('从当前作品创建 Draft').click();await select('top')
+ await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click();await button('Edit Draft').click();await select('top')
  assert.match(await summary(),/6 片 · 12 条连接/);await setNumber('3D 位置 X',.2);assert.match(await summary(),/Geometry Invalid/)
  await button('3D Undo').click();await valid();await select('top');await button('删除').click();assert.match(await summary(),/5 片 · 8 条连接/)
  await button('3D Undo').click();await valid();assert.match(await summary(),/6 片 · 12 条连接/)

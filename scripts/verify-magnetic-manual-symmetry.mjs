@@ -38,7 +38,7 @@ try{
  const button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true}),field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),panel=()=>page.getByRole('region',{name:'Symmetry Fill',exact:true}),ghost=()=>page.locator('[data-symmetry-preview-ids]')
  async function until(fn){for(let i=0;i<240;i++){if(await fn())return;await new Promise(r=>setTimeout(r,50))}throw Error('UI state did not settle')}
  async function exported(){const d=page.locator('.magnetic-3d-load');if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click();const download=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await download).path(),'utf8'))}
- async function manual(offset='.5'){await field('对称平面方式').selectOption('reference');await field('对称参考 Tile').selectOption('ramp-lower-left');await field('对称平面局部法向').selectOption('x');await field('对称平面偏移').fill(offset);await field('确认对称平面假设').check()}
+ async function manual(offset='.5'){await field('对称平面方式').selectOption('reference');await field('对称参考 Tile').selectOption('ramp-lower-left');await field('对称平面局部法向').selectOption('x');await field('对称平面偏移').fill(offset)}
  async function openBlue(){await page.locator('[data-3d-piece="rear-side-left"]').click();await button('对称补全').click();await panel().waitFor();assert.match(await page.getByTestId('symmetry-source-count').innerText(),/来源 1 片：rear-side-left/)}
  const url=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=reconstruction`
  await page.goto(url);await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await stage(page,'reconstruction','workspace')
@@ -47,11 +47,25 @@ try{
  await stage(page,'reconstruction','inspector');await field('3D Reconstruction Candidate').selectOption('diagnostic-1');await button('人工采用并进入 Assembly').click()
  await until(async()=>await page.locator('.studio').getAttribute('data-active-stage')==='assembly');await page.getByTestId('human-collision-approved').waitFor()
  const adopted=await exported();assert.deepEqual({...adopted,id:original.id},original);original=adopted;await until(async()=>await button('保存 3D Draft').isEnabled())
+ // Mode changes and re-entry are presentation only: no ID, revision, history,
+ // saved Draft or existing collision-acceptance changes.
+ const mode=()=>button('Edit Draft').getAttribute('aria-pressed'),raw=await page.evaluate(()=>localStorage.getItem('magnetic-tiles.assembly3d-draft.v1'))
+ assert.equal(await mode(),'true');assert.equal(await button('3D Undo').isDisabled(),true)
+ await button('View').click();assert.equal(await button('View').getAttribute('aria-pressed'),'true');assert.deepEqual(await exported(),original)
+ await button('Edit Draft').click();assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ await button('View').click();await button('重新加载来源').click();assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ await button('View').click();await stage(page,'source','workspace');await stage(page,'assembly','workspace');assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ await button('View').click();await page.reload();await stage(page,'assembly','inspector');assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ const tools=page.locator('.magnetic-3d-edit-tools');await tools.locator(':scope > summary').click();await button('View').click();await button('重新加载已保存 Draft').click();assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ assert.equal(await page.evaluate(()=>localStorage.getItem('magnetic-tiles.assembly3d-draft.v1')),raw);assert.equal(await button('3D Undo').isDisabled(),true);assert.doesNotMatch(await page.locator('.magnetic-3d-summary').innerText(),/未保存/)
+ await until(async()=> (await page.getByTestId('collision-review-progress').innerText()).includes('1/1'))
  // Start with the Inspector scrolled deep and the Catalog selected. Opening the
  // tool must reveal Inspector and bring the actual plane controls into view.
  await page.locator('[data-3d-piece="rear-side-left"]').click();await rightTab(page,'catalog');await button('对称补全').click();await panel().waitFor()
  await until(async()=>{const b=await panel().boundingBox();return b&&b.y>=0&&b.y<260})
  assert.equal(await page.getByRole('tab',{name:'Inspector',exact:true}).getAttribute('aria-selected'),'true')
+ assert.equal(await panel().getByRole('checkbox').count(),0,'no replacement confirmation checkbox')
+ assert.equal(await button('预览补全').isDisabled(),true,'automatic scaffold mismatch remains a blocker')
  await button('左').click()
  const label=page.locator('.magnetic-3d-editor-canvas [data-tile-label="rear-side-left"]');await label.waitFor();const hit=await label.boundingBox()
  await page.mouse.click(hit.x+hit.width/2,hit.y+hit.height/2);await until(async()=> (await page.getByTestId('symmetry-source-count').innerText())==='来源 0 片')
@@ -75,10 +89,10 @@ try{
  await button('Revalidate Geometry').click();await page.locator('.magnetic-3d-save-notice').filter({hasText:'Revalidate Geometry'}).waitFor();assert.match(await page.locator('.magnetic-3d-save-notice').innerText(),/Geometry Invalid/)
  await page.getByRole('region',{name:'Collision Review',exact:true}).locator('tbody tr').nth(2).getByRole('button').click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});await button('聚焦碰撞').click();await button('取消碰撞选择').click();assert.deepEqual(await exported(),nine)
  // Existing opposite roof panels cannot be duplicated by the left/right plane.
- await button('Edit Draft').click();await button('对称补全').click();await field('对称来源 rear-top-left').check();await field('对称来源 rear-top-right').check();await manual();await button('预览补全').click();await panel().getByRole('alert').filter({hasText:'重复补全'}).waitFor();assert.equal(await ghost().count(),0)
+ await button('Edit Draft').click();await button('对称补全').click();await field('对称来源 rear-top-left').check();await field('对称来源 rear-top-right').check();await manual();assert.equal(await button('预览补全').isDisabled(),true);await panel().getByRole('alert').filter({hasText:'重复补全'}).waitFor();assert.equal(await ghost().count(),0)
  // A different explicit plane can still preview the selected roof patch and
  // its one internal joint; this is a hypothesis, not a claim about hidden photos.
- await field('对称平面偏移').fill('3');await field('确认对称平面假设').check();await button('预览补全').click();await ghost().waitFor();assert.match(await page.getByTestId('symmetry-preview-summary').innerText(),/新增 2 片 · 1 条连接 · 总计 11 片/)
+ await field('对称平面偏移').fill('3');await button('预览补全').click();await ghost().waitFor();assert.match(await page.getByTestId('symmetry-preview-summary').innerText(),/新增 2 片 · 1 条连接 · 总计 11 片/)
  assert.deepEqual(await exported(),nine);await button('取消预览').click();assert.deepEqual(await exported(),nine)
  await field('对称平面方式').selectOption('auto');assert.equal(await button('预览补全').isDisabled(),true);await panel().getByRole('alert').filter({hasText:/框架|同一平面/}).waitFor();await button('关闭工具').click()
  await openBlue();await field('对称平面方式').selectOption('reference');await field('对称平面偏移').fill('');assert.equal(await button('预览补全').isDisabled(),true);await panel().getByRole('alert').filter({hasText:'偏移'}).waitFor()

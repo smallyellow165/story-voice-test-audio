@@ -35,7 +35,7 @@ try {
  async function build(){await page.locator('[data-stage="build"]').click();await button('3D').click()}
  async function importAssembly(a){
   await page.locator('[data-stage="assembly"]').click();await button('3D').click();const d=page.locator('.magnetic-3d-load');if(!await d.evaluate(e=>e.open))await d.locator(':scope > summary').click()
-  await field('Assembly3D JSON').fill(JSON.stringify(a));await button('加载 JSON').click();await button('从当前作品创建 Draft').click();await button('保存 3D Draft').click();const saved=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await saved).path(),'utf8'))
+  await field('Assembly3D JSON').fill(JSON.stringify(a));await button('加载 JSON').click();await button('Edit Draft').click();await button('保存 3D Draft').click();const saved=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await saved).path(),'utf8'))
  }
  const pair=JSON.parse(await readFile(path.join(root,'src/magnetic-tiles/three-d/examples/right-angle.json'),'utf8'))
  const cube=JSON.parse(await readFile(path.join(root,'src/magnetic-tiles/three-d/examples/closed-cube.json'),'utf8'))

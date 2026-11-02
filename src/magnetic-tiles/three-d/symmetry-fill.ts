@@ -14,7 +14,7 @@ import type {EditorHistory} from './vendor/editor/state.ts'
 
 /** A world plane n·x = offset. This is an explicit hypothesis, never photo evidence. */
 export type SymmetryPlane={normal:[number,number,number];offset:number}
-export type SymmetryFillRequest={sourceIds:string[];plane:SymmetryPlane;planeMode:'auto'|'reference';confirmedPlane:boolean}
+export type SymmetryFillRequest={sourceIds:string[];plane:SymmetryPlane;planeMode:'auto'|'reference'}
 export type SymmetryFillPreview={sourceRaw:string;request:SymmetryFillRequest;assembly:Assembly3D;addedIds:string[];addedConnections:Connection[];scaffoldMap:Record<string,string>;geometry:ReturnType<typeof validateAssembly3D>;layers:ReturnType<typeof assemblyValidationLayers>;canCommit:boolean}
 const fail=(message:string):never=>{throw Error(message)}
 function normalized(plane:SymmetryPlane):SymmetryPlane{
@@ -74,7 +74,6 @@ export function referenceSymmetryPlane(assembly:Assembly3D,pieceId:string,axis:'
 }
 function token(text:string){let value=2166136261;for(const c of text)value=Math.imul(value^c.charCodeAt(0),16777619);return (value>>>0).toString(16).padStart(8,'0')}
 export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequest):SymmetryFillPreview{
- if(request.confirmedPlane!==true)fail('请先确认对称平面；补全是用户假设，不是照片直接观察')
  if(!['auto','reference'].includes(request.planeMode))fail('请明确选择自动或手动平面方式')
  const automatic=request.planeMode==='auto'
  const {items,sources,scaffold,tolerance}=input(assembly,request.sourceIds),plane=normalized(request.plane)
@@ -140,7 +139,7 @@ export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequ
  // Free pieces are supported by the existing Editor/Validator. They do not
  // establish a connected Build: the existing Build connectivity gate still runs.
  const geometry=validateAssembly3D(next,{requireConnected:automatic}),layers=assemblyValidationLayers(geometry),canCommit=layers.idealGeometry.valid&&(!automatic||componentCount(next)===1&&added.every(p=>extra.some(c=>c.pieceA===p.id||c.pieceB===p.id)))
- return {sourceRaw,request:{sourceIds:sources.map(p=>p.id),plane,planeMode:request.planeMode,confirmedPlane:true},assembly:next,addedIds:added.map(p=>p.id),addedConnections:extra,scaffoldMap,geometry,layers,canCommit}
+ return {sourceRaw,request:{sourceIds:sources.map(p=>p.id),plane,planeMode:request.planeMode},assembly:next,addedIds:added.map(p=>p.id),addedConnections:extra,scaffoldMap,geometry,layers,canCommit}
 }
 /** Recompute from authoritative input; never commit a modified preview object. */
 export function confirmSymmetryFill(history:EditorHistory,preview:SymmetryFillPreview):EditorHistory{

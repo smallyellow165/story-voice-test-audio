@@ -12,7 +12,7 @@ import type {Assembly3D} from '../../src/magnetic-tiles/three-d/assembly.ts'
 const fixture=JSON.parse(readFileSync(new URL('./fixtures/orange-reviewed-geometry.json',import.meta.url),'utf8'))
 const orange=()=>executeVisible3D(fixture.plan,fixture.input).diagnosticCandidates![0].assembly
 const sourceIds=['tile2','tile3','tile4']
-function fill(a=orange(),ids=sourceIds){return previewSymmetryFill(a,{sourceIds:ids,plane:proposeSymmetryPlane(a,ids),planeMode:'auto',confirmedPlane:true})}
+function fill(a=orange(),ids=sourceIds){return previewSymmetryFill(a,{sourceIds:ids,plane:proposeSymmetryPlane(a,ids),planeMode:'auto'})}
 function residuals(a:Assembly3D){const ps=createViewerModel(a);return computeAllConnectionResiduals(a.connections,Object.fromEntries(ps.map(p=>[p.id,p.transform])),id=>ps.find(p=>p.id===id)?.shape)}
 describe('Symmetry Fill V1: explicit hypothesis, exact ports, no pose adjustment',()=>{
  it('previews 3 real mirrored triangles and 5 verified connections without changing the original 6/7',()=>{
@@ -25,12 +25,11 @@ describe('Symmetry Fill V1: explicit hypothesis, exact ports, no pose adjustment
   expect(p.addedConnections.find(c=>c.pieceA==='tile1')?.portA).toBe('e2-p0');expect(p.addedConnections.find(c=>c.pieceA==='tile1')?.flip).toBe(false)
   for(const [i,id]of p.addedIds.entries()){const original=a.pieces.find(p=>p.id===sourceIds[i])!,added=p.assembly.pieces.find(p=>p.id===id)!;expect(added.profileId).toBe(original.profileId);expect(added.profileVersion).toBe(original.profileVersion);expect(added.color).toBe(original.color)}
  })
- it('requires explicit confirmation, rejects duplicate fill, invalid planes, nonexistent sources and unsupported counts',()=>{
+ it('rejects duplicate fill, invalid planes, nonexistent sources and unsupported counts',()=>{
   const a=orange(),plane=proposeSymmetryPlane(a,sourceIds)
-  expect(()=>previewSymmetryFill(a,{sourceIds,plane,planeMode:'auto',confirmedPlane:false})).toThrow(/确认/)
-  expect(()=>previewSymmetryFill(a,{sourceIds,plane:{normal:[0,0,0],offset:0},planeMode:'auto',confirmedPlane:true})).toThrow(/法向/)
-  expect(()=>previewSymmetryFill(a,{sourceIds,plane:{normal:[1,0,0],offset:5},planeMode:'auto',confirmedPlane:true})).toThrow(/框架/)
-  expect(()=>previewSymmetryFill(fill(a).assembly,{sourceIds,plane,planeMode:'auto',confirmedPlane:true})).toThrow(/重复/)
+  expect(()=>previewSymmetryFill(a,{sourceIds,plane:{normal:[0,0,0],offset:0},planeMode:'auto'})).toThrow(/法向/)
+  expect(()=>previewSymmetryFill(a,{sourceIds,plane:{normal:[1,0,0],offset:5},planeMode:'auto'})).toThrow(/框架/)
+  expect(()=>previewSymmetryFill(fill(a).assembly,{sourceIds,plane,planeMode:'auto'})).toThrow(/重复/)
   expect(()=>fill(a,['missing'])).toThrow(/不存在/);expect(()=>fill(a,[])).toThrow(/V1/);expect(()=>fill(a,['tile2','tile2'])).toThrow(/不同来源/)
   expect(()=>proposeSymmetryPlane(a,['tile1','tile2'])).toThrow(/同一平面/)
  })
@@ -68,15 +67,15 @@ describe('Symmetry Fill V1: explicit hypothesis, exact ports, no pose adjustment
  it('rejects missing mirrored ports and original structural errors; never invents or expands ports',()=>{
   const a=orange(),plane=proposeSymmetryPlane(a,sourceIds),square=a.profiles.find(s=>s.profile.id==='square')!
   square.ports=[{edgeId:'e2',ranges:[[0,.5]]}]
-  expect(()=>previewSymmetryFill(a,{sourceIds,plane,planeMode:'auto',confirmedPlane:true})).toThrow(/Port 无法唯一映射/)
+  expect(()=>previewSymmetryFill(a,{sourceIds,plane,planeMode:'auto'})).toThrow(/Port 无法唯一映射/)
   const bad=orange();bad.connections[0].dihedralDeg=20;expect(()=>fill(bad)).toThrow(/原作品存在/)
  })
  it('manual planes copy only selected internal connections and allow free Editor components',()=>{
-  const a=orange(),plane=referenceSymmetryPlane(a,'tile1','y'),p=previewSymmetryFill(a,{sourceIds,plane,planeMode:'reference',confirmedPlane:true})
+  const a=orange(),plane=referenceSymmetryPlane(a,'tile1','y'),p=previewSymmetryFill(a,{sourceIds,plane,planeMode:'reference'})
   expect(p.canCommit).toBe(true);expect(p.addedIds).toHaveLength(sourceIds.length);expect(p.addedIds.every(id=>p.assembly.pieces.find(x=>x.id===id)?.profileId==='equilateral-triangle')).toBe(true)
   expect(p.addedConnections).toHaveLength(2);expect(componentCount(p.assembly)).toBe(2)
-  const disconnected=orange();disconnected.connections=[];expect(previewSymmetryFill(disconnected,{sourceIds,plane,planeMode:'reference',confirmedPlane:true}).canCommit).toBe(true)
-  expect(()=>previewSymmetryFill(disconnected,{sourceIds,plane,planeMode:'auto',confirmedPlane:true})).toThrow(/连通/)
+  const disconnected=orange();disconnected.connections=[];expect(previewSymmetryFill(disconnected,{sourceIds,plane,planeMode:'reference'}).canCommit).toBe(true)
+  expect(()=>previewSymmetryFill(disconnected,{sourceIds,plane,planeMode:'auto'})).toThrow(/连通/)
  })
  it('discovers additional exact port correspondences through the same solver checks, without altering the old graph',()=>{
   const a=orange();a.connections.shift();const p=fill(a);expect(p.canCommit).toBe(true);expect(p.addedConnections).toHaveLength(5);expect(p.assembly.connections.slice(0,6)).toEqual(a.connections)

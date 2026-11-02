@@ -9,7 +9,7 @@ import {previewSymmetryFill,referenceSymmetryPlane,proposeSymmetryPlane,reflectP
 import {createInitialHistory,undo,redo} from '../../src/magnetic-tiles/three-d/vendor/editor/state.ts'
 const car=():Assembly3D=>JSON.parse(readFileSync(new URL('./fixtures/car-symmetry-eight.json',import.meta.url),'utf8'))
 const blue='rear-side-left',reference='ramp-lower-left'
-function preview(a=car(),ids=[blue],offset=.5){return previewSymmetryFill(a,{sourceIds:ids,plane:referenceSymmetryPlane(a,reference,'x',offset),planeMode:'reference',confirmedPlane:true})}
+function preview(a=car(),ids=[blue],offset=.5){return previewSymmetryFill(a,{sourceIds:ids,plane:referenceSymmetryPlane(a,reference,'x',offset),planeMode:'reference'})}
 describe('manual mirror in an incomplete, Human Accepted car: selected pieces only',()=>{
  it('reproduces the asymmetric scaffold and distinguishes reference-center from the actual midpoint',()=>{
   const a=car();expect(a.pieces).toHaveLength(8);expect(a.connections).toHaveLength(10)
@@ -48,7 +48,7 @@ describe('manual mirror in an incomplete, Human Accepted car: selected pieces on
  it('still rejects exact duplicates, degenerate planes, invalid source poses and existing broken joints',()=>{
   const a=car();expect(()=>preview(a,['rear-top-left','rear-top-right'])).toThrow(/重复补全/)
   expect(()=>preview(preview(a).assembly)).toThrow(/重复补全/)
-  expect(()=>previewSymmetryFill(a,{sourceIds:[blue],plane:{normal:[0,0,0],offset:0},planeMode:'reference',confirmedPlane:true})).toThrow(/法向/)
+  expect(()=>previewSymmetryFill(a,{sourceIds:[blue],plane:{normal:[0,0,0],offset:0},planeMode:'reference'})).toThrow(/法向/)
   const invalid=car();invalid.pieces[0].pose.quaternion=[0,0,0,0];expect(()=>preview(invalid)).toThrow(/quaternion/)
   const broken=car();broken.connections[0].dihedralDeg=10;expect(()=>preview(broken)).toThrow(/原作品存在/)
  })
