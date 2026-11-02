@@ -5,18 +5,22 @@ import { assertAssembly3D } from '../../assembly.ts'
 import { canonical } from '../../../build-plan.ts'
 import { profileKey3D } from '../../profile-adapter.ts'
 import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
-import { solveAssembly3D } from '../../engine-adapter.ts'
+import {nonRepairableKeys} from '../../non-repairable.ts'
+import { solveAssembly3D, validateAssembly3D } from '../../engine-adapter.ts'
 import type { Connection } from '../engine/types.ts'
 import { uniqueId, uid } from './id.ts'
 
-export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[] }
+export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[]; collisionPolicy?:{current:string[];past:string[][];future:string[][]} }
+export const currentNonRepairable=(h:EditorHistory)=>h.collisionPolicy?.current??[]
+function policyForCurrent(h:EditorHistory,current:Assembly3D){return h.collisionPolicy?{collisionPolicy:{...h.collisionPolicy,current:nonRepairableKeys(current,h.collisionPolicy.current)}}:{}}
+
 export const MAX_HISTORY = 100
 export function createEmptyProject(): Assembly3D {
   return { kind: 'magnetic-assembly-3d', schemaVersion: 1, id: uid('draft'), revision: 0, profiles: [], pieces: [], connections: [] }
 }
-export function createInitialHistory(assembly = createEmptyProject()): EditorHistory {
+export function createInitialHistory(assembly = createEmptyProject(),nonRepairable:readonly string[]=[]): EditorHistory {
   assertAssembly3D(assembly)
-  return { past: [], current: structuredClone(assembly), future: [] }
+  return { past: [], current: structuredClone(assembly), future: [],...(nonRepairable.length?{collisionPolicy:{current:nonRepairableKeys(assembly,nonRepairable),past:[],future:[]}}:{}) }
 }
 function cloneProject(p: Assembly3D): Assembly3D {
   // P0-4: structuredClone 比 JSON 往返快 5-10x,且不丢 Date/Map 等结构(此处数据全可序列化,但保留语义更稳)。
@@ -30,14 +34,14 @@ function cloneProject(p: Assembly3D): Assembly3D {
 /** 在执行 mutation 前调用:把当前快照压栈。 */
 function pushHistory(h: EditorHistory): EditorHistory {
   const past = [...h.past, cloneProject(h.current)].slice(-MAX_HISTORY);
-  return { ...h, past, future: [] };
+  return { ...h, past, future: [],...(h.collisionPolicy?{collisionPolicy:{current:[...h.collisionPolicy.current],past:[...h.collisionPolicy.past,h.collisionPolicy.current].slice(-MAX_HISTORY),future:[]}}:{}) };
 }
 
 /** 上游保留工具：修改 current 但不入栈；宿主几何编辑使用 commit。 */
 export function updateCurrent(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
   // P0-四.7: 克隆 current 后再传给 updater,避免 updater 中的 in-place mutation
   // 在 React Strict Mode(double-invocation)下污染原始状态。
-  return { ...h, current: updater(cloneProject(h.current)) };
+  const current=updater(cloneProject(h.current));return { ...h, current,...policyForCurrent(h,current) };
 }
 
 /** 修改 current 并入栈(用于用户主动操作)。 */
@@ -49,7 +53,7 @@ export function commit(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D)
   const current = updater(cloneProject(next.current));
   assertAssembly3D(current);
   if (canonical(current) === canonical(h.current)) return h;
-  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+  return { ...next, current: { ...current, revision: h.current.revision + 1 },...policyForCurrent(next,current) };
 }
 
 /**
@@ -65,7 +69,7 @@ export function commitBatch(h: EditorHistory, updaters: ((p: Assembly3D) => Asse
   }
   assertAssembly3D(current);
   if (canonical(current) === canonical(h.current)) return h;
-  return { ...next, current: { ...current, revision: h.current.revision + 1 } };
+  return { ...next, current: { ...current, revision: h.current.revision + 1 },...policyForCurrent(next,current) };
 }
 
 export function undo(h: EditorHistory): EditorHistory {
@@ -74,6 +78,7 @@ export function undo(h: EditorHistory): EditorHistory {
   const prev = past.pop()!;
   return {
     past,
+    ...(h.collisionPolicy?{collisionPolicy:{current:h.collisionPolicy.past.at(-1)??[],past:h.collisionPolicy.past.slice(0,-1),future:[h.collisionPolicy.current,...h.collisionPolicy.future].slice(0,MAX_HISTORY)}}:{}),
     current: prev,
     future: [h.current, ...h.future].slice(0, MAX_HISTORY),
   };
@@ -85,9 +90,22 @@ export function redo(h: EditorHistory): EditorHistory {
   const next = future.shift()!;
   return {
     past: [...h.past, h.current].slice(-MAX_HISTORY),
+    ...(h.collisionPolicy?{collisionPolicy:{current:h.collisionPolicy.future[0]??[],past:[...h.collisionPolicy.past,h.collisionPolicy.current].slice(-MAX_HISTORY),future:h.collisionPolicy.future.slice(1)}}:{}),
     current: next,
     future,
   };
+}
+
+/** Metadata-only history step: geometry/revision and human acceptance are untouched. */
+export function setNonRepairableCollisionAction(h:EditorHistory,key:string,checked:boolean):EditorHistory{
+ const normalized=nonRepairableKeys(h.current,[key])[0]
+ if(!normalized)throw Error('不可修复标记不属于当前作品')
+ const old=currentNonRepairable(h)
+ if(old.includes(normalized)===checked)return h
+ if(checked&&!validateAssembly3D(h.current).issues.some(i=>i.code==='intersection'&&i.severity==='error'&&JSON.stringify([...(i.relatedPieceIds??[])].sort())===normalized))throw Error('只能标记当前 Validator 报告的实体碰撞')
+ const base=h.collisionPolicy?h:{...h,collisionPolicy:{current:[],past:h.past.map(()=>[]),future:h.future.map(()=>[])}}
+ const next=pushHistory(base)
+ return {...next,collisionPolicy:{...next.collisionPolicy!,current:nonRepairableKeys(h.current,checked?[...old,normalized]:old.filter(k=>k!==normalized))}}
 }
 
 export function canUndo(h: EditorHistory): boolean {

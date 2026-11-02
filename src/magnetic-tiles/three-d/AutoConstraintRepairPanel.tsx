@@ -7,18 +7,18 @@ import type {RepairCandidate,RepairResult} from './constraint-repair.ts'
 import {repairLimits} from './constraint-repair.ts'
 export type RepairPreview={sourceRaw:string;candidate:RepairCandidate}
 const number=(n:number)=>Number(n.toPrecision(6)).toString()
-export function AutoConstraintRepairPanel({assembly,hints,editing,disabled,targets,highlighted,collisionCount,onBusy,onPreview,onApply}:{
- assembly:Assembly3D;hints:AssemblyAngleHintLoad;editing:boolean;disabled:boolean;targets:string[];highlighted?:string;collisionCount:number
+export function AutoConstraintRepairPanel({assembly,hints,editing,disabled,targets,highlighted,collisionCount,nonRepairable,excludedCount,onBusy,onPreview,onApply}:{
+ assembly:Assembly3D;hints:AssemblyAngleHintLoad;editing:boolean;disabled:boolean;targets:string[];highlighted?:string;collisionCount:number;nonRepairable:readonly string[];excludedCount:number
  onBusy:(v:boolean)=>void;onPreview:(v:RepairPreview|null)=>void;onApply:(result:RepairResult,candidate:RepairCandidate)=>void
 }){
  const [scope,setScope]=useState<'all'|'selected'|'highlighted'>('all'),[reference,setReference]=useState(''),[running,setRunning]=useState(false),[result,setResult]=useState<RepairResult|null>(null),[chosen,setChosen]=useState(''),[notice,setNotice]=useState(''),[progress,setProgress]=useState({checks:0,nodes:0})
- const worker=useRef<Worker|null>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null),sequence=useRef(0),snapshot=serializeAssembly3D(assembly)
+ const worker=useRef<Worker|null>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null),sequence=useRef(0),snapshot=serializeAssembly3D(assembly),policyKey=JSON.stringify(nonRepairable),eligibleCount=collisionCount-excludedCount
  function stop(){sequence.current++;worker.current?.terminate();worker.current=null;if(timer.current)clearTimeout(timer.current);timer.current=null;setRunning(false);onBusy(false)}
- useEffect(()=>{stop();setResult(null);setChosen('');setNotice('');onPreview(null);return()=>{stop();onPreview(null)}},[snapshot,hints.key])
+ useEffect(()=>{stop();setResult(null);setChosen('');setNotice('');onPreview(null);return()=>{stop();onPreview(null)}},[snapshot,hints.key,policyKey])
  useEffect(()=>{if(targets.length)setScope('selected')},[targets.join('|')])
  const candidate=result?.candidates.find(c=>c.id===chosen),selectedReference=assembly.pieces.some(p=>p.id===reference)?reference:[...assembly.pieces.map(p=>p.id)].sort()[0]??''
- const targetKeys=scope==='all'?undefined:scope==='selected'?targets:highlighted?[highlighted]:[]
- const blocker=!editing?'请先进入 Edit Draft。':!hints.source?(hints.error??'等待当前来源角度建议。'):hints.source.executedVariant===null?'执行来源方案未记录，不能确定允许修改的范围。':!collisionCount?'当前无实体碰撞。':targetKeys&&!targetKeys.length?'请选择至少一个当前碰撞。':''
+ const targetKeys=scope==='all'?undefined:(scope==='selected'?targets:highlighted?[highlighted]:[]).filter(key=>!nonRepairable.includes(key))
+ const blocker=!editing?'请先进入 Edit Draft。':!hints.source?(hints.error??'等待当前来源角度建议。'):hints.source.executedVariant===null?'执行来源方案未记录，不能确定允许修改的范围。':!collisionCount?'当前无实体碰撞。':!eligibleCount?'当前碰撞均已标记为不可修复，不参与自动优化。':targetKeys&&!targetKeys.length?'请选择至少一个当前碰撞。':''
  function preview(c:RepairCandidate){onPreview({sourceRaw:snapshot,candidate:c});setChosen(c.id)}
  function search(){
   if(blocker||disabled||!hints.source)return
@@ -34,21 +34,22 @@ export function AutoConstraintRepairPanel({assembly,hints,editing,disabled,targe
     if(e.data.error){fail(e.data.error);return}
     if(e.data.result){const value=e.data.result;stop();setResult(value);setNotice(value.reason);if(value.candidates[0])preview(value.candidates[0])}
    }
-   w.postMessage({assembly,source:hints.source,targets:targetKeys,options:{...repairLimits,referencePieceId:selectedReference}})
+   w.postMessage({assembly,source:hints.source,targets:targetKeys,options:{...repairLimits,referencePieceId:selectedReference,nonRepairableKeys:[...nonRepairable]}})
   }catch(e){stop();setNotice(String(e))}
  }
  return <section className="magnetic-constraint-repair" aria-label="Auto Constraint Repair">
-  <div className="magnetic-constraint-repair-controls"><b>Auto Constraint Repair</b><InfoHint label="自动约束修复">Collision Review 的「修复」勾选只选择搜索目标，与「接受」人工审核独立。搜索只使用已采用的执行来源方案，不使用仅浏览的其他 Alternatives；只在其可调范围内调整，保留全部连接和固定参考子结构；预览不修改 Draft，点击应用才提交。</InfoHint><button disabled={!!blocker||disabled||running} onClick={search}>Find Fix</button></div>
-  <div className="magnetic-constraint-repair-controls"><label>目标<select aria-label="自动修复目标" value={scope} disabled={disabled||running} onChange={e=>setScope(e.target.value as typeof scope)}><option value="all">全部碰撞 · {collisionCount}</option><option value="selected">勾选的修复目标 · {targets.length}</option><option value="highlighted" disabled={!highlighted}>当前高亮碰撞</option></select></label><label>固定参考<select aria-label="自动修复固定参考" value={selectedReference} disabled={disabled||running} onChange={e=>setReference(e.target.value)}>{assembly.pieces.map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select></label></div>
+  <div className="magnetic-constraint-repair-controls"><b>Auto Constraint Repair</b><InfoHint label="自动约束修复">Collision Review 的「修复」勾选只选择搜索目标，与「接受」人工审核独立。「不可修复」由用户明确标记，排除优化目标和所有评分收益，但仍完整验证且不得加重。搜索只使用已采用的执行来源方案，不使用仅浏览的其他 Alternatives；只在其可调范围内调整，保留全部连接和固定参考子结构；预览不修改 Draft，点击应用才提交。</InfoHint><button disabled={!!blocker||disabled||running} onClick={search}>Find Fix</button></div>
+  <div className="magnetic-constraint-repair-controls"><label>目标<select aria-label="自动修复目标" value={scope} disabled={disabled||running} onChange={e=>setScope(e.target.value as typeof scope)}><option value="all">可修复碰撞 · {eligibleCount} / {collisionCount}</option><option value="selected">勾选的修复目标 · {targets.length}</option><option value="highlighted" disabled={!highlighted||nonRepairable.includes(highlighted)}>当前高亮碰撞</option></select></label><label>固定参考<select aria-label="自动修复固定参考" value={selectedReference} disabled={disabled||running} onChange={e=>setReference(e.target.value)}>{assembly.pieces.map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select></label></div>
+  {!!excludedCount&&<p className="hint">Non-repairable · {excludedCount}：不作为目标、不计评分；仍检查是否加重，Geometry Invalid 不变。</p>}
   {blocker&&!result&&<p className="hint">{blocker}</p>}
   {running&&<div role="status">搜索中 · {progress.checks}/{repairLimits.maxChecks} 检查 · {progress.nodes}/{repairLimits.maxNodes} 节点 <button onClick={()=>{stop();setNotice('搜索已取消，当前 Draft 未修改。')}}>取消搜索</button></div>}
   {notice&&<p role="status">{notice}</p>}
   {result&&<><p className="hint">{result.checks} 次检查 · {result.nodes} 节点 · {number(result.elapsedMs)} ms · {result.status==='budget-exhausted'?'预算终止，保留最好结果':result.status==='blocked'?'无法搜索':'离散网格结束，未证明连续域无解'}</p>{!!result.referencePieces.length&&<p className="hint">固定参考子结构：{result.referencePieces.join('、')}。只使用执行来源 Plan；共面、人工约束和待判断角度保持不变。</p>}</>}
   {result&&!!result.candidates.length&&<><select aria-label="自动修复候选" value={chosen} onChange={e=>preview(result.candidates.find(c=>c.id===e.target.value)!)}>{result.candidates.map(c=><option key={c.id} value={c.id}>{c.id} · {c.geometry.valid?'Geometry Valid':'部分改善 · Geometry Invalid'} · 碰撞 {result.baseline.length} → {c.collisions.length}</option>)}</select>
    {candidate&&<><p className="hint">候选仅供预览；点击应用修复才修改 Draft。</p><p data-testid="repair-candidate-status" className={candidate.geometry.valid?undefined:'magnetic-3d-blocker'}>{candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 仅部分改善'} · 全部连接验证通过；Photo Match / Physical Stability 未验证。</p>
-    <table><thead><tr><th>碰撞零件对</th><th>Depth 前 → 后</th></tr></thead><tbody>{result.baseline.map(c=><tr key={c.key}><td>{c.pieceIds.join(' / ')}</td><td>{number(c.depth)} → {candidate.collisions.find(x=>x.key===c.key)?number(candidate.collisions.find(x=>x.key===c.key)!.depth):'未报碰撞'}</td></tr>)}</tbody></table>
+    <table><thead><tr><th>碰撞零件对</th><th>Depth 前 → 后</th><th>优化</th></tr></thead><tbody>{result.baseline.map(c=><tr key={c.key}><td>{c.pieceIds.join(' / ')}</td><td>{number(c.depth)} → {candidate.collisions.find(x=>x.key===c.key)?number(candidate.collisions.find(x=>x.key===c.key)!.depth):'未报碰撞'}</td><td>{result.nonRepairableKeys.includes(c.key)?'不可修复 · 不计分':result.targetKeys.includes(c.key)?'修复目标':'仍检查'}</td></tr>)}</tbody></table>
     <p>角度调整：{candidate.angles.map(a=>`#${a.index} ${number(a.from)}° → ${number(a.to)}°`).join('；')}</p>
-    <details><summary>搜索与连接诊断</summary><div>相对当前角度偏离总和 {number(candidate.deviation)}° · 相对 Plan 建议 {number(candidate.planDeviation)}°</div><div>最大位置残差 {number(candidate.residuals.maxPositionError)} · 最大二面角残差 {number(candidate.residuals.maxDihedralError)}°</div><div>拒绝统计：{JSON.stringify(result.rejected)}</div><div>协调控制组：{result.groups.map(g=>g.indices.map(i=>`#${i}`).join(' + ')).join('；')}</div><div>交叠体积前后：{result.baseline.map(c=>`${c.pieceIds.join('/')} ${c.volume??'未知'} → ${(candidate.collisions.find(x=>x.key===c.key)?candidate.collisions.find(x=>x.key===c.key)!.volume??'未知':'未报碰撞')}`).join('；')}</div></details>
+    <details><summary>搜索与连接诊断</summary><div>相对当前角度偏离总和 {number(candidate.deviation)}° · 相对 Plan 建议 {number(candidate.planDeviation)}°</div><div>最大位置残差 {number(candidate.residuals.maxPositionError)} · 最大二面角残差 {number(candidate.residuals.maxDihedralError)}°</div><div>不计分碰撞：{result.nonRepairableKeys.join('；')||'无'}（包含总碰撞数、Depth、交叠体积及完全有效优先项）</div><div>拒绝统计：{JSON.stringify(result.rejected)}</div><div>协调控制组：{result.groups.map(g=>g.indices.map(i=>`#${i}`).join(' + ')).join('；')}</div><div>交叠体积前后：{result.baseline.map(c=>`${c.pieceIds.join('/')} ${c.volume??'未知'} → ${(candidate.collisions.find(x=>x.key===c.key)?candidate.collisions.find(x=>x.key===c.key)!.volume??'未知':'未报碰撞')}`).join('；')}</div></details>
     <div className="magnetic-constraint-repair-controls"><button disabled={!editing||running} onClick={()=>{try{onApply(result,candidate);onPreview(null);setResult(null);setNotice('修复已应用为一次编辑；仍使用严格 Validator，变化的错误不会自动获批。')}catch(e){setNotice(String(e))}}}>应用修复</button><button onClick={()=>preview(candidate)}>预览候选</button><button onClick={()=>onPreview(null)}>取消预览</button></div>
    </>}
   </>}

@@ -36,7 +36,7 @@ import type {RepairCandidate,RepairResult} from './constraint-repair.ts'
 import {AssemblyAngleHints} from './AssemblyAngleHints.tsx'
 import {AssemblySelectionTable} from './AssemblySelectionTable.tsx'
 import { EditorInspector } from './EditorInspector.tsx'
-import { loadDraft3D, saveDraft3D } from './draft-storage.ts'
+import { DRAFT_3D_KEY,DRAFT_COLLISION_POLICY_KEY,loadDraftCollisionPolicy,loadDraft3D, saveDraft3D } from './draft-storage.ts'
 import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 import {PHOTO_ORIGIN_3D_KEY,adoptReconstructionDraft,loadPhotoOrigin,photoDraftGeometryGate,revalidatePhotoDraft} from './reconstruction/adopt-draft.ts'
@@ -62,10 +62,10 @@ export default function ThreeDWorkspace() {
   const active = stage === 'assembly' && viewMode === '3d'
   const { registry: { profiles } } = useProfileRegistry()
   const [boot] = useState(() => {
-    try { const saved = loadDraft3D(localStorage); return { ...saved, error: '' } }
-    catch (e) { return { assembly: null, raw: null, error: `原 3D 草稿无法读取，已禁止覆盖：${String(e)}` } }
+    try { const saved = loadDraft3D(localStorage); return { ...saved,...loadDraftCollisionPolicy(localStorage,saved.assembly,saved.raw), error: '' } }
+    catch (e) { return { assembly: null, raw: null, policyRaw:null, nonRepairable:[] as string[], error: `原 3D 草稿无法读取，已禁止覆盖：${String(e)}` } }
   })
-  const [history, setHistory] = useState(() => actions.createInitialHistory(boot.assembly ?? parseAssembly3D(initial)))
+  const [history, setHistory] = useState(() => actions.createInitialHistory(boot.assembly ?? parseAssembly3D(initial),boot.nonRepairable))
   const historyRef = useRef(history); historyRef.current = history
   const [loaded, setLoaded] = useState(() => ({ source: boot.raw ?? initial, name: boot.assembly ? '已保存的 3D Draft' : examples[0].name, sequence: 0, isDraft: !!boot.assembly }))
   const [text, setText] = useState(boot.raw ?? initial), [error, setError] = useState(boot.error)
@@ -82,6 +82,8 @@ export default function ThreeDWorkspace() {
   const symmetryPieces=useMemo(()=>symmetryPreview?createViewerModel(symmetryPreview.assembly).filter(p=>symmetryPreview.addedIds.includes(p.id)):undefined,[symmetryPreview])
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
+  const [cleanPolicy,setCleanPolicy]=useState(()=>canonical(boot.nonRepairable))
+  const expectedPolicyRaw=useRef<string|null>(boot.policyRaw)
   const expectedRaw = useRef(boot.raw), fileRequest = useRef(0), cameraTargetRef = useRef(new Vector3())
   const [photoOrigin,setPhotoOrigin]=useState<PhotoOrigin3D|null>(()=>loadPhotoOrigin(localStorage))
   const [editorCamera,setEditorCamera]=useState<CameraView3D|null>(null)
@@ -92,7 +94,7 @@ export default function ThreeDWorkspace() {
       if(!allowReplace())throw Error('已取消替换当前 3D Draft；原草稿保留。')
       if(boot.error)throw Error(boot.error)
       const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current,adoption3D.cameraView)
-      expectedRaw.current=raw
+      expectedRaw.current=raw;expectedPolicyRaw.current=localStorage.getItem(DRAFT_COLLISION_POLICY_KEY);setCleanPolicy(canonical([]))
       accept(actions.createInitialHistory(assembly));setClean(raw);setText(raw);setPhotoOrigin(sidecar)
       setLoaded(old=>({source:raw,name:adoption3D.origin.entryMode==='human-accepted-diagnostic'?'Human Accepted Diagnostic':adoption3D.origin.entryMode==='diagnostic-override'?'Visible 3D · 待修复 Draft':'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
       // Navigate from the receiver's current context only after CAS persistence
@@ -101,6 +103,7 @@ export default function ThreeDWorkspace() {
     }catch(e){setError(String(e));adoption3D.complete(e)}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
+  const nonRepairable=actions.currentNonRepairable(history)
   const angleHints=useAssemblyAngleHints(current,photoOrigin,active)
   const currentRepair=repairPreview?.sourceRaw===serializeAssembly3D(current)?repairPreview:null
   const humanDiagnosticSource=photoOrigin?.origin.entryMode==='human-accepted-diagnostic'&&JSON.parse(photoOrigin.assemblyRaw).id===current.id
@@ -108,7 +111,7 @@ export default function ThreeDWorkspace() {
   const operationBusy=!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair
   const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
-  const dirty = loaded.isDraft && serializeAssembly3D(current) !== clean
+  const dirty = loaded.isDraft && (serializeAssembly3D(current) !== clean || canonical(nonRepairable)!==cleanPolicy)
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const snapshotKey=useMemo(()=>`${loaded.sequence}:${serializeAssembly3D(assembly)}`,[loaded.sequence,assembly])
   const selected = selection.kind === 'piece' ? selection.id : null
@@ -140,7 +143,8 @@ export default function ThreeDWorkspace() {
   const repairCollision=useMemo(()=>{if(!currentRepair)return undefined;const issue=currentRepair.candidate.geometry.issues.find(i=>i.code==='intersection');if(!issue)return undefined;const evidence=inspectAssemblyCollisions(currentRepair.candidate.assembly,{...currentRepair.candidate.geometry,issues:[issue]})[0];return evidence?collisionVisual(evidence,'repair-preview:'+currentRepair.candidate.id):undefined},[currentRepair])
   function applyConstraintRepair(result:RepairResult,candidate:RepairCandidate){
     if(!editing||!angleHints.source)throw Error('当前不是可编辑的有效来源，未应用修复')
-    const next=confirmConstraintRepair(historyRef.current,angleHints.source,result,candidate)
+    if(localStorage.getItem(DRAFT_COLLISION_POLICY_KEY)!==expectedPolicyRaw.current)throw Error('保存的不可修复标记已被其他页面更新，请重新加载 Draft')
+    const next=confirmConstraintRepair(historyRef.current,angleHints.source,result,candidate,actions.currentNonRepairable(historyRef.current))
     accept(next);setError('');setSaveNotice(candidate.geometry.valid?'自动修复已应用；Geometry Valid，尚未保存 Draft。':'已应用部分改善；Geometry Invalid 仍保留，变化的错误需按现有流程重新审核。')
   }
   function locateGeometryError(issue:typeof validation.issues[number]){
@@ -156,7 +160,7 @@ export default function ThreeDWorkspace() {
     else if(refs.pieceIds[0])setSelection({kind:'piece',id:refs.pieceIds[0]})
     if(refs.pieceIds[0])setErrorFocus({pieceId:refs.pieceIds[0],ts:Date.now()})
   }
-  function accept(next: EditorHistory) { setRepairPreview(null);setRepairTargets([]); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(false);setSymmetrySources([]); if(next.current.id===historyRef.current.current.id&&canonical(next.current)!==canonical(historyRef.current.current))humanReview.noteMutation(next.current);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { const geometryChanged=canonical(next.current)!==canonical(historyRef.current.current);setRepairPreview(null);setRepairTargets(ids=>geometryChanged?[]:ids.filter(id=>!actions.currentNonRepairable(next).includes(id))); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(false);setSymmetrySources([]); if(next.current.id===historyRef.current.current.id&&canonical(next.current)!==canonical(historyRef.current.current))humanReview.noteMutation(next.current);setSelection(s=>geometryChanged&&s.kind==='collision'?{kind:'none'}:s);if(geometryChanged)setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
@@ -204,21 +208,26 @@ export default function ThreeDWorkspace() {
   function startEdit() {
     if (!loaded.isDraft) {
       const draft = structuredClone(current); draft.id = uid('draft'); draft.revision = 0
-      accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft)); setLoaded(old => ({ ...old, isDraft: true }))
+      accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft));setCleanPolicy(canonical([])); setLoaded(old => ({ ...old, isDraft: true }))
     }
     setTool(snapMode==='drag'?'snap':'select');setEditing(true)
   }
   function blank() {
     if (!allowReplace()) return
-    const draft = actions.createEmptyProject(); accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft))
+    const draft = actions.createEmptyProject(); accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft));setCleanPolicy(canonical([]))
     setLoaded(old => ({ ...old, name: '空白 3D Draft', isDraft: true, sequence: old.sequence + 1 })); setSelection({ kind: 'none' });setTool(snapMode==='drag'?'snap':'select'); setEditing(true)
+  }
+  function persistDraft(){
+    const h=historyRef.current
+    expectedRaw.current=saveDraft3D(localStorage,h.current,expectedRaw.current,{nonRepairable:actions.currentNonRepairable(h),expectedRaw:expectedPolicyRaw.current})
+    expectedPolicyRaw.current=localStorage.getItem(DRAFT_COLLISION_POLICY_KEY)
+    setClean(serializeAssembly3D(h.current));setCleanPolicy(canonical(actions.currentNonRepairable(h)))
   }
   function save() {
     try {
       if (boot.error) throw Error(boot.error)
       if (operationBusy) throw Error('请先结束画布操作或确认/取消吸附预览，再保存')
-      expectedRaw.current = saveDraft3D(localStorage, historyRef.current.current, expectedRaw.current)
-      setClean(serializeAssembly3D(historyRef.current.current)); setSaveNotice('3D Draft 已保存，刷新可恢复；几何状态未被修正。'); setError('')
+      persistDraft(); setSaveNotice('3D Draft 已保存，刷新可恢复；几何状态未被修正。'); setError('')
     } catch (e) { setError(String(e)) }
   }
   async function revalidate() {
@@ -239,13 +248,14 @@ export default function ThreeDWorkspace() {
     } catch(e) {setError(String(e))}
   }
   async function approveCurrent(){
-    try{if(operationBusy||humanReview.busy)throw Error('请先结束当前操作');if(boot.error)throw Error(boot.error);expectedRaw.current=saveDraft3D(localStorage,historyRef.current.current,expectedRaw.current);setClean(serializeAssembly3D(historyRef.current.current));setLoaded(old=>({...old,isDraft:true}));await humanReview.approve();setError('')}catch(e){setError(String(e))}
+    try{if(operationBusy||humanReview.busy)throw Error('请先结束当前操作');if(boot.error)throw Error(boot.error);persistDraft();setLoaded(old=>({...old,isDraft:true}));await humanReview.approve();setError('')}catch(e){setError(String(e))}
   }
   function reloadSaved() {
     if (!allowReplace()) return
     try {
       const saved = loadDraft3D(localStorage); if (!saved.assembly) throw Error('尚未保存 3D Draft')
-      setPhotoOrigin(loadPhotoOrigin(localStorage));expectedRaw.current = saved.raw; accept(actions.createInitialHistory(saved.assembly)); setClean(saved.raw!)
+      const policy=loadDraftCollisionPolicy(localStorage,saved.assembly,saved.raw);setCleanPolicy(canonical(policy.nonRepairable));expectedPolicyRaw.current=policy.policyRaw
+      setPhotoOrigin(loadPhotoOrigin(localStorage));expectedRaw.current = saved.raw; accept(actions.createInitialHistory(saved.assembly,policy.nonRepairable)); setClean(saved.raw!)
       setLoaded(old => ({ source: saved.raw!, name: '已保存的 3D Draft', isDraft: true, sequence: old.sequence + 1 }))
       setText(saved.raw!); setSelection({ kind: 'none' }); setEditing(false); setError('')
     } catch (e) { setError(String(e)) }
@@ -255,8 +265,11 @@ export default function ThreeDWorkspace() {
       if (!allowReplace()) return
       if (source.length > 1_000_000) throw Error('JSON 超过 1 MB 限制')
       const assembly = parseAssembly3D(source)
-      accept(actions.createInitialHistory(assembly)); setClean(serializeAssembly3D(assembly))
-      setLoaded(old => ({ source, name, sequence: old.sequence + 1, isDraft: false })); setEditing(false)
+      const policy=loadDraftCollisionPolicy(localStorage,assembly,serializeAssembly3D(assembly));setCleanPolicy(canonical(policy.nonRepairable));
+      const isSavedDraft=localStorage.getItem(DRAFT_3D_KEY)===serializeAssembly3D(assembly)
+      if(isSavedDraft)expectedPolicyRaw.current=policy.policyRaw
+      accept(actions.createInitialHistory(assembly,policy.nonRepairable)); setClean(serializeAssembly3D(assembly))
+      setLoaded(old => ({ source, name, sequence: old.sequence + 1, isDraft: isSavedDraft })); setEditing(false)
       setText(source); setSelected(null); setError('')
     } catch (e) { setError(`加载失败，保留当前作品：${String(e)}`) }
   }
@@ -317,13 +330,14 @@ export default function ThreeDWorkspace() {
           {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
           {geometryGate.repair&&<div aria-label="待修复 Draft 几何状态"><b>{humanDiagnosticSource?'Human Accepted Diagnostic':'Diagnostic 来源 · 待修复 Draft'}</b><p data-testid="repair-draft-status" role={geometryGate.blocker&&!humanReview.grant?'alert':'status'}>{humanReview.grant?(humanDiagnosticSource?'Geometry Invalid + Human Accepted Diagnostic：已接受且未变化的错误不再阻断；可进入 Build，无须重复批准。':'Geometry Invalid + Human Approved：本快照的碰撞已获人工授权，可进入 Build；不代表 Geometry Valid。'):humanDiagnosticSource?(validation.valid?'当前 Geometry Valid，可进入 Build。':'尚有新增、变化或未确认等价的错误，继续阻断 Build。'):geometryGate.blocker??'当前 Draft Revision / Hash 已通过 Revalidate Geometry，可进入 Build。'} 原始碰撞错误保留在照片来源记录中。</p></div>}
           <section className="magnetic-3d-collision-review" aria-label="Collision Review"><div className="magnetic-3d-collision-heading"><h4>Collision Review · {collisionIssues.length}</h4><span data-testid="collision-review-progress">{reviewedCount}/{reviewPolicy.keys.length} 已审核</span></div>
-            {!collisionIssues.length?<p className="hint">当前严格 Validator 未报告实体碰撞。</p>:<table className="magnetic-3d-collision-table"><colgroup><col/><col style={{width:'20%'}}/><col style={{width:'16%'}}/><col style={{width:'16%'}}/></colgroup><thead><tr><th>Tile Pair</th><th>Depth</th><th>接受</th><th>修复</th></tr></thead><tbody>{collisionIssues.map((issue,index)=>{
+            {!collisionIssues.length?<p className="hint">当前严格 Validator 未报告实体碰撞。</p>:<table className="magnetic-3d-collision-table"><colgroup><col/><col style={{width:'18%'}}/><col style={{width:'13%'}}/><col style={{width:'13%'}}/><col style={{width:'19%'}}/></colgroup><thead><tr><th>Tile Pair</th><th>Depth</th><th>接受</th><th>修复</th><th title="Non-repairable：不作为优化目标或评分收益，仍完整验证且不得加重">不可修复</th></tr></thead><tbody>{collisionIssues.map((issue,index)=>{
               const key=collisionPairKey(issue.relatedPieceIds??[]),acceptedKey=collisionErrorKey(issue),selected=selectedCollision?.key===key,select=()=>{if(!operationBusy){setSelection(selected?{kind:'none'}:{kind:'collision',key,sourceKey:snapshotKey});setCollisionFocus(null)}}
               return <tr key={index} data-collision-key={key} aria-selected={selected} title={issue.message} onClick={select}>
                 <td><button disabled={operationBusy||!issue.relatedPieceIds||issue.relatedPieceIds.length!==2} aria-pressed={selected} onClick={e=>{e.stopPropagation();select()}}>{issue.relatedPieceIds?.join(' / ')??'未指定零件对'}</button></td>
                 <td>{typeof issue.penetrationDepth==='number'?depthFormat(issue.penetrationDepth):'—'}</td>
                 <td><input type="checkbox" aria-label={`接受碰撞 ${issue.relatedPieceIds?.join(' / ')}`} checked={humanReview.state?.acceptedKeys.includes(acceptedKey)??false} disabled={operationBusy||humanReview.busy||!reviewPolicy.eligible} onClick={e=>e.stopPropagation()} onChange={e=>void humanReview.accept(acceptedKey,e.target.checked,photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?String(photoOrigin.origin.id):undefined)}/></td>
-                <td><input type="checkbox" aria-label={`修复目标 ${issue.relatedPieceIds?.join(' / ')}`} checked={repairTargets.includes(key)} disabled={operationBusy||!issue.relatedPieceIds} onClick={e=>e.stopPropagation()} onChange={e=>setRepairTargets(ids=>e.target.checked?[...ids,key]:ids.filter(id=>id!==key))}/></td>
+                <td><input type="checkbox" aria-label={`修复目标 ${issue.relatedPieceIds?.join(' / ')}`} checked={repairTargets.includes(key)&&!nonRepairable.includes(key)} disabled={operationBusy||!issue.relatedPieceIds||nonRepairable.includes(key)} onClick={e=>e.stopPropagation()} onChange={e=>setRepairTargets(ids=>e.target.checked?[...ids,key]:ids.filter(id=>id!==key))}/></td>
+                <td><input type="checkbox" aria-label={`不可修复碰撞 ${issue.relatedPieceIds?.join(' / ')}`} checked={nonRepairable.includes(key)} disabled={!editing||operationBusy||!issue.relatedPieceIds} onClick={e=>e.stopPropagation()} onChange={e=>apply(h=>actions.setNonRepairableCollisionAction(h,key,e.target.checked))}/></td>
               </tr>
             })}</tbody></table>}
             <div className="magnetic-3d-collision-actions"><div><button disabled={!selectedCollision?.center} onClick={()=>selectedCollision&&setCollisionFocus({target:selectedCollision,sequence:(collisionFocus?.sequence??0)+1})}>聚焦碰撞</button><button disabled={!selectedCollision} onClick={()=>{setSelection({kind:'none'});setCollisionFocus(null)}}>取消碰撞选择</button></div>
@@ -334,7 +348,7 @@ export default function ThreeDWorkspace() {
             {!!(humanReview.state?.humanAcceptedDiagnostic?humanReview.state.blockers.length:reviewPolicy.blockers.length)&&<p className="magnetic-3d-blocker">{humanDiagnosticSource?'存在新增、变化或不可定位错误，不能放行当前作品。':'存在结构性、未知或不可定位错误，不能批准当前作品。'}</p>}
             {selectedCollision&&<p className="hint">{selectedCollision.kind==='volume'?'显示完整厚度碰撞代理的实际交集（透视），与 Viewer 外观网格不同；仍为 Invalid。':selectedCollision.reason}</p>}
           </section>
-          <AutoConstraintRepairPanel assembly={current} hints={angleHints} editing={editing} disabled={operationBusy||humanReview.busy} targets={repairTargets} highlighted={selectedCollision?.key} collisionCount={collisionIssues.length} onBusy={setRepairSearching} onPreview={setRepairPreview} onApply={applyConstraintRepair}/>
+          <AutoConstraintRepairPanel assembly={current} hints={angleHints} editing={editing} disabled={operationBusy||humanReview.busy} nonRepairable={nonRepairable} excludedCount={collisionIssues.filter(i=>nonRepairable.includes(collisionPairKey(i.relatedPieceIds??[]))).length} targets={repairTargets} highlighted={selectedCollision?.key} collisionCount={collisionIssues.length} onBusy={setRepairSearching} onPreview={setRepairPreview} onApply={applyConstraintRepair}/>
           <details onToggle={e=>setShowGeometryDetails(e.currentTarget.open)}><summary>详细几何 / Collision Diagnostic · {validation.issues.length}</summary>
             <p>{assembly.id} · revision {assembly.revision}</p>
             {validation.issues.length?<ul>{validation.issues.map((issue,i)=><li key={i} className={issue.severity==='error'?'magnetic-3d-blocker':undefined}><button className={issue.severity==='error'?'magnetic-3d-blocker':undefined} disabled={operationBusy} onClick={()=>locateGeometryError(issue)}>{issue.message}</button></li>)}</ul>:<p>保存位姿满足当前连接与碰撞检查。</p>}

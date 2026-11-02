@@ -1,3 +1,4 @@
+import {nonRepairableKeys} from './non-repairable.ts'
 import {canonical} from '../build-plan.ts'
 import {serializeAssembly3D,toEnginePose} from './assembly.ts'
 import type {Assembly3D} from './assembly.ts'
@@ -14,9 +15,9 @@ import type {EditorHistory} from './vendor/editor/state.ts'
 import type {ValidationResult} from './vendor/engine/types.ts'
 
 export type RepairCollision={key:string;pieceIds:string[];depth:number;volume:number|null}
-export type RepairOptions={maxChecks?:number;maxNodes?:number;maxMs?:number;referencePieceId?:string}
+export type RepairOptions={maxChecks?:number;maxNodes?:number;maxMs?:number;referencePieceId?:string;nonRepairableKeys?:readonly string[]}
 export type RepairCandidate={id:string;assembly:Assembly3D;geometry:ValidationResult;collisions:RepairCollision[];angles:{index:number;from:number;to:number}[];deviation:number;planDeviation:number;residuals:ReturnType<typeof connectionResiduals>;controls:number[]}
-export type RepairResult={sourceRaw:string;sourceSignature:string;targetKeys:string[];referencePieceId:string;referencePieces:string[];baseline:RepairCollision[];candidates:RepairCandidate[];groups:{indices:number[];minDelta:number;maxDelta:number}[];status:'complete'|'budget-exhausted'|'blocked';reason:string;checks:number;nodes:number;rejected:Record<string,number>;elapsedMs:number}
+export type RepairResult={sourceRaw:string;sourceSignature:string;targetKeys:string[];nonRepairableKeys:string[];referencePieceId:string;referencePieces:string[];baseline:RepairCollision[];candidates:RepairCandidate[];groups:{indices:number[];minDelta:number;maxDelta:number}[];status:'complete'|'budget-exhausted'|'blocked';reason:string;checks:number;nodes:number;rejected:Record<string,number>;elapsedMs:number}
 export const repairLimits=Object.freeze({maxChecks:128,maxNodes:512,maxMs:2500,maxCandidates:5})
 // Numerical comparisons between two evaluations only; never a Validator tolerance.
 const EPS=1e-9
@@ -43,11 +44,12 @@ function sameRelativePair(a:Assembly3D,b:Assembly3D,ids:string[]){
 }
 type Member={index:number;sign:number;min:number;max:number;preferred:number[]}
 type Control={members:Member[];min:number;max:number;domain:number[]}
-type Problem={a:Assembly3D;source:AngleHintSource;baseline:RepairCollision[];targets:Set<string>;controls:Control[];roots:string[];fixed:Set<string>;referencePieceId:string}
+type Problem={a:Assembly3D;source:AngleHintSource;baseline:RepairCollision[];targets:Set<string>;excluded:Set<string>;controls:Control[];roots:string[];fixed:Set<string>;referencePieceId:string}
 function prepare(a:Assembly3D,source:AngleHintSource,targets:readonly string[]|undefined,options:RepairOptions,report=validateAssembly3D(a),baseline=repairCollisions(a,report)):Problem{
  if(source.original.id!==a.id||source.executedVariant===null||!source.reviewInput)throw Error('缺少已校验的执行方案或 Review 硬约束，不能搜索')
  if(report.issues.some(i=>i.severity==='error'&&i.code!=='intersection'))throw Error('当前存在连接、Port、闭环或其他结构错误；V1 只修复连接有效的碰撞结构')
- const chosen=new Set(targets??baseline.map(c=>c.key))
+ const excluded=new Set(nonRepairableKeys(a,options.nonRepairableKeys??[])),chosen=new Set((targets??baseline.map(c=>c.key)).filter(k=>!excluded.has(k)))
+ if(!chosen.size&&baseline.some(c=>excluded.has(c.key)))throw Error('所选碰撞均标记为不可修复；请选择其他修复目标')
  if(!chosen.size||[...chosen].some(k=>!baseline.some(c=>c.key===k)))throw Error('修复目标为空或不属于当前碰撞快照')
  if(inspectSpatialConsistency(a,source.reviewInput,[...source.mapping].map(([observationId,pieceId])=>({observationId,pieceId}))).status==='contradicted')throw Error('当前结构与人工空间约束矛盾，请先核对，不能自动改写硬约束')
  const rows=assemblyAngleHintRows(a,source,source.executedVariant),classes=classifyAssemblyConstraints(a,rows,report),targetIds=new Set(baseline.filter(c=>chosen.has(c.key)).flatMap(c=>c.pieceIds)),connected=components(a,()=>true),affected=new Set(connected.filter(ids=>ids.some(id=>targetIds.has(id))).flat())
@@ -90,7 +92,7 @@ function prepare(a:Assembly3D,source:AngleHintSource,targets:readonly string[]|u
   for(const id of active?fixedBlocks.find(group=>group.includes(root))!:ids)fixed.add(id)
  }
  if(baseline.filter(c=>chosen.has(c.key)).every(c=>block.get(c.pieceIds[0])===block.get(c.pieceIds[1])))throw Error('目标碰撞均在同一个固定子结构内部；获准折角无法改变这些相对几何关系')
- return {a,source,baseline,targets:chosen,controls,roots,fixed,referencePieceId}
+ return {a,source,baseline,targets:chosen,excluded,controls,roots,fixed,referencePieceId}
 }
 function evaluate(p:Problem,controls:number[]):RepairCandidate{
  if(controls.length!==p.controls.length)throw Error('CONTROL_DOMAIN')
@@ -118,22 +120,27 @@ function evaluate(p:Problem,controls:number[]):RepairCandidate{
   else if(!sameRelativePair(p.a,solved,c.pieceIds))throw Error('UNVERIFIED_COLLISION_CHANGE')
  }
  const before=p.baseline.filter(c=>p.targets.has(c.key)),after=collisions.filter(c=>p.targets.has(c.key)),sum=(cs:RepairCollision[],field:'depth'|'volume')=>cs.reduce((v,c)=>v+(c[field]??0),0)
- if(!geometry.valid&&!(after.length<before.length||sum(after,'depth')<sum(before,'depth')-EPS||before.every(c=>c.volume!==null)&&after.every(c=>c.volume!==null)&&sum(after,'volume')<sum(before,'volume')-1e-14))throw Error('NO_TARGET_IMPROVEMENT')
+ if(!(after.length<before.length||sum(after,'depth')<sum(before,'depth')-EPS||before.every(c=>c.volume!==null)&&after.every(c=>c.volume!==null)&&sum(after,'volume')<sum(before,'volume')-1e-14))throw Error('NO_TARGET_IMPROVEMENT')
  return {id:'',assembly:solved,geometry,collisions,angles,deviation:angles.reduce((v,a)=>v+Math.abs(a.to-a.from),0),planDeviation,residuals:connectionResiduals(solved),controls}
 }
-function compare(a:RepairCandidate,b:RepairCandidate,targets:Set<string>){
- const score=(c:RepairCandidate)=>{const selected=c.collisions.filter(x=>targets.has(x.key));return [c.geometry.valid?0:1,selected.length,selected.reduce((s,x)=>s+x.depth,0),c.collisions.length,c.collisions.reduce((s,x)=>s+x.depth,0),selected.reduce((s,x)=>s+(x.volume??0),0),c.collisions.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]}
- const x=score(a),y=score(b);for(let i=0;i<x.length;i++)if(Math.abs(x[i]-y[i])>1e-12)return x[i]-y[i];return 0
+/** Excluded collisions contribute NOTHING, including the full-validity bonus.
+ * Full Validator results remain attached for truthful display and workflow gates. */
+export function repairCandidateScore(c:RepairCandidate,targets:ReadonlySet<string>,excluded:ReadonlySet<string>=new Set()):number[]{
+ const counted=c.collisions.filter(x=>!excluded.has(x.key)),selected=counted.filter(x=>targets.has(x.key))
+ return [counted.length?1:0,selected.length,selected.reduce((s,x)=>s+x.depth,0),counted.length,counted.reduce((s,x)=>s+x.depth,0),selected.reduce((s,x)=>s+(x.volume??0),0),counted.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]
+}
+function compare(a:RepairCandidate,b:RepairCandidate,targets:Set<string>,excluded:Set<string>){
+ const x=repairCandidateScore(a,targets,excluded),y=repairCandidateScore(b,targets,excluded);for(let i=0;i<x.length;i++)if(Math.abs(x[i]-y[i])>1e-12)return x[i]-y[i];return 0
 }
 /** Bounded deterministic best-first Cartesian grid, with exact coaxial grouped
  * deltas first. Other closed-loop combinations are admitted ONLY by the existing
  * Solver + full strict Validator. Completion means sampled grid, not proof over
  * the continuous domain. Run off the UI thread. No model or execution API. */
 export function findConstraintRepairs(a:Assembly3D,source:AngleHintSource,targets?:string[],options:RepairOptions={},progress?:(checks:number,nodes:number)=>void):RepairResult{
- const start=performance.now(),result:RepairResult={sourceRaw:serializeAssembly3D(a),sourceSignature:signature(source),targetKeys:[],referencePieceId:options.referencePieceId??'',referencePieces:[],baseline:[],candidates:[],groups:[],status:'blocked',reason:'',checks:0,nodes:0,rejected:{},elapsedMs:0}
+ const start=performance.now(),result:RepairResult={sourceRaw:serializeAssembly3D(a),sourceSignature:signature(source),targetKeys:[],nonRepairableKeys:[],referencePieceId:options.referencePieceId??'',referencePieces:[],baseline:[],candidates:[],groups:[],status:'blocked',reason:'',checks:0,nodes:0,rejected:{},elapsedMs:0}
  try{
   const report=validateAssembly3D(a);result.checks=1;result.baseline=repairCollisions(a,report)
-  const p=prepare(a,source,targets,options,report,result.baseline);result.targetKeys=[...p.targets].sort();result.referencePieceId=p.referencePieceId;result.referencePieces=[...p.fixed].sort();result.groups=p.controls.map(g=>({indices:g.members.map(m=>m.index),minDelta:g.min,maxDelta:g.max}))
+  const p=prepare(a,source,targets,options,report,result.baseline);result.targetKeys=[...p.targets].sort();result.nonRepairableKeys=[...p.excluded].sort();result.referencePieceId=p.referencePieceId;result.referencePieces=[...p.fixed].sort();result.groups=p.controls.map(g=>({indices:g.members.map(m=>m.index),minDelta:g.min,maxDelta:g.max}))
   const cap=(n:number|undefined,fallback:number)=>Number.isFinite(n)?Math.max(1,Math.min(fallback,Math.floor(n!))):fallback,maxChecks=cap(options.maxChecks,repairLimits.maxChecks),maxNodes=cap(options.maxNodes,repairLimits.maxNodes),maxMs=cap(options.maxMs,repairLimits.maxMs)
   let truncated=false
   const queue:number[][]=[p.controls.map(()=>0)],seen=new Set([queue[0].join(',')]);result.status='complete'
@@ -144,7 +151,7 @@ export function findConstraintRepairs(a:Assembly3D,source:AngleHintSource,target
    for(let i=0;i<indices.length;i++){const next=[...indices];next[i]++;const key=next.join(',');if(next[i]<p.controls[i].domain.length&&!seen.has(key)){if(seen.size<maxNodes){seen.add(key);queue.push(next)}else truncated=true}}
    const values=indices.map((i,k)=>p.controls[k].domain[i]);if(values.every(v=>Math.abs(v)<=EPS))continue
    result.checks++
-   try{const candidate=evaluate(p,values);result.candidates.push(candidate);result.candidates.sort((a,b)=>compare(a,b,p.targets));result.candidates=result.candidates.slice(0,repairLimits.maxCandidates)}catch(e){const key=String(e).replace(/^Error: /,'');result.rejected[key]=(result.rejected[key]??0)+1}
+   try{const candidate=evaluate(p,values);result.candidates.push(candidate);result.candidates.sort((a,b)=>compare(a,b,p.targets,p.excluded));result.candidates=result.candidates.slice(0,repairLimits.maxCandidates)}catch(e){const key=String(e).replace(/^Error: /,'');result.rejected[key]=(result.rejected[key]??0)+1}
    if(result.checks%8===0)progress?.(result.checks,result.nodes)
   }
   if(truncated)result.status='budget-exhausted'
@@ -155,9 +162,11 @@ export function findConstraintRepairs(a:Assembly3D,source:AngleHintSource,target
 }
 /** Recompute permissions, propagation, metrics and full validation at apply time.
  * A worker preview is never itself an authoring command or approval. */
-export function confirmConstraintRepair(history:EditorHistory,source:AngleHintSource,result:RepairResult,candidate:RepairCandidate):EditorHistory{
+export function confirmConstraintRepair(history:EditorHistory,source:AngleHintSource,result:RepairResult,candidate:RepairCandidate,currentNonRepairable:readonly string[]=[]):EditorHistory{
  if(serializeAssembly3D(history.current)!==result.sourceRaw||signature(source)!==result.sourceSignature)throw Error('修复预览已过期，当前 Draft / 来源已变化；未应用')
- const p=prepare(history.current,source,result.targetKeys,{referencePieceId:result.referencePieceId}),checked=evaluate(p,candidate.controls)
+ const keys=nonRepairableKeys(history.current,currentNonRepairable)
+ if(canonical(keys)!==canonical(result.nonRepairableKeys??[]))throw Error('不可修复标记已变化，修复预览已过期；未应用')
+ const p=prepare(history.current,source,result.targetKeys,{referencePieceId:result.referencePieceId,nonRepairableKeys:keys}),checked=evaluate(p,candidate.controls)
  if(canonical(checked.assembly)!==canonical(candidate.assembly))throw Error('修复候选快照不一致；未应用')
  return commit(history,()=>checked.assembly)
 }
