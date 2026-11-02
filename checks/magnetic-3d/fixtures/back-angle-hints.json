@@ -1,0 +1,1886 @@
+{
+  "origin": {
+    "sourceId": "7fbf104261d876bcfb1c55333252806aa396030a84129222a869e23a87d59f26",
+    "sourceHash": "fec0844b0c2681f7d5b689d1f3083587b887719bdb72c3a4657770ac847dccc2",
+    "analysisId": "8ee21f6c-43bd-4a04-8e06-ec94bc8f6c50",
+    "analysisHash": "dfcf3131c025cad2714b2eb7ef7368a6ed8f160424ba0aa6359c533802c2acf0",
+    "reviewId": "7f86bfcb-40a5-48ab-ac95-35241318fdd7",
+    "reviewHash": "331f464a7a4ad6ac78b1cec631ad1dc5874c64f24db60c6e976fddb390caa2d6",
+    "planId": "a3d5a25f-c530-45a4-af85-84a043182bea",
+    "planHash": "8636416460db4b6bf1abfbc6f3cf4c23b960365465c153c4f6ff89a750cc388e",
+    "executionId": "0c83b516-ea3d-4229-b045-53821b817c87",
+    "executionHash": "159b2233fa2d12501cebdd9f13c676e0a02ec5595a92a21d03e4264348e0b227",
+    "candidateId": "diagnostic-8",
+    "candidateHash": "248cc5ac50bd9688797be8e795e96f542d22f8975425d7cd7581ce3c35216f4f",
+    "reconstructionScope": {
+      "version": 1,
+      "groupId": "63e09e49-3057-429a-95c6-fdeebce6fcda",
+      "groupName": "m_back",
+      "imageId": "all",
+      "imageName": "所有图片",
+      "observationIds": [
+        "p01",
+        "p02",
+        "p03",
+        "p04",
+        "p05",
+        "p06",
+        "p07",
+        "p08",
+        "p09",
+        "p10",
+        "p11",
+        "p12",
+        "p13",
+        "p14"
+      ],
+      "modulePlan": {
+        "id": "81131b8e-1096-41a7-bd64-ca28e8bd7b40",
+        "hash": "2dae4a6aa2d38607fd1d2860f9dfe244998994ec7f0891ee3235f7b70d96a545"
+      }
+    },
+    "assembly": {
+      "kind": "magnetic-assembly-3d",
+      "schemaVersion": 1,
+      "id": "visible-2f13de46-180f-4f1d-9e4a-9e8ce4c4c315",
+      "revision": 0,
+      "profiles": [
+        {
+          "profile": {
+            "id": "square",
+            "version": 1,
+            "name": "正方形",
+            "vertices": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "connectableEdges": [
+              "e0",
+              "e1",
+              "e2",
+              "e3"
+            ]
+          },
+          "thickness": 0.06
+        },
+        {
+          "profile": {
+            "id": "equilateral-triangle",
+            "version": 1,
+            "name": "等边三角形",
+            "vertices": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0.5,
+                0.8660254037844386
+              ]
+            ],
+            "connectableEdges": [
+              "e0",
+              "e1",
+              "e2"
+            ]
+          },
+          "thickness": 0.06
+        }
+      ],
+      "pieces": [
+        {
+          "id": "p01",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#8147B0",
+          "pose": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "quaternion": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "p02",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#8652B3",
+          "pose": {
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "quaternion": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "p03",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#387DC0",
+          "pose": {
+            "position": [
+              -0.5,
+              0,
+              -0.4999999999999999
+            ],
+            "quaternion": [
+              0.4999999999999999,
+              -0.4999999999999999,
+              -0.5,
+              0.5
+            ]
+          }
+        },
+        {
+          "id": "p09",
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "color": "#EF916A",
+          "pose": {
+            "position": [
+              -0.5000000000000001,
+              -0.6494292453613422,
+              -0.5576775358252052
+            ],
+            "quaternion": [
+              -0.27059805007309845,
+              -0.6532814824381882,
+              0.27059805007309845,
+              0.6532814824381883
+            ]
+          }
+        },
+        {
+          "id": "p11",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#2BAE9E",
+          "pose": {
+            "position": [
+              0,
+              -0.8535533905932737,
+              -0.3535533905932738
+            ],
+            "quaternion": [
+              0.3826834323650898,
+              0,
+              0,
+              0.9238795325112867
+            ]
+          }
+        },
+        {
+          "id": "p12",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#39B8A2",
+          "pose": {
+            "position": [
+              1,
+              -0.8535533905932737,
+              -0.3535533905932738
+            ],
+            "quaternion": [
+              0.3826834323650898,
+              0,
+              0,
+              0.9238795325112867
+            ]
+          }
+        },
+        {
+          "id": "p13",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#39CEA4",
+          "pose": {
+            "position": [
+              0,
+              -1.5606601717798212,
+              -1.0606601717798214
+            ],
+            "quaternion": [
+              0.38268343236508984,
+              0,
+              0,
+              0.9238795325112867
+            ]
+          }
+        },
+        {
+          "id": "p14",
+          "profileId": "square",
+          "profileVersion": 1,
+          "color": "#36CAA0",
+          "pose": {
+            "position": [
+              1,
+              -1.5606601717798212,
+              -1.0606601717798214
+            ],
+            "quaternion": [
+              0.38268343236508984,
+              0,
+              0,
+              0.9238795325112867
+            ]
+          }
+        }
+      ],
+      "connections": [
+        {
+          "pieceA": "p01",
+          "pieceB": "p02",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "dihedralDeg": 0,
+          "flip": true
+        },
+        {
+          "pieceA": "p01",
+          "pieceB": "p03",
+          "portA": "e3-p0",
+          "portB": "e2-p0",
+          "dihedralDeg": 90,
+          "flip": true
+        },
+        {
+          "pieceA": "p01",
+          "pieceB": "p11",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "dihedralDeg": 45,
+          "flip": true
+        },
+        {
+          "pieceA": "p02",
+          "pieceB": "p12",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "dihedralDeg": 45,
+          "flip": true
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p09",
+          "portA": "e3-p0",
+          "portB": "e0-p0",
+          "dihedralDeg": 90,
+          "flip": true
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p12",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "dihedralDeg": 0,
+          "flip": true
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p13",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "dihedralDeg": 0,
+          "flip": true
+        },
+        {
+          "pieceA": "p12",
+          "pieceB": "p14",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "dihedralDeg": 0,
+          "flip": true
+        },
+        {
+          "pieceA": "p13",
+          "pieceB": "p14",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "dihedralDeg": 0,
+          "flip": true
+        }
+      ]
+    },
+    "observationMap": [
+      {
+        "observationId": "p01",
+        "pieceId": "p01"
+      },
+      {
+        "observationId": "p02",
+        "pieceId": "p02"
+      },
+      {
+        "observationId": "p03",
+        "pieceId": "p03"
+      },
+      {
+        "observationId": "p09",
+        "pieceId": "p09"
+      },
+      {
+        "observationId": "p11",
+        "pieceId": "p11"
+      },
+      {
+        "observationId": "p12",
+        "pieceId": "p12"
+      },
+      {
+        "observationId": "p13",
+        "pieceId": "p13"
+      },
+      {
+        "observationId": "p14",
+        "pieceId": "p14"
+      }
+    ],
+    "id": "dcb39710-5ed3-4039-ba56-690307fa40f6",
+    "hash": "6df99c39fe63c21a9a5ff4ee89c2dbf2dd8d3192cc2a199770d5d0f525c52712"
+  },
+  "plan": {
+    "plan": {
+      "version": 2,
+      "parts": [
+        {
+          "id": "p01",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Purple left roof panel. Conventional unverified local basis: e0 front, e1 right, e2 rear, e3 left; +Z approximately upward."
+        },
+        {
+          "id": "p02",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Purple right roof panel; uses the same conventional basis as p01."
+        },
+        {
+          "id": "p03",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Blue left upright panel. Conventionally e2 is its roof-contact edge, local +Y points toward that edge, and local +X runs toward the front along the shell depth."
+        },
+        {
+          "id": "p04",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Confirmed inventory instance; right upright pose is supported by the first step, not independently resolved in the final photograph. No final local-edge correspondence assigned."
+        },
+        {
+          "id": "p05",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Confirmed instance identified as the left base in the first step. Final pose and edge correspondence remain unresolved."
+        },
+        {
+          "id": "p06",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Confirmed instance identified as the right base in the first step. Final pose and edge correspondence remain unresolved."
+        },
+        {
+          "id": "p07",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Confirmed instance identified as a left upright purple wall in the first step. Final pose and local-edge correspondence remain unresolved."
+        },
+        {
+          "id": "p08",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Confirmed instance identified as a right upright purple wall in the first step. Final pose and local-edge correspondence remain unresolved."
+        },
+        {
+          "id": "p09",
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "orientationEvidence": "Reviewed equilateral triangle overrides Vision's tentative right-triangle identification. Conventionally e0 is the visible slope-contact rim, directed opposite p11.e3; its remaining vertex lies on the support side below that rim."
+        },
+        {
+          "id": "p10",
+          "profileId": "equilateral-triangle",
+          "profileVersion": 1,
+          "orientationEvidence": "Reviewed equilateral triangle overrides Vision's right-triangle suggestion. First-step right support is confirmed as an instance, but its final contact and local-edge mapping are unresolved."
+        },
+        {
+          "id": "p11",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Upper-left green panel. Conventional basis: e2 upper, e0 lower, e1 right, e3 left; local +Y points upslope and +Z toward the exposed side."
+        },
+        {
+          "id": "p12",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Upper-right green panel, using exactly the same local-edge convention as p11."
+        },
+        {
+          "id": "p13",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Lower-left green panel. Uses the p11 basis continued through its upper hinge: e2 upper, e0 lower, e1 right, e3 left. Final inclination is partly occluded."
+        },
+        {
+          "id": "p14",
+          "profileId": "square",
+          "profileVersion": 1,
+          "orientationEvidence": "Lower-right green panel. Uses the same basis as the other green panels. Its final rim is weak evidence by itself; the earlier independently framed panel supports identity, not an unchanged final pose."
+        }
+      ],
+      "connections": [
+        {
+          "pieceA": "p01",
+          "pieceB": "p02",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "intent": "connect",
+          "angles": [
+            0
+          ],
+          "angleRange": {
+            "min": -5,
+            "max": 5
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p01:inner_edge",
+            "p02:inner_edge"
+          ],
+          "evidence": "The roof seam has matching endpoint neighborhoods and continuous outer perimeter, supporting a shared full edge rather than projected overlap. Both supplied ports have length 1.",
+          "uncertainty": "Edge labels are conventional, not printed identifications. Near-coplanarity is inferred."
+        },
+        {
+          "pieceA": "p01",
+          "pieceB": "p11",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "intent": "connect",
+          "angles": [
+            45
+          ],
+          "angleRange": {
+            "min": 25,
+            "max": 65
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p01:front_edge",
+            "p11:upper_edge"
+          ],
+          "evidence": "Purple front rim and green upper rim follow the same span and endpoint neighborhoods. With roof local +X across the assembly, downward continuation toward the foreground rotates the green normal by a positive engine angle.",
+          "uncertainty": "45 degrees is a visual hypothesis, not a measurement. This hinge must match the p02–p12 hinge in the closed two-column strip."
+        },
+        {
+          "pieceA": "p02",
+          "pieceB": "p12",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "intent": "connect",
+          "angles": [
+            45
+          ],
+          "angleRange": {
+            "min": 25,
+            "max": 65
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p02:front_edge",
+            "p12:upper_edge"
+          ],
+          "evidence": "The right purple/green boundary continues the left hinge line. Reversed endpoint pairing follows the common outward-normal convention.",
+          "uncertainty": "Correlated with p01–p11, not an independently selectable fold."
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p12",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "intent": "connect",
+          "angles": [
+            0
+          ],
+          "angleRange": {
+            "min": -5,
+            "max": 5
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p11",
+            "p12"
+          ],
+          "evidence": "The longitudinal green seam connects the upper and lower crosswise junctions. It is a panel boundary, not an internal decorative facet; it closes the roof/upper-green loop.",
+          "uncertainty": "The shared plane is approximate; loop closure must constrain any permitted deviations."
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p13",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "intent": "connect",
+          "angles": [
+            0
+          ],
+          "angleRange": {
+            "min": -10,
+            "max": 10
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p11:lower_edge",
+            "p13:upper_edge"
+          ],
+          "evidence": "The exposed crosswise rims share their endpoint neighborhoods. The base interpretation continues the upper green plane through the hinge.",
+          "uncertainty": "The lower face is substantially occluded. A correlated shallower lower row is supplied as a full replacement graph."
+        },
+        {
+          "pieceA": "p12",
+          "pieceB": "p14",
+          "portA": "e0-p0",
+          "portB": "e2-p0",
+          "intent": "connect",
+          "angles": [
+            0
+          ],
+          "angleRange": {
+            "min": -10,
+            "max": 10
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p12:lower_edge",
+            "p14:upper_rim_segment"
+          ],
+          "evidence": "A narrow green rim beneath p12 is consistent with the upper edge of the independently observed lower-right panel.",
+          "uncertainty": "Final evidence alone could be a doubled rim. Connection is supported jointly by the final strip and earlier distinct panel, without assuming its earlier fold is retained."
+        },
+        {
+          "pieceA": "p13",
+          "pieceB": "p14",
+          "portA": "e1-p0",
+          "portB": "e3-p0",
+          "intent": "uncertain",
+          "angles": [
+            0
+          ],
+          "angleRange": {
+            "min": -5,
+            "max": 5
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p13",
+            "p14"
+          ],
+          "evidence": "The earlier two-column sheet supports a lower-row shared edge. Retaining this contact closes the green four-panel loop; it is included rather than omitted to avoid a closure constraint.",
+          "uncertainty": "The final longitudinal lower seam is hidden. This is a final-contact hypothesis, not direct final observation."
+        },
+        {
+          "pieceA": "p01",
+          "pieceB": "p03",
+          "portA": "e3-p0",
+          "portB": "e2-p0",
+          "intent": "uncertain",
+          "angles": [
+            90
+          ],
+          "angleRange": {
+            "min": 75,
+            "max": 105
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p01",
+            "p03"
+          ],
+          "evidence": "The blue upright meets the left roof perimeter over an edge span, unlike a point contact. With roof e3 directed rear-to-front and wall normal outward-left, the signed normal rotation is positive.",
+          "uncertainty": "Part of the common rim is obscured. The wall-top mapping is conventional and not independently marked."
+        },
+        {
+          "pieceA": "p11",
+          "pieceB": "p09",
+          "portA": "e3-p0",
+          "portB": "e0-p0",
+          "intent": "uncertain",
+          "angles": [
+            90
+          ],
+          "angleRange": {
+            "min": 65,
+            "max": 115
+          },
+          "flip": true,
+          "evidenceRefs": [
+            "p09:slope_edge",
+            "p11"
+          ],
+          "evidence": "The orange straight rim follows the left green side over a substantial span. Both reviewed ports have actual length 1. With p11.e3 directed downslope, rotation toward the outward-left support normal has positive sign.",
+          "uncertainty": "The image does not prove magnetic engagement. Equilateral geometry must be used; no right-angle support geometry or additional triangle-to-shell contact is inferred."
+        }
+      ],
+      "alternatives": [
+        {
+          "label": "Correlated shallower lower green row",
+          "connections": [
+            {
+              "pieceA": "p01",
+              "pieceB": "p02",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "intent": "connect",
+              "angles": [
+                0
+              ],
+              "angleRange": {
+                "min": -5,
+                "max": 5
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p01:inner_edge",
+                "p02:inner_edge"
+              ],
+              "evidence": "Same shared roof seam and conventional basis as the base graph.",
+              "uncertainty": "Approximate coplanarity; all loop constraints remain active."
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p11",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "intent": "connect",
+              "angles": [
+                45
+              ],
+              "angleRange": {
+                "min": 25,
+                "max": 65
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p01:front_edge",
+                "p11:upper_edge"
+              ],
+              "evidence": "Same descending upper-green hinge as the base graph.",
+              "uncertainty": "Must agree with the corresponding right-column hinge."
+            },
+            {
+              "pieceA": "p02",
+              "pieceB": "p12",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "intent": "connect",
+              "angles": [
+                45
+              ],
+              "angleRange": {
+                "min": 25,
+                "max": 65
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p02:front_edge",
+                "p12:upper_edge"
+              ],
+              "evidence": "Same right upper hinge and endpoint correspondence as the base graph.",
+              "uncertainty": "Not independent of the left upper hinge."
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p12",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "intent": "connect",
+              "angles": [
+                0
+              ],
+              "angleRange": {
+                "min": -5,
+                "max": 5
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p11",
+                "p12"
+              ],
+              "evidence": "Upper panels retain their common plane and longitudinal closing edge.",
+              "uncertainty": "Small deviations are subject to loop closure."
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p13",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "intent": "connect",
+              "angles": [
+                -30
+              ],
+              "angleRange": {
+                "min": -50,
+                "max": -10
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p11:lower_edge",
+                "p13:upper_edge"
+              ],
+              "evidence": "The lower row may turn toward a shallower inclination behind the foreground structure. In the retained basis this reverses part of the positive upper slope rotation, giving a negative engine hinge angle.",
+              "uncertainty": "The magnitude is underdetermined; both crosswise hinges must use the same bend."
+            },
+            {
+              "pieceA": "p12",
+              "pieceB": "p14",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "intent": "connect",
+              "angles": [
+                -30
+              ],
+              "angleRange": {
+                "min": -50,
+                "max": -10
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p12:lower_edge",
+                "p14:upper_rim_segment"
+              ],
+              "evidence": "Right lower hinge receives the same shallowing bend as the left hinge.",
+              "uncertainty": "Heavy occlusion; correlated with p11–p13 rather than an independent choice."
+            },
+            {
+              "pieceA": "p13",
+              "pieceB": "p14",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "intent": "uncertain",
+              "angles": [
+                0
+              ],
+              "angleRange": {
+                "min": -5,
+                "max": 5
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p13",
+                "p14"
+              ],
+              "evidence": "Lower panels remain coplanar with each other, retaining the closing edge of the four-panel loop.",
+              "uncertainty": "Final contact remains concealed, but cannot be dropped merely to permit inconsistent bends."
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p03",
+              "portA": "e3-p0",
+              "portB": "e2-p0",
+              "intent": "uncertain",
+              "angles": [
+                90
+              ],
+              "angleRange": {
+                "min": 75,
+                "max": 105
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p01",
+                "p03"
+              ],
+              "evidence": "Same visible roof/end-wall adjacency as the base graph.",
+              "uncertainty": "Partly obscured common rim; local mapping remains conventional."
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p09",
+              "portA": "e3-p0",
+              "portB": "e0-p0",
+              "intent": "uncertain",
+              "angles": [
+                90
+              ],
+              "angleRange": {
+                "min": 65,
+                "max": 115
+              },
+              "flip": true,
+              "evidenceRefs": [
+                "p09:slope_edge",
+                "p11"
+              ],
+              "evidence": "Same upper-green/orange support contact using the reviewed equilateral profile.",
+              "uncertainty": "No additional support contact is implied by the lower-row bend."
+            }
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "from": "p01",
+          "to": "p03",
+          "kind": "occludes",
+          "evidence": "The roof masks part of the blue upright's upper boundary."
+        },
+        {
+          "from": "p11",
+          "to": "p09",
+          "kind": "projection_overlap",
+          "evidence": "Green and orange rim evidence overlaps along the proposed side joint; transparency does not independently prove attachment."
+        },
+        {
+          "from": "p11",
+          "to": "p13",
+          "kind": "above_in_image",
+          "evidence": "The upper green panel lies above the exposed lower-left strip in the final image."
+        },
+        {
+          "from": "p12",
+          "to": "p14",
+          "kind": "above_in_image",
+          "evidence": "The upper-right panel lies above the narrow lower-right rim; this is image order, not measured world height."
+        }
+      ],
+      "spatialInterpretation": {
+        "camera": {
+          "viewpoint": "oblique",
+          "evidence": "Roof surfaces and left end faces are simultaneously visible. The final photograph supports an elevated view from the foreground-left.",
+          "uncertainty": "Qualitative only; camera calibration, gravity alignment and absolute orientation are unavailable."
+        },
+        "faces": [
+          {
+            "pieceId": "p01",
+            "orientation": "horizontal",
+            "evidenceRefs": [
+              "p01"
+            ],
+            "reasoning": "Roof perimeter and upright blue neighbor support an approximately level upper face.",
+            "uncertainty": "Scene-relative hypothesis, not a measured world pose."
+          },
+          {
+            "pieceId": "p02",
+            "orientation": "horizontal",
+            "evidenceRefs": [
+              "p02",
+              "p01"
+            ],
+            "reasoning": "Central seam and continuous roof perimeter support the same plane as p01.",
+            "uncertainty": "Small departures from level are possible."
+          },
+          {
+            "pieceId": "p03",
+            "orientation": "vertical",
+            "evidenceRefs": [
+              "p03",
+              "p01"
+            ],
+            "reasoning": "Exposed blue end extends down from the roof toward the supporting surface.",
+            "uncertainty": "Exact lean and shared upper rim are partly obscured."
+          },
+          {
+            "pieceId": "p04",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p04"
+            ],
+            "reasoning": "Earlier right-end evidence suggests upright orientation, but final boundaries are not independently traceable.",
+            "uncertainty": "Confirmed identity does not determine final pose."
+          },
+          {
+            "pieceId": "p05",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p05"
+            ],
+            "reasoning": "Earlier evidence suggests a horizontal base; final pose is concealed.",
+            "uncertainty": "No final edge correspondence established."
+          },
+          {
+            "pieceId": "p06",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p06"
+            ],
+            "reasoning": "Earlier evidence suggests the second base panel; the final photograph does not resolve its face.",
+            "uncertainty": "Earlier placement is not imposed on the final state."
+          },
+          {
+            "pieceId": "p07",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p07"
+            ],
+            "reasoning": "An upright purple wall is distinguishable in the first step, not in the final reference.",
+            "uncertainty": "Final orientation remains unresolved."
+          },
+          {
+            "pieceId": "p08",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p08"
+            ],
+            "reasoning": "Earlier purple wall evidence supports identity without a recoverable final face.",
+            "uncertainty": "No final upright pose is enforced."
+          },
+          {
+            "pieceId": "p09",
+            "orientation": "vertical",
+            "evidenceRefs": [
+              "p09:slope_edge",
+              "p11"
+            ],
+            "reasoning": "Narrow orange face beside the descending green boundary suggests an upright side support.",
+            "uncertainty": "Reviewed equilateral shape invalidates the earlier right-triangle explanation; exact lean remains uncertain."
+          },
+          {
+            "pieceId": "p10",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p10"
+            ],
+            "reasoning": "Earlier right support is distinguishable, but the final green face hides its location.",
+            "uncertainty": "No symmetry-derived final contact is asserted."
+          },
+          {
+            "pieceId": "p11",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "p11",
+              "p01"
+            ],
+            "reasoning": "Its perimeter descends from the purple roof toward the foreground; neighboring panels support a coherent slope.",
+            "uncertainty": "Perspective does not provide a calibrated inclination."
+          },
+          {
+            "pieceId": "p12",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "p12",
+              "p11"
+            ],
+            "reasoning": "Aligned crosswise rims and central seam support a common upper slope.",
+            "uncertainty": "Approximate coplanarity only."
+          },
+          {
+            "pieceId": "p13",
+            "orientation": "inclined",
+            "evidenceRefs": [
+              "p13:upper_edge",
+              "p11:lower_edge"
+            ],
+            "reasoning": "Visible strip continues the descending green sheet beneath foreground occlusion.",
+            "uncertainty": "Could become shallower, including nearly horizontal; continuous-slope pose is only the base hypothesis."
+          },
+          {
+            "pieceId": "p14",
+            "orientation": "unknown",
+            "evidenceRefs": [
+              "p14:upper_rim_segment"
+            ],
+            "reasoning": "The exposed narrow rim supports location near the lower-row hinge but not a unique face inclination.",
+            "uncertainty": "Earlier full-panel evidence must not be treated as a final pose measurement."
+          }
+        ],
+        "connections": [
+          {
+            "pieceA": "p01",
+            "pieceB": "p02",
+            "featureA": "inner_edge",
+            "featureB": "inner_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              0
+            ],
+            "angleRange": {
+              "min": 0,
+              "max": 10
+            },
+            "evidenceRefs": [
+              "p01:inner_edge",
+              "p02:inner_edge"
+            ],
+            "reasoning": "Continuous outer roof perimeter and central endpoint agreement support a shared seam.",
+            "uncertainty": "Small feature-coordinate discrepancies reflect approximate tracing."
+          },
+          {
+            "pieceA": "p01",
+            "pieceB": "p11",
+            "featureA": "front_edge",
+            "featureB": "upper_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              45
+            ],
+            "angleRange": {
+              "min": 25,
+              "max": 65
+            },
+            "evidenceRefs": [
+              "p01:front_edge",
+              "p11:upper_edge"
+            ],
+            "reasoning": "The two rims follow the same upper-left green/purple boundary.",
+            "uncertainty": "Visual fold magnitude is approximate."
+          },
+          {
+            "pieceA": "p02",
+            "pieceB": "p12",
+            "featureA": "front_edge",
+            "featureB": "upper_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              45
+            ],
+            "angleRange": {
+              "min": 25,
+              "max": 65
+            },
+            "evidenceRefs": [
+              "p02:front_edge",
+              "p12:upper_edge"
+            ],
+            "reasoning": "The right boundary continues the same roof-to-slope hinge.",
+            "uncertainty": "Must be interpreted jointly with the left boundary and central seam."
+          },
+          {
+            "pieceA": "p11",
+            "pieceB": "p12",
+            "featureA": null,
+            "featureB": null,
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              0
+            ],
+            "angleRange": {
+              "min": 0,
+              "max": 10
+            },
+            "evidenceRefs": [
+              "p11",
+              "p12"
+            ],
+            "reasoning": "A longitudinal rim joins the crosswise endpoint neighborhoods and divides separately framed panels.",
+            "uncertainty": "No named straight side feature was supplied; correspondence uses the whole-panel evidence."
+          },
+          {
+            "pieceA": "p11",
+            "pieceB": "p13",
+            "featureA": "lower_edge",
+            "featureB": "upper_edge",
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              0,
+              30
+            ],
+            "angleRange": {
+              "min": 0,
+              "max": 50
+            },
+            "evidenceRefs": [
+              "p11:lower_edge",
+              "p13:upper_edge"
+            ],
+            "reasoning": "Matching crosswise rim spans support a hinged boundary, not merely transparency.",
+            "uncertainty": "The final lower face is mostly hidden."
+          },
+          {
+            "pieceA": "p12",
+            "pieceB": "p14",
+            "featureA": "lower_edge",
+            "featureB": "upper_rim_segment",
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [
+              0,
+              30
+            ],
+            "angleRange": {
+              "min": 0,
+              "max": 50
+            },
+            "evidenceRefs": [
+              "p12:lower_edge",
+              "p14:upper_rim_segment"
+            ],
+            "reasoning": "The final narrow strip is consistent with the earlier independently framed lower-right panel.",
+            "uncertainty": "A doubled upper-panel rim remains a competing final-image-only explanation."
+          },
+          {
+            "pieceA": "p13",
+            "pieceB": "p14",
+            "featureA": null,
+            "featureB": null,
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [
+              0
+            ],
+            "angleRange": {
+              "min": 0,
+              "max": 10
+            },
+            "evidenceRefs": [
+              "p13",
+              "p14"
+            ],
+            "reasoning": "Earlier adjacency supports a retained lower-row seam hypothesis, included as a closing edge in both executable graphs.",
+            "uncertainty": "Final seam is hidden; no final shared endpoints can be traced."
+          },
+          {
+            "pieceA": "p01",
+            "pieceB": "p03",
+            "featureA": null,
+            "featureB": null,
+            "relationship": "shared_edge",
+            "foldAngleCandidatesDeg": [
+              90
+            ],
+            "angleRange": {
+              "min": 75,
+              "max": 105
+            },
+            "evidenceRefs": [
+              "p01",
+              "p03"
+            ],
+            "reasoning": "The blue end terminates against the left roof perimeter over an extended rim.",
+            "uncertainty": "Partly obscured; not a directly measured right angle."
+          },
+          {
+            "pieceA": "p11",
+            "pieceB": "p09",
+            "featureA": null,
+            "featureB": "slope_edge",
+            "relationship": "uncertain",
+            "foldAngleCandidatesDeg": [
+              90
+            ],
+            "angleRange": {
+              "min": 65,
+              "max": 115
+            },
+            "evidenceRefs": [
+              "p11",
+              "p09:slope_edge"
+            ],
+            "reasoning": "Orange rim alignment suggests support along the left green side, rather than a corner-only touch.",
+            "uncertainty": "Overlap and thickness obscure exact engagement. The reviewed equilateral triangle supplies no right-angle guarantee."
+          }
+        ],
+        "overallShapeHypotheses": [
+          {
+            "label": "Paired roof panels leading into a two-column green folded sheet",
+            "visiblePieceIds": [
+              "p01",
+              "p02",
+              "p03",
+              "p09",
+              "p11",
+              "p12",
+              "p13",
+              "p14"
+            ],
+            "evidenceRefs": [
+              "p01",
+              "p02",
+              "p03",
+              "p09",
+              "p11",
+              "p12",
+              "p13",
+              "p14"
+            ],
+            "reasoning": "Two purple roof faces meet above a blue left end; two green upper faces descend from their front rims, with lower-row green evidence partly concealed by the foreground structure. This supports a roof-and-ramp-like composition without requiring a completed enclosure.",
+            "uncertainty": "Lower-row fold and concealed shell contacts are not resolved. The foreground assembly is outside this inventory."
+          }
+        ],
+        "hiddenStructureHypotheses": [],
+        "alternatives": [
+          {
+            "label": "Continuous versus bent lower green row",
+            "description": "The lower row may continue the upper slope or bend into a shallower plane. The executable alternative changes both crosswise hinges together and retains the lower closing seam.",
+            "evidenceRefs": [
+              "p11:lower_edge",
+              "p12:lower_edge",
+              "p13",
+              "p14"
+            ],
+            "uncertainty": "Foreground occlusion prevents a decisive final depth comparison."
+          },
+          {
+            "label": "Unresolved final placement of concealed confirmed instances",
+            "description": "p04–p08 and p10 are retained exactly as confirmed inventory, but their earlier shell placements are not promoted to final executable contacts.",
+            "evidenceRefs": [
+              "p04",
+              "p05",
+              "p06",
+              "p07",
+              "p08",
+              "p10"
+            ],
+            "uncertainty": "They may retain earlier neighbors, but the final reference supplies no independently traceable shared rims."
+          }
+        ],
+        "unknowns": [
+          "The reviewed equilateral triangles supersede Vision's tentative right-triangle profiles; support angles cannot be derived from the rejected triangle geometry.",
+          "Internal faceted decoration, transparent rear lines and magnet bars are not additional panels or independent connection evidence.",
+          "Final contact between the lower green row and the foreground assembly is concealed and outside the executable inventory.",
+          "Earlier image features are frame-local; only observation-level references are used for cross-frame identity evidence.",
+          "Absolute camera orientation, scene scale and magnetic engagement are unmeasured."
+        ]
+      },
+      "unknowns": [
+        "All 14 confirmed nonexcluded IDs and their exact reviewed profiles are preserved; no concealed completion parts are added.",
+        "Unmarked symmetric edge labels are a consistent geometric convention, not verified physical markings.",
+        "p04–p08 and p10 intentionally have no executable final contacts because correspondence is genuinely unsupported, not because their profile geometry is missing.",
+        "The two roof-to-green hinge angles must agree; the two crosswise green hinge angles must also agree while both longitudinal closing seams are retained.",
+        "Intervals describe uncertainty, not independent angle combinations guaranteed to close. Geometry Execution must enforce the full graph.",
+        "No final poses, collision clearance, stability or physical buildability have been established."
+      ]
+    },
+    "reviewId": "7f86bfcb-40a5-48ab-ac95-35241318fdd7",
+    "reviewHash": "331f464a7a4ad6ac78b1cec631ad1dc5874c64f24db60c6e976fddb390caa2d6",
+    "reconstructionScope": {
+      "version": 1,
+      "groupId": "63e09e49-3057-429a-95c6-fdeebce6fcda",
+      "groupName": "m_back",
+      "imageId": "all",
+      "imageName": "所有图片",
+      "observationIds": [
+        "p01",
+        "p02",
+        "p03",
+        "p04",
+        "p05",
+        "p06",
+        "p07",
+        "p08",
+        "p09",
+        "p10",
+        "p11",
+        "p12",
+        "p13",
+        "p14"
+      ],
+      "modulePlan": {
+        "id": "81131b8e-1096-41a7-bd64-ca28e8bd7b40",
+        "hash": "2dae4a6aa2d38607fd1d2860f9dfe244998994ec7f0891ee3235f7b70d96a545"
+      }
+    },
+    "sourceId": "7fbf104261d876bcfb1c55333252806aa396030a84129222a869e23a87d59f26",
+    "sourceHash": "fec0844b0c2681f7d5b689d1f3083587b887719bdb72c3a4657770ac847dccc2",
+    "id": "a3d5a25f-c530-45a4-af85-84a043182bea",
+    "hash": "8636416460db4b6bf1abfbc6f3cf4c23b960365465c153c4f6ff89a750cc388e"
+  },
+  "execution": {
+    "version": 5,
+    "status": "candidates_found",
+    "completeSearch": false,
+    "search": {
+      "assignments": 4,
+      "geometryChecks": 256,
+      "maxAssignments": 128,
+      "maxGeometryChecks": 256,
+      "progressive": {
+        "scope": "bounded-progressive-connected-subgraphs",
+        "termination": "geometry-budget",
+        "nodes": 284,
+        "maxNodes": 1024,
+        "checks": {
+          "nominal": 4,
+          "seed": 14,
+          "recovery": 5,
+          "growth": 233
+        },
+        "cacheHits": 14,
+        "deduplicated": 40,
+        "portPruned": 0,
+        "proofPruned": 4,
+        "beamPruned": 0,
+        "beamWidth": 32,
+        "nominalGraphs": 4,
+        "acceptedStates": 72,
+        "growthExpansions": 270,
+        "reusedPosePieces": 1530,
+        "maxConnected": 8,
+        "verifiedConnectedUnion": [
+          "p01",
+          "p02",
+          "p03",
+          "p09",
+          "p11",
+          "p12",
+          "p13",
+          "p14"
+        ],
+        "returnedUnion": [
+          "p01",
+          "p02",
+          "p03",
+          "p09",
+          "p11",
+          "p12",
+          "p13",
+          "p14"
+        ],
+        "standaloneVerified": [
+          "p01",
+          "p02",
+          "p03",
+          "p04",
+          "p05",
+          "p06",
+          "p07",
+          "p08",
+          "p09",
+          "p10",
+          "p11",
+          "p12",
+          "p13",
+          "p14"
+        ],
+        "unplaced": [
+          "p04",
+          "p05",
+          "p06",
+          "p07",
+          "p08",
+          "p10"
+        ],
+        "independentComponentCoverage": [
+          "p01",
+          "p02",
+          "p03",
+          "p09",
+          "p11",
+          "p12",
+          "p13",
+          "p14"
+        ],
+        "componentResults": [
+          {
+            "observations": [
+              "p01",
+              "p02",
+              "p03",
+              "p09",
+              "p11",
+              "p12",
+              "p13",
+              "p14"
+            ],
+            "best": [
+              "p01",
+              "p02",
+              "p03",
+              "p09",
+              "p11",
+              "p12",
+              "p13",
+              "p14"
+            ],
+            "connections": 7
+          }
+        ],
+        "graphComponents": [
+          [
+            "p01",
+            "p02",
+            "p03",
+            "p09",
+            "p11",
+            "p12",
+            "p13",
+            "p14"
+          ],
+          [
+            "p04"
+          ],
+          [
+            "p05"
+          ],
+          [
+            "p06"
+          ],
+          [
+            "p07"
+          ],
+          [
+            "p08"
+          ],
+          [
+            "p10"
+          ]
+        ],
+        "failureCounts": {
+          "intersection": 209
+        }
+      }
+    },
+    "reconstructionScope": {
+      "version": 1,
+      "groupId": "63e09e49-3057-429a-95c6-fdeebce6fcda",
+      "groupName": "m_back",
+      "imageId": "all",
+      "imageName": "所有图片",
+      "observationIds": [
+        "p01",
+        "p02",
+        "p03",
+        "p04",
+        "p05",
+        "p06",
+        "p07",
+        "p08",
+        "p09",
+        "p10",
+        "p11",
+        "p12",
+        "p13",
+        "p14"
+      ],
+      "modulePlan": {
+        "id": "81131b8e-1096-41a7-bd64-ca28e8bd7b40",
+        "hash": "2dae4a6aa2d38607fd1d2860f9dfe244998994ec7f0891ee3235f7b70d96a545"
+      }
+    },
+    "options": {
+      "maxAssignments": 128,
+      "maxGeometryChecks": 256,
+      "maxLocalSubsets": 1024
+    },
+    "planId": "a3d5a25f-c530-45a4-af85-84a043182bea",
+    "planHash": "8636416460db4b6bf1abfbc6f3cf4c23b960365465c153c4f6ff89a750cc388e",
+    "reviewId": "7f86bfcb-40a5-48ab-ac95-35241318fdd7",
+    "reviewHash": "331f464a7a4ad6ac78b1cec631ad1dc5874c64f24db60c6e976fddb390caa2d6",
+    "sourceId": "7fbf104261d876bcfb1c55333252806aa396030a84129222a869e23a87d59f26",
+    "sourceHash": "fec0844b0c2681f7d5b689d1f3083587b887719bdb72c3a4657770ac847dccc2",
+    "id": "0c83b516-ea3d-4229-b045-53821b817c87",
+    "createdAt": "2026-11-01T23:54:11.518Z",
+    "hash": "159b2233fa2d12501cebdd9f13c676e0a02ec5595a92a21d03e4264348e0b227",
+    "candidates": [],
+    "diagnosticCandidates": [
+      {
+        "id": "diagnostic-8",
+        "assembly": {
+          "kind": "magnetic-assembly-3d",
+          "schemaVersion": 1,
+          "id": "diagnostic-8",
+          "revision": 0,
+          "profiles": [
+            {
+              "profile": {
+                "id": "square",
+                "version": 1,
+                "name": "正方形",
+                "vertices": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    1,
+                    0
+                  ],
+                  [
+                    1,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ]
+                ],
+                "connectableEdges": [
+                  "e0",
+                  "e1",
+                  "e2",
+                  "e3"
+                ]
+              },
+              "thickness": 0.06
+            },
+            {
+              "profile": {
+                "id": "equilateral-triangle",
+                "version": 1,
+                "name": "等边三角形",
+                "vertices": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    1,
+                    0
+                  ],
+                  [
+                    0.5,
+                    0.8660254037844386
+                  ]
+                ],
+                "connectableEdges": [
+                  "e0",
+                  "e1",
+                  "e2"
+                ]
+              },
+              "thickness": 0.06
+            }
+          ],
+          "pieces": [
+            {
+              "id": "p01",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#8147B0",
+              "pose": {
+                "position": [
+                  0,
+                  0,
+                  0
+                ],
+                "quaternion": [
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            },
+            {
+              "id": "p02",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#8652B3",
+              "pose": {
+                "position": [
+                  1,
+                  0,
+                  0
+                ],
+                "quaternion": [
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            },
+            {
+              "id": "p03",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#387DC0",
+              "pose": {
+                "position": [
+                  -0.5,
+                  0,
+                  -0.4999999999999999
+                ],
+                "quaternion": [
+                  0.4999999999999999,
+                  -0.4999999999999999,
+                  -0.5,
+                  0.5
+                ]
+              }
+            },
+            {
+              "id": "p09",
+              "profileId": "equilateral-triangle",
+              "profileVersion": 1,
+              "color": "#EF916A",
+              "pose": {
+                "position": [
+                  -0.5000000000000001,
+                  -0.6494292453613422,
+                  -0.5576775358252052
+                ],
+                "quaternion": [
+                  -0.27059805007309845,
+                  -0.6532814824381882,
+                  0.27059805007309845,
+                  0.6532814824381883
+                ]
+              }
+            },
+            {
+              "id": "p11",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#2BAE9E",
+              "pose": {
+                "position": [
+                  0,
+                  -0.8535533905932737,
+                  -0.3535533905932738
+                ],
+                "quaternion": [
+                  0.3826834323650898,
+                  0,
+                  0,
+                  0.9238795325112867
+                ]
+              }
+            },
+            {
+              "id": "p12",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#39B8A2",
+              "pose": {
+                "position": [
+                  1,
+                  -0.8535533905932737,
+                  -0.3535533905932738
+                ],
+                "quaternion": [
+                  0.3826834323650898,
+                  0,
+                  0,
+                  0.9238795325112867
+                ]
+              }
+            },
+            {
+              "id": "p13",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#39CEA4",
+              "pose": {
+                "position": [
+                  0,
+                  -1.5606601717798212,
+                  -1.0606601717798214
+                ],
+                "quaternion": [
+                  0.38268343236508984,
+                  0,
+                  0,
+                  0.9238795325112867
+                ]
+              }
+            },
+            {
+              "id": "p14",
+              "profileId": "square",
+              "profileVersion": 1,
+              "color": "#36CAA0",
+              "pose": {
+                "position": [
+                  1,
+                  -1.5606601717798212,
+                  -1.0606601717798214
+                ],
+                "quaternion": [
+                  0.38268343236508984,
+                  0,
+                  0,
+                  0.9238795325112867
+                ]
+              }
+            }
+          ],
+          "connections": [
+            {
+              "pieceA": "p01",
+              "pieceB": "p02",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p03",
+              "portA": "e3-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 90,
+              "flip": true
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p11",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 45,
+              "flip": true
+            },
+            {
+              "pieceA": "p02",
+              "pieceB": "p12",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 45,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p09",
+              "portA": "e3-p0",
+              "portB": "e0-p0",
+              "dihedralDeg": 90,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p12",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p13",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p12",
+              "pieceB": "p14",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p13",
+              "pieceB": "p14",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            }
+          ]
+        },
+        "construction": {
+          "variantIndex": 0,
+          "combinationIndex": 0,
+          "componentPieceIds": [
+            "p01",
+            "p02",
+            "p03",
+            "p09",
+            "p11",
+            "p12",
+            "p13",
+            "p14"
+          ],
+          "source": "progressive-growth",
+          "omittedHypotheses": [],
+          "parentConnections": [
+            {
+              "pieceA": "p01",
+              "pieceB": "p02",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p03",
+              "portA": "e3-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 90,
+              "flip": true
+            },
+            {
+              "pieceA": "p01",
+              "pieceB": "p11",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 45,
+              "flip": true
+            },
+            {
+              "pieceA": "p02",
+              "pieceB": "p12",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 45,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p09",
+              "portA": "e3-p0",
+              "portB": "e0-p0",
+              "dihedralDeg": 90,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p12",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p11",
+              "pieceB": "p13",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p12",
+              "pieceB": "p14",
+              "portA": "e0-p0",
+              "portB": "e2-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            },
+            {
+              "pieceA": "p13",
+              "pieceB": "p14",
+              "portA": "e1-p0",
+              "portB": "e3-p0",
+              "dihedralDeg": 0,
+              "flip": true
+            }
+          ],
+          "growthPath": [
+            "nominal"
+          ]
+        }
+      }
+    ]
+  }
+}

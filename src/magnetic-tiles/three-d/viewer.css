@@ -132,3 +132,10 @@
 /* Mobile split-panel wrappers have auto height; keep this workspace as the
    scroll owner so its action bar sticks without changing other Studio stages. */
 @media(max-width:760px){.studio[data-active-stage=assembly][data-view-mode="3d"] .studio-workspace{height:100dvh}}
+
+.magnetic-3d-angle-hints{border-top:1px solid #d8e3dd;margin-top:8px;padding-top:8px}
+.magnetic-3d-angle-heading{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.magnetic-3d-angle-heading select{min-width:0;max-width:100%;font-size:11px;flex:1}
+.magnetic-3d-angle-hints .hint{font-size:11px;line-height:1.4;margin:5px 0}
+.magnetic-3d-angle-hints details{font-size:11px;line-height:1.4;margin-top:4px}
+.magnetic-3d-angle-hints details[open]{min-width:0;overflow-wrap:anywhere}

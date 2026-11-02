@@ -1,9 +1,10 @@
+import type {ReactNode} from 'react'
 import type { Assembly3D } from './assembly.ts'
 import type { Selection } from './editor-project.ts'
 
 /** Connection indexes refer to the one current Assembly snapshot, never copied edges. */
-export function AssemblySelectionTable({ assembly, selection, select, busy, collisionIds=[],symmetrySources,onSymmetrySource }: {
-  assembly: Assembly3D; selection: Selection; select: (selection: Selection) => void; busy: boolean; collisionIds?: readonly string[];symmetrySources?:string[];onSymmetrySource?:(id:string,checked:boolean)=>void
+export function AssemblySelectionTable({ assembly, selection, select, busy, collisionIds=[],symmetrySources,onSymmetrySource,angleHints }: {
+  angleHints?:ReactNode; assembly: Assembly3D; selection: Selection; select: (selection: Selection) => void; busy: boolean; collisionIds?: readonly string[];symmetrySources?:string[];onSymmetrySource?:(id:string,checked:boolean)=>void
 }) {
   return <section className="magnetic-3d-selection-table" aria-label="Tiles & Connections">
     <h4>Tiles &amp; Connections</h4>
@@ -22,11 +23,12 @@ export function AssemblySelectionTable({ assembly, selection, select, busy, coll
             return <button key={index} data-3d-connection={index} disabled={busy}
               aria-label={`连接 #${index} · ${piece.id} → ${neighbor}`} aria-pressed={selection.kind === 'connection' && selection.index === index}
               title={`#${index} · ${c.pieceA}:${c.portA} → ${c.pieceB}:${c.portB} · ${c.dihedralDeg}° · flip ${c.flip ?? false}`}
-              onClick={e => { e.stopPropagation(); select({ kind: 'connection', index }) }}>{neighbor}<small>#{index}</small></button>
+              onClick={e => { e.stopPropagation(); select({ kind: 'connection', index }) }}>{neighbor}<small>#{index} · {c.dihedralDeg}°</small></button>
           })}{!assembly.connections.some(c => c.pieceA === piece.id || c.pieceB === piece.id) && <span>—</span>}</div></td>
         </tr>
       })}</tbody>
     </table>
+    {angleHints}
     {!assembly.pieces.length && <p className="hint">尚无零件；从 Edit Tools 添加。</p>}
   </section>
 }
