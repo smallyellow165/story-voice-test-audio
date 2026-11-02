@@ -1,3 +1,4 @@
+import {selectFixture} from './magnetic-selected-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID,createHash} from 'node:crypto'
@@ -76,7 +77,8 @@ test('saving a Profile edit inherits the selected Review module IDs and members 
  // No shared mutable grouping: changing the new Review never edits the old one.
  const rename=await post('module-plans',{reviewId:next.record.id,reviewHash:next.record.hash,expectedRevision:state.head.revision,expectedHash:state.head.recordHash,command:{kind:'rename',moduleId:state.record.modules[0].id,name:'changed'}})
  assert.deepEqual((await api.dispatch('GET','visible3d/module-state/'+review.id)).record.modules,front.record.modules)
- // A historical editing base is explicit; do not silently inherit current-head grouping.
+ // A historical editing base must first become the explicitly selected Review.
+ await selectFixture(api,review.sourceId,'review',review)
  const branch=await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:2,baseReview:{id:review.id,hash:review.hash}})
  assert.deepEqual((await api.dispatch('GET','visible3d/module-state/'+branch.record.id)).record.modules,front.record.modules)
  assert.notDeepEqual(rename.record.modules,front.record.modules)
@@ -94,7 +96,8 @@ test('deleted groups remain deleted; excluded and Unknown pieces keep membership
  await post('module-plans',{reviewId:next.record.id,reviewHash:next.record.hash,expectedRevision:state.head.revision,expectedHash:state.head.recordHash,command:{kind:'delete',moduleId:one.record.modules[0].id}})
  const third=await post('reviews',{analysisId:a.id,review:edited,expectedRevision:2});state=await api.dispatch('GET','visible3d/module-state/'+third.record.id);assert.deepEqual(state.record.modules,[]);assert.equal(state.head.revision,1)
  const other=await post('annotate',{sourceId:source.id,evidence:f.evidence})
- await assert.rejects(post('reviews',{analysisId:other.id,review:f.review,expectedRevision:3,baseReview:{id:review.id,hash:review.hash}}),/来源/)
+ await selectFixture(api,source.id,'analysis',other)
+ await assert.rejects(post('reviews',{analysisId:other.id,review:f.review,expectedRevision:3,baseReview:{id:review.id,hash:review.hash}}),/来源|Selected/)
  const fresh=await post('reviews',{analysisId:other.id,review:f.review,expectedRevision:3});assert.equal((await api.dispatch('GET','visible3d/module-state/'+fresh.record.id)).record,null)
 })
 test('legacy missing module inheritance is repaired with exact provenance and CAS, never replacing an existing grouping',async t=>{
@@ -105,12 +108,13 @@ test('legacy missing module inheritance is repaired with exact provenance and CA
  await rm(path.join(dir,'visible3d/module-heads',next.record.id+'.json'));await rm(path.join(dir,'visible3d/module-plans',inherited.record.id+'.json'))
  const targetBefore=await readFile(path.join(dir,'visible3d/reviews',next.record.id+'.json')),body={reviewId:next.record.id,reviewHash:next.record.hash,expectedRevision:0,expectedHash:null,command:{kind:'inherit',recordId:saved.record.id,recordHash:saved.record.hash}}
  assert.equal((await api.dispatch('GET','visible3d/module-state/'+next.record.id)).record,null)
- await assert.rejects(post('module-plans',{...body,command:{...body.command,recordHash:'forged'}}),/来源/)
+ await assert.rejects(post('module-plans',{...body,command:{...body.command,recordHash:'forged'}}),/来源|Selected/)
  const requests=await Promise.allSettled([post('module-plans',body),post('module-plans',body)]);assert.equal(requests.filter(r=>r.status==='fulfilled').length,1)
  const restored=await api.dispatch('GET','visible3d/module-state/'+next.record.id);assert.deepEqual(restored.record.modules,saved.record.modules)
  await assert.rejects(post('module-plans',{...body,expectedRevision:restored.head.revision,expectedHash:restored.head.recordHash}),/不能覆盖/)
  assert.deepEqual(await readFile(path.join(dir,'visible3d/reviews',next.record.id+'.json')),targetBefore)
  const foreign=await post('annotate',{sourceId:(await api.dispatch('POST','sources',{name:'other.png',original:png,view:png})).id,evidence:f.evidence})
+ await selectFixture(api,foreign.sourceId,'analysis',foreign)
  const newReview=await post('reviews',{analysisId:foreign.id,review:f.review,expectedRevision:2})
  await assert.rejects(post('module-plans',{...body,reviewId:newReview.record.id,reviewHash:newReview.record.hash}),/Analysis|来源|时间/)
 })

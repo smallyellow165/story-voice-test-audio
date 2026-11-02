@@ -1,3 +1,4 @@
+import {selectFixture} from './magnetic-selected-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile,mkdtemp,rm,readdir,writeFile} from 'node:fs/promises'
@@ -87,10 +88,10 @@ test('Reconstruction handoff keeps the immutable Diagnostic and requires the exi
  const accepted=await api.dispatch('POST','assembly3d-review/accept-diagnostic',{assembly:origin.assembly,expectedVersion:null,originId:origin.id},ctx);assert.ok(accepted.grant);assert.equal(accepted.geometry.valid,false)
  assert.ok(original.equals(await readFile(recordPath)));await assert.rejects(post('adopt',{...request,visualChecked:true}),/Diagnostic/)
  await assert.rejects(post('open-diagnostic-draft',{...request,executionHash:'forged'}),/Hash/)
- const forged=structuredClone(execution);forged.diagnosticCandidates[0].assembly.pieces[0].pose.position[0]+=1;delete forged.hash;forged.hash=createHash('sha256').update(JSON.stringify(forged)).digest('hex');await writeFile(recordPath,JSON.stringify(forged));await assert.rejects(post('open-diagnostic-draft',{...request,executionHash:forged.hash}),/身份|快照/);await writeFile(recordPath,original)
- const metadata=structuredClone(execution);metadata.diagnosticCandidates[0].unverifiedConstraints=['forged photo claim'];delete metadata.hash;metadata.hash=createHash('sha256').update(JSON.stringify(metadata)).digest('hex');await writeFile(recordPath,JSON.stringify(metadata));await assert.rejects(post('open-diagnostic-draft',{...request,executionHash:metadata.hash}),/身份|快照/);await writeFile(recordPath,original)
+ const forged=structuredClone(execution);forged.diagnosticCandidates[0].assembly.pieces[0].pose.position[0]+=1;delete forged.hash;forged.hash=createHash('sha256').update(JSON.stringify(forged)).digest('hex');await writeFile(recordPath,JSON.stringify(forged));await selectFixture(api,source.id,'execution',forged);await assert.rejects(post('open-diagnostic-draft',{...request,executionHash:forged.hash}),/身份|快照/);await writeFile(recordPath,original)
+ const metadata=structuredClone(execution);metadata.diagnosticCandidates[0].unverifiedConstraints=['forged photo claim'];delete metadata.hash;metadata.hash=createHash('sha256').update(JSON.stringify(metadata)).digest('hex');await writeFile(recordPath,JSON.stringify(metadata));await selectFixture(api,source.id,'execution',metadata);await assert.rejects(post('open-diagnostic-draft',{...request,executionHash:metadata.hash}),/身份|快照/);await writeFile(recordPath,original)
  await post('reviews',{analysisId:analysis.id,review:fixture.input.review,expectedRevision:1,thickness:.06})
  await assert.rejects(api.dispatch('POST','assembly3d-review/accept-diagnostic',{assembly:origin.assembly,expectedVersion:null,originId:origin.id},ctx),/过期/)
- // Already accepted immutable Assemblies are independent of later Review edits.
- assert.ok((await api.dispatch('POST','assembly3d-review/status',{assembly:origin.assembly},ctx)).grant)
+ // Accepted errors stay immutable, but a changed Selected parent blocks use.
+ await assert.rejects(api.dispatch('POST','assembly3d-review/status',{assembly:origin.assembly},ctx),/Selected|过期/)
 })

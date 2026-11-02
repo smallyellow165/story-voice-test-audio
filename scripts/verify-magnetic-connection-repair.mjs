@@ -1,4 +1,4 @@
-import {canonicalTestRecords} from './magnetic-canonical-test-records.mjs'
+import {canonicalTestRecords,canonicalSelectedTestHead} from './magnetic-canonical-test-records.mjs'
 // Existing Back records copied to a disposable service; never executes a model,
 // planning or Geometry Execution, and never writes the official storage.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -22,7 +22,7 @@ try{
  for(const id of new Set([analysis.traceId,plan.traceId].filter(Boolean)))await copy('visible3d/model-traces/'+id+'.json')
  await cp(path.join(official,'profile-registry'),path.join(dir,'profile-registry'),{recursive:true})
  const head=await copy('visible3d/module-heads/'+review.id+'.json');for(const id of new Set([head.recordId,plan.reconstructionScope.modulePlan.id]))await copy('visible3d/module-plans/'+id+'.json')
- await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify({revision:1,reviewId:review.id,reviewHash:review.hash}))
+ await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify(canonicalSelectedTestHead(plan,execution,analysis,review,origin)))
  const api=createMagneticIntake(dir)
 
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-angle-hints',configureServer(s){

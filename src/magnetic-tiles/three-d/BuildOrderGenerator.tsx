@@ -9,7 +9,7 @@ import type {HumanCollisionGrant} from './human-collision-policy.ts'
 import { canonical } from '../build-plan.ts'
 
 type Candidate={signature:string;source:string;result:BuildOrderResult}
-export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,onAdopt,onBeforeGenerate,onGenerated,advancedHost,humanGrant}:{humanGrant?:HumanCollisionGrant;assembly:Assembly3D|null;active:boolean;geometryValid:boolean;hasTutorial:boolean;onAdopt:(t:Tutorial3D)=>void;onBeforeGenerate:()=>boolean;onGenerated:(result:BuildOrderResult)=>void;advancedHost:HTMLElement|null}){
+export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,onAdopt,onBeforeGenerate,onGenerated,advancedHost,humanGrant}:{humanGrant?:HumanCollisionGrant;assembly:Assembly3D|null;active:boolean;geometryValid:boolean;hasTutorial:boolean;onAdopt:(t:Tutorial3D)=>void;onBeforeGenerate:()=>boolean|Promise<boolean>;onGenerated:(result:BuildOrderResult)=>void;advancedHost:HTMLElement|null}){
   const [candidate,setCandidate]=useState<Candidate|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [evaluations,setEvaluations]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxEvaluations)),[beam,setBeam]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.beamWidth))
   const [transitions,setTransitions]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxTransitions)),[connections,setConnections]=useState(String(DEFAULT_BUILD_ORDER_OPTIONS.maxConnectionsPerStep))
@@ -19,8 +19,9 @@ export function BuildOrderGenerator({assembly,active,geometryValid,hasTutorial,o
   useEffect(()=>{if(!active&&busy){cancel();setError('离开 3D Build，生成已取消；当前教程保留。')}},[active])
   useEffect(()=>{if(busy){cancel();setError('来源作品已变化，生成已取消；请重新生成。')}},[signature])
   useEffect(()=>()=>{worker.current?.terminate();request.current++},[])
-  function generate(){
-    if(!assembly||!geometryValid||!onBeforeGenerate())return
+  async function generate(){
+    if(!assembly||!geometryValid||busy)return
+    setBusy(true);if(!await onBeforeGenerate()||currentSignature.current!==signature){setBusy(false);return}
     cancel();const seq=++request.current,source=signature;setError('');setCandidate(null);setBusy(true)
     try{
       if(humanGrant){

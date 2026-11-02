@@ -2,6 +2,7 @@ import {geometryIssueReferences} from './reconstruction/diagnostic-visual.ts'
 import {PendingObservations} from './reconstruction/PendingObservations.tsx';
 import {placePendingObservation} from './reconstruction/pending-observations.ts';
 import type {PendingObservation} from './reconstruction/pending-observations.ts';
+import {intakeApi} from '../intake/api.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
 import {assertCanonicalProfiles} from './canonical-geometry.ts'
@@ -143,9 +144,11 @@ export default function ThreeDWorkspace() {
   const project = useMemo(() => ({ ...editorProject(current, catalog), shapes }), [current, catalog, shapes])
   const repairProject=useMemo(()=>currentRepair?{...editorProject(currentRepair.candidate.assembly,catalog),shapes}:null,[currentRepair,catalog,shapes])
   const repairCollision=useMemo(()=>{if(!currentRepair)return undefined;const issue=currentRepair.candidate.geometry.issues.find(i=>i.code==='intersection');if(!issue)return undefined;const evidence=inspectAssemblyCollisions(currentRepair.candidate.assembly,{...currentRepair.candidate.geometry,issues:[issue]})[0];return evidence?collisionVisual(evidence,'repair-preview:'+currentRepair.candidate.id):undefined},[currentRepair])
-  function applyConstraintRepair(result:RepairResult,candidate:RepairCandidate){
+  async function applyConstraintRepair(result:RepairResult,candidate:RepairCandidate){
     if(!editing||!angleHints.source)throw Error('当前不是可编辑的有效来源，未应用修复')
     if(localStorage.getItem(DRAFT_COLLISION_POLICY_KEY)!==expectedPolicyRaw.current)throw Error('保存的不可修复标记已被其他页面更新，请重新加载 Draft')
+    if(!photoOrigin)throw Error('缺少当前 Selected 来源');
+    await intakeApi('visible3d/selected-origin/'+String(photoOrigin.origin.id));
     const next=confirmConstraintRepair(historyRef.current,angleHints.source,result,candidate,actions.currentNonRepairable(historyRef.current))
     accept(next);setError('');setSaveNotice(candidate.geometry.valid?'自动修复已应用；Geometry Valid，尚未保存 Draft。':'已应用部分改善；Geometry Invalid 仍保留，变化的错误需按现有流程重新审核。')
   }

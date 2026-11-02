@@ -72,11 +72,11 @@ test('server rejects spatial contradictions, permits explicit no-LLM correction/
  assert.equal(rebased.basedOnPlanHash,plan.hash);assert.equal(y.record.candidates[0].spatialConsistency.status,'consistent');const origin=await post('adopt',{executionId:y.record.id,candidateId:'candidate-1',visualChecked:true});assert.equal(origin.spatialConsistency.status,'consistent')
  assert.deepEqual((await api.dispatch('GET','visible3d/executions/'+x.record.id)).record,x.record);assert.equal((await api.dispatch('GET','visible3d/executions/'+x.record.id)).outdated,true)
 })
-test('legacy version-1 saved candidates remain adoptable without rewriting their historical hashes',async t=>{
+test('legacy version-1 saved candidates remain read-only without rewriting their historical hashes',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'visible-v21-legacy-'));t.after(()=>rm(directory,{recursive:true,force:true}));const api=createMagneticIntake(directory),f=await visibleFixture(),post=(r,b)=>api.dispatch('POST','visible3d/'+r,b),source=await api.dispatch('POST','sources',{name:'legacy.png',original:png,view:png})
  const a=await post('annotate',{sourceId:source.id,evidence:f.evidence}),r=await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:0}),p=await post('manual-plan',{reviewId:r.record.id,plan:f.plan}),x=await post('execute',{planId:p.id,requestId:randomUUID()})
  const legacy={...x.record,...executeVisible3D(f.plan,r.record.input,{algorithmVersion:2})};delete legacy.diagnosticCandidates;legacy.version=1;for(const c of legacy.candidates){delete c.spatialConsistency;delete c.observationMap}delete legacy.hash;legacy.hash=createHash('sha256').update(JSON.stringify(legacy)).digest('hex');await writeFile(path.join(directory,'visible3d/executions',legacy.id+'.json'),JSON.stringify(legacy))
- const o=await post('adopt',{executionId:legacy.id,candidateId:'candidate-1',visualChecked:true});assert.equal(o.assembly.pieces.length,2);assert.equal((await api.dispatch('GET','visible3d/executions/'+legacy.id)).record.hash,legacy.hash)
+ await assert.rejects(post('adopt',{executionId:legacy.id,candidateId:'candidate-1',visualChecked:true}),/Selected/);assert.equal((await api.dispatch('GET','visible3d/executions/'+legacy.id)).record.hash,legacy.hash)
 })
 
 test('Review edits clean excluded references and invalidate changed Profile ports without mutating saved snapshots',async()=>{

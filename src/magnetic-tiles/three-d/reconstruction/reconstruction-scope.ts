@@ -5,7 +5,7 @@ import type {VisibleInput3D} from './contracts.ts'
 import type {ModulePlanRecord} from './module-plan.ts'
 
 /** Optional provenance on the existing Plan/Execution, never a second geometry model. */
-export type ReconstructionScope={version:1;groupId:string;groupName:string;imageId:string;imageName:string;observationIds:string[];modulePlan?:{id:string;hash:string}}
+export type ReconstructionScope={version:1;groupId:string;groupName:string;imageId:string;imageName:string;observationIds:string[];groupObservationIds?:string[];modulePlan?:{id:string;hash:string}}
 export type ReconstructionSelection={groupId?:string;imageId?:string}
 export function subsetVisibleInput(input:VisibleInput3D,ids:readonly string[]):VisibleInput3D{
     const keep=new Set(ids),result=structuredClone(input)
@@ -39,13 +39,13 @@ export function reconstructionInput(input:VisibleInput3D,source:Source,selection
         const o=observations.get(p.id)!
         return o.imageEvidence?o.imageEvidence.some(e=>allowedImages.has(e.imageId)&&(e.bbox!==null||e.features.length>0)):allowedImages.has(source.primaryImageId??source.id)&&(o.bbox!==null||o.features.length>0)
     }).map(p=>p.id)
-    const scope:ReconstructionScope={version:1,groupId,groupName:group?.name??'全部模块',imageId,imageName:image?.name??'所有图片',observationIds:ids,...(group&&modulePlan?{modulePlan:{id:modulePlan.id,hash:modulePlan.hash}}:{})}
+    const scope:ReconstructionScope={version:1,groupId,groupName:group?.name??'全部模块',imageId,imageName:image?.name??'所有图片',observationIds:ids,groupObservationIds:[...members].sort(),...(group&&modulePlan?{modulePlan:{id:modulePlan.id,hash:modulePlan.hash}}:{})}
     return {scope,input:subsetVisibleInput(input,ids),groupCount:admitted.length}
 }
-/** Old unscoped history belongs exclusively to All Groups + All Images. Names
- * and internal module revisions do not invalidate unchanged member geometry. */
-export function reconstructionScopeMatches(saved:ReconstructionScope|undefined,current:ReconstructionScope|null,legacyObservationIds?:readonly string[]){
-    if(!current)return false
-    if(!saved)return current.groupId==='all'&&current.imageId==='all'&&(!legacyObservationIds||JSON.stringify([...legacyObservationIds].sort())===JSON.stringify([...current.observationIds].sort()))
-    return saved.version===1&&saved.groupId===current.groupId&&saved.imageId===current.imageId&&JSON.stringify([...saved.observationIds].sort())===JSON.stringify([...current.observationIds].sort())
+/** Only an explicit compatible input scope can supply a current result. */
+export function reconstructionScopeMatches(saved:ReconstructionScope|undefined,current:ReconstructionScope|null,_unused?:readonly string[]){
+    if(!saved||!current)return false
+    return saved.version===1&&saved.groupId===current.groupId&&saved.imageId===current.imageId&&
+      JSON.stringify([...(saved.groupObservationIds??[])].sort())===JSON.stringify([...(current.groupObservationIds??[])].sort())&&
+      JSON.stringify([...saved.observationIds].sort())===JSON.stringify([...current.observationIds].sort())
 }

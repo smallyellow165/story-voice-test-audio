@@ -1,3 +1,5 @@
+import {intakeApi} from '../intake/api.ts'
+import {useAssemblyAngleHints} from './useAssemblyAngleHints.ts'
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
 import { createTutorial3D, tutorialProject, tutorialMatchesAssembly, validateTutorial3D, serializeTutorial3D, parseTutorial3D } from './tutorial.ts'
@@ -24,8 +26,11 @@ import {assertPhotoDraftReady,loadPhotoOrigin,photoDraftGeometryGate} from './re
 
 export default function ThreeDBuildWorkspace(){
   const {stage,viewMode,assembly3D}=useStudio(),active=stage==='build'&&viewMode==='3d'
+  const photoOrigin=loadPhotoOrigin(localStorage),linkedOrigin=photoOrigin&&assembly3D?.id===JSON.parse(photoOrigin.assemblyRaw).id?photoOrigin:null;
+  const selectedLineage=useAssemblyAngleHints(assembly3D??{kind:'magnetic-assembly-3d',schemaVersion:1,id:'empty',revision:0,profiles:[],pieces:[],connections:[]},linkedOrigin,active);
+  async function checkSelectedBuild(a:NonNullable<typeof assembly3D>,tutorial?:Tutorial3D){if(linkedOrigin&&!humanGrant)await intakeApi('visible3d/build-check',{originId:linkedOrigin.origin.id,assembly:a,...(tutorial?{tutorial}:{})});else if(linkedOrigin)await intakeApi('visible3d/selected-origin/'+String(linkedOrigin.origin.id))}
   const humanReview=useHumanCollisionReview(assembly3D,active),humanGrant=humanReview.grant
-  function assertBuildReady(a:NonNullable<typeof assembly3D>){if(humanGrant&&grantMatches(a,humanGrant))return;assertPhotoDraftReady(localStorage,a)}
+  function assertBuildReady(a:NonNullable<typeof assembly3D>){if(linkedOrigin&&!selectedLineage.source)throw Error(selectedLineage.error??'正在检查当前 Selected 来源链');if(humanGrant&&grantMatches(a,humanGrant))return;assertPhotoDraftReady(localStorage,a)}
   const [boot]=useState(()=>{try{return {...loadTutorial3D(localStorage),error:''}}catch(e){return {tutorial:null,saved:[],raw:null,error:`原教程存档无法读取，禁止覆盖：${String(e)}`}}})
   const [history,setHistory]=useState<EditorHistory|null>(()=>boot.tutorial?actions.createInitialHistory(boot.tutorial):null)
   const historyRef=useRef(history);historyRef.current=history
@@ -44,7 +49,7 @@ export default function ThreeDBuildWorkspace(){
   const validation=useMemo(()=>tutorial?validateTutorial3D(tutorial,humanGrant):null,[tutorial,humanGrant])
   const project=useMemo(()=>tutorial?tutorialProject(tutorial):null,[tutorial])
   const sourceValidation=useMemo(()=>assembly3D?validateAssembly3D(assembly3D):null,[assembly3D])
-  const sourceGate=useMemo(()=>{if(!assembly3D)return null;const gate=photoDraftGeometryGate(assembly3D,loadPhotoOrigin(localStorage),sourceValidation!);return humanGrant?{...gate,ready:true,blocker:null}:gate},[assembly3D,sourceValidation,humanGrant])
+  const sourceGate=useMemo(()=>{if(!assembly3D)return null;if(linkedOrigin&&!selectedLineage.source)return {repair:true,ready:false,blocker:selectedLineage.error??'正在检查当前 Selected 来源链'};const gate=photoDraftGeometryGate(assembly3D,loadPhotoOrigin(localStorage),sourceValidation!);return humanGrant?{...gate,ready:true,blocker:null}:gate},[assembly3D,sourceValidation,humanGrant,selectedLineage.source,selectedLineage.error])
   const matching=tutorial&&tutorialMatchesAssembly(tutorial,assembly3D)
   const ready=!!tutorial&&!!validation&&!!sourceGate?.ready&&tutorialReadyToSave(tutorial,validation,assembly3D)
   const index=tutorial?Math.max(0,tutorial.steps.findIndex(s=>s.id===selected)):0,step=tutorial?.steps[index]
@@ -58,21 +63,22 @@ export default function ThreeDBuildWorkspace(){
   }
   // Prepare only an empty in-memory document. An existing or unreadable save is
   // never replaced by navigation, source changes or this effect.
-  useEffect(()=>{if(active&&!historyRef.current&&!boot.error&&assembly3D?.pieces.length&&sourceGate?.ready){try{assertBuildReady(assembly3D);accept({...createTutorial3D(assembly3D),source:{assemblyId:assembly3D.id,assemblyRevision:assembly3D.revision,...(humanGrant?{humanCollisionApproval:referenceFor(humanGrant)}:{})}});setNotice('已准备当前作品；点击「生成搭建教程」查看步骤。尚未保存。')}catch(e){setError(String(e))}}},[active,assembly3D,sourceGate,boot.error])
-  function create(){try{if(assembly3D&&allowReplace()){assertBuildReady(assembly3D);fileRequest.current++;accept({...createTutorial3D(assembly3D),source:{assemblyId:assembly3D.id,assemblyRevision:assembly3D.revision,...(humanGrant?{humanCollisionApproval:referenceFor(humanGrant)}:{})}})}}catch(e){setError(String(e))}}
+  useEffect(()=>{if(active&&!historyRef.current&&!boot.error&&assembly3D?.pieces.length&&sourceGate?.ready){try{assertBuildReady(assembly3D);accept({...createTutorial3D(assembly3D),source:{assemblyId:assembly3D.id,assemblyRevision:assembly3D.revision,...(linkedOrigin?{reconstructionOrigin:{id:String(linkedOrigin.origin.id),hash:String(linkedOrigin.origin.hash)}}:{}),...(humanGrant?{humanCollisionApproval:referenceFor(humanGrant)}:{})}});setNotice('已准备当前作品；点击「生成搭建教程」查看步骤。尚未保存。')}catch(e){setError(String(e))}}},[active,assembly3D,sourceGate,boot.error])
+  function create(){try{if(assembly3D&&allowReplace()){assertBuildReady(assembly3D);fileRequest.current++;accept({...createTutorial3D(assembly3D),source:{assemblyId:assembly3D.id,assemblyRevision:assembly3D.revision,...(linkedOrigin?{reconstructionOrigin:{id:String(linkedOrigin.origin.id),hash:String(linkedOrigin.origin.hash)}}:{}),...(humanGrant?{humanCollisionApproval:referenceFor(humanGrant)}:{})}})}}catch(e){setError(String(e))}}
   function apply(fn:(h:EditorHistory)=>EditorHistory){
     const current=historyRef.current;if(!current)return
     try{const next=fn(current);documentEpoch.current++;historyRef.current=next;setHistory(next);setError('');setNotice('')}catch(e){setError(String(e))}
   }
-  function beforeGenerate(){
-    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertBuildReady(sourceRef.current)}catch(e){setError(String(e));return false}
+  async function beforeGenerate(){
+    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertBuildReady(sourceRef.current);await checkSelectedBuild(sourceRef.current)}catch(e){setError(String(e));return false}
     if(boot.error){setError(boot.error);return false}
     if((tutorial?.steps.length||dirty)&&!confirm('重新生成将替换当前教程预览及未保存修改。已保存教程仍保留在历史中。继续？'))return false
     generationEpoch.current=documentEpoch.current;return true
   }
-  function previewGenerated(result:BuildOrderResult){
-    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertBuildReady(sourceRef.current)}catch(e){setError(String(e));return}
+  async function previewGenerated(result:BuildOrderResult){
+    try{if(!sourceRef.current)throw Error('尚无当前 Assembly');assertBuildReady(sourceRef.current);await checkSelectedBuild(sourceRef.current)}catch(e){setError(String(e));return}
     const t=generatedPreview(result,sourceRef.current,humanGrant)
+    if(t&&linkedOrigin)t.source.reconstructionOrigin={id:String(linkedOrigin.origin.id),hash:String(linkedOrigin.origin.hash)}
     if(!t){setError('生成结果未通过完整教程检查，当前教程保留。');return}
     if(generationEpoch.current!==documentEpoch.current){setNotice('生成期间教程已有修改，未覆盖。可在高级编辑与诊断中明确选择生成候选。');return}
     fileRequest.current++;accept(t);setGenerated(true);setNotice('已生成未保存预览；请逐步检查后保存。搭建风险仍需人工审核。')
@@ -81,7 +87,7 @@ export default function ThreeDBuildWorkspace(){
   function choose(id:number){if(!tutorial)return;const i=tutorial.steps.findIndex(s=>s.id===id);setSelected(id);setSeekRequest(old=>({index:i,sequence:(old?.sequence??0)+1}))}
   async function save(asDraft=false){try{
     if(boot.error)throw Error(boot.error);if(!tutorial)return
-    if(!asDraft){if(!assembly3D)throw Error('尚无当前 Assembly');assertBuildReady(assembly3D)}
+    if(!asDraft){if(!assembly3D)throw Error('尚无当前 Assembly');assertBuildReady(assembly3D);await checkSelectedBuild(assembly3D,tutorial);if(linkedOrigin&&(tutorial.source.reconstructionOrigin?.id!==linkedOrigin.origin.id||tutorial.source.reconstructionOrigin?.hash!==linkedOrigin.origin.hash))throw Error('教程来源链与当前 Assembly 不一致，请重新生成')}
     if(!asDraft&&!ready)throw Error('教程未满足当前作品的完整几何与顺序检查；可在高级区域保存未完成草稿。')
     if(!asDraft&&!validation?.finalValid){if(!assembly3D||!humanGrant)throw Error('当前教程没有有效人工批准');await saveHumanTutorial(assembly3D,tutorial);await humanReview.refresh()}
     expected.current=saveTutorial3D(localStorage,tutorial,expected.current);setSavedTutorials(loadTutorial3D(localStorage).saved);setSavedId(tutorial.id)
@@ -111,7 +117,7 @@ export default function ThreeDBuildWorkspace(){
         {humanReview.error&&<p role="alert">{humanReview.error}</p>}{error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
         <BuildOrderGenerator humanGrant={humanGrant} assembly={assembly3D} active={active} geometryValid={sourceGate?.ready??false} hasTutorial={!!tutorial?.steps.length}
           onBeforeGenerate={beforeGenerate} onGenerated={previewGenerated} advancedHost={generatorHost}
-          onAdopt={t=>{try{if(!assembly3D)throw Error('尚无当前 Assembly');assertBuildReady(assembly3D);if(!confirm('使用此生成候选替换当前教程预览？此操作不保存；未完成结果只能作为未验证草稿。'))return;fileRequest.current++;accept(t)}catch(e){setError(String(e))}}}/>
+          onAdopt={t=>{try{if(!assembly3D)throw Error('尚无当前 Assembly');assertBuildReady(assembly3D);if(linkedOrigin)t.source.reconstructionOrigin={id:String(linkedOrigin.origin.id),hash:String(linkedOrigin.origin.hash)};if(!confirm('使用此生成候选替换当前教程预览？此操作不保存；未完成结果只能作为未验证草稿。'))return;fileRequest.current++;accept(t)}catch(e){setError(String(e))}}}/>
         <div ref={setControlsHost}/>{humanGrant&&<details><summary>人工批准与原始严格诊断</summary><pre>{JSON.stringify(humanGrant,null,2)}</pre></details>}
         {tutorial&&validation&&<section className="magnetic-tutorial-summary" aria-label="3D 教程检查状态">
           <p role="status" data-testid="tutorial-validation">最终 Assembly Geometry {validation.finalValid?'Valid':validation.humanApproved?(humanGrant?.acceptedDiagnostic?'Invalid + Human Accepted Diagnostic':'Invalid + Human Approved'):'Invalid'} · {validation.verified?'几何与顺序检查通过':'教程尚有待检查项'}</p>

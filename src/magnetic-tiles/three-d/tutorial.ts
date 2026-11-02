@@ -13,7 +13,7 @@ import { canonical } from '../build-plan.ts'
 
 export type Tutorial3D = {
   kind: 'magnetic-tutorial-3d'; schemaVersion: 1; id: string; revision: number; title: string
-  source: { assemblyId: string; assemblyRevision: number; humanCollisionApproval?:HumanCollisionReference }
+  source: { assemblyId: string; assemblyRevision: number; humanCollisionApproval?:HumanCollisionReference; reconstructionOrigin?:{id:string;hash:string} }
   assembly: Assembly3D; steps: BuildStepV2[]
 }
 export type TutorialProject = EditorProject & { steps: BuildStepV2[] }
@@ -38,7 +38,8 @@ export function assertCamera(camera: StepCamera) {
 export function assertTutorial3D(t: Tutorial3D): void {
   obj(t, ['kind','schemaVersion','id','revision','title','source','assembly','steps'])
   if(t.kind!=='magnetic-tutorial-3d'||t.schemaVersion!==1||!safeId(t.id)||!Number.isSafeInteger(t.revision)||t.revision<0||!text(t.title)) fail('Unsupported Tutorial3D')
-  assertAssembly3D(t.assembly); obj(t.source,['assemblyId','assemblyRevision','humanCollisionApproval'])
+  assertAssembly3D(t.assembly); obj(t.source,['assemblyId','assemblyRevision','humanCollisionApproval','reconstructionOrigin'])
+  if(t.source.reconstructionOrigin){const r=t.source.reconstructionOrigin;obj(r,['id','hash']);if(!safeId(r.id)||typeof r.hash!=='string'||!/^[a-f0-9]{64}$/.test(r.hash))fail('Invalid Reconstruction origin reference')}
   if(t.source.humanCollisionApproval){const r=t.source.humanCollisionApproval;obj(r,['id','assemblyHash','diagnosticHash']);if(!safeId(r.id)||![r.assemblyHash,r.diagnosticHash].every(v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)))fail('Invalid human collision approval reference')}
   if(t.source.assemblyId!==t.assembly.id || t.source.assemblyRevision!==t.assembly.revision) fail('Tutorial source version does not match embedded Assembly3D')
   if(!Array.isArray(t.steps)||t.steps.length>1000) fail('Invalid tutorial steps')

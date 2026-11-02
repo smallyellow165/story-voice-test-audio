@@ -58,6 +58,7 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin,g
   const allowed={status:['assembly'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
   if(!allowed[route]||!body||Object.keys(body).some(k=>!allowed[route].includes(k)))fail('人工审核请求字段或操作无效。',400)
   const assembly=body.assembly;assertCanonicalProfiles(assembly?.profiles??[],await getProfiles());const c=checked(assembly),h=await head(assembly.id)
+  if(h?.origin&&readOrigin){const origin=await readOrigin(h.origin.id,{requireSelected:true});if(origin.hash!==h.origin.hash)fail('Assembly 来源 Hash 已变化，不能继续授权',409)}
   if(route==='status')return response(h,c)
   if(route==='accept-diagnostic'){
    if(!safeId(body.originId)||!readOrigin)fail('人工采用缺少可校验的 Diagnostic 来源。')
@@ -102,11 +103,13 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin,g
   }
   const g=await grant(h,c);if(!g||body.approvalId!==g.id)fail('当前作品没有有效的服务端 Human Approved 授权。',403)
   if(route==='generate'){
-   const result=generateBuildOrder3D(assembly,body.options??{},g);const latest=await head(assembly.id);cas(latest,h.version)
+   const result=generateBuildOrder3D(assembly,body.options??{},g);const latest=await head(assembly.id);cas(latest,h.version);if(h.origin&&readOrigin)await readOrigin(h.origin.id,{requireSelected:true})
+   if(result.tutorial&&h.origin)result.tutorial.source.reconstructionOrigin={...h.origin}
    return {result,review:await response(latest,c)}
   }
   if(route==='saveTutorial'){
    const t=body.tutorial;assertTutorial3D(t)
+   if(h.origin&&(t.source.reconstructionOrigin?.id!==h.origin.id||t.source.reconstructionOrigin?.hash!==h.origin.hash))fail('教程 Reconstruction 来源与当前作品不一致',409)
    if(canonical(t.assembly)!==c.assemblyCanonical||canonical(t.source.humanCollisionApproval)!==canonical(referenceFor(g)))fail('教程来源或人工批准引用不匹配。')
    if(!tutorialReadyToSave(t,validateTutorial3D(t,g),assembly))fail('教程仍有未批准的几何错误或顺序问题。')
    const id=randomUUID();await publish(path.join(directory,'tutorials',id+'.json'),{id,tutorial:t,approvalId:g.id,createdAt:new Date().toISOString()})

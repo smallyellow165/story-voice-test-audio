@@ -1,4 +1,4 @@
-import {canonicalTestRecords} from './magnetic-canonical-test-records.mjs'
+import {canonicalTestRecords,canonicalSelectedTestHead} from './magnetic-canonical-test-records.mjs'
 // Saved Front records in a disposable service. No model/execute HTTP endpoints
 // and no formal history writes; the normal handoff's deterministic replay stays on.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -25,7 +25,7 @@ try{
  await cp(path.join(official,'profile-registry'),path.join(dir,'profile-registry'),{recursive:true})
  const moduleHead=await copy('visible3d/module-heads/'+review.id+'.json')
  for(const id of new Set([moduleHead.recordId,plan.reconstructionScope.modulePlan.id].filter(Boolean)))await copy('visible3d/module-plans/'+id+'.json')
- await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify({revision:1,reviewId:review.id,reviewHash:review.hash}))
+ await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify(canonicalSelectedTestHead(plan,execution,analysis,review)))
  const api=createMagneticIntake(dir,{enableHumanReview:true})
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-accepted-diagnostic',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
@@ -42,7 +42,7 @@ try{
  async function open(d){if(!await d.evaluate(e=>e.open))await d.locator(':scope>summary').click()}
  async function exportedAssembly(){await open(page.locator('.magnetic-3d-load'));const event=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await event).path(),'utf8'))}
  async function exportedTutorial(){await open(page.locator('.magnetic-tutorial-advanced'));await open(page.locator('.magnetic-tutorial-io'));const event=page.waitForEvent('download');await button('导出 Tutorial3D').click();return JSON.parse(await readFile(await(await event).path(),'utf8'))}
- await page.goto(base+'?stage=source');await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').selectOption(analysis.id);await field('3D Review 历史').selectOption(review.id);await stage(page,'reconstruction','inspector');await field('Spatial Planning History').selectOption(plan.id);await field('Geometry Execution History').selectOption(execution.id);await field('3D Reconstruction Candidate').selectOption('diagnostic-1')
+ await page.goto(base+'?stage=source');await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id);await field('3D Analysis 历史').selectOption(analysis.id);await field('3D Review 历史').selectOption(review.id);await stage(page,'reconstruction','inspector');await field('重建 Group').locator(`option[value="${plan.reconstructionScope.groupId}"]`).waitFor({state:'attached'});await field('重建 Group').selectOption(plan.reconstructionScope.groupId);await field('Spatial Planning History').selectOption(plan.id);await field('Geometry Execution History').selectOption(execution.id);await field('3D Reconstruction Candidate').selectOption('diagnostic-1')
  const errorList=page.getByLabel('Diagnostic Validation Errors',{exact:true});assert.equal(await errorList.locator('tbody tr').count(),4)
  for(let i=0;i<4;i++){await errorList.locator('[data-diagnostic-error]').nth(i).click();await page.locator('.visible3d-compare [data-collision-overlay]').waitFor();assert.equal(await page.locator('.visible3d-compare [data-collision-overlay]').getAttribute('data-collision-kind'),'volume')}
  assert.equal(await page.getByRole('checkbox',{name:'强制允许进入 Assembly Editor',exact:true}).count(),0);assert.equal(await button('人工采用并进入 Assembly').isEnabled(),true)

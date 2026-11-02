@@ -1,3 +1,4 @@
+import {selectFixture} from './magnetic-selected-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile,mkdtemp,rm,writeFile} from 'node:fs/promises'
@@ -21,7 +22,7 @@ test('explicit diagnostic-only endpoint preserves six-piece Invalid geometry, li
  assert.deepEqual((await f.api.dispatch('GET','visible3d/executions/'+f.x.id)).record,f.x);assert.deepEqual((await f.api.dispatch('GET','visible3d/plans/'+f.plan.id)).record,f.plan);
  assert.equal(f.x.candidates.length,0,'a new manual Plan cannot silently drop its hard connections');
  const legacy={...f.x,...executeVisible3D(f.plan.plan,f.review.record.input,{algorithmVersion:3}),id:randomUUID()};delete legacy.hash;legacy.hash=createHash('sha256').update(JSON.stringify(legacy)).digest('hex');await writeFile(path.join(f.dir,'visible3d/executions',legacy.id+'.json'),JSON.stringify(legacy));
- const normal=await f.post('adopt',{executionId:legacy.id,candidateId:'candidate-1',visualChecked:true});assert.equal(normal.humanReview.status,'accepted');assert.equal(normal.entryMode,undefined);
+ await assert.rejects(selectFixture(f.api,f.source.id,'execution',legacy),/旧 Execution/);await assert.rejects(f.post('adopt',{executionId:legacy.id,candidateId:'candidate-1',visualChecked:true}),/Selected/);
  await f.post('reviews',{analysisId:f.analysis.id,review:f.f.input.review,thickness:.06,expectedRevision:1});await assert.rejects(f.post('open-diagnostic-draft',body),/过期/);
 })
 test('wrong ideal closure and forged diagnostic metadata cannot be overridden even with a recomputed storage hash',async t=>{
@@ -29,7 +30,7 @@ test('wrong ideal closure and forged diagnostic metadata cannot be overridden ev
  const p=await f.post('manual-plan',{reviewId:f.review.record.id,plan:wrong}),x=(await f.post('execute',{planId:p.id,requestId:randomUUID()})).record;
  const c=x.diagnosticCandidates.find(c=>!c.validation.idealGeometry.valid);assert.ok(c);
  await assert.rejects(f.post('open-diagnostic-draft',{executionId:x.id,executionHash:x.hash,candidateId:c.id,override:true}),/Ideal Geometry/);
- const forged=structuredClone(f.x);forged.diagnosticCandidates[0].assembly.pieces[0].pose.position[0]+=2;delete forged.hash;forged.hash=createHash('sha256').update(JSON.stringify(forged)).digest('hex');await writeFile(path.join(f.dir,'visible3d/executions',forged.id+'.json'),JSON.stringify(forged));
+ const forged=structuredClone(f.x);forged.diagnosticCandidates[0].assembly.pieces[0].pose.position[0]+=2;delete forged.hash;forged.hash=createHash('sha256').update(JSON.stringify(forged)).digest('hex');await writeFile(path.join(f.dir,'visible3d/executions',forged.id+'.json'),JSON.stringify(forged));await selectFixture(f.api,f.source.id,'plan',f.plan);await selectFixture(f.api,f.source.id,'execution',forged);
  await assert.rejects(f.post('open-diagnostic-draft',{executionId:forged.id,executionHash:forged.hash,candidateId:'diagnostic-1',override:true}),/身份|复核/);
  const wrongSource=structuredClone(f.x);wrongSource.sourceId='0'.repeat(64);delete wrongSource.hash;wrongSource.hash=createHash('sha256').update(JSON.stringify(wrongSource)).digest('hex');await writeFile(path.join(f.dir,'visible3d/executions',wrongSource.id+'.json'),JSON.stringify(wrongSource));await assert.rejects(f.post('open-diagnostic-draft',{executionId:wrongSource.id,executionHash:wrongSource.hash,candidateId:'diagnostic-1',override:true}),/来源/);
 })

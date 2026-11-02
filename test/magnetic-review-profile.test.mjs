@@ -49,7 +49,7 @@ test('planning an immutable legacy Review excludes duplicate manual shape metada
  // Seed an explicitly synthetic old-format record in this disposable store only.
  const {hash:discard,...payload}=structuredClone(r.record);payload.input.review.pieces[0].shapeFamily='rectangle';payload.input.review.pieces[0].shapeNote='Legacy correction'
  const legacy={...payload,hash:createHash('sha256').update(JSON.stringify(payload)).digest('hex')},file=path.join(scoped,'reviews',legacy.id+'.json')
- await writeFile(file,JSON.stringify(legacy));await writeFile(path.join(scoped,'heads',source.id+'.json'),JSON.stringify({revision:1,reviewId:legacy.id,reviewHash:legacy.hash}));const bytes=await readFile(file,'utf8')
+ await writeFile(file,JSON.stringify(legacy));await writeFile(path.join(scoped,'heads',source.id+'.json'),JSON.stringify({revision:1,selectedRevision:0,analysisId:a.id,analysisHash:a.hash,reviewId:legacy.id,reviewHash:legacy.hash,groups:{}}));const bytes=await readFile(file,'utf8')
  await workflow.dispatch('POST','plan',{reviewId:legacy.id,requestId:randomUUID(),model:'gpt-4.1'})
  assert.equal(calls.length,1);assert.deepEqual(calls[0].input.geometryInput.review,exactProfileReview(legacy.input.review))
  assert.deepEqual(calls[0].input.geometryInput.profiles,legacy.input.profiles);assert.deepEqual(calls[0].input.geometryInput.evidence,legacy.input.evidence)
