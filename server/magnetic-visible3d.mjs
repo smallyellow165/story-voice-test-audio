@@ -1,3 +1,4 @@
+import {canonicalGeometryContract,canonicalProfileSnapshot,canonicalGeometryManifest,assertCanonicalProfiles} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import {reconstructionInput,reconstructionScopeMatches} from '../src/magnetic-tiles/three-d/reconstruction/reconstruction-scope.ts'
 import {assertModules,changeModules} from '../src/magnetic-tiles/three-d/reconstruction/module-plan.ts'
 import {rebaseSpatialPlan,exactProfileReview} from '../src/magnetic-tiles/three-d/reconstruction/rebase-plan.ts'
@@ -55,6 +56,8 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
  // A view preference is never trusted as executable input. Re-derive every
  // immutable refinement from the exact Plan + Review on execution and adoption.
  async function executionPlan(p,review,reference){
+  if(p.geometryContract!==canonicalGeometryContract)fail('Plan 缺少当前 Canonical Geometry 契约，请重新 Spatial Planning；不转换历史 Port 编号',409)
+  assertCanonicalProfiles(review.input.profiles,(await getRegistry()).profiles)
   if(reference===undefined||reference===null)return p.plan
   const r=await read('refinements',reference.id).catch(e=>{if(e.code==='ENOENT')fail('Refinement 文件不存在，不能回退到原始 Plan',409);throw e})
   if(r.version!==1||r.refinement.version!==1||r.refinement.algorithm!=='port-conflict-subsets-v1')fail('Refinement 版本不支持',409)
@@ -139,7 +142,8 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   const geometryInput=review?{...review.input,review:exactProfileReview(review.input.review)}:undefined
   if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
   const images=readImages?await readImages(source):null
-  const prepared={image,source,...(images?{images}:{}),input:{...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
+  if(geometryInput)assertCanonicalProfiles(geometryInput.profiles,registry.profiles)
+  const prepared={image,source,...(images?{images}:{}),input:{...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),geometryContract:canonicalGeometryManifest(geometryInput?.profiles??registry.profiles.map(canonicalProfileSnapshot)),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
   const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true,onTrace:async t=>{if(t.background)await checkpoint({trace:t,state:'running'})}},kind==='analysis'?'analysis':'plan')
   return saveModelResult(kind,trace,source,registry,review,scope)
  }
@@ -153,7 +157,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   }
   if(kind==='analysis'){assertImageEvidence(trace.plan,source);if(source.images?.length>1&&trace.plan.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')}
   if(kind==='analysis')for(const o of parseVisibleEvidence(trace.plan).observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('模型候选 Profile 不在 Registry')
-  const data=kind==='analysis'?{evidence:parseVisibleEvidence(trace.plan)}:{plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash,...(scope?{reconstructionScope:scope}:{})}
+  const data=kind==='analysis'?{evidence:parseVisibleEvidence(trace.plan)}:{geometryContract:canonicalGeometryContract,plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash,...(scope?{reconstructionScope:scope}:{})}
   // Stable ID makes completion recovery idempotent even after a server restart
   // between immutable Analysis creation and the request checkpoint.
   const target=kind==='analysis'?'analyses':'plans'
@@ -186,28 +190,6 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    if(trace.latestPollId){const pollId=identifier(trace.latestPollId);response=await (async()=>{try{return {available:true,origin:traceId+'.polls/'+pollId+'.response.txt',...shareText(await readFile(path.join(directory,'model-traces',traceId+'.polls',pollId+'.response.txt'),'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'该次 GET 未收到实际响应；不会用之前的响应冒充。'};throw e}})()}
    return {traceId,request:await wire('.request.json'),response,...(trace.background?{submissionResponse:submission,pollingNote:'每次查询的 GET 元数据与原始响应保存在同一 Trace 的 .polls 目录；不是重新生成。'}:{})}
   }
-  // Read-only, origin-bound evidence. Historical Plans remain hypotheses; no
-  // pose, connection, selected history or stored record is changed here.
-  if(method==='GET'&&route.startsWith('repair-evidence/')){
-   const origin=await read('origins',identifier(route.slice('repair-evidence/'.length))),base=await lineage('executions',origin.executionId),current=await lineage('plans',origin.planId)
-   for(const key of ['sourceId','sourceHash','reviewId','reviewHash','planId','planHash'])if(origin[key]!==base.record[key])fail('修复证据来源不一致',409)
-   if(origin.executionHash!==base.record.hash||origin.analysisId!==current.analysis.id||origin.analysisHash!==current.analysis.hash)fail('修复证据 Analysis / Execution Hash 不一致',409)
-   const plans=[],unavailable=[]
-   const files=(await readdir(path.join(directory,'plans'))).filter(f=>/^[a-f0-9-]+\.json$/.test(f)).sort()
-   for(const file of files){
-    try{
-     const record=await read('plans',file.slice(0,-5))
-     if(record.sourceId!==origin.sourceId||record.sourceHash!==origin.sourceHash)continue
-     const linkedReview=await read('reviews',record.reviewId)
-     if(linkedReview.analysisId!==origin.analysisId||linkedReview.analysisHash!==origin.analysisHash)continue
-     const group=record.reconstructionScope?.groupId,originalGroup=current.record.reconstructionScope?.groupId
-     if(group&&group!=='all'&&group!==originalGroup)continue
-     const linked=record.id===current.record.id?current:await lineage('plans',record.id)
-     plans.push({record:linked.record,profiles:linked.geometryReview.input.profiles})
-    }catch(e){unavailable.push({id:file.slice(0,-5),reason:String(e.message)})}
-   }
-   return {originId:origin.id,originHash:origin.hash,planId:current.record.id,planHash:current.record.hash,plans,unavailable}
-  }
   if(method==='GET'&&route.startsWith('module-state/'))return moduleState(route.slice(13))
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}
@@ -231,7 +213,8 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(route==='reviews'){
    const {analysis,source}=await lineage('analyses',body.analysisId)
    const registry=await getRegistry(),snapshots=[]
-   for(const p of body.review?.pieces??[]){if(!p.profileId)continue;const profile=registry.profiles.find(r=>r.id===p.profileId&&r.version===p.profileVersion);if(!profile)fail('Review Profile 不在 Registry');if(!snapshots.some(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion))snapshots.push({profile,thickness:body.thickness??0.06})}
+   for(const p of body.review?.pieces??[]){if(!p.profileId)continue;const profile=registry.profiles.find(r=>r.id===p.profileId&&r.version===p.profileVersion);if(!profile)fail('Review Profile 不在 Registry');if(!snapshots.some(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion))snapshots.push(canonicalProfileSnapshot(profile))}
+   if(body.thickness!==undefined&&snapshots.some(s=>s.thickness!==body.thickness))fail('厚度属于 Canonical Profile 版本；请在 Catalog 创建新版本，不能覆盖 Review 快照')
    const input=validateVisibleInput({evidence:analysis.evidence,review:body.review,profiles:snapshots})
    input.review=exactProfileReview(input.review)
    return locked(source.id,async()=>{const current=await head(source.id);if(body.expectedRevision!==current.revision)fail('Review 已被其他页面更新，未覆盖',409)
@@ -284,14 +267,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const selection=body.reconstructionScope??base?.reconstructionScope
    const projected=selection?await requestedScope(l.review,l.source,selection):null
    if(projected&&!projected.scope.observationIds.length)fail('当前范围没有可重建实例')
-   return put('plans',{sourceId:l.source.id,sourceHash:l.source.hash,reviewId:l.review.id,reviewHash:l.review.hash,...(projected?{reconstructionScope:projected.scope}:{}),plan:parseSpatialHypothesis(body.plan,projected?.input??l.review.input),origin:'human-hypothesis',traceId:null,...(base?{basedOnPlanId:base.id,basedOnPlanHash:base.hash}:{})})
+   assertCanonicalProfiles(l.review.input.profiles,(await getRegistry()).profiles)
+   return put('plans',{geometryContract:canonicalGeometryContract,sourceId:l.source.id,sourceHash:l.source.hash,reviewId:l.review.id,reviewHash:l.review.hash,...(projected?{reconstructionScope:projected.scope}:{}),plan:parseSpatialHypothesis(body.plan,projected?.input??l.review.input),origin:'human-hypothesis',traceId:null,...(base?{basedOnPlanId:base.id,basedOnPlanHash:base.hash}:{})})
   }
   if(route==='rebase-plan'){
    const current=await lineage('reviews',body.reviewId),old=await lineage('plans',body.planId)
    if(current.outdated||current.source.id!==old.source.id||current.analysis.id!==old.analysis.id)fail('只能在同一 Analysis 的当前 Review 中明确沿用旧计划',409)
+   if(old.record.geometryContract!==canonicalGeometryContract)fail('旧 Plan 缺少 Canonical Geometry 契约，请重新规划，不转换历史编号',409)
+   assertCanonicalProfiles(current.review.input.profiles,(await getRegistry()).profiles)
    const projected=body.reconstructionScope||old.record.reconstructionScope?await requestedScope(current.review,current.source,body.reconstructionScope??old.record.reconstructionScope):null
    const rebased=rebaseSpatialPlan(old.record.plan,old.geometryReview.input,projected?.input??current.review.input)
-   return put('plans',{sourceId:current.source.id,sourceHash:current.source.hash,reviewId:current.review.id,reviewHash:current.review.hash,...(projected?{reconstructionScope:projected.scope}:{}),...rebased,origin:'human-rebased-hypothesis',traceId:null,basedOnPlanId:old.record.id,basedOnPlanHash:old.record.hash,basedOnReviewId:old.review.id,basedOnReviewHash:old.review.hash})
+   return put('plans',{geometryContract:canonicalGeometryContract,sourceId:current.source.id,sourceHash:current.source.hash,reviewId:current.review.id,reviewHash:current.review.hash,...(projected?{reconstructionScope:projected.scope}:{}),...rebased,origin:'human-rebased-hypothesis',traceId:null,basedOnPlanId:old.record.id,basedOnPlanHash:old.record.hash,basedOnReviewId:old.review.id,basedOnReviewHash:old.review.hash})
   }
   if(route==='refine-constraints'){
    const l=await lineage('plans',body.planId)

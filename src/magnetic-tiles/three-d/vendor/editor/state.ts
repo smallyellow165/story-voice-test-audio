@@ -158,9 +158,6 @@ export function setPieceColorAction(h: EditorHistory, pieceId: string, color: st
 export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose: Pose3D): EditorHistory {
   return commit(h, p => { const piece = p.pieces.find(piece => piece.id === pieceId); if (piece) piece.pose = structuredClone(pose); return p })
 }
-export function setProfileThicknessAction(h: EditorHistory, key: string, thickness: number): EditorHistory {
-  return commit(h, p => { const s = p.profiles.find(s => profileKey3D(s.profile) === key); if (!s) throw Error('缺少 Profile 快照'); s.thickness = thickness; return p })
-}
 // Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
 export function solveComponent(p: Assembly3D, root: string): Assembly3D {
   if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')

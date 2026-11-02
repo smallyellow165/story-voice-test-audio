@@ -24,7 +24,7 @@ export type RepairResult={sourceRaw:string;sourceSignature:string;targetKeys:str
 export const repairLimits=Object.freeze({maxChecks:128,maxNodes:512,maxMs:2500,maxCandidates:5,maxConnectionProposals:8})
 // Numerical comparisons between two evaluations only; never a Validator tolerance.
 const EPS=1e-9
-const signature=(s:AngleHintSource)=>canonical({planId:s.planId,originId:s.originId,variant:s.executedVariant,plan:s.plan,input:s.reviewInput,mapping:[...s.mapping],original:s.original,connectionEvidence:s.connectionEvidence,connectionEvidenceError:s.connectionEvidenceError,executionId:s.executionId,executionHash:s.executionHash,omittedConnections:s.omittedConnections})
+const signature=(s:AngleHintSource)=>canonical({planId:s.planId,originId:s.originId,variant:s.executedVariant,plan:s.plan,input:s.reviewInput,mapping:[...s.mapping],original:s.original,executionId:s.executionId,executionHash:s.executionHash,omittedConnections:s.omittedConnections})
 function components(a:Assembly3D,allow:(i:number)=>boolean){
  const left=new Set(a.pieces.map(p=>p.id)),groups:string[][]=[]
  while(left.size){const ids=[...left].sort().slice(0,1);left.delete(ids[0]);for(let j=0;j<ids.length;j++)a.connections.forEach((c,i)=>{if(!allow(i))return;const other=c.pieceA===ids[j]?c.pieceB:c.pieceB===ids[j]?c.pieceA:undefined;if(other&&left.delete(other))ids.push(other)});groups.push(ids.sort())}return groups
@@ -182,7 +182,7 @@ export function repairCandidateScore(c:RepairCandidate,targets:ReadonlySet<strin
  const counted=c.collisions.filter(x=>!excluded.has(x.key)),selected=counted.filter(x=>targets.has(x.key))
  // Prefer exact closure over a merely tolerance-admissible new joint. These
  // residuals contain no solid-collision metric or Non-repairable scoring gain.
- return [counted.length?1:0,c.proposedConnection?0:1,c.proposedConnection?Math.min(...c.proposedConnection.evidence.map(e=>(e.authority==='human'?0:e.authority==='current-plan'?1:2)+(e.intent==='uncertain'?.25:0)+(e.evidenceRefs.length?0:.25))):0,c.residuals.maxPositionError,c.residuals.maxDihedralError,1-c.residuals.minDirectionDot,selected.length,selected.reduce((s,x)=>s+x.depth,0),counted.length,counted.reduce((s,x)=>s+x.depth,0),c.alignmentCost??0,selected.reduce((s,x)=>s+(x.volume??0),0),counted.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]
+ return [counted.length?1:0,c.proposedConnection?0:1,c.proposedConnection?Math.min(...c.proposedConnection.evidence.map(e=>(e.authority==='human'?0:1)+(e.intent==='uncertain'?.25:0)+(e.evidenceRefs.length?0:.25))):0,c.residuals.maxPositionError,c.residuals.maxDihedralError,1-c.residuals.minDirectionDot,selected.length,selected.reduce((s,x)=>s+x.depth,0),counted.length,counted.reduce((s,x)=>s+x.depth,0),c.alignmentCost??0,selected.reduce((s,x)=>s+(x.volume??0),0),counted.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]
 }
 function compare(a:RepairCandidate,b:RepairCandidate,targets:Set<string>,excluded:Set<string>){
  const x=repairCandidateScore(a,targets,excluded),y=repairCandidateScore(b,targets,excluded);for(let i=0;i<x.length;i++)if(Math.abs(x[i]-y[i])>1e-12)return x[i]-y[i];return 0

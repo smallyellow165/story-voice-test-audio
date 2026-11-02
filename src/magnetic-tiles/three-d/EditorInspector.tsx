@@ -5,6 +5,7 @@ import type { Assembly3D } from './assembly.ts'
 import type { EditorProject, Selection } from './editor-project.ts'
 import type { EditorHistory } from './vendor/editor/state.ts'
 import * as actions from './vendor/editor/state.ts'
+import {canonicalProfileSnapshot} from './canonical-geometry.ts'
 import { profileKey3D } from './profile-adapter.ts'
 import { PropertyPanel } from './vendor/components/editor/PropertyPanel.tsx'
 import { findCompatibleTargets, portsCompatible } from './vendor/editor/snap.ts'
@@ -23,7 +24,7 @@ type Props = {
 }
 export function EditorInspector({ editing,selectionInfo,globalTools,assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, tool, setTool,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
-  const [thickness, setThickness] = useState('.05'), [color, setColor] = useState('#55b8ac')
+  const [color, setColor] = useState('#55b8ac')
   const [baseId, setBaseId] = useState(''), [basePort, setBasePort] = useState('e0-p0')
   const [angle,setAngleText]=useState(()=>Number.isFinite(snapSettings.dihedralDeg)?String(snapSettings.dihedralDeg):'')
   const flip=snapSettings.flip
@@ -38,24 +39,15 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
   const compatible = selectedId && effectiveOwn ? findCompatibleTargets({ pieceId: selectedId, portId: effectiveOwn.portId }, project) : []
   const canSnap = !!(base && effectiveOwn && effectiveBase && portsCompatible(effectiveOwn, effectiveBase) &&
     !assembly.connections.some(c=>portPairKey(c)===portPairKey({pieceA:base.id,portA:effectiveBase.portId,pieceB:selectedId,portB:effectiveOwn.portId})))
-  const [snapshotThickness, setSnapshotThickness] = useState('')
-  const selectedKey = piece ? profileKey3D({ id: piece.profileId, version: piece.profileVersion }) : ''
-  const snapshot = assembly.profiles.find(s => profileKey3D(s.profile) === selectedKey)
-  useEffect(() => setSnapshotThickness(String(snapshot?.thickness ?? .05)), [selectedKey, snapshot?.thickness])
-  useEffect(() => {
-    const s = assembly.profiles.find(s => profileKey3D(s.profile) === profileKey)
-    setThickness(String(s?.thickness ?? .05))
-  }, [profileKey, assembly.profiles])
   const connection = (): Connection => ({ pieceA: base!.id, portA: effectiveBase!.portId,
     pieceB: selectedId, portB: effectiveOwn!.portId, dihedralDeg: Number(angle), flip })
   function add() {
     apply(h => {
       const profile = profiles.find(p => profileKey3D(p) === profileKey)!
-      const existing = h.current.profiles.find(s => profileKey3D(s.profile) === profileKey)
-      const snapshot = existing ? { ...existing, profile, thickness: Number(thickness) } : { profile, thickness: Number(thickness) }
+      const snapshot = canonicalProfileSnapshot(profile)
       const width = Math.max(...profile.vertices.map(v => v[0])) - Math.min(...profile.vertices.map(v => v[0]))
       const x = h.current.pieces.length ? Math.max(...h.current.pieces.map(p => p.pose.position[0])) + width + .35 : 0
-      const result = actions.addPieceAction(h, snapshot, color, [x, Number(thickness) * (snapshot.scale ?? 1) / 2, 0])
+      const result = actions.addPieceAction(h, snapshot, color, [x, snapshot.thickness / 2, 0])
       select({ kind: 'piece', id: result.pieceId }); return result.history
     })
   }
@@ -104,17 +96,12 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
     <details><summary>从 Tiles Catalog 添加</summary>
       <label>Profile<select aria-label="3D Catalog Profile" value={profileKey} onChange={e => setProfileKey(e.target.value)}>
         {profiles.map(p => <option key={profileKey3D(p)} value={profileKey3D(p)}>{p.name} · {profileKey3D(p)}</option>)}</select></label>
-      <label>厚度（Profile 单位）<input aria-label="新零件厚度" type="number" min=".000001" step=".01" value={thickness} onChange={e => setThickness(e.target.value)}/></label>
+      <p className="hint">厚度及 Port 来自版本化 Profile；修改规格请在 Tiles Catalog 创建新版本。</p>
       <label>颜色<input aria-label="新 3D 零件颜色" type="color" value={color} onChange={e => setColor(e.target.value)}/></label>
       <button onClick={add}>添加 3D 零件</button>
-      <p className="hint">同一文档的同版本 Profile 共用快照与厚度；已有配置不会被添加操作覆盖。</p>
+      <p className="hint">所有阶段共用同一版本的 Canonical Profile / Port。</p>
     </details>
-{piece&&<>
-      <details><summary>修改当前 Profile 快照厚度</summary>
-        <label>Profile 厚度<input aria-label="当前 Profile 厚度" type="number" min=".000001" step=".01" value={snapshotThickness} onChange={e => setSnapshotThickness(e.target.value)}/></label>
-        <p className="hint">明确修改此文档的 {selectedKey}，影响引用它的全部零件；不写入 Registry。</p>
-        <button onClick={() => apply(h => actions.setProfileThicknessAction(h, selectedKey, Number(snapshotThickness)))}>应用快照厚度</button></details>
-    </>}
+
     </>}
     </fieldset></details>
   </>

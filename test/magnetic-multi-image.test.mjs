@@ -1,3 +1,4 @@
+import {canonicalGeometryManifest,canonicalProfileSnapshot} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises'
@@ -34,7 +35,7 @@ test('one request includes four labeled images for both providers; single-image 
   assert.equal(model.startsWith('gpt')?request.input[0].content.filter(c=>c.type==='input_image').length:request.contents[0].parts.filter(p=>p.inlineData).length,4)
   const planar=multiRecognitionRequest(model,f.prepared.images,f.source);assert.ok(JSON.stringify(planar).includes(JSON.stringify(multiImagePrompt).slice(1,-1)))
   const single={image:f.prepared.image,input:{catalog:f.prepared.input.catalog}},legacy=buildVisibleRequest(model,single,'analysis');assert.ok(JSON.stringify(legacy).includes(JSON.stringify(observationPrompt).slice(1,-1)));assert.ok(!JSON.stringify(legacy).includes(JSON.stringify(multiImagePrompt).slice(1,-1)))
-  assert.ok(JSON.stringify(recognitionRequest(model,f.prepared.image)).includes(JSON.stringify(prompt).slice(1,-1)));assert.ok(JSON.stringify(buildVisibleRequest(model,f.prepared,'plan')).includes(JSON.stringify(planningPrompt).slice(1,-1)))
+  assert.ok(JSON.stringify(recognitionRequest(model,f.prepared.image)).includes(JSON.stringify(prompt).slice(1,-1)));f.prepared.input.geometryContract=canonicalGeometryManifest(f.prepared.input.catalog.map(canonicalProfileSnapshot));assert.ok(JSON.stringify(buildVisibleRequest(model,f.prepared,'plan')).includes(JSON.stringify(planningPrompt).slice(1,-1)))
  }
  // Regression fingerprints are pinned from pre-change HEAD exports, independent of multi-image prompt.
  assert.equal(createHash('sha256').update(prompt).digest('hex'),'4ade987533137ac510ef46523c202b5617c29d51587840cbeb6ca2ee8f6ee8fb')

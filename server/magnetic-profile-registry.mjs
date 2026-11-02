@@ -34,7 +34,7 @@ export function createProfileRegistry(directory){
   if(operation==='version'&&!prior.length)fail('原 Profile 不存在，不能创建新版本')
   let profile;try{profile=parametricProfile(input,prior.length?Math.max(...prior.map(p=>p.version))+1:1)}catch(e){fail(e.message)}
   if(current.profiles.length>=1000)fail('Catalog 已达到 V1 的 1000 个版本上限')
-  input={id:profile.id,name:profile.name,parameters:profile.parametric,connectableEdges:profile.connectableEdges,estimated:!!profile.sizeEvidence,source:profile.geometrySource}
+  input={...(profile.solid3d?{solid3d:profile.solid3d}:{}),id:profile.id,name:profile.name,parameters:profile.parametric,connectableEdges:profile.connectableEdges,estimated:!!profile.sizeEvidence,source:profile.geometrySource}
   const payload={schemaVersion:1,revision:current.revision+1,previousHash:current.hash,profile,input,createdAt:new Date().toISOString()}
   const record={...payload,hash:await contentHash(payload)},temp=path.join(dir,randomUUID()+'.tmp'),dest=path.join(dir,String(record.revision).padStart(12,'0')+'.json')
   await mkdir(dir,{recursive:true})

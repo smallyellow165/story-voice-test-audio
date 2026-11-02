@@ -1,3 +1,4 @@
+import {canonicalGeometryManifest,canonicalProfileSnapshot} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm,readFile,writeFile,mkdir} from 'node:fs/promises'
@@ -45,7 +46,7 @@ test('request deduplication, budget failure persistence, and input fingerprint c
  await assert.rejects(post(reboot,'adopt',{executionId:x.record.id,candidateId:'candidate-1',visualChecked:true}),/复核失败/)
 })
 test('same source shared, separate 2D prompt and both providers use explicit Visible3D contracts',async()=>{
- const f=await visibleFixture(),prepared={image:png,input:{geometryInput:f.input,catalog:f.assembly.profiles}}
+ const f=await visibleFixture(),prepared={image:png,input:{geometryContract:canonicalGeometryManifest(f.input.profiles),geometryInput:f.input,catalog:f.assembly.profiles}}
  for(const kind of ['analysis','plan']){
   const openai=buildVisibleRequest('gpt-4.1',prepared,kind),gemini=buildVisibleRequest('gemini-3.6-flash',prepared,kind)
   assert.equal(openai.model,'gpt-4.1');assert.match(openai.instructions,/hidden/);assert.equal(gemini.config.responseMimeType,'application/json');assert.ok(gemini.config.responseSchema.properties)
@@ -55,7 +56,7 @@ test('same source shared, separate 2D prompt and both providers use explicit Vis
 })
 test('DUPLO shared runner records an actual mocked HTTP wire once; incomplete response remains inspectable',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'visible3d-model-'));t.after(()=>rm(directory,{recursive:true,force:true}));const previous=process.env.OPENAI_API_KEY,fetchBefore=globalThis.fetch;process.env.OPENAI_API_KEY='test-only-not-a-real-key';t.after(()=>{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;globalThis.fetch=fetchBefore})
- const f=await setup(t),prepared={image:png,input:{geometryInput:f.input},imagePayloadSha256:'test-image-sha'},calls=[];let responseOutput=f.plan,responseStatus='completed'
+ const f=await setup(t),prepared={image:png,input:{geometryContract:canonicalGeometryManifest(f.input.profiles),geometryInput:f.input},imagePayloadSha256:'test-image-sha'},calls=[];let responseOutput=f.plan,responseStatus='completed'
  globalThis.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return new Response(JSON.stringify({id:'mock-response',model:'gpt-4.1',status:responseStatus,output:[{content:[{type:'output_text',text:JSON.stringify(responseOutput)}]}]}),{status:200,headers:{'Content-Type':'application/json'}})}
  const r=await runStructuredSpatialModel(prepared,{model:'gpt-4.1',directory,execute:true},{runtimeStatus:async()=>({current:true}),promptVersion:'test',recordTask:'magnetic-visible3d-plan',buildRequest:(m,p)=>buildVisibleRequest(m,p,'plan'),validate:()=>({valid:true}),capture:captureVisionWire})
  assert.equal(calls.length,1);assert.equal(r.status,'plan_ready_for_review');assert.equal(r.wireStatus,'response_saved');assert.deepEqual(r.plan,f.plan)

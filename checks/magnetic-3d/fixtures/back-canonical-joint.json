@@ -1,0 +1,21 @@
+{
+  "pieceA": "p03",
+  "pieceB": "p09",
+  "portA": "e1-p0",
+  "portB": "e1-p0",
+  "intent": "uncertain",
+  "angles": [
+    0
+  ],
+  "angleRange": {
+    "min": -5,
+    "max": 5
+  },
+  "flip": true,
+  "evidenceRefs": [
+    "p03",
+    "p09"
+  ],
+  "evidence": "Deterministic test-only native Canonical Plan hypothesis. Not an LLM output. Shared boundary observed; geometry validated by existing Solver.",
+  "uncertainty": "Partly overlapped. Equilateral geometry makes this a different support model from the rejected right-triangle suggestion."
+}

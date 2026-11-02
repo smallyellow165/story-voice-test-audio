@@ -5,6 +5,8 @@ import path from 'node:path'
 import {randomUUID,randomBytes,createHash} from 'node:crypto'
 import {assertLocalTraceRequest} from './magnetic-trace-files.mjs'
 import {canonical} from '../src/magnetic-tiles/build-plan.ts'
+import {assertCanonicalProfiles} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
+import {profiles as builtinProfiles} from '../src/magnetic-tiles/profiles.ts'
 import {assertAssembly3D} from '../src/magnetic-tiles/three-d/assembly.ts'
 import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
 import {collisionReviewPolicy,grantMatches,referenceFor} from '../src/magnetic-tiles/three-d/human-collision-policy.ts'
@@ -14,7 +16,7 @@ import {assertTutorial3D,validateTutorial3D} from '../src/magnetic-tiles/three-d
 import {tutorialReadyToSave} from '../src/magnetic-tiles/three-d/tutorial-workflow.ts'
 const fail=(m,statusCode=422)=>{throw Object.assign(Error(m),{statusCode})},hash=v=>createHash('sha256').update(canonical(v)).digest('hex')
 const safeId=id=>typeof id==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id)&&!['__proto__','prototype','constructor'].includes(id)
-export function createHumanCollisionReview(directory,{enabled=false,readOrigin}={}){
+export function createHumanCollisionReview(directory,{enabled=false,readOrigin,getProfiles=async()=>builtinProfiles}={}){
  const sessions=new Map()
  function authorize(context,session=true){
   try{assertLocalTraceRequest(context?.request,typeof enabled==='function'?enabled():enabled)}catch{fail('人工碰撞审核仅允许本机开发环境的直接同源请求。',403)}
@@ -55,7 +57,7 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin}=
   if(route==='session'){for(const [k,v]of sessions)if(v<Date.now())sessions.delete(k);if(sessions.size>1024)fail('本机会话过多。',429);const token=randomBytes(32).toString('hex');sessions.set(token,Date.now()+8*3600000);return {token,scope:'local-human-collision-review'}}
   const allowed={status:['assembly'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
   if(!allowed[route]||!body||Object.keys(body).some(k=>!allowed[route].includes(k)))fail('人工审核请求字段或操作无效。',400)
-  const assembly=body.assembly,c=checked(assembly),h=await head(assembly.id)
+  const assembly=body.assembly;assertCanonicalProfiles(assembly?.profiles??[],await getProfiles());const c=checked(assembly),h=await head(assembly.id)
   if(route==='status')return response(h,c)
   if(route==='accept-diagnostic'){
    if(!safeId(body.originId)||!readOrigin)fail('人工采用缺少可校验的 Diagnostic 来源。')

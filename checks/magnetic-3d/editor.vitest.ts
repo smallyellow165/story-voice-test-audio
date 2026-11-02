@@ -82,15 +82,13 @@ describe('Assembly3D upstream editor boundary', () => {
     const wrong = a.updateConnectionAction(h, 0, { dihedralDeg: 45 })
     expect(validateAssembly3D(wrong.current).valid).toBe(false)
   })
-  it('updates explicit Profile thickness and color while preserving poses and Registry', () => {
+  it('updates color without changing immutable Profile geometry, poses or Registry', () => {
     const { h, base, c } = pair(), before = structuredClone(profiles)
-    let next = a.setProfileThicknessAction(h, 'square@1', .12)
-    next = a.setPieceColorAction(next, base, '#123456')
+    const next = a.setPieceColorAction(h, base, '#123456')
     expect(next.current.pieces.map(p => p.pose)).toEqual(h.current.pieces.map(p => p.pose))
-    expect(next.current.profiles[0].thickness).toBe(.12)
+    expect(next.current.profiles).toEqual(h.current.profiles)
     expect(next.current.pieces[0].color).toBe('#123456')
     expect(profiles).toEqual(before)
-    expect(() => a.setProfileThicknessAction(h, 'square@1', -1)).toThrow()
     expect(() => a.updateConnectionAction(a.createConnectionAction(h, c), 0, { dihedralDeg: 999 })).toThrow()
   })
   it('deduplicates no-op commits and batches multiple edits into one history entry', () => {

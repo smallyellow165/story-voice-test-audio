@@ -9,7 +9,7 @@ export const shapeFields = {
 } as const
 export type Shape = keyof typeof shapeFields
 export type Parameters = { shape: Shape; dimensions: Record<string,number> }
-export type ProfileInput = { id:string; name:string; parameters:Parameters; connectableEdges:string[]; estimated:boolean; source:string }
+export type ProfileInput = {solid3d?:Profile['solid3d']; id:string; name:string; parameters:Parameters; connectableEdges:string[]; estimated:boolean; source:string }
 export const dimensionNames:Record<string,string>={side:'边长',width:'宽',height:'高度',base:'底边',legA:'直角边 A',legB:'直角边 B'}
 export function parametricProfile(input:ProfileInput,version:number):Profile {
  if(!input||typeof input.id!=='string'||input.id.length>80||input.id==='unknown'||typeof input.name!=='string'||!input.name.trim()||input.name.length>100||typeof input.source!=='string'||input.source.length>2000||typeof input.estimated!=='boolean')throw Error('名称、ID 或来源说明无效（unknown 为保留 ID）')
@@ -26,7 +26,7 @@ export function parametricProfile(input:ProfileInput,version:number):Profile {
   case 'isosceles-triangle':vertices=[[0,0],[b,0],[b/2,h]];break
   case 'right-triangle':vertices=[[0,0],[a,0],[0,c]];break
  }
- const p:Profile={id:input.id,name:input.name.trim(),version,vertices,connectableEdges:structuredClone(input.connectableEdges),parametric:{shape:params.shape,dimensions:Object.fromEntries(fields.map(k=>[k,params.dimensions[k]]))},geometrySource:input.source.trim(),...(input.estimated?{sizeEvidence:{status:'estimated',source:input.source.trim()||'用户输入的估计尺寸'}}:{})}
+ const p:Profile={...(input.solid3d?{solid3d:structuredClone(input.solid3d)}:{}),id:input.id,name:input.name.trim(),version,vertices,connectableEdges:structuredClone(input.connectableEdges),parametric:{shape:params.shape,dimensions:Object.fromEntries(fields.map(k=>[k,params.dimensions[k]]))},geometrySource:input.source.trim(),...(input.estimated?{sizeEvidence:{status:'estimated',source:input.source.trim()||'用户输入的估计尺寸'}}:{})}
  const issues=profileIssues(p);if(issues.length)throw Error(issues.join('；'))
  return p
 }

@@ -4,6 +4,7 @@ import {placePendingObservation} from './reconstruction/pending-observations.ts'
 import type {PendingObservation} from './reconstruction/pending-observations.ts';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
+import {assertCanonicalProfiles} from './canonical-geometry.ts'
 import { parseAssembly3D, serializeAssembly3D } from './assembly.ts'
 import { validateAssembly3D,inspectAssemblyCollisions } from './engine-adapter.ts'
 import { componentCount, createViewerModel, rotationDegrees } from './viewer-model.ts'
@@ -93,7 +94,7 @@ export default function ThreeDWorkspace() {
       if(viewMode!=='3d')throw Error('当前已切换至 2D；3D 候选未载入。')
       if(!allowReplace())throw Error('已取消替换当前 3D Draft；原草稿保留。')
       if(boot.error)throw Error(boot.error)
-      const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly)),{raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current,adoption3D.cameraView)
+      const assembly=parseAssembly3D(JSON.stringify(adoption3D.assembly));assertCanonicalProfiles(assembly.profiles,profiles);const {raw,sidecar}=adoptReconstructionDraft(localStorage,assembly,adoption3D.origin,expectedRaw.current,adoption3D.cameraView)
       expectedRaw.current=raw;expectedPolicyRaw.current=localStorage.getItem(DRAFT_COLLISION_POLICY_KEY);setCleanPolicy(canonical([]))
       accept(actions.createInitialHistory(assembly));setClean(raw);setText(raw);setPhotoOrigin(sidecar)
       setLoaded(old=>({source:raw,name:adoption3D.origin.entryMode==='human-accepted-diagnostic'?'Human Accepted Diagnostic':adoption3D.origin.entryMode==='diagnostic-override'?'Visible 3D · 待修复 Draft':'Visible 3D · 人工采用的候选 Draft',sequence:old.sequence+1,isDraft:true}));setSelection({kind:'none'});setEditing(true);setError('')
@@ -103,6 +104,7 @@ export default function ThreeDWorkspace() {
     }catch(e){setError(String(e));adoption3D.complete(e)}finally{clearAdoption3D()}
   },[adoption3D])
   const current = history.current
+  const profileError=useMemo(()=>{try{assertCanonicalProfiles(current.profiles,profiles);return ''}catch(e){return String(e)}},[current.profiles,profiles])
   const nonRepairable=actions.currentNonRepairable(history)
   const angleHints=useAssemblyAngleHints(current,photoOrigin,active)
   const currentRepair=repairPreview?.sourceRaw===serializeAssembly3D(current)?repairPreview:null
@@ -206,6 +208,7 @@ export default function ThreeDWorkspace() {
   }
   function allowReplace() { return !dirty || confirm('当前 3D Draft 有未保存修改。确认替换？可先取消并导出或保存草稿。') }
   function startEdit() {
+    if(profileError){setError(profileError);return}
     if (!loaded.isDraft) {
       const draft = structuredClone(current); draft.id = uid('draft'); draft.revision = 0
       accept(actions.createInitialHistory(draft)); setClean(serializeAssembly3D(draft));setCleanPolicy(canonical([])); setLoaded(old => ({ ...old, isDraft: true }))
@@ -219,6 +222,7 @@ export default function ThreeDWorkspace() {
   }
   function persistDraft(){
     const h=historyRef.current
+    assertCanonicalProfiles(h.current.profiles,profiles)
     expectedRaw.current=saveDraft3D(localStorage,h.current,expectedRaw.current,{nonRepairable:actions.currentNonRepairable(h),expectedRaw:expectedPolicyRaw.current})
     expectedPolicyRaw.current=localStorage.getItem(DRAFT_COLLISION_POLICY_KEY)
     setClean(serializeAssembly3D(h.current));setCleanPolicy(canonical(actions.currentNonRepairable(h)))
@@ -234,6 +238,7 @@ export default function ThreeDWorkspace() {
     setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null)
     const target=historyRef.current.current,signature=serializeAssembly3D(target);
     try {
+      assertCanonicalProfiles(target.profiles,profiles);
       if(operationBusy||humanReview.busy)throw Error('请先结束当前画布或审核操作，再执行 Revalidate Geometry');
       if(hasHumanReview(target.id))await humanReview.revalidate();
       const report=validateAssembly3D(target);
@@ -254,6 +259,7 @@ export default function ThreeDWorkspace() {
     if (!allowReplace()) return
     try {
       const saved = loadDraft3D(localStorage); if (!saved.assembly) throw Error('尚未保存 3D Draft')
+      assertCanonicalProfiles(saved.assembly.profiles,profiles)
       const policy=loadDraftCollisionPolicy(localStorage,saved.assembly,saved.raw);setCleanPolicy(canonical(policy.nonRepairable));expectedPolicyRaw.current=policy.policyRaw
       setPhotoOrigin(loadPhotoOrigin(localStorage));expectedRaw.current = saved.raw; accept(actions.createInitialHistory(saved.assembly,policy.nonRepairable)); setClean(saved.raw!)
       setLoaded(old => ({ source: saved.raw!, name: '已保存的 3D Draft', isDraft: true, sequence: old.sequence + 1 }))
@@ -265,6 +271,7 @@ export default function ThreeDWorkspace() {
       if (!allowReplace()) return
       if (source.length > 1_000_000) throw Error('JSON 超过 1 MB 限制')
       const assembly = parseAssembly3D(source)
+      assertCanonicalProfiles(assembly.profiles,profiles)
       const policy=loadDraftCollisionPolicy(localStorage,assembly,serializeAssembly3D(assembly));setCleanPolicy(canonical(policy.nonRepairable));
       const isSavedDraft=localStorage.getItem(DRAFT_3D_KEY)===serializeAssembly3D(assembly)
       if(isSavedDraft)expectedPolicyRaw.current=policy.policyRaw
@@ -287,6 +294,7 @@ export default function ThreeDWorkspace() {
            <div className="magnetic-3d-display-tools"><label><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>{editing&&<button disabled={operationBusy} aria-expanded={symmetryOpen} onClick={()=>{setSymmetryOpen(v=>!v);setSymmetrySources([]);setSymmetryPreview(null);setSelection({kind:'none'})}}>对称补全</button>}{editing&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}</div>
           </div>
         </section>
+        {profileError&&<p role="alert" className="magnetic-3d-blocker">{profileError}</p>}
         {currentRepair&&<p className="magnetic-constraint-repair-banner" data-testid="repair-viewer-preview" data-repair-angles={JSON.stringify(currentRepair.candidate.angles)}>自动修复预览 · {currentRepair.candidate.id} · {currentRepair.candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 部分改善'} · {currentRepair.candidate.proposedConnection?'建议新增 Connection':'仅改善碰撞'} · 碰撞 {currentRepair.candidate.collisions.length} · 当前 Draft 尚未修改</p>}
         {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={symmetryPreview||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
           onSelectPiece={id => { if (!operationBusy) setSelection({ kind: 'piece', id }) }}

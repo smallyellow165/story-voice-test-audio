@@ -1,3 +1,4 @@
+import {canonicalGeometryManifest,canonicalProfileSnapshot} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -31,7 +32,7 @@ test('Gemini and planar multi-image output contracts require the same hex colors
  const g=buildVisibleRequest('gemini-3.6-flash',prepared,'analysis');assert.equal(g.config.responseSchema.properties.observations.items.properties.color.pattern,hex);assert.equal(g.config.responseSchema.properties.observations.items.properties.bbox.nullable,true)
  const p=multiRecognitionRequest('gpt-6.1-sol',prepared.images,fixture.source);assert.equal(p.text.format.type,'json_schema');assert.equal(p.text.format.schema.properties.observations.items.properties.color.pattern,hex)
  const single={image:png,input:{catalog:fixture.catalog}},r=buildVisibleRequest('gpt-6.1-sol',single,'analysis');assert.equal(r.text.format.type,'json_object');assert.ok(r.instructions.startsWith(observationPrompt));assert.equal(recognitionRequest('gpt-6.1-sol',png).text.format.type,'json_schema')
- const plan=buildVisibleRequest('gpt-6.1-sol',prepared,'plan');assert.equal(plan.text.format.type,'json_object');assert.ok(plan.instructions.startsWith(planningPrompt))
+ prepared.input.geometryContract=canonicalGeometryManifest(fixture.catalog.map(canonicalProfileSnapshot));const plan=buildVisibleRequest('gpt-6.1-sol',prepared,'plan');assert.equal(plan.text.format.type,'json_object');assert.ok(plan.instructions.startsWith(planningPrompt))
  assert.equal(createHash('sha256').update(prompt).digest('hex'),'4ade987533137ac510ef46523c202b5617c29d51587840cbeb6ca2ee8f6ee8fb');assert.equal(createHash('sha256').update(observationPrompt).digest('hex'),'d9cfbad84d3e582ac2c16fac5ac06e6165832cb0b2a949437e853998a39b9366')
 })
 test('all 23 original colors remain rejected; changing ONLY color in a labeled in-memory copy passes full Recognition validation',()=>{

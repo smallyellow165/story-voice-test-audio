@@ -1,3 +1,4 @@
+import {canonicalGeometryManifest,canonicalProfileSnapshot} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm} from 'node:fs/promises'
@@ -42,7 +43,7 @@ test('V2 alternatives use existing engine; wrong closure remains rejected withou
  const three=await visibleV2Fixture();three.plan.connections[2].angles=[45];const wrong=executeVisible3D(three.plan,three.input);assert.ok(wrong.candidates.every(c=>c.geometry.valid&&c.assembly.pieces.length<3));assert.equal(wrong.diagnosticCandidates[0].validation.idealGeometry.valid,false);assert.deepEqual(executeVisible3D(three.plan,three.input,{algorithmVersion:2}).candidates,[])
 })
 test('V2 requests use existing two model tasks and explicit bounded features, legacy 2D prompt untouched',async()=>{
- const f=await visibleV2Fixture(),prepared={image:png,input:{geometryInput:f.input,catalog:f.assembly.profiles}}
+ const f=await visibleV2Fixture(),prepared={image:png,input:{geometryContract:canonicalGeometryManifest(f.input.profiles),geometryInput:f.input,catalog:f.assembly.profiles}}
  assert.match(visiblePromptVersion,/v2/);assert.equal(evidenceSchema.properties.version.enum[0],2);assert.equal(spatialSchema.properties.version.enum[0],2)
  assert.equal(evidenceSchema.properties.observations.items.properties.features.items.properties.points.maxItems,2)
  for(const kind of ['analysis','plan'])for(const model of ['gpt-4.1','gemini-3.6-flash']){const r=buildVisibleRequest(model,prepared,kind);assert.equal(r.model,model);const text=r.instructions??r.config.systemInstruction;assert.match(text,/SHAPE|Profile/);assert.match(text,/HIDDEN STRUCTURE/)}

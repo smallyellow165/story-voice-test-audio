@@ -1,3 +1,4 @@
+import {canonicalProfileGeometry,canonicalProfileSnapshot} from './three-d/canonical-geometry.ts'
 import {useState} from 'react'
 import {useProfileRegistry} from './ProfileRegistry.tsx'
 import {ProfileEditor} from './ProfileEditor.tsx'
@@ -25,6 +26,7 @@ export function SupportedTiles({selected,onSelect}:{selected:string;onSelect:(ke
    <p className="catalog-identity">Profile ID：{profile.id} · Version：{profile.version}</p>
    {profile.sizeEvidence&&<p className="catalog-size-source" data-testid="profile-size-source">Estimated · {profile.sizeEvidence.source}</p>}
    {profile.geometrySource&&!profile.sizeEvidence&&<p className="catalog-identity">来源：{profile.geometrySource}</p>}
+   <details><summary>Canonical 3D Geometry / Ports</summary><p>3D 原点为多边形面积质心；局部 XY、CCW，正面 +Z。旋转、翻面及相机不会改变 Port 身份。厚度与 Port 分段随 Profile 版本固定。</p><pre>{JSON.stringify(canonicalProfileGeometry(canonicalProfileSnapshot(profile)),null,2)}</pre></details>
    <h3>顶点坐标</h3><ol className="catalog-vertices" start={0}>{profile.vertices.map((v,i)=><li key={i}>v{i} = [{v.join(', ')}]</li>)}</ol>
    <h3>边与连接器</h3><table><thead><tr><th>边</th><th>长度</th><th>连接</th></tr></thead><tbody>{spec.edges.map(e=><tr key={e.id}><td>{e.id} · v{e.from} → v{e.to}</td><td>{Number(e.length.toFixed(9))}</td><td>{e.connectable?'可连接':'不可连接'}</td></tr>)}</tbody></table>
   </section>

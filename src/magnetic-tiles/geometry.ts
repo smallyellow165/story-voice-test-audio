@@ -1,7 +1,8 @@
 import type { Parameters } from './parametric-profile.ts'
-// Planar, zero-thickness geometry only. This is not a contract for future 3D joints.
+// Authoritative planar polygon, with optional immutable, versioned 3D solid settings.
 export type Vec = [number, number]
-export type Profile = { id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; parametric?: Parameters; geometrySource?: string; sizeEvidence?: { status: 'estimated'; source: string } }
+export type SolidProfile3D = {thickness:number;ports?:{edgeId:string;ranges:[number,number][]}[]}
+export type Profile = {solid3d?:SolidProfile3D; id: string; version: number; name: string; vertices: Vec[]; connectableEdges: string[]; parametric?: Parameters; geometrySource?: string; sizeEvidence?: { status: 'estimated'; source: string } }
 // Reflect local X before rotating. Missing mirrored means false for every historical pose.
 export type Pose = { x: number; y: number; angleRad: number; mirrored?: boolean }
 export type Tile = { id: string; profileId: string; profileVersion: number; color: string; pose: Pose }
@@ -37,6 +38,15 @@ export function profileIssues(p: Profile): string[] {
     }
   }
   if (new Set(p.connectableEdges).size !== p.connectableEdges.length || p.connectableEdges.some(e => !v.some((_, i) => e === `e${i}`))) errors.push('可连接边引用无效或重复')
+  if(p.solid3d){
+    if(!Number.isFinite(p.solid3d.thickness)||p.solid3d.thickness<=0)errors.push('3D 厚度必须为有限正数')
+    const seen=new Set<string>()
+    if(p.solid3d.ports!==undefined&&!Array.isArray(p.solid3d.ports))return [...errors,'3D Port 布局必须为数组']
+    for(const layout of p.solid3d.ports??[]){
+      if(!layout||seen.has(layout.edgeId)||!p.connectableEdges.includes(layout.edgeId)||!Array.isArray(layout.ranges)){errors.push('3D Port 布局无效');continue}seen.add(layout.edgeId)
+      let end=0;for(const range of layout.ranges){if(!Array.isArray(range)||range.length!==2||!range.every(Number.isFinite)||range[0]<end||range[1]>1||range[1]<=range[0])errors.push('3D Port 区间必须有序、不重叠且位于 0..1');else end=range[1]}
+    }
+  }
   return errors
 }
 export function profileFor(tile: Tile, profiles: readonly Profile[]) {

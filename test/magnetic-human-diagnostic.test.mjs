@@ -63,10 +63,11 @@ test('a changed relative pose is rejected even for the same collision pair and s
  await assert.rejects(f.call('generate',{expectedVersion:s.version,approvalId:old.grant.id}),e=>e.statusCode===403)
 })
 test('new collisions, related connections and thickness changes cannot inherit old acceptance',async t=>{
- for(const change of [a=>a.pieces.push({...structuredClone(a.pieces.find(p=>p.id==='p17')),id:'new-intruder'}),a=>{a.connections=a.connections.filter(c=>c.pieceA!=='p17'&&c.pieceB!=='p17')},a=>{a.profiles[0].thickness*=1.1}]){
+ for(const change of [a=>a.pieces.push({...structuredClone(a.pieces.find(p=>p.id==='p17')),id:'new-intruder'}),a=>{a.connections=a.connections.filter(c=>c.pieceA!=='p17'&&c.pieceB!=='p17')}]){
   const f=await setup(t),s=await f.adopt();change(f.a);f.a.revision++;const after=await f.call('sync',{expectedVersion:s.version});assert.equal(after.grant,null);assert.ok(after.blockers.length);await assert.rejects(f.call('generate',{expectedVersion:after.version,approvalId:s.grant.id}),e=>e.statusCode===403)
  }
 })
+test('same-version thickness overrides cannot enter formal authorization or Build',async t=>{const f=await setup(t);await f.adopt();f.a.profiles[0].thickness*=1.1;await assert.rejects(f.call('sync',{expectedVersion:1}),/Canonical Profile/);await assert.rejects(f.call('generate',{expectedVersion:1}),/Canonical Profile/)})
 test('unknown errors, forged origins, unaccepted snapshots, unauthorized requests and concurrent changes fail closed',async t=>{
  const f=await setup(t),r=validateAssembly3D(f.a)
  assert.equal(diagnosticAcceptanceEligibility(f.a,{...r,issues:[...r.issues,{modelId:f.a.id,severity:'error',code:'other',message:'unknown geometry fault'}]}).eligible,false)
