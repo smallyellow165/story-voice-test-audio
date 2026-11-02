@@ -42,6 +42,7 @@
     "test:magnetic-intake": "node --experimental-strip-types --test test/magnetic-intake.test.mjs",
     "test:magnetic-intake:browser": "node scripts/verify-magnetic-intake.mjs",
     "test:magnetic-analysis:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-ui.mjs",
+    "test:magnetic-analysis-table:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-table.mjs",
     "test:magnetic-mosaic": "node --experimental-strip-types --test test/magnetic-mosaic.test.mjs",
     "test:magnetic-mosaic:browser": "node scripts/verify-magnetic-mosaic.mjs",
     "test:magnetic-workflow-ui:browser": "node scripts/verify-magnetic-workflow-ui.mjs",

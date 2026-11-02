@@ -1,6 +1,7 @@
 import {openSavedImageSources} from './magnetic-studio-browser.mjs'
 // Actual Chrome + WebGL, isolated real APIs, synthetic image/annotations. No paid requests.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
+import {sourceImageAction} from './magnetic-studio-browser.mjs'
 import {createServer} from 'vite'
 import {createMagneticIntake} from '../server/magnetic-intake.mjs'
 import {visibleFixture} from '../test/magnetic-visible3d-fixtures.mjs'
@@ -58,8 +59,8 @@ try{
   const f=v2?(name==='closed-cube'?await visibleV2Fixture():upgradeVisibleFixture(await visibleFixture(name))):await visibleFixture(name);if(name==='right-angle')f.plan.connections[0].angles=[90,-90];await step('source');await button('3D').click()
   // Each geometry fixture is a separate single-image Analysis, not an addition
   // to the previous fixture's multi-image collection.
-  const remove=page.locator('.source-inspector .source-set-list button[aria-label^="移除 "]').filter({visible:true})
-  while(await remove.count()){const count=await remove.count();await remove.first().click();await page.waitForFunction(count=>document.querySelectorAll('.source-inspector .source-set-list button[aria-label^="移除 "]').length<count,count)}
+  const remove=page.locator('.source-inspector .source-set-table button[aria-label^="更多操作 "]').filter({visible:true})
+  while(await remove.count()){const count=await remove.count(),name=(await remove.first().getAttribute('aria-label')).slice('更多操作 '.length);await sourceImageAction(page,name,'移除');await page.waitForFunction(count=>document.querySelectorAll('.source-inspector .source-set-table button[aria-label^="更多操作 "]').length<count,count)}
   await page.locator('.source-inspector').filter({visible:true}).getByTestId('intake-upload').setInputFiles({name:name+'-synthetic.png',mimeType:'image/png',buffer:await image(f.assembly)})
   await button('Analyze Visible 3D（调用模型）').waitFor();await page.waitForFunction(name=>[...document.querySelectorAll('p')].some(p=>p.textContent.includes('Visible 3D · '+name)),name+'-synthetic.png')
   await details(page.locator('.source-inspector details').filter({hasText:'人工标注 / 离线验证'}));await field('Visible 3D 人工标注 JSON').fill(JSON.stringify(f.evidence));await button('保存人工标注并 Review').click();await button('保存 3D Review').waitFor()

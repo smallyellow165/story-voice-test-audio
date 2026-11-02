@@ -4,7 +4,7 @@ import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/pla
 import {createServer} from 'vite'
 import {createMagneticIntake} from '../server/magnetic-intake.mjs'
 import {contentHash} from '../src/magnetic-tiles/build-plan.ts'
-import {stage,studioMode} from './magnetic-studio-browser.mjs'
+import {stage,studioMode,sourceImageAction} from './magnetic-studio-browser.mjs'
 import {mkdtemp,mkdir,readFile,writeFile,readdir,cp,rm} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto'
 import {tmpdir} from 'node:os'
@@ -41,7 +41,7 @@ try{
  const observations=[{id:'p1',color:'#b895cf',box:[.1,.2,.4,.8]},{id:'p2',color:'#55b8ac',box:[.6,.2,.9,.8]}]
  async function selectImage(id){await stage(page,'source','inspector');await inspector().getByRole('tab',{name:'上传图片',exact:true}).click();const details=inspector().locator('details').filter({has:page.getByText('重新打开图片集合',{exact:true})});if(!await details.evaluate(d=>d.open))await details.locator('summary').click();await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(id)}
  async function idleImages(){await page.waitForFunction(()=>{const selected=document.querySelector('[data-stage="source"]')?.getAttribute('aria-current');return selected==='step'&&![...document.querySelectorAll('.source-image-picker')].filter(e=>e.checkVisibility()).some(e=>[...e.querySelectorAll('p[role="status"]')].some(p=>p.textContent.includes('保存图片集合')))})}
- async function clearCollection(){await stage(page,'source','inspector');const remove=inspector().getByRole('button',{name:/^移除 /});while(await remove.count()){await remove.first().click();await idleImages()}}
+ async function clearCollection(){await stage(page,'source','inspector');const actions=inspector().getByRole('button',{name:/^更多操作 /});while(await actions.count()){const name=(await actions.first().getAttribute('aria-label')).slice('更多操作 '.length);await sourceImageAction(page,name,'移除');await idleImages()}}
  async function uploadSingle(f){await clearCollection();await inspector().getByRole('tab',{name:'上传图片',exact:true}).click();const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/source-sets')&&r.request().method()==='POST');await inspector().getByTestId('intake-upload').setInputFiles({name:f.file,mimeType:'image/png',buffer:f.buffer});const source=await(await response).json();await idleImages();return source}
  async function librarySingle(name){await clearCollection();await inspector().getByRole('tab',{name:'服务器图片',exact:true}).click();await inspector().getByLabel('搜索服务器图片',{exact:true}).fill(name);const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/source-sets')&&r.request().method()==='POST');await inspector().getByLabel('加入 '+name,{exact:true}).click();const source=await(await response).json();await idleImages();return source}
  async function chooseAnalysis(mode,id){const item=field(mode==='3d'?'3D Analysis 历史':'历史 Analysis');if(!await item.count())await button('工作阶段').click();await item.selectOption(id)}

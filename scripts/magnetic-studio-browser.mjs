@@ -53,6 +53,11 @@ export async function studioMode(page,mode){
  if((page.viewportSize()?.width??1500)<=760&&await page.locator('.studio-workflow').isVisible())await page.getByRole('button',{name:'查看工作区',exact:true}).click()
 }
 
+export async function sourceImageAction(page,name,action){
+ await page.getByRole('button',{name:'更多操作 '+name,exact:true}).filter({visible:true}).click()
+ await page.getByRole('menu',{name:'图片操作 '+name,exact:true}).getByRole('menuitem',{name:action+' '+name,exact:true}).click()
+}
+
 // Image input now uses tabs. Open the existing collection picker explicitly;
 // this changes only the input tab, never the selected collection or Analysis.
 export async function openSavedImageSources(page){

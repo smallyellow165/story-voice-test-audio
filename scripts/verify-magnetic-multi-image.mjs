@@ -8,7 +8,7 @@ import {multiImagePromptVersion} from '../server/magnetic-multi-image-vision.mjs
 import {sourceImages} from '../src/magnetic-tiles/intake/image-set.ts'
 import {visibleFixture} from '../test/magnetic-visible3d-fixtures.mjs'
 import {upgradeVisibleFixture} from '../test/magnetic-visible3d-v2-fixtures.mjs'
-import {stage,studioMode} from './magnetic-studio-browser.mjs'
+import {stage,studioMode,sourceImageAction} from './magnetic-studio-browser.mjs'
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto'
 import {tmpdir} from 'node:os'
@@ -41,12 +41,12 @@ try{
  const inspector=()=>page.locator('.studio-inspector'),field=name=>(name==='上传磁力片图片文件'?inspector().locator('.source-inspector:visible'):inspector()).getByLabel(name,{exact:true}),button=name=>inspector().getByRole('button',{name,exact:true})
  async function idle(){await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent==='Analyze Visible 3D（调用模型）');return b&&!b.disabled})}
  async function currentSource(){const id=await page.evaluate(()=>JSON.parse(localStorage.getItem('magnetic-visible3d-context.v1')||'{}').sourceId);return api.dispatch('GET','sources/'+id)}
- async function setMetadata(name,role,direction){const details=inspector().locator('.source-set-list li').filter({hasText:name}).locator('details');if(!await details.evaluate(d=>d.open))await details.locator('summary').click();await field('图片角色 '+name).selectOption(role);await idle();await field('拍摄方向 '+name).selectOption(direction);await idle()}
+ async function setMetadata(name,role,direction){await field('图片角色 '+name).selectOption(role);await idle();await field('拍摄方向 '+name).selectOption(direction);await idle()}
  assert.equal(await field('3D Vision 模型').inputValue(),'gpt-6.1-sol');assert.equal(await inspector().getByRole('heading',{name:'图片与识别（Analysis） · Visible 3D'}).count(),0)
  await inspector().getByRole('tab',{name:'服务器图片',exact:true}).click();await field('搜索服务器图片').fill('car-');await field('加入 car-all.png').waitFor();await field('加入 car-all.png').click();await idle();await field('加入 car-1.png').click();await idle();assert.equal((await currentSource()).images.length,2)
  await inspector().getByRole('tab',{name:'上传图片',exact:true}).click();await field('上传磁力片图片文件').setInputFiles(['car-2.png','car-3.png'].map(n=>path.join(root,'public/test-images/maganetic',n)));await idle();assert.equal((await currentSource()).images.length,4)
  await setMetadata('car-all.png','Final','Front');await setMetadata('car-1.png','Step','Back');await setMetadata('car-2.png','Step','Oblique');await setMetadata('car-3.png','Step','Front')
- await field('图片备注 car-2.png').fill('绿色斜坡展开状态；不要重复计数');await field('图片备注 car-2.png').press('Tab');await idle();await button('上移 car-3.png').click();await idle();await button('下移 car-3.png').click();await idle()
+ await field('图片备注 car-2.png').fill('绿色斜坡展开状态；不要重复计数');await field('图片备注 car-2.png').press('Tab');await idle();await sourceImageAction(page,'car-3.png','上移');await idle();await sourceImageAction(page,'car-3.png','下移');await idle()
  let source=await currentSource();assert.deepEqual(source.images.map(e=>e.name),['car-all.png','car-1.png','car-2.png','car-3.png']);assert.equal(source.images[2].note,'绿色斜坡展开状态；不要重复计数');assert.deepEqual(source.images.map(e=>e.origin),['server','server','upload','upload']);assert.deepEqual(calls,[])
  await page.reload();await stage(page,'source','inspector');await idle();assert.equal((await currentSource()).id,source.id);assert.equal(await field('图片备注 car-2.png').inputValue(),source.images[2].note)
  await page.screenshot({path:out+'/analysis-wide.png'})
@@ -63,7 +63,7 @@ try{
  assert.deepEqual(calls,['analysis','plan']);const h=await api.dispatch('GET','visible3d/history');assert.equal(h.executions.length,1);assert.equal(h.executions[0].candidates.length,1)
  await button('Trace / Raw').click();await page.getByRole('button',{name:'Spatial Planning',exact:true}).click();await page.waitForFunction(()=>document.querySelector('textarea[aria-label="Trace JSON"]')?.value.includes('referenceImageId'));await page.getByRole('button',{name:'关闭 Trace',exact:true}).click()
  await field('已对照照片审核候选').check();page.once('dialog',d=>d.accept());await button('采用候选到 3D Assembly Editor').click();await page.waitForFunction(()=>document.querySelector('[data-stage="assembly"]')?.getAttribute('aria-current')==='step');assert.equal(await page.locator('.studio-workspace canvas:visible').count(),1);
- await stage(page,'source','inspector');await button('移除 car-3.png').click();await idle();assert.equal((await currentSource()).images.length,3);assert.equal(await page.getByLabel('3D Analysis 历史',{exact:true}).inputValue(),'','changing collection clears old selected result');assert.deepEqual(calls,['analysis','plan'])
+ await stage(page,'source','inspector');await sourceImageAction(page,'car-3.png','移除');await idle();assert.equal((await currentSource()).images.length,3);assert.equal(await page.getByLabel('3D Analysis 历史',{exact:true}).inputValue(),'','changing collection clears old selected result');assert.deepEqual(calls,['analysis','plan'])
  // Multi-upload also works without server selections, with tab/state separation from 2D.
  await studioMode(page,'2d');await stage(page,'source','inspector');await field('上传磁力片图片文件').setInputFiles(['car-all.png','car-1.png'].map(n=>path.join(root,'public/test-images/maganetic',n)));await page.waitForFunction(()=>new URL(location.href).searchParams.has('sourceId'));assert.equal(await inspector().getByText(/本次 Analysis · 2\/4/).count(),1)
  await studioMode(page,'3d');await stage(page,'source','inspector');await idle();assert.equal((await currentSource()).images.length,3)
