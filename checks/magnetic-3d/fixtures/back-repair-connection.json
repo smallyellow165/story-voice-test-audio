@@ -1,0 +1,28 @@
+{
+  "fixtureNote": "Test-only projection from immutable historical Plan; original hash retained for provenance, not used as a stored record.",
+  "id": "745e9061-f056-43fb-92b0-37c22a1c7589",
+  "hash": "3900dd9d517cd521113ffbc3b6e09df207b695e4c402f18ab13c7e6833ed6c42",
+  "connections": [
+    {
+      "pieceA": "p03",
+      "pieceB": "p09",
+      "portA": "e3-p0",
+      "portB": "e2-p0",
+      "intent": "uncertain",
+      "angles": [
+        0
+      ],
+      "angleRange": {
+        "min": -5,
+        "max": 5
+      },
+      "flip": true,
+      "evidenceRefs": [
+        "p03",
+        "p09"
+      ],
+      "evidence": "Candidate full upright joint between the blue front rim and orange rear side; closes the roof/end/support/slope loop.",
+      "uncertainty": "Partly overlapped. Equilateral geometry makes this a different support model from the rejected right-triangle suggestion."
+    }
+  ]
+}

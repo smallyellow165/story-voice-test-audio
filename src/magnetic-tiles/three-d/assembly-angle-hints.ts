@@ -12,7 +12,8 @@ type Lineage={sourceId:string;sourceHash:string;analysisId?:string;analysisHash?
 export type AnglePlanRecord=Ref&Lineage&{plan:SpatialHypothesis3D;reconstructionScope?:unknown}
 export type AngleExecutionRecord=Ref&Lineage&VisibleExecution3D&{planId:string;planHash:string;reconstructionScope?:unknown;refinement?:RefinementReference}
 export type AngleRefinementRecord=Ref&Lineage&{planId:string;planHash:string;refinement:ConstraintRefinement;candidateHashes:Record<string,string>}
-export type AngleHintSource={planId:string;originId:string;scope:string;plan:SpatialHypothesis3D;executedVariant:number|null;refined:boolean;reviewInput?:VisibleInput3D;original:Assembly3D;mapping:Map<string,string>}
+export type ConnectionEvidenceRecords={originId:string;originHash:string;planId:string;planHash:string;plans:{record:AnglePlanRecord & {origin?:string};profiles:Assembly3D['profiles']}[];unavailable:{id:string;reason:string}[]}
+export type AngleHintSource={executionId?:string;executionHash?:string;omittedConnections?:ConnectionHypothesis3D[];connectionEvidence?:ConnectionEvidenceRecords;connectionEvidenceError?:string;planId:string;originId:string;scope:string;plan:SpatialHypothesis3D;executedVariant:number|null;refined:boolean;reviewInput?:VisibleInput3D;original:Assembly3D;mapping:Map<string,string>}
 const same=(a:unknown,b:unknown)=>canonical(a)===canonical(b)
 const pair=(a:string,b:string)=>[a,b].sort().join('|')
 const fail=():never=>{throw Error('角度建议来源、Hash 或几何快照不一致；未显示其他 Plan 的建议')}
@@ -46,7 +47,7 @@ export function bindAngleHintSource(sidecar:PhotoOrigin3D,storedOrigin:Record<st
   mapping.set(m.observationId,m.pieceId);used.add(m.pieceId)
  }
  const scope=o.reconstructionScope as {groupName?:string;imageName?:string}|undefined
- return {planId:plan.id,originId:String(o.id),scope:scope?[scope.groupName,scope.imageName].filter(Boolean).join(' / '):'原记录未注明 Group / Image 范围',plan:plan.plan,executedVariant,refined:!!execution.refinement,original,mapping}
+ return {executionId:execution.id,executionHash:execution.hash,omittedConnections:candidate.construction?.omittedHypotheses,planId:plan.id,originId:String(o.id),scope:scope?[scope.groupName,scope.imageName].filter(Boolean).join(' / '):'原记录未注明 Group / Image 范围',plan:plan.plan,executedVariant,refined:!!execution.refinement,original,mapping}
 }
 export type AngleComparison='in-range'|'out-of-range'|'suggested'|'other-angle'|'no-angle'|'not-comparable'|'unconnected'|'no-hint'
 export type AngleHintRow={key:string;pieceA:string;pieceB:string;connectionIndex?:number;current?:Connection;hint?:ConnectionHypothesis3D;comparison:AngleComparison;reason?:string;angleInPlanDirection?:number;missingPieces?:string[]}

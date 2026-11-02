@@ -186,6 +186,28 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    if(trace.latestPollId){const pollId=identifier(trace.latestPollId);response=await (async()=>{try{return {available:true,origin:traceId+'.polls/'+pollId+'.response.txt',...shareText(await readFile(path.join(directory,'model-traces',traceId+'.polls',pollId+'.response.txt'),'utf8'))}}catch(e){if(e.code==='ENOENT')return {available:false,text:'该次 GET 未收到实际响应；不会用之前的响应冒充。'};throw e}})()}
    return {traceId,request:await wire('.request.json'),response,...(trace.background?{submissionResponse:submission,pollingNote:'每次查询的 GET 元数据与原始响应保存在同一 Trace 的 .polls 目录；不是重新生成。'}:{})}
   }
+  // Read-only, origin-bound evidence. Historical Plans remain hypotheses; no
+  // pose, connection, selected history or stored record is changed here.
+  if(method==='GET'&&route.startsWith('repair-evidence/')){
+   const origin=await read('origins',identifier(route.slice('repair-evidence/'.length))),base=await lineage('executions',origin.executionId),current=await lineage('plans',origin.planId)
+   for(const key of ['sourceId','sourceHash','reviewId','reviewHash','planId','planHash'])if(origin[key]!==base.record[key])fail('修复证据来源不一致',409)
+   if(origin.executionHash!==base.record.hash||origin.analysisId!==current.analysis.id||origin.analysisHash!==current.analysis.hash)fail('修复证据 Analysis / Execution Hash 不一致',409)
+   const plans=[],unavailable=[]
+   const files=(await readdir(path.join(directory,'plans'))).filter(f=>/^[a-f0-9-]+\.json$/.test(f)).sort()
+   for(const file of files){
+    try{
+     const record=await read('plans',file.slice(0,-5))
+     if(record.sourceId!==origin.sourceId||record.sourceHash!==origin.sourceHash)continue
+     const linkedReview=await read('reviews',record.reviewId)
+     if(linkedReview.analysisId!==origin.analysisId||linkedReview.analysisHash!==origin.analysisHash)continue
+     const group=record.reconstructionScope?.groupId,originalGroup=current.record.reconstructionScope?.groupId
+     if(group&&group!=='all'&&group!==originalGroup)continue
+     const linked=record.id===current.record.id?current:await lineage('plans',record.id)
+     plans.push({record:linked.record,profiles:linked.geometryReview.input.profiles})
+    }catch(e){unavailable.push({id:file.slice(0,-5),reason:String(e.message)})}
+   }
+   return {originId:origin.id,originHash:origin.hash,planId:current.record.id,planHash:current.record.hash,plans,unavailable}
+  }
   if(method==='GET'&&route.startsWith('module-state/'))return moduleState(route.slice(13))
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}

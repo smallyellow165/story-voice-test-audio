@@ -14,7 +14,7 @@ export const constraintClassificationPolicy=Object.freeze({version:1,nearZero:5,
 
 /** Biconnected edge blocks in the current connection multigraph. Connections in
  * one cycle block may require coordinated solving, even without a shared Tile. */
-function cycleBlocks(assembly:Assembly3D):number[][]{
+export function cycleBlocks(assembly:Assembly3D):number[][]{
  const adj=new Map(assembly.pieces.map(p=>[p.id,[] as {to:string;edge:number}[]]))
  assembly.connections.forEach((c,edge)=>{adj.get(c.pieceA)?.push({to:c.pieceB,edge});adj.get(c.pieceB)?.push({to:c.pieceA,edge})})
  const discovery=new Map<string,number>(),low=new Map<string,number>(),stack:number[]=[],blocks:number[][]=[];let tick=0

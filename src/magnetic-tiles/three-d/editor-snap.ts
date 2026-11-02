@@ -10,9 +10,10 @@ import {editorProject} from './editor-project.ts';
 import {validateAssembly3D} from './engine-adapter.ts';
 
 export type EdgeSnapPreview={sourceRaw:string;connection:Connection;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>};
-/** Use upstream port math; change only B, never solve/reposition its neighbours. */
-export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeSnapPreview{
- const sourceRaw=serializeAssembly3D(assembly),project=editorProject(assembly),c=structuredClone(connection);
+/** Shared exact Port compatibility/alignment, also used by connection-aware repair.
+ * This computes a target only; it never edits a linked piece or grants validity. */
+export function edgeSnapTransform(assembly:Assembly3D,c:Connection){
+ const project=editorProject(assembly);
  const a=assembly.pieces.find(p=>p.id===c.pieceA),b=assembly.pieces.find(p=>p.id===c.pieceB);
  if(!a||!b||a.id===b.id)throw Error('请选择不同的源零件 B 和目标 A');
  const shape=(id:string)=>project.shapes.get(project.parts.find(p=>p.id===id)!.shape)!;
@@ -21,6 +22,12 @@ export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeS
  if(assembly.connections.some(existing=>portPairKey(existing)===portPairKey(c)))throw Error('重复连接：该 Port Pair 已占用；请先解除原连接');
  const tf=computeSnapTransform(a.id,c.portA,b.id,c.portB,c.dihedralDeg,c.flip??false,project);
  if(!tf)throw Error('无法计算吸附 Pose；检查 Port、Dihedral 和 flip');
+ return tf;
+}
+/** Use upstream port math; change only B, never solve/reposition its neighbours. */
+export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeSnapPreview{
+ const sourceRaw=serializeAssembly3D(assembly),c=structuredClone(connection),b=assembly.pieces.find(p=>p.id===c.pieceB)!;
+ const tf=edgeSnapTransform(assembly,c);
  const moving=tf.position.distanceTo(new Vector3(...b.pose.position))>1e-8||1-Math.abs(tf.quaternion.dot(new Quaternion(...b.pose.quaternion)))>1e-10;
  if(moving&&assembly.connections.some(x=>x.pieceA===b.id||x.pieceB===b.id))throw Error('源零件仍有连接；移动前请解除相关连接，不会自动移动邻片或修改闭环');
  const next=structuredClone(assembly);next.pieces.find(p=>p.id===b.id)!.pose=fromEnginePose(tf);next.connections.push(c);
