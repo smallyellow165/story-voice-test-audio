@@ -17,20 +17,30 @@ function setup(history=false){
  if(history)source.connectionEvidence={originId:fixture.origin.id,originHash:fixture.origin.hash,planId:fixture.plan.id,planHash:fixture.plan.hash,plans:[{record:{...structuredClone(fixture.plan),id:historical.id,hash:historical.hash,plan:{...structuredClone(source.plan),connections:structuredClone(historical.connections),alternatives:[]}} as AnglePlanRecord,profiles:assembly.profiles}],unavailable:[]}
  return {assembly,source}
 }
+const joint=(s:ReturnType<typeof setup>)=>s.source.connectionEvidence!.plans[0].record.plan.connections.find(c=>[c.pieceA,c.pieceB].sort().join('|')==='p03|p09')!
 function articulated(){
  const s=setup(),ids=new Set(['p01','p11','p09']);s.assembly.pieces=s.assembly.pieces.filter(p=>ids.has(p.id));s.assembly.connections=s.assembly.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB)&&![c.pieceA,c.pieceB].every(id=>['p11','p09'].includes(id)))
  return s
 }
 describe('Connection-aware Auto Fix uses evidence + existing Snap + strict whole graph validation',()=>{
- it('Back: finds the explicit historical Port pair but rejects all incompatible closed loops, preserving nine old connections',()=>{
+ it('Back: maps historical frames, establishes the tenth joint and preserves all nine original connections',()=>{
   const s=setup(true),before=serializeAssembly3D(s.assembly),inputs=repairConnectionInputs(s.assembly,s.source)
-  expect(inputs.proposals).toHaveLength(1);expect(inputs.proposals[0].connection).toMatchObject({pieceA:'p03',portA:'e3-p0',pieceB:'p09',portB:'e2-p0',dihedralDeg:0,flip:true});expect(inputs.proposals[0].evidence[0].authority).toBe('historical-plan')
+  expect(inputs.proposals).toHaveLength(1);expect(inputs.proposals[0].connection).toMatchObject({pieceA:'p03',portA:'e1-p0',pieceB:'p09',portB:'e1-p0',dihedralDeg:0,flip:true});expect(inputs.proposals[0].evidence[0].authority).toBe('historical-plan')
   expect(()=>edgeSnapTransform(s.assembly,inputs.proposals[0].connection)).not.toThrow()
   const r=findConstraintRepairs(s.assembly,s.source)
-  expect(r.status).toBe('complete');expect(r.checks).toBe(90);expect(r.connectionAttempts![0]).toMatchObject({checks:81,accepted:0});expect(r.connectionAttempts![0].errors['loop-position-error']).toBe(81)
+  expect(r.status).toBe('complete');expect(r.checks).toBe(90);expect(r.connectionAttempts![0].checks).toBe(81);expect(r.connectionAttempts![0].accepted).toBeGreaterThan(0)
   expect(r.candidates.length).toBeGreaterThan(0)
-  for(const c of r.candidates){expect(c.proposedConnection).toBeUndefined();expect(c.assembly.connections).toHaveLength(9);expect(c.assembly.connections.map(({dihedralDeg:_,...c})=>c)).toEqual(s.assembly.connections.map(({dihedralDeg:_,...c})=>c));expect(c.geometry.issues.every(i=>i.code==='intersection')).toBe(true)}
-  expect(r.candidates[0].angles.map(a=>a.to)).toEqual([25,25]);expect(serializeAssembly3D(s.assembly)).toBe(before)
+  for(const c of r.candidates){expect(c.assembly.connections.length).toBe(c.proposedConnection?10:9);expect(c.assembly.connections.slice(0,9).map(({dihedralDeg:_,...c})=>c)).toEqual(s.assembly.connections.map(({dihedralDeg:_,...c})=>c));expect(c.geometry.issues.every(i=>i.code==='intersection')).toBe(true)}
+  expect(r.candidates[0].angles.map(a=>a.to)).toEqual([30,30]);expect(r.candidates[0].proposedConnection!.connection.dihedralDeg).toBe(0);expect(r.candidates[0].residuals.maxPositionError).toBeLessThan(1e-10);expect(r.candidates[0].collisions.map(c=>c.pieceIds)).toEqual([['p03','p11']]);expect(serializeAssembly3D(s.assembly)).toBe(before)
+  const h=createInitialHistory(s.assembly);joint(s).flip=!joint(s).flip;expect(()=>confirmConstraintRepair(h,s.source,r,r.candidates[0])).toThrow(/过期/)
+ })
+ it('binds mapping to Observation identity and unchanged anchors, independent of Piece IDs and declaration direction',()=>{
+  const s=setup(true),rename=(id:string)=>'instance-'+id
+  for(const a of [s.assembly,s.source.original]){for(const p of a.pieces)p.id=rename(p.id);for(const c of a.connections){c.pieceA=rename(c.pieceA);c.pieceB=rename(c.pieceB)}}
+  s.source.mapping=new Map([...s.source.mapping].map(([o,p])=>[o,rename(p)]))
+  const c=s.assembly.connections[1];[c.pieceA,c.pieceB]=[c.pieceB,c.pieceA];[c.portA,c.portB]=[c.portB,c.portA]
+  const r=findConstraintRepairs(s.assembly,s.source),best=r.candidates[0];expect(best.proposedConnection!.connection).toMatchObject({pieceA:'instance-p03',pieceB:'instance-p09',portA:'e1-p0',portB:'e1-p0',flip:true,dihedralDeg:0});expect(best.residuals.maxPositionError).toBeLessThan(1e-10)
+  const t=setup(true);t.assembly.connections[1].portB='e1-p0';expect(repairConnectionInputs(t.assembly,t.source).proposals).toEqual([]);expect(repairConnectionInputs(t.assembly,t.source).skipped.some(s=>s.reason.includes('锚点'))).toBe(true)
  })
  it('adds a genuinely evidenced compatible joint and coordinates its connected substructure; preview is read-only, apply is one Undo step',()=>{
   const s=articulated(),raw=serializeAssembly3D(s.assembly),r=findConstraintRepairs(s.assembly,s.source),best=r.candidates.find(c=>c.proposedConnection&&c.geometry.valid)
@@ -47,17 +57,17 @@ describe('Connection-aware Auto Fix uses evidence + existing Snap + strict whole
  it('does not manufacture a Port pair from adjacency/occlusion, guess unknown ports, reuse old Profiles, or override human separation',()=>{
   const s=setup();expect(repairConnectionInputs(s.assembly,s.source).proposals).toHaveLength(0)
   const t=setup(true);t.source.connectionEvidence!.plans[0].record.plan.parts.find(p=>p.id==='p09')!.profileId='right-triangle';expect(repairConnectionInputs(t.assembly,t.source).proposals).toHaveLength(0);expect(repairConnectionInputs(t.assembly,t.source).skipped[0].reason).toMatch(/Profile/)
-  const u=setup(true);u.source.connectionEvidence!.plans[0].record.plan.connections[0].portA=null;expect(repairConnectionInputs(u.assembly,u.source).skipped[0].reason).toMatch(/未确定/)
-  const v=setup(true);v.source.reviewInput!.review.constraints=[{...v.source.connectionEvidence!.plans[0].record.plan.connections[0],intent:'separate'}];expect(repairConnectionInputs(v.assembly,v.source).proposals).toHaveLength(0)
+  const u=setup(true);joint(u).portA=null;expect(repairConnectionInputs(u.assembly,u.source).skipped[0].reason).toMatch(/未确定/)
+  const v=setup(true);v.source.reviewInput!.review.constraints=[{...joint(v),intent:'separate'}];expect(repairConnectionInputs(v.assembly,v.source).proposals).toHaveLength(0)
  })
  it('never rewrites a human Port/Flip constraint to match historical suggestions',()=>{
-  const s=setup(true),h=structuredClone(s.source.connectionEvidence!.plans[0].record.plan.connections[0]);h.portA='e1-p0';h.intent='connect';s.source.reviewInput!.review.constraints=[h]
+  const s=setup(true),h=structuredClone(joint(s));h.portA='e1-p0';h.intent='connect';s.source.reviewInput!.review.constraints=[h]
   const proposals=repairConnectionInputs(s.assembly,s.source).proposals;expect(proposals.every(p=>p.connection.portA==='e1-p0')).toBe(true);expect(repairConnectionInputs(s.assembly,s.source).skipped.some(s=>/硬约束/.test(s.reason))).toBe(true)
   s.source.reviewInput!.review.constraints.push({...h,portA:'e3-p0'});expect(repairConnectionInputs(s.assembly,s.source).proposals).toEqual([])
  })
  it('does not optimize or gain score from Non-repairable joints; all remaining collisions still must not worsen',()=>{
   const s=setup(true),nr=collisionPairKey(['p01','p09']),target=collisionPairKey(['p03','p09']),r=findConstraintRepairs(s.assembly,s.source,[target],{nonRepairableKeys:[nr]})
-  expect(r.nonRepairableKeys).toEqual([nr]);expect(r.targetKeys).toEqual([target]);expect(r.connectionAttempts![0].accepted).toBe(0)
+  expect(r.nonRepairableKeys).toEqual([nr]);expect(r.targetKeys).toEqual([target]);expect(r.connectionAttempts![0].accepted).toBeGreaterThan(0)
   for(const c of r.candidates)for(const col of c.collisions){const b=r.baseline.find(b=>b.key===col.key)!;expect(col.depth).toBeLessThanOrEqual(b.depth+1e-9);expect(col.volume!).toBeLessThanOrEqual(b.volume!+1e-12)}
   const noJoint=findConstraintRepairs(s.assembly,s.source,undefined,{nonRepairableKeys:[target]});expect(noJoint.connectionAttempts).toEqual([])
  })

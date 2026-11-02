@@ -1,3 +1,6 @@
+import {profilePortMappings,anchoredPortMappings,mapConnectionConvention} from './port-mapping.ts'
+import type {PortMappingAnchor,LocalPortMapping,AngleDomain,PortMappingResult} from './port-mapping.ts'
+import {assemblyAngleHintRows} from './assembly-angle-hints.ts'
 import {canonical} from '../build-plan.ts'
 import type {Assembly3D} from './assembly.ts'
 import type {AngleHintSource} from './assembly-angle-hints.ts'
@@ -7,7 +10,7 @@ import type {Connection} from './vendor/engine/types.ts'
 import {portPairKey} from './vendor/engine/port-compatibility.ts'
 import {edgeSnapTransform} from './editor-snap.ts'
 
-export type RepairConnectionEvidence={recordId:string;hash?:string;variant:number;authority:'human'|'current-plan'|'historical-plan'|'execution-hypothesis';intent:ConnectionHypothesis3D['intent'];evidence:string;uncertainty:string;evidenceRefs:string[]}
+export type RepairConnectionEvidence={recordId:string;hash?:string;variant:number;authority:'human'|'current-plan'|'historical-plan'|'execution-hypothesis';intent:ConnectionHypothesis3D['intent'];evidence:string;uncertainty:string;evidenceRefs:string[];portMapping?:{sourcePorts:[string,string];targetPorts:[string,string];normalSigns:[number,number];reversed:[boolean,boolean];anchors:string[];status:PortMappingResult['status']}}
 export type RepairConnectionProposal={id:string;connection:Connection;angles:number[];range:ConnectionHypothesis3D['angleRange'];evidence:RepairConnectionEvidence[]}
 export type RepairConnectionInputs={analysisRelations?:VisualConnection3D[];proposals:RepairConnectionProposal[];skipped:{pair:string;reason:string}[];unavailable:string[]}
 /** Only structured, explicitly port-mapped evidence is executable. Adjacency,
@@ -24,7 +27,7 @@ export function repairConnectionInputs(a:Assembly3D,s:AngleHintSource):RepairCon
   if(s.reviewInput?.review.constraints.some(c=>samePair(c,x,y)&&c.intent==='separate'))return skip('当前人工约束明确分离')
   for(const [id,piece] of [[h.pieceA,p],[h.pieceB,q]] as const){
    const planned=parts.find(p=>p.id===id),profile=profiles.find(p=>p.profile.id===piece.profileId&&p.profile.version===piece.profileVersion),current=a.profiles.find(p=>p.profile.id===piece.profileId&&p.profile.version===piece.profileVersion)
-   if(!planned||planned.profileId!==piece.profileId||planned.profileVersion!==piece.profileVersion||!profile||canonical(profile)!==canonical(current))return skip('Profile / 厚度快照不同；旧 Port 映射不可复用')
+   if(!planned||planned.profileId!==piece.profileId||planned.profileVersion!==piece.profileVersion||!profile||!current||(proof.portMapping?profilePortMappings(profile,current).length===0:canonical(profile)!==canonical(current)))return skip('Profile / 厚度快照不同；旧 Port 映射不可复用')
   }
   if(!h.portA||!h.portB||h.flip===null||!h.angles.length||!h.angles.every(Number.isFinite))return skip('证据未确定 Port、Flip 或角度；不按距离猜测')
   const range=h.angleRange
@@ -49,7 +52,49 @@ export function repairConnectionInputs(a:Assembly3D,s:AngleHintSource):RepairCon
  // The executed source is always available, including projects without history.
  const current=records.find(p=>p.record.id===s.planId)
  for(const [i,v] of [{connections:s.plan.connections},...s.plan.alternatives].entries())for(const h of v.connections)add(h,s.plan.parts,current?.profiles??s.original.profiles,{recordId:s.planId,hash:current?.record.hash,variant:i,authority:'current-plan',intent:h.intent,evidence:h.evidence,uncertainty:h.uncertainty,evidenceRefs:h.evidenceRefs})
- for(const {record,profiles} of records.filter(p=>p.record.id!==s.planId))for(const [i,v] of [{connections:record.plan.connections},...record.plan.alternatives].entries())for(const h of v.connections)add(h,record.plan.parts,profiles,{recordId:record.id,hash:record.hash,variant:i,authority:'historical-plan',intent:h.intent,evidence:h.evidence,uncertainty:h.uncertainty,evidenceRefs:h.evidenceRefs})
+ // A historical instance can use a different symmetry-equivalent local frame
+ // even when its Profile ID and Port strings are identical. Infer correspondence
+ // ONLY from full geometry + unchanged original handoff connection anchors.
+ const currentRows=assemblyAngleHintRows(a,s,s.executedVariant??0),reverse=(d:AngleDomain):AngleDomain=>({angles:d.angles.map(v=>-v),angleRange:d.angleRange?{min:-d.angleRange.max,max:-d.angleRange.min}:null})
+ for(const {record,profiles} of records.filter(p=>p.record.id!==s.planId)){
+  if(s.connectionEvidence?.originId!==s.originId||s.connectionEvidence.planId!==s.planId){out.unavailable.push('历史连接证据来源不一致，未使用');continue}
+  const domains=new Map<string,LocalPortMapping[]>()
+  for(const part of record.plan.parts){
+   const piece=a.pieces.find(p=>p.id===mapped(part.id)),snapshot=profiles.find(p=>p.profile.id===part.profileId&&p.profile.version===part.profileVersion),current=piece&&a.profiles.find(p=>p.profile.id===piece.profileId&&p.profile.version===piece.profileVersion)
+   if(piece&&snapshot&&current&&part.profileId===piece.profileId&&part.profileVersion===piece.profileVersion)domains.set(piece.id,profilePortMappings(snapshot,current))
+  }
+  for(const [i,v] of [{connections:record.plan.connections},...record.plan.alternatives].entries()){
+   const anchors:PortMappingAnchor[]=[]
+   for(const h of v.connections){
+    if(h.intent==='separate'||h.portA===null||h.portB===null||h.flip===null||!h.angles.length)continue
+    const x=mapped(h.pieceA),y=mapped(h.pieceB),hs=v.connections.filter(q=>samePair(q,x,y)&&q.intent!=='separate'),cs=a.connections.filter(c=>pair(c.pieceA,c.pieceB)===pair(x,y))
+    if(hs.length!==1||cs.length!==1)continue
+    const c=cs[0],index=a.connections.indexOf(c),forward=c.pieceA===x
+    if(!s.original.connections.some(old=>portPairKey(old)===portPairKey(c)&&(old.flip??false)===(c.flip??false)))continue
+    if([c.pieceA,c.pieceB].some(id=>{
+     const piece=a.pieces.find(p=>p.id===id)!,snap=a.profiles.find(p=>p.profile.id===piece.profileId&&p.profile.version===piece.profileVersion)
+     return canonical(snap)!==canonical(s.original.profiles.find(p=>p.profile.id===piece.profileId&&p.profile.version===piece.profileVersion))
+    }))continue
+    const row=currentRows.find(r=>r.connectionIndex===index),hint=row?.hint,comparable=hint&&!['not-comparable','no-hint','no-angle'].includes(row!.comparison)
+    let domain:AngleDomain=comparable?{angles:hint.angles,angleRange:hint.angleRange}:{angles:[c.dihedralDeg],angleRange:null}
+    if(comparable&&mapped(hint.pieceA)!==c.pieceA&&!c.flip)domain=reverse(domain)
+    if(!forward&&!c.flip)domain=reverse(domain)
+    anchors.push({id:`${x}↔${y} / #${index}`,historical:{...h,pieceA:x,pieceB:y},current:{...c,pieceA:x,pieceB:y,portA:forward?c.portA:c.portB,portB:forward?c.portB:c.portA},domain})
+   }
+   for(const h of v.connections){
+    const x=mapped(h.pieceA),y=mapped(h.pieceB)
+    if(!a.pieces.some(p=>p.id===x)||!a.pieces.some(p=>p.id===y)||h.intent==='separate'||a.connections.some(c=>pair(c.pieceA,c.pieceB)===pair(x,y)))continue
+    if(!h.portA||!h.portB||h.flip===null||!h.angles.length){out.skipped.push({pair:pair(x,y),reason:'历史证据未确定 Port、Flip 或角度，无法转换'});continue}
+    const mapping=anchoredPortMappings(domains,anchors,x,y)
+    if(!mapping.pairs.length){out.skipped.push({pair:pair(x,y),reason:mapping.reason});continue}
+    if(mapping.status!=='mapped')out.unavailable.push(`${record.id.slice(0,8)} · ${pair(x,y)} · ${mapping.reason}`)
+    for(const frames of mapping.pairs)for(const converted of mapConnectionConvention(h,frames.a,frames.b))add(converted,record.plan.parts,profiles,{
+     recordId:record.id,hash:record.hash,variant:i,authority:'historical-plan',intent:h.intent,evidence:h.evidence,uncertainty:h.uncertainty,evidenceRefs:h.evidenceRefs,
+     portMapping:{sourcePorts:[h.portA,h.portB],targetPorts:[converted.portA!,converted.portB!],normalSigns:[frames.a.normalSign,frames.b.normalSign],reversed:[frames.a.ports[h.portA].reversed,frames.b.ports[h.portB].reversed],anchors:mapping.anchors,status:mapping.status}
+    })
+   }
+  }
+ }
  // Execution omissions are preserved structured hypotheses, never new facts.
  if(s.executionId)for(const h of s.omittedConnections??[])add(h,s.plan.parts,s.original.profiles,{recordId:s.executionId,hash:s.executionHash,variant:s.executedVariant??0,authority:'execution-hypothesis',intent:h.intent,evidence:h.evidence,uncertainty:h.uncertainty,evidenceRefs:h.evidenceRefs})
  const ids=new Set(a.pieces.map(p=>p.id))

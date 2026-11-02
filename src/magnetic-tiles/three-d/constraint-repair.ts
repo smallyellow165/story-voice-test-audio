@@ -180,7 +180,9 @@ function alignmentCost(a:Assembly3D,proposals:RepairConnectionProposal[]){
  * Full Validator results remain attached for truthful display and workflow gates. */
 export function repairCandidateScore(c:RepairCandidate,targets:ReadonlySet<string>,excluded:ReadonlySet<string>=new Set()):number[]{
  const counted=c.collisions.filter(x=>!excluded.has(x.key)),selected=counted.filter(x=>targets.has(x.key))
- return [counted.length?1:0,c.proposedConnection?0:1,c.proposedConnection?Math.min(...c.proposedConnection.evidence.map(e=>(e.authority==='human'?0:e.authority==='current-plan'?1:2)+(e.intent==='uncertain'?.25:0)+(e.evidenceRefs.length?0:.25))):0,selected.length,selected.reduce((s,x)=>s+x.depth,0),counted.length,counted.reduce((s,x)=>s+x.depth,0),c.alignmentCost??0,selected.reduce((s,x)=>s+(x.volume??0),0),counted.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]
+ // Prefer exact closure over a merely tolerance-admissible new joint. These
+ // residuals contain no solid-collision metric or Non-repairable scoring gain.
+ return [counted.length?1:0,c.proposedConnection?0:1,c.proposedConnection?Math.min(...c.proposedConnection.evidence.map(e=>(e.authority==='human'?0:e.authority==='current-plan'?1:2)+(e.intent==='uncertain'?.25:0)+(e.evidenceRefs.length?0:.25))):0,c.residuals.maxPositionError,c.residuals.maxDihedralError,1-c.residuals.minDirectionDot,selected.length,selected.reduce((s,x)=>s+x.depth,0),counted.length,counted.reduce((s,x)=>s+x.depth,0),c.alignmentCost??0,selected.reduce((s,x)=>s+(x.volume??0),0),counted.reduce((s,x)=>s+(x.volume??0),0),c.deviation,c.planDeviation,...c.controls]
 }
 function compare(a:RepairCandidate,b:RepairCandidate,targets:Set<string>,excluded:Set<string>){
  const x=repairCandidateScore(a,targets,excluded),y=repairCandidateScore(b,targets,excluded);for(let i=0;i<x.length;i++)if(Math.abs(x[i]-y[i])>1e-12)return x[i]-y[i];return 0
