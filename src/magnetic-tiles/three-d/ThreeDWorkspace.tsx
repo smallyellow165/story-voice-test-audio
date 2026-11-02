@@ -4,6 +4,8 @@ import {placePendingObservation} from './reconstruction/pending-observations.ts'
 import type {PendingObservation} from './reconstruction/pending-observations.ts';
 import {intakeApi} from '../intake/api.ts'
 import {createPortal} from 'react-dom'
+import {arrangeAssemblyDisplays,readAssemblyVisibility,saveAssemblyVisibility} from './multi-assembly-display.ts'
+import type {AssemblyVisibility,ReadOnlyPieceSelection} from './multi-assembly-display.ts'
 import {preserveSavedAssembly,saveAssemblySnapshot,restoreAssemblySnapshot,groupSnapshot,savedAssemblyRef} from './assembly-library.ts'
 import type {SavedAssembly,SavedAssemblySummary} from './assembly-library.ts'
 import {restoreSavedHumanReview} from './human-collision-client.ts'
@@ -80,6 +82,8 @@ export default function ThreeDWorkspace() {
   const [collisionFocus,setCollisionFocus]=useState<CollisionFocus>(null)
   const [errorFocus,setErrorFocus]=useState<{pieceId:string;ts:number}|null>(null)
   const [assemblyIO,setAssemblyIO]=useState(false),[savedAssemblies,setSavedAssemblies]=useState<SavedAssemblySummary[]>([]),[libraryError,setLibraryError]=useState('')
+  const [displayPreferences,setDisplayPreferences]=useState<{projectId:string;values:AssemblyVisibility}>({projectId:'',values:{}}),[displayError,setDisplayError]=useState('')
+  const [displaySnapshots,setDisplaySnapshots]=useState<{projectId:string;records:SavedAssembly[]}>({projectId:'',records:[]}),[readOnlySelection,setReadOnlySelection]=useState<ReadOnlyPieceSelection>(null)
   const archiveQueue=useRef<Promise<unknown>>(Promise.resolve()),projectRef=useRef(project3D);projectRef.current=project3D
   const [editing, setEditing] = useState(true), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
@@ -123,6 +127,32 @@ export default function ThreeDWorkspace() {
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   useEffect(()=>{setAssemblyOrigin3D(photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.origin:null)},[photoOrigin,current.id,setAssemblyOrigin3D])
   useEffect(()=>{let alive=true;setSavedAssemblies([]);void protectSavedWorking().then(async r=>{if(!alive)return;if(r&&serializeAssembly3D(historyRef.current.current)===serializeAssembly3D(r.snapshot.assembly))setLibraryError(r.lineage.selected?'':`来源不匹配：${r.lineage.error}；Draft 可查看，Build 仍受来源校验。`);if(r?.reviewRef&&r.lineage.selected&&serializeAssembly3D(historyRef.current.current)===serializeAssembly3D(r.snapshot.assembly))await restoreSavedHumanReview(r.snapshot.assembly,r.hash);await refreshAssemblies()}).catch(e=>{if(alive){setLibraryError(String(e));void refreshAssemblies().catch(()=>{})}});return()=>{alive=false}},[project3D?.id])
+  const visibility=displayPreferences.projectId===project3D?.id?displayPreferences.values:{[current.id]:true}
+  const activeVisible=visibility[current.id]!==false
+  useEffect(()=>{
+    if(!project3D){setDisplayPreferences({projectId:'',values:{}});return}
+    try{setDisplayPreferences({projectId:project3D.id,values:readAssemblyVisibility(localStorage,project3D.id,historyRef.current.current.id)});setDisplayError('')}
+    catch(e){setDisplayPreferences({projectId:project3D.id,values:{[historyRef.current.current.id]:true}});setDisplayError(String(e))}
+  },[project3D?.id])
+  const visibleSavedKey=JSON.stringify(savedAssemblies.filter(a=>a.id!==current.id&&visibility[a.id]).map(a=>[a.id,a.hash]))
+  useEffect(()=>{
+    let alive=true;const p=project3D?.id
+    const wanted=savedAssemblies.filter(a=>a.id!==current.id&&visibility[a.id])
+    void Promise.all(wanted.map(async a=>{const r=await intakeApi<SavedAssembly>('assembly3d/records/'+a.id);if(r.project.id!==p||r.hash!==a.hash)throw Error('显示作品的 Project / Snapshot 已变化，请重新打开或保存作品');assertCanonicalProfiles(r.snapshot.assembly.profiles,profiles);return r})).then(records=>{if(alive)setDisplaySnapshots({projectId:p??'',records})}).catch(e=>{if(alive){setDisplaySnapshots({projectId:p??'',records:[]});setDisplayError(String(e))}})
+    return()=>{alive=false}
+  },[project3D?.id,current.id,visibleSavedKey])
+  // Freeze the initial placement envelope per opened document, not per Gizmo frame.
+  const displayAnchor=useMemo(()=>current,[current.id,loaded.sequence])
+  const readOnlyAssemblies=useMemo(()=>arrangeAssemblyDisplays(displayAnchor,displaySnapshots.projectId===project3D?.id?displaySnapshots.records.filter(r=>r.assembly.id!==current.id&&visibility[r.assembly.id]&&savedAssemblies.some(a=>a.id===r.assembly.id&&a.hash===r.hash)).map(r=>({id:r.assembly.id,name:r.name,snapshotHash:r.snapshotHash,assembly:r.snapshot.assembly})):[]),[displayAnchor,displaySnapshots,project3D?.id,visibility,savedAssemblies,current.id])
+  useEffect(()=>{setReadOnlySelection(null)},[current.id])
+  useEffect(()=>{if(selection.kind!=='none')setReadOnlySelection(null)},[selection])
+  function setAssemblyVisible(id:string,visible:boolean){
+    const p=projectRef.current;if(!p)return
+    const values={...(displayPreferences.projectId===p.id?displayPreferences.values:{[historyRef.current.current.id]:true}),[id]:visible}
+    setDisplayPreferences({projectId:p.id,values});setReadOnlySelection(null);if(id===historyRef.current.current.id&&!visible)setSelection({kind:'none'})
+    try{saveAssemblyVisibility(localStorage,p.id,values);setDisplayError('')}catch(e){setDisplayError(`显示状态仅在本页生效：${String(e)}`)}
+  }
+  function inspectReadOnly(assemblyId:string,pieceId:string){if(operationBusy)return;setSelection({kind:'none'});setReadOnlySelection({assemblyId,pieceId})}
   const dirty = (serializeAssembly3D(current) !== clean || canonical(nonRepairable)!==cleanPolicy)
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const snapshotKey=useMemo(()=>`${loaded.sequence}:${serializeAssembly3D(assembly)}`,[loaded.sequence,assembly])
@@ -239,7 +269,7 @@ export default function ThreeDWorkspace() {
       const saved=restoreAssemblySnapshot(localStorage,r,expected)
       expectedRaw.current=saved.raw;expectedPolicyRaw.current=saved.policy;setPhotoOrigin(saved.photoOrigin);setEditorCamera(saved.photoOrigin.cameraView??null)
       accept(actions.createInitialHistory(r.snapshot.assembly,r.snapshot.nonRepairable),true);setClean(saved.raw);setCleanPolicy(canonical(r.snapshot.nonRepairable));setText(saved.raw)
-      setLoaded(old=>({source:saved.raw,name:r.name,sequence:old.sequence+1}));setSelection({kind:'none'});setEditing(true);setError('');setLibraryError(r.lineage.selected?'':`来源不匹配：${r.lineage.error}；Draft 可查看，Build 仍受来源校验。`)
+      setAssemblyVisible(r.assembly.id,true);setLoaded(old=>({source:saved.raw,name:r.name,sequence:old.sequence+1}));setSelection({kind:'none'});setEditing(true);setError('');setLibraryError(r.lineage.selected?'':`来源不匹配：${r.lineage.error}；Draft 可查看，Build 仍受来源校验。`)
       if(r.reviewRef&&r.lineage.selected){try{await restoreSavedHumanReview(r.snapshot.assembly,r.hash)}catch(e){setLibraryError(`作品已恢复；审核授权未恢复：${String(e)}`)}}
       await refreshAssemblies();navigate('assembly')
     }catch(e){setLibraryError(String(e))}finally{setAssemblyIO(false)}
@@ -330,7 +360,19 @@ export default function ThreeDWorkspace() {
   const inProject=!!project3D&&photoOrigin?.origin.sourceId===project3D.id&&JSON.parse(photoOrigin.assemblyRaw).id===current.id
   let currentSaved=false;try{const ref=savedAssemblyRef(localStorage);currentSaved=!dirty&&ref?.id===current.id&&savedAssemblies.some(a=>a.id===current.id&&a.hash===ref.hash)}catch{/* unknown receipt is never displayed as Saved */}
   return <>
-    {hosts.assemblies&&createPortal(<section hidden={viewMode!=='3d'} className="assembly-selector" aria-label="Assembly Selector"><label>Assembly / 当前作品<select aria-label="Assembly / 当前作品" disabled={operationBusy||!project3D} value={inProject?(currentSaved?current.id:'working:'+current.id):''} onChange={e=>{if(e.target.value&&!e.target.value.startsWith('working:'))void openSavedAssembly(e.target.value)}}><option value="" disabled>选择当前 Project 的作品</option>{inProject&&!currentSaved&&<option value={'working:'+current.id}>{String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'Group')} · Group · {current.pieces.length} Tiles · Draft</option>}{savedAssemblies.map(a=><option key={a.id} value={a.id}>{a.name} · Group · {a.tiles} Tiles · Saved · r{a.revision}</option>)}</select></label>{inProject&&<small data-testid="assembly-origin-summary">Group {String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'全部模块')} · Plan {String(photoOrigin!.origin.planId).slice(0,8)} · Execution {String(photoOrigin!.origin.executionId).slice(0,8)} · {String(photoOrigin!.origin.entryMode??'Candidate')}</small>}{libraryError&&<p role="alert">{libraryError}</p>}{project3D&&photoOrigin&&!inProject&&<small>工作区来自其他 Project；选择列表中的作品可恢复当前 Project 的存档。</small>}</section>,hosts.assemblies)}
+    {hosts.assemblies&&createPortal(<section hidden={viewMode!=='3d'} className="assembly-selector" aria-label="Assembly Selector">
+      <div className="assembly-list-heading">Assembly / 当前作品 <InfoHint label="Assembly 显示与编辑"><p>勾选只控制显示；点击作品名称切换当前编辑对象。其他作品只读，显示偏移不是对齐或合并。切换时恢复已保存的完整 Draft。</p></InfoHint></div>
+      {!savedAssemblies.length&&!inProject&&<small>当前 Project 尚无已保存作品。</small>}
+      <ul className="assembly-list" aria-label="Project Assemblies">
+        {inProject&&!savedAssemblies.some(a=>a.id===current.id)&&<li data-assembly-row={current.id} aria-current="true"><input type="checkbox" aria-label={'显示作品 '+current.id} checked={activeVisible} disabled={operationBusy} onChange={e=>setAssemblyVisible(current.id,e.target.checked)}/><span>{String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'Group')} · {current.pieces.length} Tiles · Draft <b>编辑中</b></span></li>}
+        {savedAssemblies.map(a=>{const isCurrent=inProject&&a.id===current.id;return <li key={a.id} data-assembly-row={a.id} aria-current={isCurrent?'true':undefined}>
+          <input type="checkbox" aria-label={'显示作品 '+a.id} title="仅控制显示" checked={isCurrent?activeVisible:!!visibility[a.id]} disabled={operationBusy} onChange={e=>setAssemblyVisible(a.id,e.target.checked)}/>
+          <button type="button" disabled={operationBusy} aria-label={'编辑作品 '+a.id} aria-pressed={isCurrent} onClick={()=>{if(!isCurrent||!currentSaved)void openSavedAssembly(a.id)}} title={`${a.name} · ${a.id}`}><span>{a.name} · {isCurrent?current.pieces.length:a.tiles} Tiles</span><small>{isCurrent&&!currentSaved?'未保存':'Saved'} · r{isCurrent?current.revision:a.revision}{isCurrent&&<b> · 编辑中</b>}</small></button>
+        </li>})}
+      </ul>
+      {inProject&&<small data-testid="assembly-origin-summary">Group {String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'全部模块')} · Plan {String(photoOrigin!.origin.planId).slice(0,8)} · Execution {String(photoOrigin!.origin.executionId).slice(0,8)} · {String(photoOrigin!.origin.entryMode??'Candidate')}</small>}
+      {libraryError&&<p role="alert">{libraryError}</p>}{displayError&&<p role="alert">{displayError}</p>}{project3D&&photoOrigin&&!inProject&&<small>工作区来自其他 Project；选择列表中的作品可恢复当前 Project 的存档。</small>}
+    </section>,hosts.assemblies)}
     <StudioSlot column="workspace" stages={['assembly']} view="3d">
       <section className="magnetic-3d-workspace" aria-label="3D 作品查看">
         <div className="magnetic-3d-toolbar" aria-label="3D Assembly 工具栏">
@@ -345,8 +387,12 @@ export default function ThreeDWorkspace() {
           </div>
         </section>
         {profileError&&<p role="alert" className="magnetic-3d-blocker">{profileError}</p>}
+        {(readOnlyAssemblies.length>0||!activeVisible)&&<div className="assembly-display-summary" data-testid="multi-assembly-display" data-displayed-assemblies={JSON.stringify([...(activeVisible?[{id:current.id,tiles:current.pieces.length,offset:[0,0,0],active:true}]:[]),...readOnlyAssemblies.map(a=>({id:a.id,tiles:a.pieces.length,offset:a.offset,snapshotHash:a.snapshotHash,active:false}))])}>
+          <span>{activeVisible?`${String((photoOrigin?.origin.reconstructionScope as {groupName?:string})?.groupName??current.id)} · 编辑中`:'当前编辑作品已隐藏'}</span>{readOnlyAssemblies.map(a=><span key={a.id}>{a.name} · {a.pieces.length} Tiles · 只读</span>)}<small>并列显示，尚未对齐</small>
+        </div>}
+        {readOnlySelection&&<p className="assembly-display-inspection" role="status" data-testid="read-only-assembly-selection">{readOnlyAssemblies.find(a=>a.id===readOnlySelection.assemblyId)?.name} · {readOnlySelection.pieceId} · 只读；请在左栏点击作品名称切换编辑。</p>}
         {currentRepair&&<p className="magnetic-constraint-repair-banner" data-testid="repair-viewer-preview" data-repair-angles={JSON.stringify(currentRepair.candidate.angles)}>自动修复预览 · {currentRepair.candidate.id} · {currentRepair.candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 部分改善'} · {currentRepair.candidate.proposedConnection?'建议新增 Connection':'仅改善碰撞'} · 碰撞 {currentRepair.candidate.collisions.length} · 当前 Draft 尚未修改</p>}
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas project={repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
           onSelectPiece={id => {if(operationBusy)return;setSelection({kind:'piece',id});if(symmetryOpen)setSymmetrySources(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}}
           onSelectConnection={index => { if (!operationBusy) setSelection({ kind: 'connection', index }) }}
           onSelectPort={(id,portId)=>{if(operationBusy||symmetryOpen)return;if(snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
@@ -355,7 +401,7 @@ export default function ThreeDWorkspace() {
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
           onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={snapMode==='click'&&!symmetryOpen} interactionLocked={!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
           cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
-          : <MagnetScene3D key={loaded.sequence} assembly={assembly} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
+          : <MagnetScene3D key={loaded.sequence} assembly={assembly} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
         <details className="magnetic-3d-load"><summary>加载 / 导出 Assembly3D</summary>
           <label>Assembly3D JSON<textarea aria-label="Assembly3D JSON" value={text} spellCheck={false} maxLength={1_000_000}

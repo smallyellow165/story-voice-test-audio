@@ -59,10 +59,10 @@ export function AssemblyTileLabels({ pieces, selectedIds, solids, elements }: {
 }
 
 /** Ordinary React overlay avoids creating/unmounting a second React root in Canvas. */
-export function TileLabelLayer({ids,selectedIds,elements,previewIds=[]}:{ids:string[];selectedIds:string[];elements:TileLabelElements;previewIds?:string[]}){
+export function TileLabelLayer({ids,selectedIds,elements,previewIds=[],labels={}}:{ids:string[];selectedIds:string[];elements:TileLabelElements;previewIds?:string[];labels?:Record<string,string>}){
   return <div className="magnetic-3d-label-layer" aria-hidden="true">
     {ids.map(id=><span key={id} ref={el=>{if(el)elements.current.set(id,el);else elements.current.delete(id)}}
-      data-tile-label={id} data-symmetry-preview={previewIds.includes(id)} data-selected={selectedIds.includes(id)} className="magnetic-3d-tile-label">{id}</span>)}
+      data-tile-label={id} data-symmetry-preview={previewIds.includes(id)} data-selected={selectedIds.includes(id)} className="magnetic-3d-tile-label" title={labels[id]??id}>{labels[id]??id}</span>)}
   </div>
 }
 

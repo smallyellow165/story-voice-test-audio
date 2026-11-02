@@ -1,3 +1,6 @@
+import {ReadOnlyAssemblyGroups} from '../../../ReadOnlyAssemblyGroups.tsx'
+import {displayAnnotationPieces,displayLabels,displayPieceKey,EMPTY_ASSEMBLY_DISPLAYS} from '../../../multi-assembly-display.ts'
+import type {MultiAssemblyDisplayProps} from '../../../multi-assembly-display.ts'
 import {captureCameraView,restoreCameraView,resizeSavedCamera} from '../../../camera-view.ts'
 import type {CameraView3D} from '../../../camera-view.ts'
 // Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
@@ -30,7 +33,7 @@ export interface EditorView {
   zoom: number;
 }
 
-type SnapInteractionProps = CollisionDisplayProps & {
+type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
   showTileIds?:boolean;
   onSnapProposal?:(connection:Connection)=>void;
   onMovePieceCancel?:()=>void;
@@ -76,7 +79,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,
 }: {
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
@@ -139,7 +142,7 @@ function SceneContent({
     return set;
   }, [selection, project,snapSourcePort]);
 
-  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked;
+  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked||!activeVisible;
   const controlsRef = useRef<any>(null);
   const transformControlsRef = useRef<any>(null);
   const { camera, size } = useThree();
@@ -156,7 +159,7 @@ function SceneContent({
   /* ---- 相机拟合:复用 MagnetScene3D 的投影算法 ---- */
   const computeAllWorldVerts = useCallback((): THREE.Vector3[] => {
     const out: THREE.Vector3[] = [];
-    for (const p of project.pieces) {
+    for (const p of activeVisible?project.pieces:[]) {
       const tf = transforms[p.id];
       const piece = pieceMap[p.id];
       if (!tf || !piece) continue;
@@ -166,9 +169,10 @@ function SceneContent({
       if (!shape) continue;
       out.push(...pieceWorldVertices(shape, tf.position, tf.quaternion));
     }
-    for(const p of previewPieces??[])out.push(...pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion));
+    for(const p of activeVisible?previewPieces??[]:[])out.push(...pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion));
+    for(const p of displayAnnotationPieces(readOnlyAssemblies))out.push(...pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion));
     return out;
-  }, [project.pieces, transforms, pieceMap, partMap,previewPieces]);
+  }, [project.pieces, transforms, pieceMap, partMap,previewPieces,readOnlyAssemblies,activeVisible]);
 
   const fitAll = useCallback(() => {
     if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
@@ -186,6 +190,14 @@ function SceneContent({
       cameraTargetRef.current.copy(result.target);
     }
   }, [camera, computeAllWorldVerts, size, defaultCameraStateRef, cameraTargetRef]);
+
+  const displayKey=JSON.stringify([activeVisible,readOnlyAssemblies.map(a=>[a.id,a.offset])]);
+  const lastDisplay=useRef(displayKey);
+  useEffect(()=>{
+    if(lastDisplay.current===displayKey&&!readOnlyAssemblies.length)return;
+    lastDisplay.current=displayKey;
+    const timer=setTimeout(()=>fitAllRef.current?.(),100);return()=>clearTimeout(timer);
+  },[displayKey]);
 
   const fitSelection = useCallback(() => {
     if (!selectedPieceId) { fitAll(); return; }
@@ -592,7 +604,7 @@ function SceneContent({
         <primitive object={dummyObj} visible={false} />
 
         {/* 磁力片 */}
-        <group ref={solids}>{project.pieces.map((piece) => {
+        <group ref={solids}><group visible={activeVisible} userData={{assemblyId:project.id}}>{(activeVisible?project.pieces:[]).map((piece) => {
           const tf = transforms[piece.id];
           const part = partMap[piece.partId];
           if (!tf || !part) return null;
@@ -619,12 +631,12 @@ function SceneContent({
               onPointerOut={() => { document.body.style.cursor = 'default'; setHoveredPiece(null); }}
             /></group>
           );
-        })}</group>
+        })}</group><ReadOnlyAssemblyGroups readOnlyAssemblies={readOnlyAssemblies} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection}/></group>
+        {activeVisible&&<group>
         {previewPieces&&<AssemblyPreviewOverlay pieces={previewPieces}/>}
         <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
-        {(showTileIds||collision)&&<AssemblyTileLabels pieces={[...annotationPieces,...(previewPieces??[])]} selectedIds={selectedIds} solids={solids} elements={labelElements}/>}
 
-        <CollisionOverlay collision={collision} collisionFocus={collisionFocus} label={collisionLabel}/>
+        <CollisionOverlay collision={activeVisible?collision:undefined} collisionFocus={collisionFocus} label={collisionLabel}/>
         {/* 吸附预览(半透明 ghost) */}
         {displayedGhost && ghostPieceId && (() => {
           const piece = pieceMap[ghostPieceId];
@@ -693,6 +705,8 @@ function SceneContent({
             </group>
           );
         })}
+        </group>}
+        {(showTileIds||collision)&&<AssemblyTileLabels pieces={[...(activeVisible?annotationPieces:[]),...(activeVisible?previewPieces??[]:[]),...displayAnnotationPieces(readOnlyAssemblies)]} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} solids={solids} elements={labelElements}/>}
       </SceneLighting>
 
       <OrbitControls
@@ -705,7 +719,7 @@ function SceneContent({
       />
 
       {/* TransformControls:仅在选中零件且非选择模式时启用 */}
-      {!interactionLocked && selectedPieceId && toolMode !== 'select' && (
+      {activeVisible && !interactionLocked && selectedPieceId && toolMode !== 'select' && (
         <TransformControls
           ref={transformControlsRef}
           object={dummyObj}
@@ -747,8 +761,10 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,
 }: Props) {
+  const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
+  const labelNames=useMemo(()=>displayLabels(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelElements=useRef(new Map<string,HTMLSpanElement>());
   const collisionLabel=useRef<HTMLOutputElement>(null);
   const c=selection.kind==='connection'?project.connections[selection.index]:undefined;
@@ -775,7 +791,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          project={project} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
@@ -798,9 +814,9 @@ export function EditorCanvas({
           onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
-      {(showTileIds||collision)&&<TileLabelLayer ids={collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]} previewIds={previewPieces?.map(p=>p.id)} selectedIds={selectedIds} elements={labelElements}/>}
+      {(showTileIds||collision)&&<TileLabelLayer ids={[...(activeVisible?(collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]):[]),...otherAnnotations.map(p=>p.id)]} labels={labelNames} previewIds={previewPieces?.map(p=>p.id)} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} elements={labelElements}/>}
       {previewPieces&&<output className="hint magnetic-symmetry-overlay-evidence" data-symmetry-preview-ids={JSON.stringify(previewPieces.map(p=>p.id))}>灰色半透明为对称候选 · 非照片证据</output>}
-      <CollisionLabel collision={collision} label={collisionLabel}/>
+      <CollisionLabel collision={activeVisible?collision:undefined} label={collisionLabel}/>
 
       {/* Host-scoped layout; upstream Tailwind is not installed. */}
       <div className="magnetic-3d-editor-camera-tools">
