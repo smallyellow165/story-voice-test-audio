@@ -1,3 +1,5 @@
+import {ModuleGizmo} from '../../../ModuleGizmo.tsx'
+import type {ModuleGizmoProps} from '../../../ModuleGizmo.tsx'
 import {ReadOnlyAssemblyGroups} from '../../../ReadOnlyAssemblyGroups.tsx'
 import {displayAnnotationPieces,displayLabels,displayPieceKey,EMPTY_ASSEMBLY_DISPLAYS} from '../../../multi-assembly-display.ts'
 import type {MultiAssemblyDisplayProps} from '../../../multi-assembly-display.ts'
@@ -34,6 +36,7 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
+  moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;
   showTileIds?:boolean;
   onSnapProposal?:(connection:Connection)=>void;
   onMovePieceCancel?:()=>void;
@@ -79,7 +82,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,
 }: {
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
@@ -142,7 +145,7 @@ function SceneContent({
     return set;
   }, [selection, project,snapSourcePort]);
 
-  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked||!activeVisible;
+  const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked||!activeVisible||moduleMode;
   const controlsRef = useRef<any>(null);
   const transformControlsRef = useRef<any>(null);
   const { camera, size } = useThree();
@@ -719,7 +722,7 @@ function SceneContent({
       />
 
       {/* TransformControls:仅在选中零件且非选择模式时启用 */}
-      {activeVisible && !interactionLocked && selectedPieceId && toolMode !== 'select' && (
+      {activeVisible && !moduleMode && !interactionLocked && selectedPieceId && toolMode !== 'select' && (
         <TransformControls
           ref={transformControlsRef}
           object={dummyObj}
@@ -728,6 +731,7 @@ function SceneContent({
         />
       )}
 
+      {activeVisible&&!interactionLocked&&moduleGizmo&&<ModuleGizmo {...moduleGizmo}/>}
       {/* ViewCube */}
       <GizmoHelper alignment="top-right" margin={[80, 80]}>
         <GizmoViewcube
@@ -761,7 +765,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,
 }: Props) {
   const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelNames=useMemo(()=>displayLabels(readOnlyAssemblies),[readOnlyAssemblies]);
@@ -791,7 +795,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          project={project} moduleGizmo={moduleGizmo} moduleMode={moduleMode} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}

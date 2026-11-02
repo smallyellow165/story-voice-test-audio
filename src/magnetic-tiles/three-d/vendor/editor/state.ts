@@ -1,7 +1,7 @@
 // Adapted MIT upstream snapshot history and piece/connection mutations.
 // Source and exact differences: third_party/3D_Magnetic_Pieces/EDITOR.md.
 import type { Assembly3D, Pose3D } from '../../assembly.ts'
-import { assertAssembly3D } from '../../assembly.ts'
+import { assertAssembly3D,assemblyGeometrySubset } from '../../assembly.ts'
 import { canonical } from '../../../build-plan.ts'
 import { profileKey3D } from '../../profile-adapter.ts'
 import type { ProfileSnapshot3D } from '../../profile-adapter.ts'
@@ -169,7 +169,7 @@ export function solveComponent(p: Assembly3D, root: string): Assembly3D {
       if (next && !members.has(next)) { members.add(next); queue.push(next) }
     }
   }
-  const subset = { ...p, pieces: p.pieces.filter(piece => members.has(piece.id)), connections: p.connections.filter(c => members.has(c.pieceA)) }
+  const subset = assemblyGeometrySubset(p,members)
   const solved = solveAssembly3D(subset, [root]), poses = new Map(solved.pieces.map(piece => [piece.id, piece.pose]))
   return { ...p, pieces: p.pieces.map(piece => poses.has(piece.id) ? { ...piece, pose: poses.get(piece.id)! } : piece) }
 }

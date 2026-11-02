@@ -28,9 +28,9 @@ export default function ThreeDBuildWorkspace(){
   const {stage,viewMode,assembly3D}=useStudio(),active=stage==='build'&&viewMode==='3d'
   const photoOrigin=loadPhotoOrigin(localStorage),linkedOrigin=photoOrigin&&assembly3D?.id===JSON.parse(photoOrigin.assemblyRaw).id?photoOrigin:null;
   const selectedLineage=useAssemblyAngleHints(assembly3D??{kind:'magnetic-assembly-3d',schemaVersion:1,id:'empty',revision:0,profiles:[],pieces:[],connections:[]},linkedOrigin,active);
-  async function checkSelectedBuild(a:NonNullable<typeof assembly3D>,tutorial?:Tutorial3D){if(linkedOrigin&&!humanGrant)await intakeApi('visible3d/build-check',{originId:linkedOrigin.origin.id,assembly:a,...(tutorial?{tutorial}:{})});else if(linkedOrigin)await intakeApi('visible3d/selected-origin/'+String(linkedOrigin.origin.id))}
+  async function checkSelectedBuild(a:NonNullable<typeof assembly3D>,tutorial?:Tutorial3D){if(linkedOrigin&&!humanGrant)await intakeApi(linkedOrigin.origin.kind==='combined-assembly'?'assembly3d/build-check':'visible3d/build-check',{originId:linkedOrigin.origin.id,assembly:a,...(tutorial?{tutorial}:{})});else if(linkedOrigin)await intakeApi((linkedOrigin.origin.kind==='combined-assembly'?'assembly3d/selected-origin/':'visible3d/selected-origin/')+String(linkedOrigin.origin.id))}
   const humanReview=useHumanCollisionReview(assembly3D,active),humanGrant=humanReview.grant
-  function assertBuildReady(a:NonNullable<typeof assembly3D>){if(linkedOrigin&&!selectedLineage.source)throw Error(selectedLineage.error??'正在检查当前 Selected 来源链');if(humanGrant&&grantMatches(a,humanGrant))return;assertPhotoDraftReady(localStorage,a)}
+  function assertBuildReady(a:NonNullable<typeof assembly3D>){if(linkedOrigin&&!selectedLineage.source&&!selectedLineage.lineageReady)throw Error(selectedLineage.error??'正在检查当前 Selected 来源链');if(humanGrant&&grantMatches(a,humanGrant))return;assertPhotoDraftReady(localStorage,a)}
   const [boot]=useState(()=>{try{return {...loadTutorial3D(localStorage),error:''}}catch(e){return {tutorial:null,saved:[],raw:null,error:`原教程存档无法读取，禁止覆盖：${String(e)}`}}})
   const [history,setHistory]=useState<EditorHistory|null>(()=>boot.tutorial?actions.createInitialHistory(boot.tutorial):null)
   const historyRef=useRef(history);historyRef.current=history
@@ -49,7 +49,7 @@ export default function ThreeDBuildWorkspace(){
   const validation=useMemo(()=>tutorial?validateTutorial3D(tutorial,humanGrant):null,[tutorial,humanGrant])
   const project=useMemo(()=>tutorial?tutorialProject(tutorial):null,[tutorial])
   const sourceValidation=useMemo(()=>assembly3D?validateAssembly3D(assembly3D):null,[assembly3D])
-  const sourceGate=useMemo(()=>{if(!assembly3D)return null;if(linkedOrigin&&!selectedLineage.source)return {repair:true,ready:false,blocker:selectedLineage.error??'正在检查当前 Selected 来源链'};const gate=photoDraftGeometryGate(assembly3D,loadPhotoOrigin(localStorage),sourceValidation!);return humanGrant?{...gate,ready:true,blocker:null}:gate},[assembly3D,sourceValidation,humanGrant,selectedLineage.source,selectedLineage.error])
+  const sourceGate=useMemo(()=>{if(!assembly3D)return null;if(linkedOrigin&&!selectedLineage.source&&!selectedLineage.lineageReady)return {repair:true,ready:false,blocker:selectedLineage.error??'正在检查当前 Selected 来源链'};const gate=photoDraftGeometryGate(assembly3D,loadPhotoOrigin(localStorage),sourceValidation!);return humanGrant?{...gate,ready:true,blocker:null}:gate},[assembly3D,sourceValidation,humanGrant,selectedLineage.source,selectedLineage.lineageReady,selectedLineage.error])
   const matching=tutorial&&tutorialMatchesAssembly(tutorial,assembly3D)
   const ready=!!tutorial&&!!validation&&!!sourceGate?.ready&&tutorialReadyToSave(tutorial,validation,assembly3D)
   const index=tutorial?Math.max(0,tutorial.steps.findIndex(s=>s.id===selected)):0,step=tutorial?.steps[index]

@@ -1,6 +1,6 @@
 import { Box3, OrthographicCamera, Vector3 } from 'three'
 import type { Assembly3D } from './assembly.ts'
-import { assertAssembly3D } from './assembly.ts'
+import { assertAssembly3D,assemblyGeometrySubset } from './assembly.ts'
 import { validateAssembly3D } from './engine-adapter.ts'
 import { createViewerModel, componentCount } from './viewer-model.ts'
 import { pieceWorldVertices, computeFitCamera } from './vendor/components/magnet3d/cameraUtils.ts'
@@ -110,7 +110,7 @@ export function generateBuildOrder3D(input: Assembly3D, options: BuildOrderOptio
     const saved=cache.get(mask);if(saved){result.stats.cacheHits++;return saved}
     if(result.stats.evaluations>=config.maxEvaluations){exhausted='EVALUATION_BUDGET';return null}
     const ids=new Set(pieces.filter((_,i)=>has(mask,i)).map(p=>p.id))
-    const partial={...input,pieces:input.pieces.filter(p=>ids.has(p.id)),connections:input.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB))}
+    const partial=assemblyGeometrySubset(input,ids)
     const check=validateAssembly3D(partial,{checkGround:true,requireConnected:true})
     result.stats.evaluations++
     const value={valid:acceptedGeometry(check,partial),strict:geometryOK(check),validationWarnings:check.issues.filter(i=>i.code==='ground'||i.severity==='warning').map(i=>i.message)}

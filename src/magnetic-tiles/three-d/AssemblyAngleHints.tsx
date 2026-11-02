@@ -17,6 +17,7 @@ export function AssemblyAngleHints({assembly,state,selection,select,busy,report}
  const {key,source,error}=state,[variant,setVariant]=useState<{key:string;index:number}>({key:'',index:0})
  useEffect(()=>{if(source)setVariant({key,index:source.executedVariant??0})},[key,source])
  if(!key)return <p className="hint">空间规划角度建议：当前作品无关联 Spatial Plan。</p>
+ if(state.lineageReady)return <p className="hint">Combined：使用固定 Assembly Parent 快照，不拼接历史 Plan 角度假设。</p>
  if(!source)return <p className="hint" role="status">空间规划角度建议：{error??'读取当前来源…'}</p>
  const index=variant.key===key?variant.index:source.executedVariant??0
  const variants=[{label:'主方案',connections:source.plan.connections},...source.plan.alternatives],rows=assemblyAngleHintRows(assembly,source,index)

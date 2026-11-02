@@ -1,5 +1,5 @@
 import type { Assembly3D } from './assembly.ts'
-import { assertAssembly3D } from './assembly.ts'
+import { assertAssembly3D,assemblyGeometrySubset } from './assembly.ts'
 import { validateAssembly3D } from './engine-adapter.ts'
 import { componentCount, createViewerModel } from './viewer-model.ts'
 import { pieceWorldVertices } from './vendor/components/magnet3d/cameraUtils.ts'
@@ -81,7 +81,7 @@ export function createTutorial3D(assembly: Assembly3D): Tutorial3D {
 export function tutorialProject(t: Tutorial3D): TutorialProject { return {...editorProject(t.assembly),steps:t.steps} }
 export function stepAssembly(t: Tutorial3D,index: number): Assembly3D {
   const ids=new Set(t.steps.slice(0,index+1).flatMap(s=>s.addedPieceIds))
-  return {...t.assembly,pieces:t.assembly.pieces.filter(p=>ids.has(p.id)),connections:t.assembly.connections.filter(c=>ids.has(c.pieceA)&&ids.has(c.pieceB))}
+  return assemblyGeometrySubset(t.assembly,ids)
 }
 export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): TutorialDiagnostics {
   assertTutorial3D(t)

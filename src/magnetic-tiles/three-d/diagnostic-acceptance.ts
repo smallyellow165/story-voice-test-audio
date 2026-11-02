@@ -7,7 +7,7 @@ import type {ValidationIssue,ValidationResult} from './vendor/engine/types.ts'
 /** Authorization evidence beside the existing Assembly, never a geometry flag.
  * The server constructs this from a verified immutable Diagnostic origin. */
 export type AcceptedDiagnostic3D={
-  version:1;origin:{id:string;hash:string};execution:{id:string;hash:string};diagnostic:{id:string;hash:string};
+  version:1;origin:{id:string;hash:string};execution?:{id:string;hash:string};diagnostic?:{id:string;hash:string};parents?:import('./assembly.ts').AssemblyParent3D[];
   assembly:Assembly3D;geometry:ValidationResult;
 }
 // Numerical equivalence of rigid transforms only, NOT a Validator tolerance.
