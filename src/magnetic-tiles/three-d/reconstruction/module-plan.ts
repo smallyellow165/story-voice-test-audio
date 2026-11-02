@@ -1,10 +1,10 @@
 import type {VisibleReview3D} from './contracts.ts'
 export type ReviewModule={id:string;name:string;observationIds:string[]}
-export type ModuleCommand={kind:'create'|'rename'|'members'|'delete';moduleId?:string;name?:string;observationIds?:string[];move?:boolean}|{kind:'restore';recordId:string}
+export type ModuleCommand={kind:'create'|'rename'|'members'|'delete';moduleId?:string;name?:string;observationIds?:string[];move?:boolean}|{kind:'restore';recordId:string}|{kind:'inherit';recordId:string;recordHash:string}
 export type ModulePlanRecord={
     id:string;hash:string;createdAt:string;kind:'magnetic-module-plan';schemaVersion:1;modulePlanId:string;revision:number;
     parent:{id:string;hash:string}|null;sourceId:string;sourceHash:string;analysisId:string;analysisHash:string;reviewId:string;reviewHash:string;
-    modules:ReviewModule[];change:{kind:string;moduleId?:string;moved:{observationId:string;fromModuleId:string;toModuleId:string}[];restoredFrom?:string};
+    modules:ReviewModule[];change:{kind:string;moduleId?:string;moved:{observationId:string;fromModuleId:string;toModuleId:string}[];restoredFrom?:string;inheritedFrom?:{id:string;hash:string}};
 }
 export type ModuleHead={revision:number;recordId:string|null;recordHash:string|null;modulePlanId:string|null}
 const moduleId=(id:unknown):id is string=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)
@@ -26,7 +26,7 @@ export function moduleFilterIds(modules:ReviewModule[],filter:string,review:Visi
 }
 /** Mutations are membership-only; no Recognition/Profile/confirmation edits.
  * Overlapping assignments require the caller's explicit move authorization. */
-export function changeModules(before:ReviewModule[],review:VisibleReview3D,command:Exclude<ModuleCommand,{kind:'restore'}>,newId:string){
+export function changeModules(before:ReviewModule[],review:VisibleReview3D,command:Exclude<ModuleCommand,{kind:'restore'}|{kind:'inherit'}>,newId:string){
     assertModules(before,review)
     if(!command||!['create','rename','members','delete'].includes(command.kind))throw Error('未知模块操作')
     const modules=structuredClone(before),target=modules.find(m=>m.id===command.moduleId)

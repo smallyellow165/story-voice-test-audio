@@ -90,6 +90,16 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(h.recordId&&(!record||record.hash!==h.recordHash||record.revision!==h.revision||record.modulePlanId!==h.modulePlanId))fail('Module Plan Head / Hash 不一致',409)
   return {head:h,record,history,outdated:l.outdated,reviewId:l.review.id,reviewHash:l.review.hash}
  }
+ async function writeModuleHead(record){
+  const next={revision:record.revision,recordId:record.id,recordHash:record.hash,modulePlanId:record.modulePlanId},f=filename('module-heads',record.reviewId),tmp=f+'.'+randomUUID()+'.tmp'
+  await mkdir(path.dirname(f),{recursive:true});await writeFile(tmp,JSON.stringify(next),{mode:0o600});await rename(tmp,f);return next
+ }
+ function inheritedModules(previous,review){
+  if(previous.sourceId!==review.sourceId||previous.sourceHash!==review.sourceHash||previous.analysisId!==review.analysisId||previous.analysisHash!==review.analysisHash)fail('不能跨 Analysis 或图片来源继承模块',409)
+  const allowed=new Set(review.input.review.pieces.map(p=>p.id)),modules=previous.modules.map(m=>({...m,observationIds:m.observationIds.filter(id=>allowed.has(id))}))
+  assertModules(modules,review.input.review)
+  return {modules,change:{kind:'inherit',moved:[],inheritedFrom:{id:previous.id,hash:previous.hash}}}
+ }
  function planScope(plan){return plan.reconstructionScope??{version:1,groupId:'all',groupName:'全部模块',imageId:'all',imageName:'所有图片',observationIds:plan.plan.parts.map(p=>p.id)}}
  async function requestedScope(review,source,selection){
   const groupId=selection?.groupId??'all'
@@ -203,7 +213,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const input=validateVisibleInput({evidence:analysis.evidence,review:body.review,profiles:snapshots})
    input.review=exactProfileReview(input.review)
    return locked(source.id,async()=>{const current=await head(source.id);if(body.expectedRevision!==current.revision)fail('Review 已被其他页面更新，未覆盖',409)
-    const review=await put('reviews',{sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,input,registryHash:registry.hash})
+    // The selected Review is the editing base, even when it is historical.
+    // Older clients fall back to the current Review of this exact Analysis.
+    let base=null
+    if(body.baseReview){const l=await lineage('reviews',identifier(body.baseReview.id));if(l.review.hash!==body.baseReview.hash||l.analysis.id!==analysis.id||l.analysis.hash!==analysis.hash||l.source.id!==source.id)fail('Review 编辑来源或 Hash 不一致',409);base=l.review}
+    else if(current.reviewId){const l=await lineage('reviews',current.reviewId);if(l.analysis.id===analysis.id&&l.analysis.hash===analysis.hash)base=l.review}
+    const previous=base?(await moduleState(base.id)).record:null
+    const review=await put('reviews',{sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,input,registryHash:registry.hash,...(base?{parentReview:{id:base.id,hash:base.hash}}:{})})
+    if(previous){
+     const record=await put('module-plans',{kind:'magnetic-module-plan',schemaVersion:1,modulePlanId:randomUUID(),revision:1,parent:null,sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,reviewId:review.id,reviewHash:review.hash,...inheritedModules(previous,review)})
+     await writeModuleHead(record)
+    }
     const next={revision:current.revision+1,reviewId:review.id,reviewHash:review.hash},f=filename('heads',source.id),temp=f+'.tmp';await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,f);return {record:review,head:next}
    })
   }
@@ -219,13 +239,20 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     const previous=current.recordId?await read('module-plans',current.recordId):null
     if(previous&&(previous.hash!==current.recordHash||previous.revision!==current.revision||previous.reviewId!==l.review.id||previous.reviewHash!==l.review.hash||previous.modulePlanId!==current.modulePlanId))fail('Module Plan 当前快照不一致',409)
     let next
-    if(body.command?.kind==='restore'){
+    if(body.command?.kind==='inherit'){
+     // Repair a Review saved by older versions, without overwriting any grouping
+     // already created there. Explicit immutable provenance; no GET-time writes.
+     if(previous)fail('当前 Review 已有模块记录，不能覆盖继承',409)
+     const old=await lineage('module-plans',identifier(body.command.recordId))
+     if(old.record.hash!==body.command.recordHash||old.review.id===l.review.id||old.review.createdAt>l.review.createdAt||old.record.createdAt>l.review.createdAt)fail('模块继承来源或保存时间不一致',409)
+     next=inheritedModules(old.record,l.review)
+    }else if(body.command?.kind==='restore'){
      const old=await lineage('module-plans',body.command.recordId)
      if(old.record.reviewId!==l.review.id||old.record.reviewHash!==l.review.hash||old.record.modulePlanId!==current.modulePlanId)fail('不能跨 Review 恢复 Module Plan',409)
      next={modules:structuredClone(old.record.modules),change:{kind:'restore',moved:[],restoredFrom:old.record.id}}
     }else next=changeModules(previous?.modules??[],l.review.input.review,body.command,randomUUID())
     const record=await put('module-plans',{kind:'magnetic-module-plan',schemaVersion:1,modulePlanId:current.modulePlanId??randomUUID(),revision:current.revision+1,parent:previous?{id:previous.id,hash:previous.hash}:null,sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,...next})
-    const nextHead={revision:record.revision,recordId:record.id,recordHash:record.hash,modulePlanId:record.modulePlanId},f=filename('module-heads',l.review.id),tmp=f+'.'+randomUUID()+'.tmp';await mkdir(path.dirname(f),{recursive:true});await writeFile(tmp,JSON.stringify(nextHead),{mode:0o600});await rename(tmp,f)
+    const nextHead=await writeModuleHead(record)
     return {record,head:nextHead}
    })
   }
