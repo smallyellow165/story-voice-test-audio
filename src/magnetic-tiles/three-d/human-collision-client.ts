@@ -30,3 +30,5 @@ export function saveHumanTutorial(a:Assembly3D,tutorial:Tutorial3D){return enque
 /** One explicit Reconstruction action; the server reads the immutable origin
  * and creates the existing persisted workflow grant without another approval. */
 export function acceptHumanDiagnostic(a:Assembly3D,originId:string){return enqueue(async()=>remember(a,await call('accept-diagnostic',{assembly:a,expectedVersion:null,originId})))}
+/** Restore only an exact server-saved review receipt. This never accepts a new error. */
+export function restoreSavedHumanReview(a:Assembly3D,savedHash:string){return enqueue(async()=>{const current=await readHumanReview(a);return remember(a,await call('restore-saved',{assembly:a,expectedVersion:current.version,savedHash}),markers()[a.id]?.nonce)})}

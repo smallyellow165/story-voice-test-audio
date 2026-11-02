@@ -28,7 +28,7 @@ try{
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'manual-mirror-isolated',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!['visible3d/selected','visible3d/open-diagnostic-draft','visible3d/build-check'].includes(route)&&!route.startsWith('assembly3d-review/'))throw Error('Model/Planning/Execution/unrelated writes forbidden')
+   if(req.method!=='GET'&&!['visible3d/selected','visible3d/open-diagnostic-draft','visible3d/build-check'].includes(route)&&!route.startsWith('assembly3d-review/')&&!route.startsWith('assembly3d/'))throw Error('Model/Planning/Execution/unrelated writes forbidden')
    let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
  }}]});await server.listen()
@@ -56,7 +56,7 @@ try{
  await button('View').click();await button('重新加载来源').click();assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
  await button('View').click();await stage(page,'source','workspace');await stage(page,'assembly','workspace');assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
  await button('View').click();await page.reload();await stage(page,'assembly','inspector');assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
- const tools=page.locator('.magnetic-3d-edit-tools');await tools.locator(':scope > summary').click();await button('View').click();await button('重新加载已保存 Draft').click();assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
+ const tools=page.locator('.magnetic-3d-edit-tools');await tools.locator(':scope > summary').click();await button('View').click();await button('重新加载已保存 Draft').click();await until(async()=>await mode()==='true'&&await button('保存 3D Draft').isEnabled());assert.equal(await mode(),'true');assert.deepEqual(await exported(),original)
  assert.equal(await page.evaluate(()=>localStorage.getItem('magnetic-tiles.assembly3d-draft.v1')),raw);assert.equal(await button('3D Undo').isDisabled(),true);assert.doesNotMatch(await page.locator('.magnetic-3d-summary').innerText(),/未保存/)
  await until(async()=> (await page.getByTestId('collision-review-progress').innerText()).includes('1/1'))
  // Start with the Inspector scrolled deep and the Catalog selected. Opening the
@@ -84,7 +84,7 @@ try{
  await until(async()=> (await page.getByTestId('collision-review-progress').innerText()).includes('1/3'))
  await until(()=>button('3D Undo').isEnabled());await button('3D Undo').click();assert.deepEqual(await exported(),original)
  await until(()=>button('3D Redo').isEnabled());await button('3D Redo').click();assert.deepEqual(await exported(),nine)
- await until(()=>button('保存 3D Draft').isEnabled());await button('保存 3D Draft').click();await page.reload();await stage(page,'assembly','inspector');assert.deepEqual(await exported(),nine)
+ await until(()=>button('保存 3D Draft').isEnabled());await button('保存 3D Draft').click();await page.locator('.magnetic-3d-save-notice').filter({hasText:'3D Draft 已保存'}).waitFor();await page.reload();await stage(page,'assembly','inspector');assert.deepEqual(await exported(),nine)
  await until(async()=> (await page.getByTestId('collision-review-progress').innerText()).includes('1/3'))
  await button('Revalidate Geometry').click();await page.locator('.magnetic-3d-save-notice').filter({hasText:'Revalidate Geometry'}).waitFor();assert.match(await page.locator('.magnetic-3d-save-notice').innerText(),/Geometry Invalid/)
  await page.getByRole('region',{name:'Collision Review',exact:true}).locator('tbody tr').nth(2).getByRole('button').click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});await button('聚焦碰撞').click();await button('取消碰撞选择').click();assert.deepEqual(await exported(),nine)

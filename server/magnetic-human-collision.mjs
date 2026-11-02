@@ -16,7 +16,7 @@ import {assertTutorial3D,validateTutorial3D} from '../src/magnetic-tiles/three-d
 import {tutorialReadyToSave} from '../src/magnetic-tiles/three-d/tutorial-workflow.ts'
 const fail=(m,statusCode=422)=>{throw Object.assign(Error(m),{statusCode})},hash=v=>createHash('sha256').update(canonical(v)).digest('hex')
 const safeId=id=>typeof id==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id)&&!['__proto__','prototype','constructor'].includes(id)
-export function createHumanCollisionReview(directory,{enabled=false,readOrigin,getProfiles=async()=>builtinProfiles}={}){
+export function createHumanCollisionReview(directory,{enabled=false,readOrigin,readSavedAssembly,getProfiles=async()=>builtinProfiles}={}){
  const sessions=new Map()
  function authorize(context,session=true){
   try{assertLocalTraceRequest(context?.request,typeof enabled==='function'?enabled():enabled)}catch{fail('人工碰撞审核仅允许本机开发环境的直接同源请求。',403)}
@@ -52,14 +52,28 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin,g
   const matches=!h||same(h,c),review=matches&&h?.acceptedDiagnostic?acceptance(c,h.acceptedDiagnostic):null
   return {matches,version:h?.version??null,assemblyHash:c.assemblyHash,diagnosticHash:c.diagnosticHash,assemblyCanonical:c.assemblyCanonical,acceptedKeys:same(h,c)&&h.diagnosticHash===c.diagnosticHash?h.acceptedKeys:[],eligible:c.policy.eligible,collisionKeys:c.policy.keys,geometry:c.geometry,blockers:review?.blockers??c.policy.blockers,grant:await grant(h,c),...(h?.acceptedDiagnostic?{humanAcceptedDiagnostic:true,acceptedErrors:review?.accepted??[]}:{})}
  }
- return {async dispatch(method,route,body={},context){
+ return {async capture(assembly){const h=await head(assembly.id),c=checked(assembly);return same(h,c)&&h.diagnosticHash===c.diagnosticHash?{version:h.version,hash:h.hash}:null},async dispatch(method,route,body={},context){
   authorize(context,route!=='session');if(method!=='POST')fail('Use POST',405)
   if(route==='session'){for(const [k,v]of sessions)if(v<Date.now())sessions.delete(k);if(sessions.size>1024)fail('本机会话过多。',429);const token=randomBytes(32).toString('hex');sessions.set(token,Date.now()+8*3600000);return {token,scope:'local-human-collision-review'}}
-  const allowed={status:['assembly'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
+  const allowed={status:['assembly'],'restore-saved':['assembly','expectedVersion','savedHash'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}
   if(!allowed[route]||!body||Object.keys(body).some(k=>!allowed[route].includes(k)))fail('人工审核请求字段或操作无效。',400)
   const assembly=body.assembly;assertCanonicalProfiles(assembly?.profiles??[],await getProfiles());const c=checked(assembly),h=await head(assembly.id)
   if(h?.origin&&readOrigin){const origin=await readOrigin(h.origin.id,{requireSelected:true});if(origin.hash!==h.origin.hash)fail('Assembly 来源 Hash 已变化，不能继续授权',409)}
   if(route==='status')return response(h,c)
+  if(route==='restore-saved'){
+   cas(h,body.expectedVersion)
+   const saved=readSavedAssembly&&await readSavedAssembly(assembly.id)
+   if(!saved||saved.hash!==body.savedHash||canonical(saved.snapshot.assembly)!==c.assemblyCanonical||!saved.reviewRef)fail('保存作品或审核引用不一致，未恢复授权。',409)
+   if(readOrigin){const origin=await readOrigin(saved.parent.id,{requireSelected:true});if(origin.hash!==saved.parent.hash)fail('保存作品来源已变化。',409)}
+   let prior=await readRecord(path.join(directory,'heads',assembly.id,String(saved.reviewRef.version).padStart(12,'0')+'.json'))
+   if(prior.hash!==saved.reviewRef.hash||!same(prior,c)||prior.diagnosticHash!==c.diagnosticHash||canonical(prior.origin??null)!==canonical({id:saved.parent.id,hash:saved.parent.hash}))fail('保存的审核与当前几何快照不一致。',409)
+   // Later explicit accepts/revocations of THIS exact snapshot take precedence.
+   // A saved receipt must never resurrect an authorization the user revoked.
+   for(let version=prior.version+1;version<=(h?.version??0);version++){const r=await readRecord(path.join(directory,'heads',assembly.id,String(version).padStart(12,'0')+'.json'));if(same(r,c)&&r.diagnosticHash===c.diagnosticHash)prior=r}
+   if(h&&same(h,c)&&h.diagnosticHash===c.diagnosticHash&&canonical(h.acceptedKeys)===canonical(prior.acceptedKeys)&&h.approvalId===prior.approvalId)return response(h,c)
+   const {version,hash:_,previousHash,updatedAt,...rest}=prior
+   return response(await commit(h,rest),c)
+  }
   if(route==='accept-diagnostic'){
    if(!safeId(body.originId)||!readOrigin)fail('人工采用缺少可校验的 Diagnostic 来源。')
    const origin=await readOrigin(body.originId,{acceptingDiagnostic:true})

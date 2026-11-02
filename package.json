@@ -71,6 +71,8 @@
     "test:magnetic-build-flow": "node --experimental-strip-types --test test/magnetic-build-flow.test.mjs",
     "test:magnetic-build-flow:browser": "node --experimental-strip-types scripts/verify-magnetic-build-flow.mjs",
     "test:magnetic-assembly-actions:browser": "node --experimental-strip-types scripts/verify-magnetic-assembly-actions.mjs",
+    "test:magnetic-assembly-library": "node --experimental-strip-types --test test/magnetic-assembly-library.test.mjs",
+    "test:magnetic-assembly-selector:browser": "node --experimental-strip-types scripts/verify-magnetic-assembly-selector.mjs",
     "test:magnetic-symmetry-fill": "node --experimental-strip-types --test test/magnetic-symmetry-fill.test.mjs",
     "test:magnetic-symmetry-fill:browser": "node --experimental-strip-types scripts/verify-magnetic-symmetry-fill.mjs",
     "test:magnetic-symmetry-fill:manual:browser": "node --experimental-strip-types scripts/verify-magnetic-manual-symmetry.mjs",

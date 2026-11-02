@@ -25,7 +25,7 @@ type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
 type Adoption3DRequest = {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D;complete:(error?:unknown)=>void}
-const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: Adoption3DRequest|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>Promise<void>; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; showInspector:()=>void; hosts:Partial<Record<Column,HTMLDivElement>>}|null>(null)
+const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: Adoption3DRequest|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>Promise<void>; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; showInspector:()=>void; project3D:{id:string;name:string}|null; setProject3D:(p:{id:string;name:string}|null)=>void; assemblyOrigin3D:Record<string,unknown>|null; setAssemblyOrigin3D:(o:Record<string,unknown>|null)=>void; hosts:Partial<Record<Column|'assemblies',HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
@@ -42,6 +42,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [opened3D,setOpened3D]=useState(modeBoot.mode==='3d'),[openedVisible3D,setOpenedVisible3D]=useState(modeBoot.mode==='3d')
   const [adoption3D,setAdoption3D]=useState<Adoption3DRequest|null>(null)
   const [assembly3D,setAssembly3D]=useState<Assembly3D|null>(null)
+  const [project3D,setProject3D]=useState<{id:string;name:string}|null>(null),[assemblyOrigin3D,setAssemblyOrigin3D]=useState<Record<string,unknown>|null>(null),[assembliesHost,setAssembliesHost]=useState<HTMLDivElement|null>(null)
   const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
   const request=useUrlRequest(), parsed=readStudioUrl(request.href)
@@ -69,7 +70,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     setMobileColumn('workspace')
     try{saveStudioMode(localStorage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
   }
-  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,navigate,showInspector:()=>{selectTab('inspector');setMobileColumn('inspector')},hosts:{workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,project3D,setProject3D,assemblyOrigin3D,setAssemblyOrigin3D,navigate,showInspector:()=>{selectTab('inspector');setMobileColumn('inspector')},hosts:{assemblies:assembliesHost??undefined,workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
     <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode} data-studio-mode={mode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
@@ -82,7 +83,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
         </div></div>
         {modeWarning&&<p role="status" className="studio-mode-warning">{modeWarning}</p>}
         <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workspace')}>查看工作区</button><button onClick={()=>setMobileColumn('inspector')}>查看检查器</button></div>
-        <div ref={setWorkflow}/>{parsed.errors.map(e=><p key={e} role="alert">{e}；未按无效参数恢复。</p>)}
+        <div ref={setWorkflow}/><div hidden={mode!=='3d'} ref={setAssembliesHost}/>{parsed.errors.map(e=><p key={e} role="alert">{e}；未按无效参数恢复。</p>)}
         <p className="hint">{imageStages.includes(stage)&&intakeMode==='visible3d'?'Visible 3D · 仅重建可见证据；几何合法与照片匹配分开审核。':(stage==='assembly'||stage==='build')&&viewMode==='3d'?'3D 快照 · 按保存的位姿查看；几何校验不代表物理稳定性。':'相对尺寸 · 零厚度二维几何，不代表实物三维磁吸或稳定性。'}</p>
       </aside></Panel>
       <Separator className="studio-separator studio-outer-separator" aria-label="调整左栏与中栏宽度" title="拖动或使用方向键调整左栏与中栏宽度"/>

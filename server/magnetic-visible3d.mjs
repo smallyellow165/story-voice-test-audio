@@ -85,12 +85,13 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    return writeHead(source.id,{...next,selectedRevision:(h.selectedRevision??0)+1})
   })
  }
- async function selectedOrigin(id){
-  const origin=await read('origins',identifier(id)),l=await lineage('executions',origin.executionId);await assertSelected(l,'execution')
+ async function originSnapshot(id){
+  const origin=await read('origins',identifier(id)),l=await lineage('executions',origin.executionId)
   for(const k of ['sourceId','sourceHash','reviewId','reviewHash','planId','planHash'])if(origin[k]!==l.record[k])fail('Assembly 来源身份不一致',409)
   if(origin.executionHash!==l.record.hash||origin.analysisId!==l.analysis.id||origin.analysisHash!==l.analysis.hash)fail('当前 Assembly 不属于该 Group 的 Selected 来源链；请重新选择并采用',409)
   return origin
  }
+ async function selectedOrigin(id){const origin=await originSnapshot(id);await assertSelected(await lineage('executions',origin.executionId),'execution');return origin}
  async function publishOrigin(data,l){
   // Creation is not a second Draft selector. The existing workspace Draft CAS
   // chooses which immutable origin it adopts. A failed/cancelled client handoff
@@ -231,7 +232,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   const r=await put(target,{...data,...(trace.background?{id:trace.id}:{}),sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
   return {record:r,trace,usable:true,...(trace.background?{state:'complete',error:null}:{})}
  }
- return {read,head,lineage,selectedOrigin,async dispatch(method,route,body={}){
+ return {read,head,lineage,originSnapshot,selectedOrigin,async dispatch(method,route,body={}){
   if(method==='POST'&&route==='build-check'){
    const origin=await selectedOrigin(body.originId),a=body.assembly;assertAssembly3D(a)
    if(a.id!==origin.assembly.id)fail('Assembly 与所选来源不一致',409)

@@ -163,3 +163,7 @@
 .magnetic-constraint-repair-banner{font-size:12px;border:1px dashed #758c84;padding:6px;margin:5px 0}
 
 .magnetic-constraint-repair-controls label select{flex:1;width:auto}
+
+.assembly-selector{margin:8px 0;font-size:12px;min-width:0}.assembly-selector label{gap:4px}.assembly-selector select{font-size:12px;padding:5px;max-width:100%}.assembly-selector small{display:block;margin-top:5px;overflow-wrap:anywhere}.assembly-selector p{font-size:12px;margin:5px 0;overflow-wrap:anywhere}
+
+.studio-workflow [data-testid="assembly-history-origin"]{display:block;margin-top:5px;overflow-wrap:anywhere}

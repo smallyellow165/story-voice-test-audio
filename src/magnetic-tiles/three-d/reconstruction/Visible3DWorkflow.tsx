@@ -105,12 +105,13 @@ const api = <T,>(route: string, body?: unknown) => intakeApi<T>('visible3d/' + r
 function download(name: string, data: unknown) { const u = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })), a = document.createElement('a'); a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }
 function ExecutionStatus({value,testId}:{value:DisplayStatus;testId:string}){return <div className="visible3d-execution-state" data-tone={value.tone} data-testid={testId} role={value.tone==='error'?'alert':'status'}><b>{value.label}</b><p>{value.message}</p></div>}
 export default function Visible3DWorkflow() {
-    const { stage, intakeMode, navigate, adopt3D } = useStudio(), { registry } = useProfileRegistry();
+    const { stage, intakeMode, navigate, adopt3D, setProject3D, assemblyOrigin3D } = useStudio(), { registry } = useProfileRegistry();
     const active = intakeMode === 'visible3d';
     const [config, setConfig] = useState<Config | null>(null), [history, setHistory] = useState<History>({ analyses: [], reviews: [], plans: [], executions: [] });
     const [refinement,setRefinement]=useState<RefinementReference|null>(null);
     const [imageSource,setImageSource]=useState<'upload'|'server'>('upload');
     const [source, setSource] = useState<Source | null>(null), [analysis, setAnalysis] = useState<Analysis | null>(null), [review, setReview] = useState<Review | null>(null);
+    useEffect(()=>{setProject3D(source?{id:source.id,name:source.name}:null)},[source?.id,source?.name,setProject3D]);
     const [head, setHead] = useState<SelectedHead>({revision:0,selectedRevision:0,analysisId:null,reviewId:null,groups:{}});
     const reviewDisplay=useReviewDisplay(source&&analysis?`visible3d:${source.id}:${source.hash}:${analysis.id}:${review?.id??'unsaved'}:${review?.hash??''}`:'',source,analysis?.evidence.observations??[]);
     const moduleStore=useModulePlan(review,active&&(stage==='review'||stage==='reconstruction'));
@@ -377,6 +378,7 @@ export default function Visible3DWorkflow() {
     return <>
   <StudioSlot column="workflow" stages={['source','review','reconstruction','assembly','build']} intake="visible3d" view="3d"><p title={source?.id}>Visible 3D · {source?.name ?? '未选照片'}</p><button disabled={busy} onClick={() => void run(async () => { await refresh(); if (source)
         setHead(await api('head/' + source.id)); })}>刷新 3D 历史</button>
+   {source&&(stage==='assembly'||stage==='build')&&assemblyOrigin3D?<><small data-testid="assembly-history-origin">作品来源 · {String(assemblyOrigin3D.sourceId).slice(0,8)} · {String((assemblyOrigin3D.reconstructionScope as {groupName?:string})?.groupName??'全部模块')}</small>{([['3D Analysis 历史','analysisId'],['3D Review 历史','reviewId'],['Spatial Planning History','planId'],['Geometry Execution History','executionId']] as const).map(([label,key])=><label key={key}>{label}<select aria-label={label} disabled value={String(assemblyOrigin3D[key]??'')}><option value={String(assemblyOrigin3D[key]??'')}>{String(assemblyOrigin3D[key]??'尚无来源').slice(0,8)} · Assembly Origin</option></select></label>)}<small>上方为当前作品的不可变来源；重建选择未重绑。返回 Reconstruction 可修改重建范围。</small></>:<>
    {source && <><small data-testid="selected-project">Project {source.id.slice(0,8)}</small><label>3D Analysis 历史<select aria-label="3D Analysis 历史" value={analysis?.id ?? ''} disabled={busy} onChange={e => { const a = history.analyses.find(a => a.id === e.target.value); if (a)
             void run(async()=>{await chooseSelected('analysis',a);selectAnalysis(a)}); }}><option value="">选择 Analysis</option>{history.analyses.filter(a => a.sourceId === source.id).map(a => <option key={a.id} value={a.id}>{a.id.slice(0,8)} · {a.origin} · {a.createdAt}</option>)}</select></label>
    <label>3D Review 历史<select aria-label="3D Review 历史" value={review?.id ?? ''} disabled={busy} onChange={e => { const r = history.reviews.find(r => r.id === e.target.value); if (r) {
@@ -388,6 +390,7 @@ export default function Visible3DWorkflow() {
    <label>Geometry Execution History<select aria-label="Geometry Execution History" value={execution?.id ?? ''} disabled={busy} onChange={e => { const x = history.executions.find(x => x.id === e.target.value); if (x) {
             void run(async()=>{await chooseSelected('execution',x);setAttempt(null);setTrace(null);setRefinement(x.refinement??null);setCandidateId(defaultExecutionPreview(x));setChecked(false);setViewRequest(n=>n+1)});
         } }}><option value="">选择 Execution</option>{history.executions.filter(x => x.planId === plan?.id).map(x => <option key={x.id} value={x.id}>{x.status} · {x.id.slice(0, 8)}</option>)}</select></label></>}
+   </>}
   </StudioSlot>
   <StudioSlot column="workspace" stages={['source']} intake="visible3d"><section className="analysis-image-preview" aria-label="Visible 3D Analysis 原图">
    <h3>原图与可见证据（Source）</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
