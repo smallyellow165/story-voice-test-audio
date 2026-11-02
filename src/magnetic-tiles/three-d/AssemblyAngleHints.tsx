@@ -1,34 +1,24 @@
 import {Fragment,useEffect,useState} from 'react'
-import {intakeApi} from '../intake/api.ts'
 import type {Assembly3D} from './assembly.ts'
-import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 import {InfoHint} from '../../brick-vision/InfoHint.tsx'
 import {classifyAssemblyConstraints} from './constraint-classification.ts'
 import type {ValidationResult} from './vendor/engine/types.ts'
 import type {AngleHintRow} from './assembly-angle-hints.ts'
 import type {Selection} from './editor-project.ts'
-import {angleHintSourceKey,bindAngleHintSource,assemblyAngleHintRows} from './assembly-angle-hints.ts'
-import type {AngleHintSource,AnglePlanRecord,AngleExecutionRecord,AngleRefinementRecord,AngleComparison} from './assembly-angle-hints.ts'
+import {assemblyAngleHintRows} from './assembly-angle-hints.ts'
+import type {AngleComparison} from './assembly-angle-hints.ts'
+
+import type {AssemblyAngleHintLoad} from './useAssemblyAngleHints.ts'
 
 const labels:Record<AngleComparison,string>={'in-range':'范围内','out-of-range':'范围外','suggested':'符合建议值','other-angle':'非建议值（未提供范围）','no-angle':'未提供角度','not-comparable':'无法直接比较','unconnected':'未连接','no-hint':'无对应建议'}
 const degrees=(n:number)=>`${Number(n.toFixed(3))}°`
 /** Only immutable source records are read here; no editor or validation writes. */
-export function AssemblyAngleHints({assembly,origin,selection,select,busy,report}:{report:ValidationResult;assembly:Assembly3D;origin:PhotoOrigin3D|null;selection:Selection;select:(s:Selection)=>void;busy:boolean}){
- const key=angleHintSourceKey(assembly,origin)
- const [loaded,setLoaded]=useState<{key:string;source?:AngleHintSource;error?:string}>({key:''})
- const [variant,setVariant]=useState<{key:string;index:number}>({key:'',index:0})
- useEffect(()=>{
-  let alive=true
-  if(!key||!origin)return
-  const o=origin.origin,read=<T,>(route:string)=>intakeApi<{record:T}>(route).then(r=>r.record)
-  Promise.all([intakeApi<Record<string,unknown>>(`visible3d/origins/${encodeURIComponent(String(o.id))}`),read<AnglePlanRecord>(`visible3d/plans/${encodeURIComponent(String(o.planId))}`),read<AngleExecutionRecord>(`visible3d/executions/${encodeURIComponent(String(o.executionId))}`),o.refinement?read<AngleRefinementRecord>(`visible3d/refinements/${encodeURIComponent(String((o.refinement as {id:string}).id))}`):undefined])
-   .then(([stored,plan,execution,refinement])=>{const source=bindAngleHintSource(origin,stored,plan,execution,refinement);if(alive){setLoaded({key,source});setVariant({key,index:source.executedVariant??0})}})
-   .catch(e=>{if(alive)setLoaded({key,error:String(e)})})
-  return()=>{alive=false}
- },[key])
+export function AssemblyAngleHints({assembly,state,selection,select,busy,report}:{state:AssemblyAngleHintLoad;report:ValidationResult;assembly:Assembly3D;selection:Selection;select:(s:Selection)=>void;busy:boolean}){
+ const {key,source,error}=state,[variant,setVariant]=useState<{key:string;index:number}>({key:'',index:0})
+ useEffect(()=>{if(source)setVariant({key,index:source.executedVariant??0})},[key,source])
  if(!key)return <p className="hint">空间规划角度建议：当前作品无关联 Spatial Plan。</p>
- const state=loaded.key===key?loaded:undefined,source=state?.source,index=variant.key===key?variant.index:0
- if(!source)return <p className="hint" role="status">空间规划角度建议：{state?.error??'读取当前来源…'}</p>
+ if(!source)return <p className="hint" role="status">空间规划角度建议：{error??'读取当前来源…'}</p>
+ const index=variant.key===key?variant.index:source.executedVariant??0
  const variants=[{label:'主方案',connections:source.plan.connections},...source.plan.alternatives],rows=assemblyAngleHintRows(assembly,source,index)
  return <div className="magnetic-3d-angle-hints" aria-label="Spatial Planning Angle Hints">
   <div className="magnetic-3d-angle-heading"><b>空间规划角度建议</b><InfoHint label="自动约束识别">分类结合建议角度、范围、证据、当前严格验证及连接闭环。共面保持只是优先级；可调折角不是物理铰链或已证明的自由度。闭环中的变量需协调，当前仅只读识别。</InfoHint>{variants.length>1&&<select aria-label="角度建议方案" value={index} onChange={e=>setVariant({key,index:Number(e.target.value)})}>{variants.map((v,i)=><option key={i} value={i}>{i===source.executedVariant?'执行来源 · ':''}{v.label}</option>)}</select>}</div>

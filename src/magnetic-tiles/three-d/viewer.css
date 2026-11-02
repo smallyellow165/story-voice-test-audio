@@ -150,3 +150,17 @@
 .magnetic-3d-angle-table tr[data-angle-pair]>td{vertical-align:middle;overflow:hidden;text-overflow:ellipsis}
 .magnetic-3d-angle-table .magnetic-3d-angle-comparison>span{overflow:hidden;text-overflow:ellipsis}
 .magnetic-3d-angle-table .magnetic-3d-angle-comparison>button{flex:0 0 auto}
+
+.magnetic-constraint-repair{border-top:1px solid #d8e3dd;margin-top:9px;padding-top:7px;font-size:12px;min-width:0}
+.magnetic-constraint-repair-controls{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:5px 0}
+.magnetic-constraint-repair-controls>b{flex:1}
+.magnetic-constraint-repair-controls label{display:flex;align-items:center;gap:4px;flex:1;min-width:160px;font-size:11px;white-space:nowrap}
+.magnetic-constraint-repair select{font-size:11px;padding:5px;min-width:0;max-width:100%}
+.magnetic-constraint-repair button{font-size:11px;min-height:28px;padding:4px 7px}
+.magnetic-constraint-repair p{margin:6px 0;line-height:1.4;overflow-wrap:anywhere}
+.magnetic-constraint-repair table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px}
+.magnetic-constraint-repair td,.magnetic-constraint-repair th{padding:4px;text-align:left;border-bottom:1px solid #d8e3dd;overflow-wrap:anywhere}
+.magnetic-constraint-repair details{font-size:11px;overflow-wrap:anywhere}
+.magnetic-constraint-repair-banner{font-size:12px;border:1px dashed #758c84;padding:6px;margin:5px 0}
+
+.magnetic-constraint-repair-controls label select{flex:1;width:auto}

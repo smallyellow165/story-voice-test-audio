@@ -3,7 +3,7 @@ import {parseAssembly3D} from './assembly.ts'
 import type {Assembly3D} from './assembly.ts'
 import type {Connection} from './vendor/engine/types.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
-import type {SpatialHypothesis3D,ConnectionHypothesis3D} from './reconstruction/contracts.ts'
+import type {SpatialHypothesis3D,ConnectionHypothesis3D,VisibleInput3D} from './reconstruction/contracts.ts'
 import type {VisibleExecution3D} from './reconstruction/execute.ts'
 import type {ConstraintRefinement,RefinementReference} from './reconstruction/constraint-refinement.ts'
 
@@ -12,7 +12,7 @@ type Lineage={sourceId:string;sourceHash:string;analysisId?:string;analysisHash?
 export type AnglePlanRecord=Ref&Lineage&{plan:SpatialHypothesis3D;reconstructionScope?:unknown}
 export type AngleExecutionRecord=Ref&Lineage&VisibleExecution3D&{planId:string;planHash:string;reconstructionScope?:unknown;refinement?:RefinementReference}
 export type AngleRefinementRecord=Ref&Lineage&{planId:string;planHash:string;refinement:ConstraintRefinement;candidateHashes:Record<string,string>}
-export type AngleHintSource={planId:string;originId:string;scope:string;plan:SpatialHypothesis3D;executedVariant:number|null;refined:boolean;original:Assembly3D;mapping:Map<string,string>}
+export type AngleHintSource={planId:string;originId:string;scope:string;plan:SpatialHypothesis3D;executedVariant:number|null;refined:boolean;reviewInput?:VisibleInput3D;original:Assembly3D;mapping:Map<string,string>}
 const same=(a:unknown,b:unknown)=>canonical(a)===canonical(b)
 const pair=(a:string,b:string)=>[a,b].sort().join('|')
 const fail=():never=>{throw Error('角度建议来源、Hash 或几何快照不一致；未显示其他 Plan 的建议')}
