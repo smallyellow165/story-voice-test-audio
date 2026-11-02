@@ -137,5 +137,16 @@
 .magnetic-3d-angle-heading{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .magnetic-3d-angle-heading select{min-width:0;max-width:100%;font-size:11px;flex:1}
 .magnetic-3d-angle-hints .hint{font-size:11px;line-height:1.4;margin:5px 0}
-.magnetic-3d-angle-hints details{font-size:11px;line-height:1.4;margin-top:4px}
-.magnetic-3d-angle-hints details[open]{min-width:0;overflow-wrap:anywhere}
+
+/* Only the angle table scrolls horizontally when five readable columns cannot
+   fit. Default rows stay one line; evidence opens in a full-width detail row. */
+.magnetic-3d-angle-scroll{max-width:100%;min-width:0;overflow-x:auto}
+.magnetic-3d-angle-hints .magnetic-3d-angle-table{min-width:360px;table-layout:fixed;font-size:11px}
+.magnetic-3d-angle-table thead th,.magnetic-3d-angle-table tr[data-angle-pair]>td{white-space:nowrap;padding:5px 3px;line-height:1.5;overflow-wrap:normal}
+.magnetic-3d-angle-hints .magnetic-3d-angle-table button{white-space:nowrap;padding:2px 3px;min-height:24px;line-height:1.4}
+.magnetic-3d-angle-table .magnetic-3d-angle-comparison{display:flex;align-items:center;justify-content:space-between;gap:3px}
+.magnetic-3d-angle-table tr[data-angle-detail]>td{white-space:normal;overflow-wrap:anywhere;font-size:11px;line-height:1.5;padding:7px}
+.magnetic-3d-angle-table tr[data-angle-detail]{cursor:default}
+.magnetic-3d-angle-table tr[data-angle-pair]>td{vertical-align:middle;overflow:hidden;text-overflow:ellipsis}
+.magnetic-3d-angle-table .magnetic-3d-angle-comparison>span{overflow:hidden;text-overflow:ellipsis}
+.magnetic-3d-angle-table .magnetic-3d-angle-comparison>button{flex:0 0 auto}
