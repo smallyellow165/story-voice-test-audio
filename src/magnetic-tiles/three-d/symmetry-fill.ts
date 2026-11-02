@@ -8,12 +8,13 @@ import {portWorldEndpoints,computeTransformFromConnection} from './vendor/engine
 import {shapeOutline} from './vendor/engine/outline.ts'
 import {portsCompatible,isPortOccupied} from './vendor/editor/snap.ts'
 import type {Connection} from './vendor/engine/types.ts'
+import {inspectPortCompatibility} from './vendor/engine/port-compatibility.ts'
 import {commit} from './vendor/editor/state.ts'
 import type {EditorHistory} from './vendor/editor/state.ts'
 
 /** A world plane n·x = offset. This is an explicit hypothesis, never photo evidence. */
 export type SymmetryPlane={normal:[number,number,number];offset:number}
-export type SymmetryFillRequest={sourceIds:string[];plane:SymmetryPlane;confirmedPlane:boolean}
+export type SymmetryFillRequest={sourceIds:string[];plane:SymmetryPlane;planeMode:'auto'|'reference';confirmedPlane:boolean}
 export type SymmetryFillPreview={sourceRaw:string;request:SymmetryFillRequest;assembly:Assembly3D;addedIds:string[];addedConnections:Connection[];scaffoldMap:Record<string,string>;geometry:ReturnType<typeof validateAssembly3D>;layers:ReturnType<typeof assemblyValidationLayers>;canCommit:boolean}
 const fail=(message:string):never=>{throw Error(message)}
 function normalized(plane:SymmetryPlane):SymmetryPlane{
@@ -45,7 +46,6 @@ function input(assembly:Assembly3D,sourceIds:string[]){
  assertAssembly3D(assembly)
  if(assembly.pieces.length>64||!sourceIds.length||sourceIds.length>32||new Set(sourceIds).size!==sourceIds.length)fail('V1 支持 1–32 个不同来源，补全后最多 64 片')
  const items=createViewerModel(assembly),sources=sourceIds.slice().sort().map(id=>items.find(p=>p.id===id)??fail('来源 Tile 不存在：'+id)),scaffold=items.filter(p=>!sourceIds.includes(p.id))
- if(!scaffold.length)fail('请保留至少一个未选中的框架 Tile，用于确定并检查对称平面')
  return {items,sources,scaffold,tolerance:scaleOf(items)*1e-7}
 }
 function scaffoldMapping(scaffold:ViewerPiece[],plane:SymmetryPlane,tolerance:number){
@@ -60,6 +60,7 @@ function scaffoldMapping(scaffold:ViewerPiece[],plane:SymmetryPlane,tolerance:nu
  */
 export function proposeSymmetryPlane(assembly:Assembly3D,sourceIds:string[]):SymmetryPlane{
  const {items,sources,scaffold,tolerance}=input(assembly,sourceIds),n=new Vector3(0,0,1).applyQuaternion(sources[0].transform.quaternion).normalize(),d=n.dot(sources[0].transform.position)
+ if(!scaffold.length)fail('自动推断需要至少一个未选中的框架 Tile；也可明确指定参考平面')
  if(sources.some(p=>1-Math.abs(n.dot(new Vector3(0,0,1).applyQuaternion(p.transform.quaternion)))>1e-9||vertices(p).some(v=>Math.abs(n.dot(v)-d)>tolerance)))fail('来源零件不是同一平面，无法提供唯一的前后候选；请明确指定参考平面')
  const values=items.flatMap(vertices).map(v=>n.dot(v)),plane:SymmetryPlane={normal:n.toArray(),offset:(Math.min(...values)+Math.max(...values))/2}
  if(Math.abs(plane.offset-d)<=tolerance)fail('所选片位于候选平面上，无法确定缺失的一侧')
@@ -74,10 +75,12 @@ export function referenceSymmetryPlane(assembly:Assembly3D,pieceId:string,axis:'
 function token(text:string){let value=2166136261;for(const c of text)value=Math.imul(value^c.charCodeAt(0),16777619);return (value>>>0).toString(16).padStart(8,'0')}
 export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequest):SymmetryFillPreview{
  if(request.confirmedPlane!==true)fail('请先确认对称平面；补全是用户假设，不是照片直接观察')
+ if(!['auto','reference'].includes(request.planeMode))fail('请明确选择自动或手动平面方式')
+ const automatic=request.planeMode==='auto'
  const {items,sources,scaffold,tolerance}=input(assembly,request.sourceIds),plane=normalized(request.plane)
  if(assembly.pieces.length+sources.length>64)fail('补全后超过 V1 的 64 片上限')
- const original=validateAssembly3D(assembly,{requireConnected:true})
- if(componentCount(assembly)!==1)fail('V1 需要连通的原作品；不自动为多个组件猜测连接')
+ const original=validateAssembly3D(assembly,{requireConnected:automatic})
+ if(automatic&&componentCount(assembly)!==1)fail('自动模式需要连通的原作品；不自动为多个组件猜测连接')
  if(!assemblyValidationLayers(original).idealGeometry.valid)fail('原作品存在连接、Port 或闭环等结构错误；请先修复，再对称补全')
  const sourceRaw=serializeAssembly3D(assembly),sourceToAdded=new Map<string,string>(),used=new Set(assembly.pieces.map(p=>p.id))
  const suffix=token(sourceRaw+JSON.stringify(plane)+sources.map(p=>p.id).join('|'))
@@ -86,7 +89,10 @@ export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequ
  const addedIdSet=new Set(added.map(p=>p.id)),newItems=createViewerModel(next).filter(p=>addedIdSet.has(p.id))
  for(const p of newItems){const duplicate=items.find(q=>sameSolid(p,q,tolerance,false));if(duplicate)fail(`重复补全：候选 ${p.id} 与现有 ${duplicate.id} 的实体位置相同`)}
  for(let i=0;i<newItems.length;i++)for(let j=0;j<i;j++)if(sameSolid(newItems[i],newItems[j],tolerance,false))fail('候选互相重复，未加入任何零件')
- const scaffoldMap=scaffoldMapping(scaffold,plane,tolerance)
+ // A confirmed manual plane is an explicit copy hypothesis, not a claim that
+ // the incomplete assembly is globally symmetric. Never infer external joints.
+ if(automatic&&!scaffold.length)fail('自动模式缺少可验证的框架')
+ const scaffoldMap=automatic?scaffoldMapping(scaffold,plane,tolerance):{}
  const all=createViewerModel(next),byId=new Map(all.map(p=>[p.id,p])),transforms=Object.fromEntries(all.map(p=>[p.id,p.transform])),getShape=(id:string)=>byId.get(id)?.shape
  const endpoints=(id:string,portId:string)=>portWorldEndpoints(id,portId,transforms,getShape)??fail(`无法定位 Port ${id}:${portId}`)
  function connection(a:string,pa:string,b:string,pb:string):Connection{
@@ -103,7 +109,7 @@ export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequ
  const extra:Connection[]=[]
  function add(c:Connection){
   if(next.connections.some(x=>x.pieceA===c.pieceA&&x.portA===c.portA&&x.pieceB===c.pieceB&&x.portB===c.portB||x.pieceA===c.pieceB&&x.portA===c.portB&&x.pieceB===c.pieceA&&x.portB===c.portA))return
-  if(isPortOccupied(c.pieceA,c.portA,next.connections)||isPortOccupied(c.pieceB,c.portB,next.connections))fail(`镜像连接端口已占用：${c.pieceA}:${c.portA} / ${c.pieceB}:${c.portB}；不会覆盖原连接`)
+  if(inspectPortCompatibility([...next.connections,c],getShape,transforms).status==='conflict')fail(`镜像连接端口空间冲突：${c.pieceA}:${c.portA} / ${c.pieceB}:${c.portB}；不会覆盖原连接`)
   next.connections.push(c);extra.push(c)
  }
  // Preserve every reflected source constraint, remapping fixed scaffold ports by
@@ -115,10 +121,10 @@ export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequ
   if(matches.length!==1)fail(`框架 Port 无法唯一映射：${id}:${portId} → ${target}`)
   return [target,matches[0].portId]
  }
- for(const c of assembly.connections)if(sourceToAdded.has(c.pieceA)||sourceToAdded.has(c.pieceB)){const [a,pa]=mirroredPort(c.pieceA,c.portA),[b,pb]=mirroredPort(c.pieceB,c.portB);add(connection(a,pa,b,pb))}
+ for(const c of assembly.connections)if(automatic?(sourceToAdded.has(c.pieceA)||sourceToAdded.has(c.pieceB)):(sourceToAdded.has(c.pieceA)&&sourceToAdded.has(c.pieceB))){const [a,pa]=mirroredPort(c.pieceA,c.portA),[b,pb]=mirroredPort(c.pieceB,c.portB);add(connection(a,pa,b,pb))}
  // Exact geometric coincidences can provide extra connections beyond the source
  // graph. Never select an arbitrary partner when a port has multiple options.
- const ports=all.flatMap(p=>p.shape.ports.map(port=>({id:p.id,portId:port.portId,port}))),pairs:Connection[]=[],counts=new Map<string,number>();let checks=0
+ const ports=automatic?all.flatMap(p=>p.shape.ports.map(port=>({id:p.id,portId:port.portId,port}))):[],pairs:Connection[]=[],counts=new Map<string,number>();let checks=0
  if(ports.length>1024)fail('Port 数超过 V1 预算（1024）')
  const newIds=new Set(added.map(p=>p.id))
  for(let i=0;i<ports.length;i++)for(let j=0;j<i;j++){
@@ -131,13 +137,15 @@ export function previewSymmetryFill(assembly:Assembly3D,request:SymmetryFillRequ
  }
  if([...counts.values()].some(n=>n>1))fail('同一 Port 存在多个精确连接候选；V1 不自动猜测连接对象')
  for(const c of pairs)add(c)
- const geometry=validateAssembly3D(next,{requireConnected:true}),layers=assemblyValidationLayers(geometry),canCommit=layers.idealGeometry.valid&&componentCount(next)===1&&added.every(p=>extra.some(c=>c.pieceA===p.id||c.pieceB===p.id))
- return {sourceRaw,request:{sourceIds:sources.map(p=>p.id),plane,confirmedPlane:true},assembly:next,addedIds:added.map(p=>p.id),addedConnections:extra,scaffoldMap,geometry,layers,canCommit}
+ // Free pieces are supported by the existing Editor/Validator. They do not
+ // establish a connected Build: the existing Build connectivity gate still runs.
+ const geometry=validateAssembly3D(next,{requireConnected:automatic}),layers=assemblyValidationLayers(geometry),canCommit=layers.idealGeometry.valid&&(!automatic||componentCount(next)===1&&added.every(p=>extra.some(c=>c.pieceA===p.id||c.pieceB===p.id)))
+ return {sourceRaw,request:{sourceIds:sources.map(p=>p.id),plane,planeMode:request.planeMode,confirmedPlane:true},assembly:next,addedIds:added.map(p=>p.id),addedConnections:extra,scaffoldMap,geometry,layers,canCommit}
 }
 /** Recompute from authoritative input; never commit a modified preview object. */
 export function confirmSymmetryFill(history:EditorHistory,preview:SymmetryFillPreview):EditorHistory{
  if(serializeAssembly3D(history.current)!==preview.sourceRaw)fail('补全预览已过期，请重新预览；原 Draft 未改变')
  const checked=previewSymmetryFill(history.current,preview.request)
- if(!checked.canCommit)fail('对称补全存在结构错误或未连接的零件，不能加入 Draft')
+ if(!checked.canCommit)fail('对称补全的连接、Port 或闭环未通过结构检查，不能加入 Draft')
  return commit(history,()=>checked.assembly)
 }

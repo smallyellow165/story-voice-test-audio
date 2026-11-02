@@ -73,6 +73,7 @@
     "test:magnetic-assembly-actions:browser": "node --experimental-strip-types scripts/verify-magnetic-assembly-actions.mjs",
     "test:magnetic-symmetry-fill": "node --experimental-strip-types --test test/magnetic-symmetry-fill.test.mjs",
     "test:magnetic-symmetry-fill:browser": "node --experimental-strip-types scripts/verify-magnetic-symmetry-fill.mjs",
+    "test:magnetic-symmetry-fill:manual:browser": "node --experimental-strip-types scripts/verify-magnetic-manual-symmetry.mjs",
     "test:magnetic-human-collision": "node --experimental-strip-types --test test/magnetic-human-collision.test.mjs",
     "test:magnetic-human-collision:browser": "node --experimental-strip-types scripts/verify-magnetic-human-collision.mjs",
     "test:magnetic-3d": "vitest run --config vitest.magnetic-3d.config.ts",

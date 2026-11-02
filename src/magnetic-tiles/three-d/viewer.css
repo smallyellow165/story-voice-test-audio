@@ -110,7 +110,7 @@
 .magnetic-3d-collision-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}.magnetic-3d-collision-table th,.magnetic-3d-collision-table td{padding:5px 4px;border-bottom:1px solid #d8e3dd;text-align:left;overflow-wrap:anywhere}.magnetic-3d-collision-table thead{background:#eef3ef}.magnetic-3d-collision-table tr[aria-selected=true]{box-shadow:inset 2px 0 #9b2727}.magnetic-3d-collision-table td button{font-size:11px;padding:3px 4px;white-space:normal}.magnetic-3d-collision-table input{width:auto}
 .magnetic-3d-collision-actions{display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap;margin:7px 0}.magnetic-3d-collision-actions>div{display:flex;gap:4px;flex-wrap:wrap}.magnetic-3d-collision-actions button{padding:5px;font-size:11px;max-width:100%}
 
-.magnetic-symmetry-panel{border-top:1px solid #d8e3dd;border-bottom:1px solid #d8e3dd;padding:7px 0;margin:9px 0;font-size:12px}
+.magnetic-symmetry-panel{border-top:1px solid #d8e3dd;border-bottom:1px solid #d8e3dd;padding:7px 0;margin:9px 0;font-size:12px;scroll-margin-top:64px;outline:none}
 .magnetic-symmetry-panel label{display:block;margin:7px 0}.magnetic-symmetry-panel select,.magnetic-symmetry-panel input[type=number]{width:100%;min-width:0}
 .magnetic-symmetry-panel .magnetic-symmetry-confirm{display:flex;align-items:flex-start;gap:6px}.magnetic-symmetry-confirm input{width:auto;margin:2px 0}
 .magnetic-symmetry-reference{display:grid;grid-template-columns:minmax(0,1fr) 70px 80px;gap:5px}.magnetic-symmetry-panel pre{max-width:100%;overflow:auto}

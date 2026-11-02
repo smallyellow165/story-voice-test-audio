@@ -10,7 +10,7 @@ import path from 'node:path'
 import assert from 'node:assert/strict'
 const root=new URL('../',import.meta.url).pathname,dir=await mkdtemp(path.join(tmpdir(),'magnetic-assembly-actions-')),out='/tmp/magnetic-assembly-actions'
 const official=path.join(root,'generated/magnetic-intake/visible3d/origins/69852d9f-009d-42fd-86a4-4dd4d7780d2f.json'),originRaw=await readFile(official,'utf8'),origin=JSON.parse(originRaw),six=origin.assembly,sourceIds=['tile2','tile3','tile4']
-const nine=confirmSymmetryFill(createInitialHistory(six),previewSymmetryFill(six,{sourceIds,plane:proposeSymmetryPlane(six,sourceIds),confirmedPlane:true})).current
+const nine=confirmSymmetryFill(createInitialHistory(six),previewSymmetryFill(six,{sourceIds,plane:proposeSymmetryPlane(six,sourceIds),planeMode:'auto',confirmedPlane:true})).current
 const api=createMagneticIntake(dir,{enableHumanReview:true}),errors=[],consoleErrors=[],calls=[],layout=[]
 let server,browser,page
 try{

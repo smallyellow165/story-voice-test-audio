@@ -1,0 +1,303 @@
+{
+  "kind": "magnetic-assembly-3d",
+  "schemaVersion": 1,
+  "id": "visible-edaeaad0-b52d-4bba-b761-3792eeeb82b2",
+  "revision": 0,
+  "profiles": [
+    {
+      "profile": {
+        "id": "square",
+        "version": 1,
+        "name": "正方形",
+        "vertices": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "connectableEdges": [
+          "e0",
+          "e1",
+          "e2",
+          "e3"
+        ]
+      },
+      "thickness": 0.06
+    },
+    {
+      "profile": {
+        "id": "equilateral-triangle",
+        "version": 1,
+        "name": "等边三角形",
+        "vertices": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0.5,
+            0.8660254037844386
+          ]
+        ],
+        "connectableEdges": [
+          "e0",
+          "e1",
+          "e2"
+        ]
+      },
+      "thickness": 0.06
+    }
+  ],
+  "pieces": [
+    {
+      "id": "ramp-lower-left",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#3AC994",
+      "pose": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "ramp-lower-right",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#39C994",
+      "pose": {
+        "position": [
+          1,
+          0,
+          0
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "ramp-upper-left",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#3AAEA2",
+      "pose": {
+        "position": [
+          0,
+          1,
+          0
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "ramp-upper-right",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#39AFA3",
+      "pose": {
+        "position": [
+          1,
+          1,
+          0
+        ],
+        "quaternion": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "rear-side-left",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#2863B8",
+      "pose": {
+        "position": [
+          -0.4999999999999999,
+          1.6830127018922196,
+          -0.6830127018922193
+        ],
+        "quaternion": [
+          0.35355339059327373,
+          0.6123724356957946,
+          0.3535533905932738,
+          0.6123724356957945
+        ]
+      }
+    },
+    {
+      "id": "rear-support-left",
+      "profileId": "equilateral-triangle",
+      "profileVersion": 1,
+      "color": "#EF956F",
+      "pose": {
+        "position": [
+          -0.4999999999999999,
+          1.0000000000000002,
+          -0.2886751345948134
+        ],
+        "quaternion": [
+          0.6830127018922194,
+          0.18301270189221905,
+          0.6830127018922195,
+          0.18301270189221908
+        ]
+      }
+    },
+    {
+      "id": "rear-top-left",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#8245AF",
+      "pose": {
+        "position": [
+          0,
+          1.9330127018922194,
+          -0.24999999999999997
+        ],
+        "quaternion": [
+          -0.25881904510252074,
+          0,
+          0,
+          0.9659258262890683
+        ]
+      }
+    },
+    {
+      "id": "rear-top-right",
+      "profileId": "square",
+      "profileVersion": 1,
+      "color": "#7940A7",
+      "pose": {
+        "position": [
+          1,
+          1.9330127018922194,
+          -0.24999999999999994
+        ],
+        "quaternion": [
+          -0.2588190451025207,
+          0,
+          0,
+          0.9659258262890683
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "pieceA": "ramp-lower-left",
+      "pieceB": "ramp-lower-right",
+      "portA": "e1-p0",
+      "portB": "e3-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "ramp-upper-left",
+      "pieceB": "ramp-lower-left",
+      "portA": "e0-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "ramp-upper-left",
+      "pieceB": "ramp-upper-right",
+      "portA": "e1-p0",
+      "portB": "e3-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "ramp-upper-left",
+      "pieceB": "rear-support-left",
+      "portA": "e3-p0",
+      "portB": "e1-p0",
+      "dihedralDeg": -90,
+      "flip": false
+    },
+    {
+      "pieceA": "ramp-upper-right",
+      "pieceB": "ramp-lower-right",
+      "portA": "e0-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "rear-side-left",
+      "pieceB": "rear-support-left",
+      "portA": "e3-p0",
+      "portB": "e0-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "rear-top-left",
+      "pieceB": "ramp-upper-left",
+      "portA": "e0-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 30,
+      "flip": true
+    },
+    {
+      "pieceA": "rear-top-left",
+      "pieceB": "rear-side-left",
+      "portA": "e3-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": -90,
+      "flip": false
+    },
+    {
+      "pieceA": "rear-top-left",
+      "pieceB": "rear-top-right",
+      "portA": "e1-p0",
+      "portB": "e3-p0",
+      "dihedralDeg": 0,
+      "flip": true
+    },
+    {
+      "pieceA": "rear-top-right",
+      "pieceB": "ramp-upper-right",
+      "portA": "e0-p0",
+      "portB": "e2-p0",
+      "dihedralDeg": 30,
+      "flip": true
+    }
+  ]
+}
