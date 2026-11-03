@@ -1,4 +1,5 @@
 import {ReadOnlyAssemblyGroups} from '../../ReadOnlyAssemblyGroups.tsx'
+import {WorldOrientationGizmo,WorldOrientationCaption} from '../../WorldOrientationGizmo.tsx'
 import {displayAnnotationPieces,displayLabels,displayPieceKey,EMPTY_ASSEMBLY_DISPLAYS} from '../../multi-assembly-display.ts'
 import type {MultiAssemblyDisplayProps} from '../../multi-assembly-display.ts'
 import {GeometryIssueOverlay} from '../../GeometryIssueOverlay.tsx'
@@ -73,6 +74,7 @@ function SceneContent({ pieces, selected, onSelect, fitRequest, resetRequest, on
       onClick={e => { e.stopPropagation(); if (e.delta <= 3) onSelect(p.id) }}/></group>)}</group><ReadOnlyAssemblyGroups readOnlyAssemblies={readOnlyAssemblies} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection}/></group><AssemblyConnectionHighlight pieces={pieces} connection={activeVisible?selectedConnection:undefined}/>{(showTileIds||collision||geometryIssue)&&<AssemblyTileLabels pieces={[...(activeVisible?pieces:[]),...otherPieces]} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} solids={solids} elements={labelElements}/>}<GeometryIssueOverlay pieces={pieces} geometryIssue={activeVisible?geometryIssue:undefined} issueFocus={issueFocus}/><CollisionOverlay collision={activeVisible?collision:undefined} collisionFocus={collisionFocus} label={collisionLabel}/></SceneLighting>
     <OrbitControls ref={controls} makeDefault enablePan enableZoom enableRotate enableDamping={false}
       minZoom={.01} maxZoom={100000} onChange={report}/>
+    <WorldOrientationGizmo/>
   </>
 }
 export class ViewerErrorBoundary extends Component<{ children: ReactNode }, { error: string }> {
@@ -104,6 +106,7 @@ export function MagnetScene3D({ assembly, selected, onSelect,inspectionTools=fal
             resetRequest={resetRequest} onCameraChange={report} preset={preset} showTileIds={showTileIds} selectedConnection={selectedConnection} initialCameraView={initialCameraView}/>
         </Canvas>
       </ViewerErrorBoundary>
+      <WorldOrientationCaption/>
       {(showTileIds||collision||geometryIssue)&&<TileLabelLayer ids={[...(activeVisible?(collision?collision.evidence.pieceIds:geometryIssue?geometryIssue.pieceIds:pieces.map(p=>p.id)):[]),...otherPieces.map(p=>p.id)]} labels={labelNames} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} elements={labelElements}/>}
       <CollisionLabel collision={activeVisible?collision:undefined} label={collisionLabel}/>
     </div>

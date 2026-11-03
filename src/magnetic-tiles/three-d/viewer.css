@@ -179,3 +179,9 @@
 .assembly-edit-toolbar label{display:block;margin:7px 0}
 .assembly-edit-toolbar select{width:100%;min-width:0;max-width:100%;padding:5px}
 .module-operation-fields{border:0;padding:0;margin:0;min-width:0}
+.world-orientation-caption{position:absolute;top:101px;right:9px;width:98px;text-align:center;font:10px Arial,sans-serif;color:#47635c;pointer-events:none;user-select:none}
+.group-spatial-inspection table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+.group-spatial-inspection th,.group-spatial-inspection td{padding:5px 2px;text-align:right;border-bottom:1px solid #d8e3dd;overflow-wrap:anywhere}
+.group-spatial-inspection th:first-child{width:12%;text-align:left}
+.group-spatial-inspection tr[data-bounds-axis=y] th{color:#276a57}
+.bounds-align-tools{border-top:1px solid #d8e3dd;padding-top:8px}

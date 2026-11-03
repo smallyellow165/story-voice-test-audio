@@ -9,7 +9,10 @@ import type {Connection} from './vendor/engine/types.ts'
 import {canonical} from '../build-plan.ts'
 export const IDENTITY_FRAME:Pose3D={position:[0,0,0],quaternion:[0,0,0,1]}
 export type ModuleSpace='global'|'local'|'face'
-export type ModulePreview={sourceRaw:string;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>;connection?:Connection}
+export type BoundsAxis='x'|'y'|'z'
+export type BoundsMode='min'|'center'|'max'
+export type BoundsAlignment={movingId:string;referenceId:string;axis:BoundsAxis;mode:BoundsMode;delta:number}
+export type ModulePreview={sourceRaw:string;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>;connection?:Connection;boundsAlignment?:BoundsAlignment}
 export function combineAssemblySnapshots(id:string,parents:{name:string;parent:AssemblyParent3D;assembly:Assembly3D}[]):Assembly3D{
  if(parents.length<2||parents.length>8||new Set(parents.map(p=>p.parent.id)).size!==parents.length)throw Error('请选择 2–8 个不同的已保存作品')
  const a:Assembly3D={kind:'magnetic-assembly-3d',schemaVersion:1,id,revision:0,profiles:[],pieces:[],connections:[],modules:[]}
@@ -21,15 +24,31 @@ export function combineAssemblySnapshots(id:string,parents:{name:string;parent:A
  });assertAssembly3D(a);return a
 }
 export function moduleById(a:Assembly3D,id:string){const m=a.modules?.find(m=>m.id===id);if(!m)throw Error('请选择当前 Combined Draft 的模块');return m}
-export function moduleCenter(a:Assembly3D,id:string){const ids=new Set(moduleById(a,id).pieces.map(p=>p.id)),box=new Box3();for(const p of createViewerModel(a).filter(p=>ids.has(p.id)))for(const v of pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion))box.expandByPoint(v);if(box.isEmpty())throw Error('模块没有可用几何');return box.getCenter(new Vector3())}
+/** The same world solid vertices used by Viewer framing and the existing Group pivot.
+ * Only stored/proposed Assembly poses enter here; read-only display offsets never do. */
+export function moduleBounds(a:Assembly3D,id:string){const ids=new Set(moduleById(a,id).pieces.map(p=>p.id)),box=new Box3();for(const p of createViewerModel(a).filter(p=>ids.has(p.id)))for(const v of pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion))box.expandByPoint(v);if(box.isEmpty())throw Error('模块没有可用几何');return box}
+export function moduleCenter(a:Assembly3D,id:string){return moduleBounds(a,id).getCenter(new Vector3())}
+export function moduleBoundsAlignment(a:Assembly3D,movingId:string,referenceId:string,axis:BoundsAxis,mode:BoundsMode):BoundsAlignment{
+ if(movingId===referenceId)throw Error('移动 Group 与参考 Group 必须不同')
+ if(!['x','y','z'].includes(axis)||!['min','center','max'].includes(mode))throw Error('请选择世界坐标轴及边界对齐方式')
+ const coordinate=(id:string)=>{const b=moduleBounds(a,id);return (mode==='center'?b.getCenter(new Vector3()):b[mode])[axis]}
+ const delta=coordinate(referenceId)-coordinate(movingId)
+ return {movingId,referenceId,axis,mode,delta:Math.abs(delta)<=1e-10?0:delta}
+}
+export function previewModuleBoundsAlign(a:Assembly3D,movingId:string,referenceId:string,axis:BoundsAxis,mode:BoundsMode):ModulePreview{
+ const boundsAlignment=moduleBoundsAlignment(a,movingId,referenceId,axis,mode)
+ const next=boundsAlignment.delta===0?structuredClone(a):moduleStep(a,movingId,'translate',axis,boundsAlignment.delta,'global')
+ return {...previewModuleTransform(a,next),boundsAlignment}
+}
 export function moduleOrientation(a:Assembly3D,id:string,space:ModuleSpace,faceId?:string){const m=moduleById(a,id);if(space==='global')return new Quaternion();if(space==='local')return new Quaternion(...m.frame.quaternion);const p=a.pieces.find(p=>p.id===faceId&&m.pieces.some(x=>x.id===p.id));if(!p)throw Error('Face 坐标需要选择当前移动模块的参考 Tile');return new Quaternion(...p.pose.quaternion)}
 export function modulePivot(a:Assembly3D,id:string,space:ModuleSpace,faceId?:string):Pose3D{return {position:moduleCenter(a,id).toArray(),quaternion:moduleOrientation(a,id,space,faceId).toArray()}}
 export function pivotDelta(start:Pose3D,target:Pose3D):Pose3D{assertPose3D(start);assertPose3D(target);const q=new Quaternion(...target.quaternion).multiply(new Quaternion(...start.quaternion).invert()).normalize(),t=new Vector3(...target.position).sub(new Vector3(...start.position).applyQuaternion(q));return {position:t.toArray(),quaternion:q.toArray()}}
 /** A single SE(3) action on all module members. No solver propagation/re-grounding. */
 export function transformModule(a:Assembly3D,id:string,delta:Pose3D):Assembly3D{
  assertPose3D(delta);const m=moduleById(a,id),ids=new Set(m.pieces.map(p=>p.id)),q=new Quaternion(...delta.quaternion),t=new Vector3(...delta.position),next=structuredClone(a)
- for(const p of next.pieces)if(ids.has(p.id)){p.pose.position=new Vector3(...p.pose.position).applyQuaternion(q).add(t).toArray();p.pose.quaternion=q.clone().multiply(new Quaternion(...p.pose.quaternion)).normalize().toArray()}
- const frame=moduleById(next,id).frame;frame.position=new Vector3(...frame.position).applyQuaternion(q).add(t).toArray();frame.quaternion=q.clone().multiply(new Quaternion(...frame.quaternion)).normalize().toArray();assertAssembly3D(next);return next
+ const translationOnly=q.x===0&&q.y===0&&q.z===0
+ for(const p of next.pieces)if(ids.has(p.id)){p.pose.position=new Vector3(...p.pose.position).applyQuaternion(q).add(t).toArray();if(!translationOnly)p.pose.quaternion=q.clone().multiply(new Quaternion(...p.pose.quaternion)).normalize().toArray()}
+ const frame=moduleById(next,id).frame;frame.position=new Vector3(...frame.position).applyQuaternion(q).add(t).toArray();if(!translationOnly)frame.quaternion=q.clone().multiply(new Quaternion(...frame.quaternion)).normalize().toArray();assertAssembly3D(next);return next
 }
 export function moduleStep(a:Assembly3D,id:string,kind:'translate'|'rotate',axis:'x'|'y'|'z',value:number,space:ModuleSpace,faceId?:string){
  if(!Number.isFinite(value))throw Error('位移 / 角度必须为有限数');const direction=new Vector3(axis==='x'?1:0,axis==='y'?1:0,axis==='z'?1:0).applyQuaternion(moduleOrientation(a,id,space,faceId));if(kind==='translate')return transformModule(a,id,{position:direction.multiplyScalar(value).toArray(),quaternion:[0,0,0,1]});const q=new Quaternion().setFromAxisAngle(direction,value*Math.PI/180),pivot=moduleCenter(a,id);return transformModule(a,id,{position:pivot.clone().sub(pivot.clone().applyQuaternion(q)).toArray(),quaternion:q.toArray()})

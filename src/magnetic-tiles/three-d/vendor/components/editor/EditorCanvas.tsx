@@ -1,3 +1,4 @@
+import {WorldOrientationGizmo,WorldOrientationCaption} from '../../../WorldOrientationGizmo.tsx'
 import {ModuleGizmo} from '../../../ModuleGizmo.tsx'
 import type {ModuleGizmoProps} from '../../../ModuleGizmo.tsx'
 import {ReadOnlyAssemblyGroups} from '../../../ReadOnlyAssemblyGroups.tsx'
@@ -8,7 +9,7 @@ import type {CameraView3D} from '../../../camera-view.ts'
 // Adapted MIT upstream EditorCanvas; see third_party/3D_Magnetic_Pieces/EDITOR.md.
 import { useRef, useMemo, useEffect, useCallback, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Line, TransformControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
+import { OrbitControls, Line, TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 type MagnetColor = string;
 
@@ -728,23 +729,7 @@ function SceneContent({
       )}
 
       {activeVisible&&!interactionLocked&&moduleGizmo&&<ModuleGizmo {...moduleGizmo}/>}
-      {/* ViewCube */}
-      <GizmoHelper alignment="top-right" margin={[80, 80]}>
-        <GizmoViewcube
-          onClick={(e: any) => {
-            e?.stopPropagation?.();
-            const face = e?.face?.normal;
-            if (face) {
-              if (face.x > 0.5) setViewRef.current?.('right');
-              else if (face.x < -0.5) setViewRef.current?.('left');
-              else if (face.y > 0.5) setViewRef.current?.('top');
-              else if (face.z > 0.5) setViewRef.current?.('front');
-              else if (face.z < -0.5) setViewRef.current?.('back');
-            }
-            return null as any;
-          }}
-        />
-      </GizmoHelper>
+      <WorldOrientationGizmo/>
     </>
   );
 }
@@ -814,6 +799,7 @@ export function EditorCanvas({
           onViewChange={onViewChange} showTileIds={showTileIds} onSnapProposal={onSnapProposal} onMovePieceCancel={onMovePieceCancel} snapCandidates={snapCandidates} snapSourcePort={snapSourcePort} showSnapTargets={showSnapTargets} snapGhost={snapGhost} interactionLocked={interactionLocked} initialCameraView={initialCameraView} onCameraViewChange={onCameraViewChange}
         />
       </Canvas>
+      <WorldOrientationCaption/>
       {(showTileIds||collision)&&<TileLabelLayer ids={[...(activeVisible?(collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]):[]),...otherAnnotations.map(p=>p.id)]} labels={labelNames} previewIds={previewPieces?.map(p=>p.id)} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} elements={labelElements}/>}
       {previewPieces&&<output className="hint magnetic-symmetry-overlay-evidence" data-symmetry-preview-ids={JSON.stringify(previewPieces.map(p=>p.id))}>灰色半透明为对称候选 · 非照片证据</output>}
       <CollisionLabel collision={activeVisible?collision:undefined} label={collisionLabel}/>
