@@ -1,6 +1,7 @@
 import {assertImageMetadata,assertImageEvidence,sourceImages} from '../src/magnetic-tiles/intake/image-set.ts'
 import {createHumanCollisionReview} from './magnetic-human-collision.mjs'
 import {createAssemblyLibrary} from './magnetic-assemblies.mjs'
+import {createMagneticGallery} from './magnetic-gallery.mjs'
 import {createVisible3DWorkflow} from './magnetic-visible3d.mjs'
 import {inspectDiagnosticConflicts} from '../src/magnetic-tiles/intake/candidate-conflicts.ts'
 import {alignmentInspection} from '../src/magnetic-tiles/intake/alignment-inspection.ts'
@@ -32,6 +33,7 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
  let assemblies
  const humanCollision=createHumanCollisionReview(path.join(directory,'assembly3d-review'),{enabled:enableHumanReview,readSavedAssembly:id=>assemblies.read(id),readSavedVersion:(id,version)=>assemblies.read(id,version),getProfiles:async()=>(await registry.get()).profiles,readOrigin:async(id,options)=>{const origin=id.startsWith('combined-')?await assemblies.origin(id):await visible3D.selectedOrigin(id);if(options?.acceptingDiagnostic){const l=await visible3D.lineage('executions',origin.executionId);if(l.outdated||l.record.hash!==origin.executionHash||l.source.hash!==origin.sourceHash||l.review.hash!==origin.reviewHash)fail('Diagnostic 来源已变化，不能接受过期快照。',409)}return origin}})
  assemblies=createAssemblyLibrary(path.join(directory,'assembly3d'),{readOrigin:visible3D.originSnapshot,selectedOrigin:visible3D.selectedOrigin,getProfiles:async()=>(await registry.get()).profiles,captureReview:a=>humanCollision.capture(a),onCombined:(a,o)=>humanCollision.initializeCombined(a,o)})
+ const gallery=createMagneticGallery(path.join(directory,'gallery'),{readAssembly:assemblies.read,assertPublishable:humanCollision.assertPublishable})
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
  async function put(kind,value,{replace=false}={}){
   const {hash:_,...payload}=value, record={...payload,hash:await contentHash(payload)}
@@ -62,6 +64,7 @@ export function createMagneticIntake(directory,{libraryDirectory,enableHumanRevi
  }
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else if(kind==='reconstructions'){const {trace,diagnosticCandidates,...summary}=r;out[kind].push({...summary,traceAvailable:!!trace,diagnosticCount:diagnosticCandidates?.length??0})}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
  return {read,result,async dispatch(method,route,body={},context){
+  if(route.startsWith('gallery/'))return gallery.dispatch(method,route.slice(8),body)
   if(route.startsWith('assembly3d/'))return assemblies.dispatch(method,route.slice(11),body)
   if(route.startsWith('assembly3d-review/'))return humanCollision.dispatch(method,route.slice('assembly3d-review/'.length),body,context)
   if(route.startsWith("visible3d/"))return visible3D.dispatch(method,route.slice(10),body)

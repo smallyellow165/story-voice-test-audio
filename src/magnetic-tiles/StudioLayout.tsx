@@ -1,5 +1,6 @@
 import {loadStudioMode,saveStudioMode} from './studio-mode.ts'
 import type {StudioMode} from './studio-mode.ts'
+import {magneticGalleryUrl} from '../magnetic-gallery/links.ts'
 import type {CameraView3D} from './three-d/camera-view.ts'
 import {useProfileRegistry} from './ProfileRegistry.tsx'
 import { workflowTerms } from './studio-terms.ts'
@@ -75,7 +76,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
-        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1></header>
+        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1><a href={magneticGalleryUrl()} target="_blank" rel="noreferrer">我的作品集 ↗</a></header>
         <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
         <div className="studio-mode-switch" role="group" aria-label="Studio 工作模式"><span>工作模式</span><div>
           <button aria-pressed={mode==='2d'} disabled={dragging} onClick={()=>switchMode('2d')}>2D</button>

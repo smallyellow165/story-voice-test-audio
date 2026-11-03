@@ -16,6 +16,7 @@ import {arrangeAssemblyDisplays,readAssemblyVisibility,saveAssemblyVisibility} f
 import type {AssemblyVisibility,ReadOnlyPieceSelection} from './multi-assembly-display.ts'
 import {preserveSavedAssembly,saveAssemblySnapshot,restoreAssemblySnapshot,groupSnapshot,savedAssemblyRef} from './assembly-library.ts'
 import type {SavedAssembly,SavedAssemblySummary} from './assembly-library.ts'
+import {addAssemblyToGalleryUrl} from '../../magnetic-gallery/links.ts'
 import {restoreSavedHumanReview} from './human-collision-client.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
@@ -417,6 +418,7 @@ export default function ThreeDWorkspace() {
         {savedAssemblies.map(a=>{const isCurrent=inProject&&a.id===current.id;return <li key={a.id} data-assembly-row={a.id} aria-current={isCurrent?'true':undefined}>
           <input type="checkbox" aria-label={'显示作品 '+a.id} title="仅控制显示" checked={isCurrent?activeVisible:!!visibility[a.id]} disabled={operationBusy} onChange={e=>setAssemblyVisible(a.id,e.target.checked)}/>
           <button type="button" disabled={operationBusy} aria-label={'编辑作品 '+a.id} aria-pressed={isCurrent} onClick={()=>{if(!isCurrent||!currentSaved)void openSavedAssembly(a.id)}} title={`${a.name} · ${a.id}`}><span>{a.name} · {isCurrent?current.pieces.length:a.tiles} Tiles{a.type==='combined'?' · Combined':''}</span><small>{isCurrent&&!currentSaved?'未保存':'Saved'} · r{isCurrent?current.revision:a.revision}{isCurrent&&<b> · 编辑中</b>}</small></button>
+          <a href={addAssemblyToGalleryUrl(a)} target="_blank" rel="noreferrer" aria-label={'Add to Gallery '+a.name}>Add to Gallery · v{a.version} ↗</a>
         </li>})}
       </ul>
       {inProject&&photoOrigin?.origin.kind==='combined-assembly'?<small data-testid="assembly-origin-summary">Combined · {current.modules?.map(m=>`${m.name} r${m.parent.revision} · ${m.parent.id.slice(0,12)} / ${m.parent.hash.slice(0,8)}`).join(' + ')}</small>:inProject&&<small data-testid="assembly-origin-summary">Group {String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'全部模块')} · Plan {String(photoOrigin!.origin.planId).slice(0,8)} · Execution {String(photoOrigin!.origin.executionId).slice(0,8)} · {String(photoOrigin!.origin.entryMode??'Candidate')}</small>}

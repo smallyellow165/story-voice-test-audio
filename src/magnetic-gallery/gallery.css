@@ -1,0 +1,6 @@
+.magnetic-gallery-card { min-height:200px; display:flex; align-items:center; }
+.magnetic-gallery-card>div { width:100%; padding:24px; }
+.magnetic-gallery-description { white-space:pre-wrap; overflow-wrap:anywhere; font-size:22px; line-height:1.6; }
+.magnetic-gallery-open { color:#286553; font-weight:700; }
+.magnetic-gallery .magnetic-3d-camera-state { display:none; }
+.magnetic-gallery .magnetic-3d-camera-tools { flex-wrap:wrap; }

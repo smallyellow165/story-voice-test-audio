@@ -74,7 +74,23 @@ export function createHumanCollisionReview(directory,{enabled=false,readOrigin,r
   const review=acceptance(c,evidence),g=review?.complete&&!c.geometry.valid?await publishGrant(assembly,c,evidence.origin,evidence):null
   return commit(null,{assembly,assemblyHash:c.assemblyHash,assemblyCanonical:c.assemblyCanonical,diagnosticHash:c.diagnosticHash,geometry:c.geometry,acceptedKeys:(review?.accepted??[]).filter(i=>i.code==='intersection').map(i=>canonical(i)).sort(),approvalId:g?.id??null,origin:evidence.origin,acceptedDiagnostic:evidence,savedTutorials:[]})
  }
- return {initializeCombined,async capture(assembly){const h=await head(assembly.id),c=checked(assembly);return same(h,c)&&h.diagnosticHash===c.diagnosticHash?{version:h.version,hash:h.hash}:null},async dispatch(method,route,body={},context){
+ return {initializeCombined,async assertPublishable(saved){
+  const assembly=saved.snapshot.assembly
+  if(!assembly.pieces.length)fail('空 Assembly 不能加入 Gallery')
+  if(validateAssembly3D(assembly).valid)return
+  const c=checked(assembly),ref=saved.reviewRef
+  if(!ref||!Number.isSafeInteger(ref.version)||ref.version<1)fail('Geometry Invalid；请先完成人工接受并保存该版本',409)
+  let prior=await readRecord(path.join(directory,'heads',assembly.id,String(ref.version).padStart(12,'0')+'.json'))
+  if(prior.hash!==ref.hash||prior.version!==ref.version||!same(prior,c)||prior.diagnosticHash!==c.diagnosticHash)fail('保存版本的人工审核不匹配',409)
+  const latest=await head(assembly.id)
+  if(!latest||latest.version<ref.version)fail('保存版本的人工审核链缺失',409)
+  // Honor later explicit revocations of this exact snapshot, as restore-saved does.
+  for(let version=ref.version+1;version<=latest.version;version++){
+   const r=await readRecord(path.join(directory,'heads',assembly.id,String(version).padStart(12,'0')+'.json'))
+   if(same(r,c)&&r.diagnosticHash===c.diagnosticHash)prior=r
+  }
+  if(!await grant(prior,c))fail('Geometry Invalid；该保存版本没有有效的 Human Accepted / Human Approved 授权',409)
+ },async capture(assembly){const h=await head(assembly.id),c=checked(assembly);return same(h,c)&&h.diagnosticHash===c.diagnosticHash?{version:h.version,hash:h.hash}:null},async dispatch(method,route,body={},context){
   authorize(context,route!=='session');if(method!=='POST')fail('Use POST',405)
   if(route==='session'){for(const [k,v]of sessions)if(v<Date.now())sessions.delete(k);if(sessions.size>1024)fail('本机会话过多。',429);const token=randomBytes(32).toString('hex');sessions.set(token,Date.now()+8*3600000);return {token,scope:'local-human-collision-review'}}
   const allowed={status:['assembly'],'restore-saved':['assembly','expectedVersion','savedHash'],'accept-diagnostic':['assembly','expectedVersion','originId'],sync:['assembly','expectedVersion','originId'],accept:['assembly','expectedVersion','acceptedKeys'],approve:['assembly','expectedVersion','acceptedKeys'],revalidate:['assembly','expectedVersion'],generate:['assembly','expectedVersion','approvalId','options'],saveTutorial:['assembly','expectedVersion','approvalId','tutorial']}

@@ -17,6 +17,7 @@ const projectId=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value
  */
 export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getProfiles,captureReview,onCombined}){
  async function latest(assemblyId,version){
+  if(version!==undefined&&(!Number.isSafeInteger(version)||version<1))fail('Assembly 固定版本无效')
   const dir=path.join(directory,id(assemblyId)),files=(await readdir(dir).catch(e=>{if(e.code==='ENOENT')return [];throw e})).filter(n=>/^\d{12}\.json$/.test(n)).sort()
   if(!files.length)return null
   const filename=version===undefined?files.at(-1):String(version).padStart(12,'0')+'.json'
@@ -40,6 +41,8 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
    const records=await Promise.all(dirs.filter(d=>d.isDirectory()).map(d=>latest(d.name)))
    return {assemblies:records.filter(r=>r?.project.id===p).map(summary).sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
   }
+  const fixed=route.match(/^records\/([^/]+)\/versions\/([1-9]\d*)$/)
+  if(method==='GET'&&fixed){const r=await latest(fixed[1],Number(fixed[2]));if(!r)fail('Assembly 固定版本不存在',404);return r}
   if(method==='GET'&&route.startsWith('records/')){const r=await latest(route.slice(8));if(!r)fail('Assembly 尚未保存',404);return {...r,lineage:await state(r)}}
   if(method==='GET'&&route.startsWith('selected-origin/'))return combinedOrigin(route.slice(16))
   if(method==='POST'&&route==='build-check'){
