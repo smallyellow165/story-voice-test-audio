@@ -207,3 +207,8 @@
 
 .module-snap-parameters{container-type:inline-size}
 @container (max-width:190px){.snap-fields-row{grid-template-columns:minmax(0,1fr)}}
+.snap-preview-diagnostics { font-size: .85em; overflow-wrap: anywhere; }
+.snap-preview-diagnostics dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem .6rem; margin: .5rem 0; }
+.snap-preview-diagnostics dt { font-weight: 600; }
+.snap-preview-diagnostics dd { margin: 0; min-width: 0; }
+@media (max-width: 600px) { .snap-preview-diagnostics dl { grid-template-columns: minmax(0, 1fr); gap: .2rem; } }
