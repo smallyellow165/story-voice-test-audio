@@ -1,3 +1,5 @@
+import {SnapViewportPicker} from '../../../SnapViewportPicker.tsx'
+import type {SnapViewport} from '../../../module-snap-selection.ts'
 import {WorldOrientationGizmo,WorldOrientationCaption} from '../../../WorldOrientationGizmo.tsx'
 import {ModuleGizmo} from '../../../ModuleGizmo.tsx'
 import type {ModuleGizmoProps} from '../../../ModuleGizmo.tsx'
@@ -37,6 +39,7 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
+  snapViewport?:SnapViewport;
   moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;groupSelectedIds?:string[];
   showTileIds?:boolean;
   onSnapProposal?:(connection:Connection)=>void;
@@ -83,8 +86,9 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,snapViewport,snapTooltip,
 }: {
+  snapTooltip:React.RefObject<HTMLOutputElement|null>;
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
   project: EditorProject;
@@ -636,6 +640,7 @@ function SceneContent({
         {previewPieces&&<AssemblyPreviewOverlay pieces={previewPieces}/>}
         <AssemblyConnectionHighlight pieces={annotationPieces} connection={selectedConnection} onSelect={()=>selection.kind==='connection'&&onSelectConnection(selection.index)}/>
 
+        {snapViewport&&<SnapViewportPicker state={snapViewport} pieces={annotationPieces} solids={solids} tooltip={snapTooltip}/>}
         <CollisionOverlay collision={activeVisible?collision:undefined} collisionFocus={collisionFocus} label={collisionLabel}/>
         {/* 吸附预览(半透明 ghost) */}
         {displayedGhost && ghostPieceId && (() => {
@@ -654,7 +659,7 @@ function SceneContent({
         })()}
 
         {/* 选中 piece 的端口可视化 */}
-        {selection.kind === 'piece' && (() => {
+        {!snapViewport&&selection.kind === 'piece' && (() => {
           const piece = pieceMap[selection.id];
           const part = piece ? partMap[piece.partId] : null;
           const shape = part ? project.shapes.get(part.shape) : null;
@@ -746,8 +751,9 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,snapViewport,
 }: Props) {
+  const snapTooltip=useRef<HTMLOutputElement>(null);
   const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelNames=useMemo(()=>displayLabels(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelElements=useRef(new Map<string,HTMLSpanElement>());
@@ -776,7 +782,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          project={project} snapViewport={snapViewport} snapTooltip={snapTooltip} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
@@ -800,6 +806,9 @@ export function EditorCanvas({
         />
       </Canvas>
       <WorldOrientationCaption/>
+      {snapViewport?.picker&&<div className="snap-viewport-prompt" role="status" data-testid="snap-picker-active">{snapViewport.picker.replace('-',' ')} · 在 Viewer 拾取 · Esc 取消</div>}
+      <output ref={snapTooltip} className="snap-port-tooltip" data-testid="snap-port-hover" hidden/>
+
       {(showTileIds||collision)&&<TileLabelLayer ids={[...(activeVisible?(collision?collision.evidence.pieceIds:[...project.pieces.map(p=>p.id),...(previewPieces??[]).map(p=>p.id)]):[]),...otherAnnotations.map(p=>p.id)]} labels={labelNames} previewIds={previewPieces?.map(p=>p.id)} selectedIds={[...selectedIds,...(readOnlySelection?[displayPieceKey(readOnlySelection.assemblyId,readOnlySelection.pieceId)]:[])]} elements={labelElements}/>}
       {previewPieces&&<output className="hint magnetic-symmetry-overlay-evidence" data-symmetry-preview-ids={JSON.stringify(previewPieces.map(p=>p.id))}>灰色半透明为对称候选 · 非照片证据</output>}
       <CollisionLabel collision={activeVisible?collision:undefined} label={collisionLabel}/>

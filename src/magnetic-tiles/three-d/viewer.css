@@ -185,3 +185,25 @@
 .group-spatial-inspection th:first-child{width:12%;text-align:left}
 .group-spatial-inspection tr[data-bounds-axis=y] th{color:#276a57}
 .bounds-align-tools{border-top:1px solid #d8e3dd;padding-top:8px}
+.module-snap-parameters .snap-side-heading{display:flex;align-items:center;gap:7px;margin:7px 0 3px;min-width:0}
+.snap-side-heading b:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:#d97706}
+.snap-fixed b:before{background:#0e7490}
+.module-snap-parameters .snap-side-heading small{margin:0;font-size:10px;white-space:nowrap;color:#547169}
+.module-snap-parameters .snap-side-heading label{display:flex;align-items:center;gap:4px;flex:1;min-width:0;margin:0}
+.module-snap-parameters .snap-side-heading label{white-space:nowrap}
+.module-snap-parameters .snap-side-heading label select{flex:1;width:0}
+.snap-fields-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.module-snap-parameters .snap-fields-row label{min-width:0;margin:0;font-size:10px}
+.snap-select-field{display:grid;grid-template-columns:minmax(0,1fr) 27px;gap:3px;align-items:center}
+.module-snap-parameters select{min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;padding:4px}
+.module-snap-parameters button.snap-selector{width:27px;height:28px;min-height:28px;padding:3px;display:flex;align-items:center;justify-content:center;margin:0}
+.module-snap-parameters .snap-options{display:flex;align-items:end;flex-wrap:wrap;gap:8px;margin-top:6px}
+.module-snap-parameters .snap-options label{display:flex;align-items:center;gap:4px;margin:0;font-size:10px}
+.module-snap-parameters .snap-options input[type=number]{width:65px;padding:4px}
+.module-snap-parameters .snap-options input[type=checkbox]{margin:0;width:auto}
+.module-snap-parameters .snap-picker-hint{margin:4px 0 0;color:#276a57}
+.snap-viewport-prompt{position:absolute;top:9px;left:50%;transform:translateX(-50%);max-width:55%;padding:5px 8px;border:1px solid #9bb9aa;border-radius:5px;background:#fffc;font-size:11px;pointer-events:none}
+.snap-port-tooltip{position:absolute;pointer-events:none;background:#174d3f;color:white;padding:3px 6px;border-radius:4px;font-size:11px;z-index:5}
+
+.module-snap-parameters{container-type:inline-size}
+@container (max-width:190px){.snap-fields-row{grid-template-columns:minmax(0,1fr)}}
