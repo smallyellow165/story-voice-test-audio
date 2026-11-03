@@ -12,17 +12,17 @@ import { findCompatibleTargets, portsCompatible } from './vendor/editor/snap.ts'
 import { portPairKey } from './vendor/engine/port-compatibility.ts'
 import type { Connection } from './vendor/engine/types.ts'
 import {disconnectPieceForSnap} from './editor-snap.ts'
-import type { ToolMode } from './vendor/components/editor/EditorCanvas.tsx'
+import type {AssemblyOperation} from './ModuleTransformPanel.tsx'
 
 type Props = {
   editing:boolean;selectionInfo:ReactNode;globalTools:ReactNode;
   assembly: Assembly3D; project: EditorProject; profiles: readonly Profile[]; selection: Selection
   ownPort: string; setOwnPort: (id: string) => void
   apply: (action: (h: EditorHistory) => EditorHistory) => void
-  select: (s: Selection) => void; busy: boolean; tool: ToolMode; setTool: (tool: ToolMode) => void
+  select: (s: Selection) => void; busy: boolean; operation:AssemblyOperation
   onPreviewSnap:(connection:Connection)=>void;snapSettings:{dihedralDeg:number;flip:boolean};setSnapSettings:(settings:{dihedralDeg:number;flip:boolean})=>void
 }
-export function EditorInspector({ editing,selectionInfo,globalTools,assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, tool, setTool,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
+export function EditorInspector({ editing,selectionInfo,globalTools,assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
   const [color, setColor] = useState('#55b8ac')
   const [baseId, setBaseId] = useState(''), [basePort, setBasePort] = useState('e0-p0')
@@ -54,7 +54,7 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
   return <>
     <section className="magnetic-3d-selection-detail" aria-label="Selection Detail"><h4>Selection Detail</h4>{selectionInfo}
     {editing && (selection.kind==='piece'||selection.kind==='connection') && <fieldset className="magnetic-3d-edit-inspector" disabled={busy}><legend className="sr-only">当前选择编辑</legend>
-    <PropertyPanel project={project} selection={selection}
+    <PropertyPanel operation={operation} project={project} selection={selection}
       onSetPieceTransform={(id, pose) => apply(h => actions.setPieceTransformAction(h, id, pose))}
       onSetPieceColor={(id, c) => apply(h => actions.setPieceColorAction(h, id, c))}
       onDuplicatePiece={() => apply(h => { const result = actions.duplicatePieceAction(h, selectedId); select({ kind: 'piece', id: result.newId }); return result.history })}
@@ -63,7 +63,7 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
       onRemoveConnection={i => apply(h => { select({ kind: 'none' }); return actions.removeConnectionAction(h, i) })}/>
     {piece && <>
       <label>当前零件颜色<input aria-label="当前 3D 零件颜色" type="color" value={piece.color ?? '#55b8ac'} onChange={e => apply(h => actions.setPieceColorAction(h, piece.id, e.target.value))}/></label>
-      <details open><summary>选择边并连接</summary>
+      {operation==='snap'&&<details open><summary>选择边并连接</summary>
         <p>固定目标 A，移动选中零件 B。先选择 B 的连接边，再点击 A 的兼容边或使用下方选项；预览后确认。</p>
         <label>B 端口<select aria-label="3D 自身端口 B" value={effectiveOwn?.portId ?? ''} onChange={e => setOwnPort(e.target.value)}>
           {ownShape?.ports.map(p => <option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select></label>
@@ -76,9 +76,9 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
         <p className="hint">当前 B 端口有 {compatible.length} 个空闲兼容目标。90° 常用 flip 关闭；相邻共面通常为 0°、flip 开启。</p>
         <button disabled={!canSnap || !angle.trim()} onClick={() => onPreviewSnap(connection())}>预览吸附</button>
         <button disabled={!base || !effectiveOwn || !effectiveBase || !angle.trim()} onClick={() => apply(h => actions.createConnectionAction(h, connection(), false))}>仅建立约束（不移动）</button>
-      </details>
-      <button disabled={!assembly.connections.some(c=>c.pieceA===piece.id||c.pieceB===piece.id)} onClick={()=>apply(h=>disconnectPieceForSnap(h,piece.id))}>解除选中零件全部连接（保留 Pose）</button>
-      <button onClick={() => apply(h => actions.solveComponentAction(h, piece.id))}>显式求解（固定选中片）</button>
+      </details>}
+      <details><summary>其他单片操作</summary><button disabled={!assembly.connections.some(c=>c.pieceA===piece.id||c.pieceB===piece.id)} onClick={()=>apply(h=>disconnectPieceForSnap(h,piece.id))}>解除选中零件全部连接（保留 Pose）</button>
+      <button onClick={() => apply(h => actions.solveComponentAction(h, piece.id))}>显式求解（固定选中片）</button></details>
     </>}
     {selection.kind === 'connection' && <>
       <button onClick={()=>select({kind:'piece',id:assembly.connections[selection.index].pieceB})}>重新吸附 B（先解除相关连接）</button>
@@ -90,9 +90,6 @@ export function EditorInspector({ editing,selectionInfo,globalTools,assembly, pr
   </fieldset>}</section>
     <details className="magnetic-3d-edit-tools"><summary>Edit Tools</summary>
     <fieldset className="magnetic-3d-edit-inspector" disabled={busy}><legend className="sr-only">全局编辑操作</legend>{globalTools}{editing&&<>
-    <label>工具<select aria-label="3D 编辑工具" value={tool} onChange={e => setTool(e.target.value as ToolMode)}>
-      <option value="select">选择</option><option value="move">移动 Gizmo</option><option value="rotate">旋转 Gizmo</option><option value="snap">拖动吸附（预览）</option>
-    </select></label>
     <details><summary>从 Tiles Catalog 添加</summary>
       <label>Profile<select aria-label="3D Catalog Profile" value={profileKey} onChange={e => setProfileKey(e.target.value)}>
         {profiles.map(p => <option key={profileKey3D(p)} value={profileKey3D(p)}>{p.name} · {profileKey3D(p)}</option>)}</select></label>

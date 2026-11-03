@@ -35,10 +35,14 @@ export function moduleStep(a:Assembly3D,id:string,kind:'translate'|'rotate',axis
  if(!Number.isFinite(value))throw Error('位移 / 角度必须为有限数');const direction=new Vector3(axis==='x'?1:0,axis==='y'?1:0,axis==='z'?1:0).applyQuaternion(moduleOrientation(a,id,space,faceId));if(kind==='translate')return transformModule(a,id,{position:direction.multiplyScalar(value).toArray(),quaternion:[0,0,0,1]});const q=new Quaternion().setFromAxisAngle(direction,value*Math.PI/180),pivot=moduleCenter(a,id);return transformModule(a,id,{position:pivot.clone().sub(pivot.clone().applyQuaternion(q)).toArray(),quaternion:q.toArray()})
 }
 export function alignModuleFace(a:Assembly3D,id:string,faceId:string,direction:'up'|'front'){
- const face=moduleOrientation(a,id,'face',faceId),normal=new Vector3(0,0,1).applyQuaternion(face),target=direction==='up'?new Vector3(0,1,0):new Vector3(0,0,1)
- // Minimal rotation; antiparallel case uses Three's deterministic orthogonal axis.
- const q=new Quaternion().setFromUnitVectors(normal,target),pivot=moduleCenter(a,id);return transformModule(a,id,{position:pivot.clone().sub(pivot.clone().applyQuaternion(q)).toArray(),quaternion:q.toArray()})
+ const q=faceOrientationQuaternion(moduleOrientation(a,id,'face',faceId),direction),pivot=moduleCenter(a,id);return transformModule(a,id,{position:pivot.clone().sub(pivot.clone().applyQuaternion(q)).toArray(),quaternion:q.toArray()})
 }
+/** The existing minimal face rotation, also used by the single Tile UI. */
+export function faceOrientationQuaternion(face:Quaternion,direction:'up'|'front'){
+ const normal=new Vector3(0,0,1).applyQuaternion(face),target=direction==='up'?new Vector3(0,1,0):new Vector3(0,0,1)
+ return new Quaternion().setFromUnitVectors(normal,target)
+}
+
 export function previewModuleTransform(a:Assembly3D,next:Assembly3D):ModulePreview{return {sourceRaw:serializeAssembly3D(a),assembly:next,geometry:validateAssembly3D(next)}}
 export function previewModuleSnap(a:Assembly3D,movingId:string,fixedId:string,c:Connection):ModulePreview{
  if(movingId===fixedId)throw Error('固定模块与移动模块必须不同');const moving=moduleById(a,movingId),fixed=moduleById(a,fixedId)

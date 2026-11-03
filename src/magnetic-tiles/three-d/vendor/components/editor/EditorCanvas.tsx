@@ -36,7 +36,7 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
-  moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;
+  moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;groupSelectedIds?:string[];
   showTileIds?:boolean;
   onSnapProposal?:(connection:Connection)=>void;
   onMovePieceCancel?:()=>void;
@@ -82,7 +82,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,
 }: {
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
   initialCameraView?:CameraView3D;onCameraViewChange?:(view:CameraView3D)=>void;
@@ -205,14 +205,10 @@ function SceneContent({
   const fitSelection = useCallback(() => {
     if (!selectedPieceId) { fitAll(); return; }
     if (!(camera as THREE.OrthographicCamera).isOrthographicCamera) return;
-    const tf = transforms[selectedPieceId];
-    const piece = pieceMap[selectedPieceId];
-    if (!tf || !piece) return;
-    const part = partMap[piece.partId];
-    if (!part) return;
-    const shape = project.shapes.get(part.shape);
-    if (!shape) return;
-    const verts = pieceWorldVertices(shape, tf.position, tf.quaternion);
+    const verts=(groupSelectedIds??[selectedPieceId]).flatMap(id=>{
+      const tf=transforms[id],piece=pieceMap[id],part=piece&&partMap[piece.partId],shape=part&&project.shapes.get(part.shape);
+      return tf&&shape?pieceWorldVertices(shape,tf.position,tf.quaternion):[];
+    });
     const result = computeFitCamera({
       worldVertices: verts,
       camera: camera as THREE.OrthographicCamera,
@@ -224,7 +220,7 @@ function SceneContent({
       applyFitResult(camera as THREE.OrthographicCamera, result, controlsRef.current);
       cameraTargetRef.current.copy(result.target);
     }
-  }, [camera, selectedPieceId, transforms, pieceMap, partMap, size, fitAll, cameraTargetRef]);
+  }, [camera, selectedPieceId, groupSelectedIds, transforms, pieceMap, partMap, size, fitAll, cameraTargetRef]);
 
   const restoredCamera=useRef(false)
   // 仅在首次加载或 project.id 变化时自动 fit
@@ -588,7 +584,7 @@ function SceneContent({
 
   const annotationPieces=project.pieces.flatMap(p=>{const shape=project.shapes.get(partMap[p.partId]?.shape),transform=transforms[p.id];return shape&&transform?[{id:p.id,shape,transform}]:[]});
   const selectedConnection=selection.kind==='connection'?project.connections[selection.index]:undefined;
-  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:selectedPieceId?[selectedPieceId]:[];
+  const selectedIds=collision?collision.evidence.pieceIds:selectedConnection?[selectedConnection.pieceA,selectedConnection.pieceB]:groupSelectedIds??(selectedPieceId?[selectedPieceId]:[]);
 
   // 连接点击检测
   const handleConnectionClick = useCallback((idx: number, e: any) => {
@@ -765,14 +761,14 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,
 }: Props) {
   const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelNames=useMemo(()=>displayLabels(readOnlyAssemblies),[readOnlyAssemblies]);
   const labelElements=useRef(new Map<string,HTMLSpanElement>());
   const collisionLabel=useRef<HTMLOutputElement>(null);
   const c=selection.kind==='connection'?project.connections[selection.index]:undefined;
-  const selectedIds=collision?collision.evidence.pieceIds:c?[c.pieceA,c.pieceB]:selection.kind==='piece'?[selection.id]:[];
+  const selectedIds=collision?collision.evidence.pieceIds:c?[c.pieceA,c.pieceB]:groupSelectedIds??(selection.kind==='piece'?[selection.id]:[]);
   const defaultCameraStateRef = useRef<DefaultCameraState | null>(null);
   const resetViewRef = useRef<(() => void) | null>(null);
   const fitAllRef = useRef<(() => void) | null>(null);
@@ -795,7 +791,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} moduleGizmo={moduleGizmo} moduleMode={moduleMode} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          project={project} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
@@ -876,7 +872,7 @@ export function EditorCanvas({
 
       <div className="magnetic-3d-editor-help">
         <div>点击选中 · 左键拖空白旋转视角 · 右键平移 · 滚轮缩放 · {toolMode === 'rotate' ? '拖圆环旋转' : toolMode === 'snap' ? '拖轴移动并磁吸' : toolMode === 'move' ? '拖轴移动' : '右栏切换移动/旋转工具'}</div>
-        <div>WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销</div>
+        <div>{moduleMode?'Group 整体编辑 · Inspector 切换 Move / Rotate / Orient / Snap · 拖拽单次撤销':'WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销'}</div>
       </div>
     </div>
   );

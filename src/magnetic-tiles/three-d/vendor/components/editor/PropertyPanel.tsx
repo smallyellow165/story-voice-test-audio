@@ -2,6 +2,8 @@
 // MIT source: third_party/3D_Magnetic_Pieces/EDITOR.md.
 import { useState, useMemo, useEffect } from 'react'
 import * as THREE from 'three'
+import type {AssemblyOperation} from '../../../ModuleTransformPanel.tsx'
+import {faceOrientationQuaternion} from '../../../module-transform.ts'
 import type { EditorProject, Selection, SerializableTransform } from '../../../editor-project.ts'
 const ALL_COLORS = ['#f5b942','#ef795d','#55b8ac','#7e9bda','#b895cf']
 const colorLabels: Record<string,string> = Object.fromEntries(ALL_COLORS.map(c=>[c,c]))
@@ -9,7 +11,7 @@ const colorSwatch = (c: string) => c
 let fieldIdCounter = 0
 const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
 interface Props {
-  project: EditorProject; selection: Selection
+  operation?:AssemblyOperation; project: EditorProject; selection: Selection
   onSetPieceColor: (id: string, color: string) => void
   onDuplicatePiece: () => void; onDeleteSelected: () => void
   onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
@@ -128,7 +130,7 @@ function PieceProps(props: Props) {
         </div>
       </div>
       {/* 位置 */}
-      <fieldset>
+      {(!props.operation||props.operation==='move')&&<fieldset>
         <legend className="text-xs text-gray-500 mb-1">位置 (X / Y / Z)</legend>
         <div className="grid grid-cols-3 gap-1">
           {(['x', 'y', 'z'] as const).map((axis) => {
@@ -151,9 +153,9 @@ function PieceProps(props: Props) {
             );
           })}
         </div>
-      </fieldset>
+      </fieldset>}
       {/* 旋转(欧拉角 XYZ 度数) */}
-      <fieldset>
+      {(!props.operation||props.operation==='rotate')&&<fieldset>
         <div className="flex items-center justify-between mb-1">
           <legend className="text-xs text-gray-500">旋转 (度, XYZ)</legend>
           <button onClick={resetRotation} className="text-[10px] text-blue-500 hover:underline">重置</button>
@@ -187,7 +189,8 @@ function PieceProps(props: Props) {
           <button onClick={() => rotateBy('z', 15)} className="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-50" title="V">Z +15°</button>
           <button onClick={() => rotateBy('z', -15)} className="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-50" title="B">Z -15°</button>
         </div>
-      </fieldset>
+      </fieldset>}
+      {props.operation==='orient'&&<div className="button-row">{(['up','front'] as const).map(d=><button key={d} onClick={()=>{const q=faceOrientationQuaternion(curQuat,d).multiply(curQuat).normalize();onSetPieceTransform(piece.id,{position:[...curPos],quaternion:q.toArray()})}}>{d==='up'?'所选面朝上':'所选面朝前'}</button>)}</div>}
       <div className="flex gap-2 pt-2 border-t">
         <button onClick={onDuplicatePiece} className="text-xs px-2 py-1 border rounded hover:bg-gray-50">复制</button>
         <button onClick={onDeleteSelected} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">删除</button>

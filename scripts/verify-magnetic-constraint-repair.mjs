@@ -1,3 +1,4 @@
+import {canonicalTestRecords,canonicalSelectedTestHead} from './magnetic-canonical-test-records.mjs'
 // Existing Back records copied to a disposable service; never executes a model,
 // planning or Geometry Execution, and never writes the official storage.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
@@ -15,15 +16,16 @@ let server,browser,page
 try{
  await mkdir(out,{recursive:true})
  const origin=await copy('visible3d/origins/dcb39710-5ed3-4039-ba56-690307fa40f6.json'),execution=await copy('visible3d/executions/'+origin.executionId+'.json'),plan=await copy('visible3d/plans/'+origin.planId+'.json'),review=await copy('visible3d/reviews/'+origin.reviewId+'.json'),analysis=await copy('visible3d/analyses/'+review.analysisId+'.json'),source=await sourceCopy(origin.sourceId)
+ await canonicalTestRecords(dir,plan,execution,origin)
  for(const i of source.images??[])await sourceCopy(i.sourceId)
  for(const id of new Set([analysis.traceId,plan.traceId].filter(Boolean)))await copy('visible3d/model-traces/'+id+'.json')
  await cp(path.join(official,'profile-registry'),path.join(dir,'profile-registry'),{recursive:true})
  const head=await copy('visible3d/module-heads/'+review.id+'.json');for(const id of new Set([head.recordId,plan.reconstructionScope.modulePlan.id]))await copy('visible3d/module-plans/'+id+'.json')
- await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify({revision:1,reviewId:review.id,reviewHash:review.hash}))
+ await mkdir(path.join(dir,'visible3d/heads'),{recursive:true});await writeFile(path.join(dir,'visible3d/heads',source.id+'.json'),JSON.stringify(canonicalSelectedTestHead(plan,execution,analysis,review,origin)))
  const api=createMagneticIntake(dir)
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-angle-hints',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
-  s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push({method:req.method,route});try{if(req.method!=='GET')throw Error('Read only browser test');res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch('GET',route)))}catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
+  s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push({method:req.method,route});try{if(req.method!=='GET'&&!route.startsWith('assembly3d/'))throw Error('No models or source writes');let raw='';for await(const chunk of req)raw+=chunk;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))}catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
  }}]});await server.listen()
  browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});page=await browser.newPage({viewport:{width:1780,height:1100},acceptDownloads:true});page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept())
  await page.addInitScript(o=>{if(sessionStorage.getItem('angle-seeded'))return;localStorage.setItem('magnetic-tiles.assembly3d-draft.v1',JSON.stringify(o.assembly));localStorage.setItem('magnetic-tiles.assembly3d-origin.v1',JSON.stringify({origin:o,assemblyRaw:JSON.stringify(o.assembly)}));sessionStorage.setItem('angle-seeded','yes')},origin)
@@ -45,10 +47,10 @@ try{
  for(const id of ['p01','p02','p03'])assert.deepEqual(applied.pieces.find(p=>p.id===id).pose,original.pieces.find(p=>p.id===id).pose)
  assert.equal(await collision().locator('tbody tr').count(),1);assert.match(await collision().textContent(),/p03 \/ p11/);await page.screenshot({path:out+'/applied.png'})
  await button('3D Undo').click();assert.deepEqual(await exported(),original);assert.equal(await collision().locator('tbody tr').count(),3);await button('3D Redo').click();assert.deepEqual(await exported(),applied)
- await button('保存 3D Draft').click();await page.reload();await hints().waitFor();assert.deepEqual(await exported(),applied);await button('Edit Draft').click();await until(()=>button('Find Fix').isEnabled());await button('Find Fix').click();await until(async()=>await panel().getByText('在已采样范围与预算内没有保持全部连接的改善方案；不证明连续角度域无解',{exact:true}).count()>0);assert.equal(await banner().count(),0);assert.deepEqual(await exported(),applied)
+ await button('保存 3D Draft').click();await page.getByText('3D Draft 已保存，刷新可恢复；几何状态未被修正。',{exact:true}).waitFor();await page.reload();await hints().waitFor();assert.deepEqual(await exported(),applied);await button('Edit Draft').click();await until(()=>button('Find Fix').isEnabled());await button('Find Fix').click();await until(async()=>await panel().getByText('在已采样范围与预算内没有保持全部连接的改善方案；不证明连续角度域无解',{exact:true}).count()>0);assert.equal(await banner().count(),0);assert.deepEqual(await exported(),applied)
  await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'严格复验失败'}).waitFor();assert.equal(await collision().locator('tbody tr').count(),1)
  for(const width of [1780,1100,680]){await page.setViewportSize({width,height:1000});await stage(page,'assembly','inspector');await panel().scrollIntoViewIfNeeded();assert.equal(await panel().evaluate(e=>e.scrollWidth>e.clientWidth+1),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);await page.screenshot({path:`${out}/${width}.png`})}
- assert.equal(calls.some(c=>c.method!=='GET'),false);assert.ok(calls.some(c=>c.route==='visible3d/plans/'+plan.id));assert.deepEqual(errors,[])
+ assert.equal(calls.some(c=>c.method!=='GET'&&!c.route.startsWith('assembly3d/')),false);assert.ok(calls.some(c=>c.route==='visible3d/plans/'+plan.id));assert.deepEqual(errors,[])
  for(const [file,bytes] of originals)assert.deepEqual(await readFile(file),bytes)
  const result={passed:true,source:{origin:origin.id,plan:plan.id,execution:execution.id},checks:['real Worker, multi collision targets','read-only 3→1 partial preview; 45→25 coordinated folds','cancel preview/search preserves Draft','apply, all 9 connections and reference Poses preserved','Undo/Redo','invalid save, refresh, strict revalidate','no further solution leaves Draft intact','1780/1100/680 layout'],modelCalls:0,executionCalls:0,formalWrites:0,errors};await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
 }catch(e){if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',await page.locator('body').innerText().catch(()=>''))}throw e}
