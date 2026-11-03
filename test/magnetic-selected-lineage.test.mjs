@@ -9,7 +9,7 @@ import {selectedProject} from './magnetic-selected-project-fixture.mjs'
 import {selectFixture} from './magnetic-selected-fixture.mjs'
 import {reconstructionInput} from '../src/magnetic-tiles/three-d/reconstruction/reconstruction-scope.ts'
 import {selectedScopeKey} from '../src/magnetic-tiles/three-d/reconstruction/selected-lineage.ts'
-async function setup(t){const dir=await mkdtemp(path.join(tmpdir(),'magnetic-selected-lineage-'));t.after(()=>rm(dir,{recursive:true,force:true}));const api=createMagneticIntake(dir,{enableHumanReview:true});return {dir,api,...await selectedProject(api)}}
+async function setup(t){const dir=await mkdtemp(path.join(tmpdir(),'magnetic-selected-lineage-'));t.after(()=>rm(dir,{recursive:true,force:true}));const api=createMagneticIntake(dir);return {dir,api,...await selectedProject(api)}}
 test('Project Selected, independent Front/Back chains and immutable parents survive restart; no newest-history selection',async t=>{
  const f=await setup(t),key=n=>selectedScopeKey(f.scopes[n]),head=()=>f.api.dispatch('GET','visible3d/head/'+f.source.id),before=await head()
  assert.equal(before.analysisId,f.analysis.id);assert.equal(before.reviewId,f.review.id);assert.equal(Object.keys(before.groups).length,2)
@@ -19,7 +19,7 @@ test('Project Selected, independent Front/Back chains and immutable parents surv
  assert.deepEqual(changed.groups[key('Front')],before.groups[key('Front')]);assert.equal(changed.groups[key('Back')].plan.id,f.plans.Back[0].id);assert.equal(changed.groups[key('Back')].execution,undefined)
  const stale=await f.post('execute',{planId:f.plans.Back[1].id,requestId:randomUUID()});assert.equal(stale.state,'failed');assert.match(stale.error,/Selected Plan/)
  await assert.rejects(selectFixture(f.api,f.source.id,'execution',f.executions.Back[1]),/Selected Plan/)
- await selectFixture(f.api,f.source.id,'execution',f.executions.Back[0]);const o=await f.post('adopt',{executionId:f.executions.Back[0].id,candidateId:'candidate-1',visualChecked:true});assert.equal(o.planId,f.plans.Back[0].id)
+ await selectFixture(f.api,f.source.id,'execution',f.executions.Back[0]);const o=await f.post('adopt',{executionId:f.executions.Back[0].id,candidateId:'candidate-1'});assert.equal(o.planId,f.plans.Back[0].id)
  assert.equal((await f.api.dispatch('GET','visible3d/selected-origin/'+o.id)).id,o.id);await f.post('build-check',{originId:o.id,assembly:o.assembly})
  await selectFixture(f.api,f.source.id,'plan',f.plans.Back[1]);await assert.rejects(f.api.dispatch('GET','visible3d/selected-origin/'+o.id),/Selected/);await assert.rejects(f.post('build-check',{originId:o.id,assembly:o.assembly}),/Selected/)
  assert.deepEqual(await readFile(path.join(f.dir,'visible3d/plans',f.plans.Back[0].id+'.json')),unchanged)

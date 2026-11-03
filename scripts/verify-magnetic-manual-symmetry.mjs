@@ -24,11 +24,11 @@ try{
  while(module.parent)module=await copy(`visible3d/module-plans/${module.parent.id}.json`)
  await copy(`visible3d/module-heads/${origin.reviewId}.json`)
  for(const file of await readdir(path.join(official,'profile-registry')))if(file.endsWith('.json'))await copy('profile-registry/'+file)
- const api=createMagneticIntake(dir,{enableHumanReview:true})
+ const api=createMagneticIntake(dir)
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'manual-mirror-isolated',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!['visible3d/selected','visible3d/open-diagnostic-draft','visible3d/build-check'].includes(route)&&!route.startsWith('assembly3d-review/')&&!route.startsWith('assembly3d/'))throw Error('Model/Planning/Execution/unrelated writes forbidden')
+   if(req.method!=='GET'&&!['visible3d/selected','visible3d/open-diagnostic-draft','visible3d/build-check'].includes(route)&&!route.startsWith('assembly3d/'))throw Error('Model/Planning/Execution/unrelated writes forbidden')
    let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
  }}]});await server.listen()
@@ -44,8 +44,8 @@ try{
  await page.goto(url);await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await stage(page,'reconstruction','workspace')
  await field('重建 Group').locator(`option[value="${group}"]`).waitFor({state:'attached'});await field('重建 Group').selectOption(group)
  await until(async()=>await field('Geometry Execution History').inputValue()===origin.executionId)
- await stage(page,'reconstruction','inspector');await field('3D Reconstruction Candidate').selectOption('diagnostic-1');await button('人工采用并进入 Assembly').click()
- await until(async()=>await page.locator('.studio').getAttribute('data-active-stage')==='assembly');await page.getByTestId('human-collision-approved').waitFor()
+ await stage(page,'reconstruction','inspector');await field('3D Reconstruction Candidate').selectOption('diagnostic-1');await button('打开 Diagnostic 到 Assembly Editor').click()
+ await until(async()=>await page.locator('.studio').getAttribute('data-active-stage')==='assembly');await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor()
  const adopted=await exported();assert.deepEqual({...adopted,id:original.id},original);original=adopted;await until(async()=>await button('保存 3D Draft').isEnabled())
  // Mode changes and re-entry are presentation only: no ID, revision, history,
  // saved Draft or existing collision-acceptance changes.
@@ -87,7 +87,7 @@ try{
  await until(()=>button('保存 3D Draft').isEnabled());await button('保存 3D Draft').click();await page.locator('.magnetic-3d-save-notice').filter({hasText:'3D Draft 已保存'}).waitFor();await page.reload();await stage(page,'assembly','inspector');assert.deepEqual(await exported(),nine)
  await until(async()=> (await page.getByTestId('collision-review-progress').innerText()).includes('1/3'))
  await button('Revalidate Geometry').click();await page.locator('.magnetic-3d-save-notice').filter({hasText:'Revalidate Geometry'}).waitFor();assert.match(await page.locator('.magnetic-3d-save-notice').innerText(),/Geometry Invalid/)
- await page.getByRole('region',{name:'Collision Review',exact:true}).locator('tbody tr').nth(2).getByRole('button').click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});await button('聚焦碰撞').click();await button('取消碰撞选择').click();assert.deepEqual(await exported(),nine)
+ await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).locator('tbody tr').nth(2).getByRole('button').click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});await button('聚焦碰撞').click();await button('取消碰撞选择').click();assert.deepEqual(await exported(),nine)
  // Existing opposite roof panels cannot be duplicated by the left/right plane.
  await button('Edit Draft').click();await button('对称补全').click();await field('对称来源 rear-top-left').check();await field('对称来源 rear-top-right').check();await manual();assert.equal(await button('预览补全').isDisabled(),true);await panel().getByRole('alert').filter({hasText:'重复补全'}).waitFor();assert.equal(await ghost().count(),0)
  // A different explicit plane can still preview the selected roof patch and

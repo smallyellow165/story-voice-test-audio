@@ -63,7 +63,7 @@ test('actual execution audit persists under immutable hash/lineage; metadata sta
   const next=createMagneticIntake(dir),loaded=await next.read('reconstructions',r.id);assert.deepEqual(loaded,r);const {hash,...payload}=loaded;assert.equal(await contentHash(payload),hash)
   const trace=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id)).text);assert.deepEqual(trace.execution.trace.search.connectivityAudit,r.trace.search.connectivityAudit);assert.equal(trace.references.review.hash,review.hash)
   const alignment=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id+'/alignment/diagnostic-1')).text).alignment;assert.equal(alignment.actual.connection.connectionModel,'segmented-edge-v1');assert.ok(alignment.actual.edges.contact.length>0);assert.equal(r.trace.search.connectivityAudit.connectionModel,'whole-edge-v1')
-  const h=await next.dispatch('GET','history');assert.equal(h.reconstructions[0].trace,undefined);await assert.rejects(next.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:'diagnostic-1',visualChecked:true,assembly:r.diagnosticCandidates[0].tiles}),/选择候选/)
+  const h=await next.dispatch('GET','history');assert.equal(h.reconstructions[0].trace,undefined);await assert.rejects(next.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:'diagnostic-1',assembly:r.diagnosticCandidates[0].tiles}),/选择候选/)
   assert.deepEqual(await next.read('reviews',review.id),review);assert.deepEqual(await next.read('analyses',analysis.id),analysis)
  }finally{await rm(dir,{recursive:true,force:true})}
 })

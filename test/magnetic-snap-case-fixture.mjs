@@ -7,13 +7,12 @@ import {multiAssemblyFixture} from './magnetic-multi-assembly-fixture.mjs'
 export const SNAP_CASE_ID='combined-8565b7b2-feea-458c-b267-c4ffbc00c781'
 export async function snapCaseFixture(dir){
  const f=await multiAssemblyFixture(dir)
- for(const relative of [`assembly3d/${SNAP_CASE_ID}`,`assembly3d-review/heads/${SNAP_CASE_ID}`]){
+ for(const relative of [`assembly3d/${SNAP_CASE_ID}`]){
   await mkdir(path.join(dir,relative),{recursive:true})
   for(const name of await readdir(path.join(f.official,relative))){
-   if(!/^\d{12}\.json$/.test(name))continue
+   if(!/^\d{12}\.json$/.test(name)||name>'000000000003.json')continue
    const file=relative+'/'+name,raw=await readFile(path.join(f.official,file),'utf8');f.copied.set(file,raw);await writeFile(path.join(dir,file),raw)
-   const h=JSON.parse(raw)
-   if(h.approvalId){const file='assembly3d-review/approvals/'+h.approvalId+'.json',raw=await readFile(path.join(f.official,file),'utf8');f.copied.set(file,raw);await mkdir(path.dirname(path.join(dir,file)),{recursive:true});await writeFile(path.join(dir,file),raw)}
+
   }
  }
  const record=await f.api.dispatch('GET','assembly3d/records/'+SNAP_CASE_ID)

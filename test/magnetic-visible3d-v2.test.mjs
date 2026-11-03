@@ -54,6 +54,6 @@ test('V2 review, selected full-plan alternative, stale protection and immutable 
  const r=await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:0}),p=await post('manual-plan',{reviewId:r.record.id,plan:f.plan})
  const derived=await post('manual-plan',{reviewId:r.record.id,basedOnPlanId:p.id,plan:f.plan});assert.equal(derived.basedOnPlanId,p.id);assert.equal(derived.basedOnPlanHash,p.hash)
  const x=await post('execute',{planId:derived.id,requestId:randomUUID()});assert.equal(x.record.candidates[0].assembly.pieces.length,3)
- const origin=await post('adopt',{executionId:x.record.id,candidateId:'candidate-1',visualChecked:true});assert.equal(origin.assembly.pieces.length,3)
+ const origin=await post('adopt',{executionId:x.record.id,candidateId:'candidate-1'});assert.equal(origin.assembly.pieces.length,3)
  await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:1});await assert.rejects(post('manual-plan',{reviewId:r.record.id,basedOnPlanId:p.id,plan:f.plan}),/过期/)
 })

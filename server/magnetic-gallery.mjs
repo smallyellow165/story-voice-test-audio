@@ -12,7 +12,7 @@ function reference(value){
 }
 
 /** Display metadata only. Geometry remains in the append-only Assembly library. */
-export function createMagneticGallery(directory,{readAssembly,assertPublishable}){
+export function createMagneticGallery(directory,{readAssembly}){
  const file=id=>{if(!isHash(id))fail('Gallery ID 无效');return path.join(directory,id+'.json')}
  function record(item){
   if(!item||item.schemaVersion!==1||typeof item.description!=='string'||!item.description.trim()||item.description.length>500||typeof item.createdAt!=='string'||item.id!==digest(reference(item.assemblyRef)))fail('Gallery 记录损坏',409)
@@ -42,7 +42,7 @@ export function createMagneticGallery(directory,{readAssembly,assertPublishable}
   if(method==='POST'&&route==='publish'){
    if(!body||Object.keys(body).some(k=>!['description','assemblyRef'].includes(k))||typeof body.description!=='string'||!body.description.trim()||body.description.length>500)fail('请填写 1–500 个字符的作品描述')
    const assemblyRef=reference(body.assemblyRef),saved=await resolve(assemblyRef)
-   await assertPublishable(saved)
+   if(!saved.snapshot.assembly.pieces.length)fail('空 Assembly 不能加入 Gallery')
    const item={schemaVersion:1,id:digest(assemblyRef),description:body.description.trim(),assemblyRef,createdAt:new Date().toISOString()}
    await mkdir(directory,{recursive:true})
    const target=file(item.id),temp=target+'.'+randomUUID()+'.tmp'

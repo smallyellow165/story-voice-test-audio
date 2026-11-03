@@ -8,7 +8,7 @@ import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 export const ASSEMBLY_SAVED_REF_KEY='magnetic-tiles.assembly3d-saved-ref.v1'
 export type AssemblySnapshot={assembly:Assembly3D;photoOrigin:PhotoOrigin3D;nonRepairable:string[]}
 export type SavedAssemblySummary={id:string;version:number;name:string;type:'group'|'combined';project:{id:string;hash:string};group:{id:string;name:string};revision:number;tiles:number;connections:number;hash:string;snapshotHash:string;savedAt:string;parent:{kind:'geometry-origin';id:string;hash:string}|{kind:'assemblies';assemblies:import('./assembly.ts').AssemblyParent3D[]}}
-export type SavedAssembly={assembly:{id:string};name:string;type:'group'|'combined';project:SavedAssemblySummary['project'];group:SavedAssemblySummary['group'];parent:SavedAssemblySummary['parent'];version:number;hash:string;snapshotHash:string;snapshot:AssemblySnapshot;reviewRef:{version:number;hash:string}|null;lineage:{selected:boolean;error:string|null}}
+export type SavedAssembly={assembly:{id:string};name:string;type:'group'|'combined';project:SavedAssemblySummary['project'];group:SavedAssemblySummary['group'];parent:SavedAssemblySummary['parent'];version:number;hash:string;snapshotHash:string;snapshot:AssemblySnapshot;lineage:{selected:boolean;error:string|null}}
 export type SavedAssemblyRef={id:string;hash:string;projectId:string}
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>
 export function savedAssemblyRef(storage:Pick<Storage,'getItem'>):SavedAssemblyRef|null{
@@ -20,7 +20,8 @@ export function groupSnapshot(assembly:Assembly3D,origin:PhotoOrigin3D|null,nonR
  if(!origin||JSON.parse(origin.assemblyRaw).id!==assembly.id)return null
  const sidecar=structuredClone(origin),ids=new Set(assembly.pieces.map(p=>p.id))
  if(sidecar.symmetryFills)sidecar.symmetryFills=sidecar.symmetryFills.filter(f=>f.addedIds.every(id=>ids.has(id))&&f.addedRevision<=assembly.revision)
- if(sidecar.geometryReview?.assemblyRaw!==serializeAssembly3D(assembly))delete sidecar.geometryReview
+ // Retain old receipts only in immutable historical records, never in new saves.
+ delete sidecar.geometryReview
  return {assembly,photoOrigin:sidecar,nonRepairable:[...nonRepairable]}
 }
 export async function saveAssemblySnapshot(snapshot:AssemblySnapshot,expected:SavedAssemblyRef|null){

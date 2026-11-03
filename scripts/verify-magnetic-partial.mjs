@@ -20,7 +20,7 @@ try{
  await page.screenshot({path:'/tmp/magnetic-partial-review.png'})
  await page.getByLabel('修正形状',{exact:true}).selectOption('square@1');const mapped=await save();assert.equal(mapped.evidence.observations[1].profileId,'square')
  await page.getByLabel('历史 Review',{exact:true}).selectOption(review.id);await idle();await page.getByRole('button',{name:`识别零件 ${unknown}`,exact:true}).click();await page.getByRole('button',{name:'排除零件',exact:true}).click();await reviewDetails(page,'高级信息 / 编辑');await page.getByLabel('输入类别',{exact:true}).selectOption('diagram');await save();result=await reconstruct();assert.ok(result.candidates.length);assert.equal(result.candidates[0].assembly.instances.length,1);assert.match(await page.getByRole('status').filter({visible:true}).innerText(),/部分作品/)
- await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await idle();await button('生成搭建步骤').click();await page.locator('[data-build-tile]').waitFor();assert.equal(await page.locator('[data-build-tile]').count(),1)
+ await button('在作品编辑器中打开').click();await idle();await button('生成搭建步骤').click();await page.locator('[data-build-tile]').waitFor();assert.equal(await page.locator('[data-build-tile]').count(),1)
  assert.deepEqual(await(await page.request.get(base+'/api/magnetic-intake/analyses/'+analysis.id)).json(),original)
  assert.deepEqual(await(await page.request.get(base+'/api/magnetic-intake/reviews/'+review.id)).json(),review)
  assert.deepEqual(errors,[])

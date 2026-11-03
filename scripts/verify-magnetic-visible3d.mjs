@@ -74,7 +74,7 @@ try{
   await button('Fit to View').click();await button('Reset Camera').click();await rendered();assert.equal(await button('采用候选到 3D Assembly Editor').isDisabled(),true)
   return f
  }
- async function adopt(){await field('已对照照片审核候选').check();await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();await page.locator('.visible3d-origin').waitFor();assert.equal(await button('Edit Draft').getAttribute('aria-pressed'),'true')}
+ async function adopt(){await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();await page.locator('.visible3d-origin').waitFor();assert.equal(await button('Edit Draft').getAttribute('aria-pressed'),'true')}
  async function exported(){await details(page.locator('.magnetic-3d-load'));const dl=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await dl).path(),'utf8'))}
  await page.goto(url);await create('right-angle',2)
  const sourceBefore=await api.dispatch('GET','history');assert.equal(sourceBefore.analyses.length,0)
@@ -141,7 +141,7 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
    await button('回到 Review 修正选中零件').click();assert.equal(await page.locator(`tr[data-review-id="${side}"]`).filter({visible:true}).getAttribute('aria-selected'),'true')
    await button('核对此连接与角度建议').first().click();await field('已审核面夹角下限').fill('0');await field('已审核面夹角上限').fill('5');await button('加入已审核空间检查').click()
    async function saveAndExecute(){await button('保存 3D Review').click();await page.getByRole('status').filter({hasText:'3D Review 已保存'}).waitFor();await button('进入 3D Reconstruction').click();const d=page.locator('details').filter({has:page.getByText('沿用已有空间假设（不调用模型）',{exact:true})});await details(d);await button('按当前 Review 创建人工计划').click();await page.getByRole('status').filter({hasText:'已按当前 Review 创建人工计划'}).waitFor();await button('Geometry Execution（不调用模型）').click();await page.getByTestId('visible3d-execution-status').filter({hasText:'candidates_found'}).waitFor()}
-   await saveAndExecute();await page.getByTestId('visible3d-spatial-status').filter({hasText:'contradicted'}).waitFor();await field('已对照照片审核候选').check();assert.equal(await button('采用候选到 3D Assembly Editor').isDisabled(),true);await page.screenshot({path:out+'/spatial-contradiction.png'})
+   await saveAndExecute();await page.getByTestId('visible3d-spatial-status').filter({hasText:'contradicted'}).waitFor();assert.equal(await button('采用候选到 3D Assembly Editor').isDisabled(),true);await page.screenshot({path:out+'/spatial-contradiction.png'})
    await button('回到 Review 修正选中零件').click();await field('已审核面夹角下限').fill('85');await field('已审核面夹角上限').fill('90');await button('加入已审核空间检查').click();await saveAndExecute();await page.getByTestId('visible3d-spatial-status').filter({hasText:'consistent'}).waitFor();await page.screenshot({path:out+'/review-corrected.png'})
    const current=(await api.dispatch('GET','visible3d/history')).executions.find(y=>y.sourceId===live.sourceId&&y.id!==x.id&&y.candidates[0]?.spatialConsistency?.status==='consistent')
    assert.ok(current);assert.deepEqual((await api.dispatch('GET','visible3d/plans/'+p.id)).record,p,'original model plan and Trace remain immutable')

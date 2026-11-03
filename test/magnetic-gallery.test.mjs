@@ -12,7 +12,6 @@ import {moduleStep} from '../src/magnetic-tiles/three-d/module-transform.ts'
 import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
 import {png} from './magnetic-visible3d-fixtures.mjs'
 
-const request={socket:{remoteAddress:'127.0.0.1'},headers:{host:'127.0.0.1:9999',origin:'http://127.0.0.1:9999','sec-fetch-site':'same-origin'}}
 const ref=r=>({id:r.assembly.id,version:r.version,hash:r.hash})
 const save=(api,snapshot,expectedHash=null)=>api.dispatch('POST','assembly3d/save',{snapshot,expectedHash})
 const publish=(api,r,description='我的作品')=>api.dispatch('POST','gallery/publish',{description,assemblyRef:ref(r)})
@@ -20,20 +19,15 @@ const open=(api,id)=>api.dispatch('GET','gallery/items/'+id)
 const snapshot=o=>({assembly:structuredClone(o.assembly),photoOrigin:{origin:o,assemblyRaw:serializeAssembly3D(o.assembly)},nonRepairable:[]})
 async function setup(t){
  const dir=await mkdtemp(path.join(tmpdir(),'magnetic-gallery-'));t.after(()=>rm(dir,{recursive:true,force:true}))
- const api=createMagneticIntake(dir,{enableHumanReview:true}),f=await selectedProject(api)
+ const api=createMagneticIntake(dir),f=await selectedProject(api)
  async function saved(name='Front'){
   const p=f.plans[name][1],x=f.executions[name][1]
   await selectFixture(api,f.source.id,'plan',p);await selectFixture(api,f.source.id,'execution',x)
-  const origin=await api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1',visualChecked:true})
+  const origin=await api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1'})
   return save(api,snapshot(origin))
  }
  return {dir,api,f,saved}
 }
-async function reviewer(api){
- const {token}=await api.dispatch('POST','assembly3d-review/session',{}, {request})
- return (route,body)=>api.dispatch('POST','assembly3d-review/'+route,body,{request:{...request,headers:{...request.headers,authorization:'Bearer '+token}}})
-}
-
 test('multiple text-only publications survive restart; duplicate/concurrent adds never replace a description',async t=>{
  const {dir,api,saved}=await setup(t),a=await saved(),b=await saved('Back')
  const added=await Promise.all([publish(api,a,'小房子'),publish(api,a,'重复提交不覆盖')]);assert.equal(added.filter(r=>r.created).length,1)
@@ -78,43 +72,27 @@ test('Combined publishes its own saved poses and opens without Parent files or s
  assert.deepEqual(loaded.assembly,fixed.snapshot.assembly);assert.deepEqual(loaded.assembly.modules,s.assembly.modules)
 })
 
-test('unapproved Invalid snapshots and review receipts without a grant cannot publish; approved exact versions can',async t=>{
+test('Invalid saved snapshots publish without any approval or review files',async t=>{
  const {dir,api,saved}=await setup(t),original=await saved(),s=structuredClone(original.snapshot)
  s.assembly.pieces.push({...structuredClone(s.assembly.pieces[0]),id:'collision-copy'});s.assembly.revision++
- let invalid=await save(api,s,original.hash);assert.equal(validateAssembly3D(s.assembly).valid,false)
- await assert.rejects(publish(api,invalid),/Geometry Invalid/)
- const review=await reviewer(api)
- let h=await review('sync',{assembly:s.assembly,originId:s.photoOrigin.origin.id,expectedVersion:null})
- invalid=await save(api,s,invalid.hash);assert.ok(invalid.reviewRef)
- await assert.rejects(publish(api,invalid),/没有有效/)
- h=await review('accept',{assembly:s.assembly,expectedVersion:h.version,acceptedKeys:h.collisionKeys})
- h=await review('approve',{assembly:s.assembly,expectedVersion:h.version,acceptedKeys:h.collisionKeys})
- const approved=await save(api,s,invalid.hash),added=await publish(api,approved)
- assert.equal(validateAssembly3D((await open(api,added.item.id)).assembly).valid,false)
- // Reviewing other work does not invalidate this exact saved approval.
- const changed=structuredClone(s.assembly);changed.revision++;changed.pieces[2].pose.position=[9,9,9]
- h=await review('sync',{assembly:changed,expectedVersion:h.version})
- await publish(api,approved)
- h=await review('restore-saved',{assembly:s.assembly,expectedVersion:h.version,savedHash:approved.hash})
- await review('accept',{assembly:s.assembly,expectedVersion:h.version,acceptedKeys:[]})
- await assert.rejects(publish(api,approved),/没有有效/)
- // Browsing a prior publication remains a read-only snapshot operation.
- await rm(path.join(dir,'assembly3d-review'),{recursive:true})
+ const invalid=await save(api,s,original.hash);assert.equal(validateAssembly3D(s.assembly).valid,false)
+ assert.equal('reviewRef' in invalid,false)
+ const added=await publish(api,invalid)
  assert.deepEqual((await open(api,added.item.id)).assembly,s.assembly)
+ assert.equal(validateAssembly3D((await open(api,added.item.id)).assembly).valid,false)
+ await assert.rejects(readdir(path.join(dir,'assembly3d-review')),e=>e.code==='ENOENT')
 })
 
-test('Human Accepted Diagnostic uses the existing exact-error grant, keeping Geometry Invalid',async t=>{
+test('Diagnostic drafts publish directly while their saved geometry remains Invalid',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'magnetic-gallery-diagnostic-'));t.after(()=>rm(dir,{recursive:true,force:true}))
- const api=createMagneticIntake(dir,{enableHumanReview:true}),f=JSON.parse(await readFile(new URL('../checks/magnetic-3d/fixtures/orange-reviewed-geometry.json',import.meta.url)))
+ const api=createMagneticIntake(dir),f=JSON.parse(await readFile(new URL('../checks/magnetic-3d/fixtures/orange-reviewed-geometry.json',import.meta.url)))
  const post=(route,body)=>api.dispatch('POST','visible3d/'+route,body)
  const source=await api.dispatch('POST','sources',{name:'OFFLINE diagnostic.png',original:png,view:png})
  const analysis=await post('annotate',{sourceId:source.id,evidence:f.input.evidence}),review=await post('reviews',{analysisId:analysis.id,review:f.input.review,expectedRevision:0,thickness:.06})
  const plan=await post('manual-plan',{reviewId:review.record.id,plan:f.plan}),x=(await post('execute',{planId:plan.id,requestId:randomUUID()})).record
- const o=await post('open-diagnostic-draft',{executionId:x.id,executionHash:x.hash,candidateId:x.diagnosticCandidates[0].id,humanAccepted:true})
- const unaccepted=await save(api,snapshot(o));await assert.rejects(publish(api,unaccepted),/Geometry Invalid/)
- const accept=await reviewer(api),state=await accept('accept-diagnostic',{assembly:o.assembly,expectedVersion:null,originId:o.id});assert.ok(state.grant)
- const accepted=await save(api,snapshot(o),unaccepted.hash),added=await publish(api,accepted,'人工接受的作品')
- assert.deepEqual((await open(api,added.item.id)).assembly,o.assembly);assert.equal(state.geometry.valid,false)
+ const o=await post('open-diagnostic-draft',{executionId:x.id,executionHash:x.hash,candidateId:x.diagnosticCandidates[0].id})
+ const saved=await save(api,snapshot(o)),added=await publish(api,saved,'Diagnostic 作品')
+ assert.deepEqual((await open(api,added.item.id)).assembly,o.assembly);assert.equal(validateAssembly3D(o.assembly).valid,false)
 })
 
 test('missing/tampered pinned versions never fall back to latest; invalid requests do not publish',async t=>{

@@ -47,12 +47,12 @@ test('immutable refinement lifecycle: explicit binding, exact execution/replay/a
  const unchanged=(await post('execute',{planId:p.id,requestId:randomUUID(),options})).record;assert.deepEqual(unchanged.candidates,old.candidates);assert.equal(unchanged.refinement,undefined)
  const c=r.refinement.candidates[0],reference={id:r.id,hash:r.hash,candidateId:c.id,candidateHash:r.candidateHashes[c.id]}
  const x=(await post('execute',{planId:p.id,requestId:randomUUID(),refinement:reference,options})).record;assert.deepEqual(x.refinement,reference);assert.equal(x.effectivePlanHash,hash(c.plan));assert.deepEqual(x.candidates,executeVisible3D(c.plan,review.input,{...options,algorithmVersion:5}).candidates);assert.ok(x.candidates.length);assert.ok(x.candidates.every(c=>validateAssembly3D(c.assembly).valid));assert.ok(x.candidates.every(c=>c.assembly.connections.every(edge=>!r.refinement.candidates[0].removed.some(d=>connectionPair(d.constraint)===connectionPair(edge)))))
- const chosen=x.candidates.find(c=>c.assembly.pieces.length===2),origin=await post('adopt',{executionId:x.id,candidateId:chosen.id,visualChecked:true});assert.deepEqual(origin.refinement,reference);assert.deepEqual(origin.assembly.pieces,chosen.assembly.pieces)
+ const chosen=x.candidates.find(c=>c.assembly.pieces.length===2),origin=await post('adopt',{executionId:x.id,candidateId:chosen.id});assert.deepEqual(origin.refinement,reference);assert.deepEqual(origin.assembly.pieces,chosen.assembly.pieces)
  const history=await api.dispatch('GET','history');assert.equal(history.refinements.length,1);assert.deepEqual((await api.dispatch('GET','executions/'+old.id)).record,old)
  assert.equal((await post('execute',{planId:p.id,requestId:randomUUID(),refinement:{...reference,hash:'forged'},options})).state,'failed')
  assert.equal((await post('execute',{planId:p.id,requestId:randomUUID(),refinement:{...reference,candidateHash:'forged'},options})).state,'failed')
  const other=await post('manual-plan',{reviewId:review.id,plan:f.plan});assert.equal((await post('execute',{planId:other.id,requestId:randomUUID(),refinement:reference,options})).state,'failed');assert.ok((await post('refine-constraints',{planId:other.id,planHash:other.hash})).refinement.blockers.length)
- await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:1});assert.equal((await api.dispatch('GET','refinements/'+r.id)).outdated,true);assert.equal((await post('execute',{planId:p.id,refinement:reference,requestId:randomUUID()})).state,'failed');await assert.rejects(post('adopt',{executionId:x.id,candidateId:chosen.id,visualChecked:true}),/过期/)
+ await post('reviews',{analysisId:a.id,review:f.review,expectedRevision:1});assert.equal((await api.dispatch('GET','refinements/'+r.id)).outdated,true);assert.equal((await post('execute',{planId:p.id,refinement:reference,requestId:randomUUID()})).state,'failed');await assert.rejects(post('adopt',{executionId:x.id,candidateId:chosen.id}),/过期/)
 })
 test('failed execution request status does not leak between refinement choices',()=>{
  const plan={id:'plan',hash:'hash'},r={id:'ref',hash:'h',candidateId:'refinement-1',candidateHash:'c'},requests=[{id:'original',kind:'execute',state:'failed',planId:'plan',createdAt:'1'},{id:'refined',kind:'execute',state:'failed',planId:'plan',refinement:r,createdAt:'2'}]
@@ -69,7 +69,7 @@ test('refined partials cannot be adopted while omitting a separate human hard co
  const x=(await post('execute',{planId:model.id,requestId:randomUUID(),refinement:reference,options})).record
  assert.equal(x.candidates.length,1);assert.ok(x.candidates[0].assembly.connections.some(edge=>connectionPair(edge)===connectionPair(f.review.constraints[0])))
  assert.ok(x.candidates.every(c=>c.assembly.connections.some(edge=>connectionPair(edge)===connectionPair(f.review.constraints[0]))))
- const origin=await post('adopt',{executionId:x.id,candidateId:x.candidates[0].id,visualChecked:true});assert.deepEqual(origin.refinement,reference)
+ const origin=await post('adopt',{executionId:x.id,candidateId:x.candidates[0].id});assert.deepEqual(origin.refinement,reference)
  await assert.rejects(post('refine-constraints',{planId:p.id,planHash:p.hash}),/过期/)
  assert.ok(review.id!==updated.record.id)
 })

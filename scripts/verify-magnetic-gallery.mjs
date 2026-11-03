@@ -12,7 +12,7 @@ import {serializeAssembly3D} from '../src/magnetic-tiles/three-d/assembly.ts'
 import {moduleStep} from '../src/magnetic-tiles/three-d/module-transform.ts'
 
 const root=new URL('../',import.meta.url).pathname,dir=await mkdtemp(path.join(tmpdir(),'magnetic-gallery-browser-'))
-const out='/tmp/magnetic-gallery-browser',api=createMagneticIntake(dir,{enableHumanReview:true}),f=await selectedProject(api),calls=[],errors=[]
+const out='/tmp/magnetic-gallery-browser',api=createMagneticIntake(dir),f=await selectedProject(api),calls=[],errors=[]
 const ref=r=>({id:r.assembly.id,version:r.version,hash:r.hash})
 const save=(snapshot,expectedHash=null)=>api.dispatch('POST','assembly3d/save',{snapshot,expectedHash})
 let server,browser,page
@@ -21,7 +21,7 @@ try{
  async function saved(name){
   const p=f.plans[name][1],x=f.executions[name][1]
   await selectFixture(api,f.source.id,'plan',p);await selectFixture(api,f.source.id,'execution',x)
-  const origin=await api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1',visualChecked:true})
+  const origin=await api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1'})
   return save({assembly:structuredClone(origin.assembly),photoOrigin:{origin,assemblyRaw:serializeAssembly3D(origin.assembly)},nonRepairable:[]})
  }
  const front=await saved('Front'),back=await saved('Back')
@@ -34,7 +34,7 @@ try{
    const route=req.url.slice(1).split('?')[0];calls.push([req.method,route])
    try{
     res.setHeader('Content-Type','application/json')
-    if(req.method!=='GET'&&route!=='gallery/publish'&&!['assembly3d/save','assembly3d-review/session','assembly3d-review/status','assembly3d-review/sync','assembly3d-review/restore-saved'].includes(route))throw Error('No model calls or unrelated writes in Gallery test: '+route)
+    if(req.method!=='GET'&&route!=='gallery/publish'&&!['assembly3d/save',].includes(route))throw Error('No model calls or unrelated writes in Gallery test: '+route)
     let raw='';for await(const chunk of req)raw+=chunk
     res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
    }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}

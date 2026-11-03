@@ -46,7 +46,7 @@ try{
  await field('几何重建候选').waitFor();assert.equal(await mode(),'2d');assert.equal(await field('几何重建候选').inputValue(),twoD.candidates[0].id)
  for(const name of ['图片重建维度','作品查看模式','教程维度'])assert.equal(await page.getByRole('group',{name,exact:true}).count(),0)
  for(const name of ['2D 图片','Visible 3D','2D 查看','3D 查看','2D 教程','3D 教程'])assert.equal(await page.getByRole('button',{name,exact:true}).count(),0)
- await field('已对照原图').check();await button('在作品编辑器中打开').click();await modeStage('2d','assembly');await button('保存作品快照').click()
+ await button('在作品编辑器中打开').click();await modeStage('2d','assembly');await button('保存作品快照').click()
  await modeStage('2d','build');await button('生成搭建步骤').click();await button('保存教程').click();await button('完成搭建').click();await page.locator('.build-step-heading').filter({hasText:'已完成'}).waitFor()
  const saved2=await data(),twoDPlayback=await page.getByTestId('build-playback-source').textContent()
  await studioMode(page,'3d');assert.equal(await mode(),'3d');await page.getByTestId('tutorial-source').waitFor()
@@ -54,7 +54,7 @@ try{
  await modeStage('3d','source');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s3.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s3.id)
  await field('3D Analysis 历史').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption('candidate-2');await camera()
  await page.locator('[data-linked-observation]').filter({visible:true}).first().click();await button('以所选面为上方观察').click();await button('保存当前视角').click();const savedCamera=await camera()
- await field('已对照照片审核候选').check();await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();assert.equal(await mode(),'3d');assert.equal(await active(),'assembly')
+ await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();assert.equal(await mode(),'3d');assert.equal(await active(),'assembly')
  const adopted=await data();await modeStage('3d','build');await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:'已生成 · 3 步'}).waitFor({timeout:20000});await button('保存教程').click();await field('3D 教程查看步骤').selectOption('1')
  const tutorial=await exportTutorial(),baseline=await data(),postCount=calls.filter(c=>c.method==='POST').length,dialogCount=dialogs,workerCount=workers
  for(const s of ['source','review','reconstruction','assembly','build']){

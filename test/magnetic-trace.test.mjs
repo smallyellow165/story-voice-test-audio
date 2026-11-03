@@ -58,7 +58,7 @@ test('immutable persisted execution, small history, redacted raw traces, legacy 
   const history=await next.dispatch('GET','history'),summary=history.reconstructions.find(v=>v.id===r.id);assert.equal(summary.trace,undefined);assert.equal(summary.diagnosticCandidates,undefined);assert.equal(summary.diagnosticCount,10);assert.equal(summary.traceAvailable,true)
   const raw=await next.dispatch('GET','trace/reviews/'+review.id);assert.ok(raw.text.includes('REDACTED'));assert.ok(raw.text.includes('IMAGE BASE64 OMITTED'));assert.ok(!raw.text.includes('private-unit-test-token'));assert.ok(!raw.text.includes('UNIT_IMAGE_BYTES'));assert.equal(JSON.parse(raw.text).savedFieldAvailability.response,false)
   const exec=JSON.parse((await next.dispatch('GET','trace/reconstructions/'+r.id)).text);assert.equal(exec.references.reconstruction.hash,r.hash);assert.deepEqual(exec.execution.diagnosticCandidates,r.diagnosticCandidates)
-  await assert.rejects(next.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:r.diagnosticCandidates[0].id,visualChecked:true,assembly:{}}),/选择候选/)
+  await assert.rejects(next.dispatch('POST','origins',{reconstructionId:r.id,reconstructionHash:r.hash,candidateId:r.diagnosticCandidates[0].id,assembly:{}}),/选择候选/)
   const {hash:ignoredHash,...badTrace}=structuredClone(r);badTrace.id=crypto.randomUUID();badTrace.trace.references.reconstructionId=badTrace.id;badTrace.trace.references.reviewHash='wrong'
   const invalid=await seed('reconstructions',badTrace);await assert.rejects(next.dispatch('GET','trace/reconstructions/'+invalid.id),/Trace 输入或来源/)
   const {id,hash,trace,diagnosticCandidates,...payload}=r,legacy=await seed('reconstructions',{...payload,id:crypto.randomUUID()})

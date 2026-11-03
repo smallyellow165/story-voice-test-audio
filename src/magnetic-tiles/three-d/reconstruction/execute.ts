@@ -28,7 +28,6 @@ export type VisibleCandidate3D = {
         status: 'unverified';
         score: null;
     };
-    humanReview: 'pending';
     unverifiedConstraints: string[];
     rank: number;
     frame: 'component-local-unregistered';
@@ -146,7 +145,7 @@ function executeBase(planValue: SpatialHypothesis3D, inputValue: VisibleInput3D,
                 dedup.add(key);
                 const unresolved = input.review.pieces.filter(p => !p.excluded && !set.has(p.id)).map(p => p.id);
                 const candidate:VisibleCandidate3D={ id: 'pending', assembly, geometry, observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input), coverage: { reconstructed: group, unresolved, excluded, totalConfirmed: confirmed.length },
-                    photoMatch: { status: 'unverified', score: null }, humanReview: 'pending', unverifiedConstraints: [...notes, ...plan.unknowns, ...plan.relations.map(r => `${r.from}/${r.to}: ${r.kind} 图片关系未作重投影验证`),
+                    photoMatch: { status: 'unverified', score: null }, unverifiedConstraints: [...notes, ...plan.unknowns, ...plan.relations.map(r => `${r.from}/${r.to}: ${r.kind} 图片关系未作重投影验证`),
                         '绝对位置、相机、世界朝向及比例标定未验证；局部坐标系只用于求解', ...input.profiles.filter(s => s.profile.sizeEvidence?.status === 'estimated').map(s => `Profile ${s.profile.id}@${s.profile.version} 的尺寸来源为 estimated，几何合法不证明实物尺寸`), ...(unresolved.length ? ['PARTIAL: 未解决实例未生成；不可把局部候选当作完整作品'] : [])], rank: 0, frame: 'component-local-unregistered', interpretation: label };
                 candidates.push(candidate);observer?.accepted(candidate,context);
             }
@@ -221,7 +220,7 @@ export function executeVisible3D(planValue:SpatialHypothesis3D,inputValue:Visibl
     if(seen.has(key)){local.deduplicated++;return}seen.add(key);
     if(base.search.geometryChecks>=(options.maxGeometryChecks??256)){local.complete=false;localStopped=true;return}base.search.geometryChecks++;local.geometryChecks++;
     const geometry=validateAssembly3D(assembly);if(!geometry.valid)return;
-    const candidate:VisibleCandidate3D={id:'pending',assembly,geometry,observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input),coverage:{reconstructed:[...ids],unresolved:input.review.pieces.filter(p=>!p.excluded&&!set.has(p.id)).map(p=>p.id),excluded,totalConfirmed:confirmed.length},photoMatch:{status:'unverified',score:null},humanReview:'pending',unverifiedConstraints:[...parent.context.notes,...plan.unknowns,...plan.relations.map(r=>`${r.from}/${r.to}: ${r.kind} 图片关系未作重投影验证`),...input.profiles.filter(s=>s.profile.sizeEvidence?.status==='estimated').map(s=>`Profile ${s.profile.id}@${s.profile.version} 的尺寸来源为 estimated，几何合法不证明实物尺寸`),'PARTIAL: 从已求解组件保留原始 Pose 的局部子图；原完整结构的约束未全部满足。','照片匹配、世界朝向与物理稳定性未验证。'],rank:0,frame:'component-local-unregistered',interpretation:parent.context.label+' · local subgraph'};
+    const candidate:VisibleCandidate3D={id:'pending',assembly,geometry,observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input),coverage:{reconstructed:[...ids],unresolved:input.review.pieces.filter(p=>!p.excluded&&!set.has(p.id)).map(p=>p.id),excluded,totalConfirmed:confirmed.length},photoMatch:{status:'unverified',score:null},unverifiedConstraints:[...parent.context.notes,...plan.unknowns,...plan.relations.map(r=>`${r.from}/${r.to}: ${r.kind} 图片关系未作重投影验证`),...input.profiles.filter(s=>s.profile.sizeEvidence?.status==='estimated').map(s=>`Profile ${s.profile.id}@${s.profile.version} 的尺寸来源为 estimated，几何合法不证明实物尺寸`),'PARTIAL: 从已求解组件保留原始 Pose 的局部子图；原完整结构的约束未全部满足。','照片匹配、世界朝向与物理稳定性未验证。'],rank:0,frame:'component-local-unregistered',interpretation:parent.context.label+' · local subgraph'};
     valid.set(key,enrich(candidate,parent.context,'local-subgraph'));
   }
   // Compare the largest subgraphs across all retained parents before smaller
@@ -238,7 +237,7 @@ export function executeVisible3D(planValue:SpatialHypothesis3D,inputValue:Visibl
   const candidates=completeSearch?[...valid.values()].sort((a,b)=>b.coverage.reconstructed.length-a.coverage.reconstructed.length||Number(a.spatialConsistency?.status==='contradicted')-Number(b.spatialConsistency?.status==='contradicted')||a.unverifiedConstraints.length-b.unverifiedConstraints.length||assemblyKey(a.assembly).localeCompare(assemblyKey(b.assembly))).slice(0,options.topK??5):[];
   candidates.forEach((c,i)=>{c.id=`candidate-${i+1}`;c.rank=i+1;c.assembly.id=`visible-${i+1}`});
   const diagnosticCandidates=parentOrder.slice(0,maxDiagnosticCandidates).map(({assembly,geometry,context},i)=>{
-    const ids=assembly.pieces.map(p=>p.id),candidate:VisibleCandidate3D={id:`diagnostic-${i+1}`,kind:'diagnostic',assembly:structuredClone(assembly),geometry,validation:assemblyValidationLayers(geometry),collisions:inspectAssemblyCollisions(assembly,geometry),observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input),coverage:{reconstructed:ids,unresolved:input.review.pieces.filter(p=>!p.excluded&&!ids.includes(p.id)).map(p=>p.id),excluded,totalConfirmed:confirmed.length},photoMatch:{status:'unverified',score:null},humanReview:'pending',unverifiedConstraints:[...context.notes,...plan.unknowns,'DIAGNOSTIC_ONLY: 严格 Validator 未通过，禁止普通采用。'],rank:i+1,frame:'component-local-unregistered',interpretation:context.label};
+    const ids=assembly.pieces.map(p=>p.id),candidate:VisibleCandidate3D={id:`diagnostic-${i+1}`,kind:'diagnostic',assembly:structuredClone(assembly),geometry,validation:assemblyValidationLayers(geometry),collisions:inspectAssemblyCollisions(assembly,geometry),observationMap:candidateObservationMap(assembly,input),spatialConsistency:inspectSpatialConsistency(assembly,input),coverage:{reconstructed:ids,unresolved:input.review.pieces.filter(p=>!p.excluded&&!ids.includes(p.id)).map(p=>p.id),excluded,totalConfirmed:confirmed.length},photoMatch:{status:'unverified',score:null},unverifiedConstraints:[...context.notes,...plan.unknowns,'DIAGNOSTIC_ONLY: 严格 Validator 未通过，禁止普通采用。'],rank:i+1,frame:'component-local-unregistered',interpretation:context.label};
     const out=enrich(candidate,context,'component');out.kind='diagnostic';out.collisions=candidate.collisions;out.assembly.id=`diagnostic-${i+1}`;return out;
   });
   return {version:3,status:!completeSearch?'budget_exhausted':candidates.length?'candidates_found':'no_valid_candidate',completeSearch,search:{...base.search,localSearch:local},candidates,diagnosticCandidates,diagnostics};

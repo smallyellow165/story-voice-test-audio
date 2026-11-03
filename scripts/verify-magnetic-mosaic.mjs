@@ -68,7 +68,7 @@ try{
  assert.equal(await page.getByLabel('几何重建候选',{exact:true}).inputValue(),c.id)
  await writeFile(out+'/result.json' ,JSON.stringify(result,null,2))
  if(process.env.MAGNETIC_VISUAL_ACCEPTED==='1'){
-  await page.getByLabel('已对照原图',{exact:true}).check();await button('在作品编辑器中打开').click();await ready()
+  await button('在作品编辑器中打开').click();await ready()
   assert.equal(await page.locator('polygon[data-tile-id]').count(),17)
   assert.equal(await page.getByLabel('作品模式',{exact:true}).inputValue(),'flat-mosaic')
   await button('保存作品快照').click();await page.screenshot({path:out+'/studio-assembly.png'})

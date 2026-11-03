@@ -21,7 +21,7 @@ try{
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-spatial-inspection',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&!route.startsWith('assembly3d-review/')&&route!=='visible3d/build-check')throw Error('Models / Planning / Execution / source writes forbidden')
+   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&route!=='visible3d/build-check')throw Error('Models / Planning / Execution / source writes forbidden')
    let raw='';for await(const c of req)raw+=c
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
@@ -101,7 +101,7 @@ try{
  const saved=await api.dispatch('GET','assembly3d/records/'+final.id);assert.deepEqual(saved.parent,seed.parent);assert.deepEqual(saved.snapshot.assembly,final)
  await page.reload();await stage(page,'assembly','workspace');await field('当前 Group').waitFor();await until(()=>button('保存 3D Draft').isEnabled());assert.deepEqual(await exported(),final);await field('当前 Group').selectOption('module-1');await assertBounds(final,'module-1')
  await open(page.locator('.bounds-align-tools'));await field('Bounds Align Reference Group').selectOption('module-0');await field('Bounds Align Axis').selectOption('z');await field('Bounds Align Mode').selectOption('max');assert.equal(Number(await field('Bounds Align Calculated Delta').getAttribute('data-delta')),0);assert.equal(await button('预览对齐').isDisabled(),true);assert.deepEqual(await exported(),final)
- await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'严格复验失败'}).waitFor();assert.equal(await page.getByTestId('human-collision-approved').count(),0)
+ await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'几何诊断'}).waitFor();assert.equal(await page.getByTestId('human-collision-approved').count(),0)
  for(const width of [1840,1100,680]){await page.setViewportSize({width,height:1100});await stage(page,'assembly','inspector');await page.getByRole('region',{name:'Assembly 编辑工具',exact:true}).scrollIntoViewIfNeeded();assert.equal(await table().evaluate(e=>e.scrollWidth>e.clientWidth+1),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);await page.screenshot({path:`${out}/inspector-${width}.png`});await stage(page,'assembly','workspace');await frames();const cap=await page.getByRole('img',{name:'世界 XYZ 方向：+Y 为竖直向上',exact:true}).filter({visible:true}).boundingBox(),cv=await canvas().boundingBox();assert.ok(cap.x>=cv.x&&cap.x+cap.width<=cv.x+cv.width&&cap.y>=cv.y&&cap.y+cap.height<=cv.y+cv.height);await page.screenshot({path:`${out}/viewer-${width}.png`})}
  for(const original of [f.front,f.rear])assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+original.assembly.id)).snapshot,original.snapshot)
  assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head);for(const [file,raw]of f.copied)assert.equal(await readFile(path.join(f.official,file),'utf8'),raw);assert.deepEqual(errors,[])

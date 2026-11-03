@@ -18,8 +18,8 @@ const post=(api,route,body)=>api.dispatch('POST','visible3d/'+route,body)
 async function prepared(t){const f=await setup(t),analysis=await post(f.api,'annotate',{sourceId:f.source.id,evidence:f.evidence}),r=await post(f.api,'reviews',{analysisId:analysis.id,review:f.review,thickness:.06,expectedRevision:0}),p=await post(f.api,'manual-plan',{reviewId:r.record.id,plan:f.plan}),x=await post(f.api,'execute',{planId:p.id,requestId:randomUUID()});assert.equal(x.state,'complete');assert.equal(x.record.candidates.length,1);return {...f,analysis,r,p,x:x.record}}
 test('real intake source + immutable Review/Plan/Execution + origin adoption survives factory restart',async t=>{
  const f=await prepared(t),before=await f.api.dispatch('GET','history')
- const o=await post(f.api,'adopt',{executionId:f.x.id,candidateId:f.x.candidates[0].id,visualChecked:true})
- assert.deepEqual(o.assembly.pieces,f.x.candidates[0].assembly.pieces);assert.deepEqual(o.assembly.profiles,f.r.record.input.profiles);assert.equal(o.observationMap.length,2);assert.equal(o.photoMatch.score,null);assert.equal(o.humanReview.status,'accepted')
+ const o=await post(f.api,'adopt',{executionId:f.x.id,candidateId:f.x.candidates[0].id})
+ assert.deepEqual(o.assembly.pieces,f.x.candidates[0].assembly.pieces);assert.deepEqual(o.assembly.profiles,f.r.record.input.profiles);assert.equal(o.observationMap.length,2);assert.equal(o.photoMatch.score,null);assert.equal('humanReview' in o,false)
  const restored=createMagneticIntake(f.directory);assert.deepEqual(await restored.dispatch('GET','visible3d/origins/'+o.id),o)
  const l=await restored.dispatch('GET','visible3d/executions/'+f.x.id);assert.equal(l.outdated,false);assert.equal(l.record.planHash,f.p.hash)
  const after=await f.api.dispatch('GET','history');assert.deepEqual(after,before,'2D analyses/reviews/reconstructions/selected/origins untouched')
@@ -28,22 +28,22 @@ test('review head CAS and stale candidate rejection work even when old IDs are s
  const f=await prepared(t);await assert.rejects(post(f.api,'reviews',{analysisId:f.analysis.id,review:f.review,expectedRevision:0}),/其他页面/)
  await post(f.api,'reviews',{analysisId:f.analysis.id,review:f.review,expectedRevision:1})
  assert.equal((await f.api.dispatch('GET','visible3d/executions/'+f.x.id)).outdated,true)
- await assert.rejects(post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1',visualChecked:true}),/过期/)
+ await assert.rejects(post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1'}),/过期/)
  const execute=await post(f.api,'execute',{planId:f.p.id,requestId:randomUUID()});assert.equal(execute.state,'failed');assert.match(execute.error,/Review/)
 })
-test('exact profile set, manual confirmation and integrity checks prevent unsupported adoption',async t=>{
- const f=await prepared(t);await assert.rejects(post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1'}),/对照/)
+test('exact profile set and integrity checks prevent unsupported adoption',async t=>{
+ const f=await prepared(t);assert.ok((await post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1'})).assembly)
  const plan=structuredClone(f.plan);plan.parts[0].profileVersion=99;await assert.rejects(post(f.api,'manual-plan',{reviewId:f.r.record.id,plan}),/不得改变/)
  plan.parts.pop();await assert.rejects(post(f.api,'manual-plan',{reviewId:f.r.record.id,plan}),/不得改变|丢失/)
  const filename=path.join(f.directory,'visible3d','executions',f.x.id+'.json');const changed=JSON.parse(await readFile(filename,'utf8'));changed.candidates[0].assembly.pieces[0].pose.position[0]+=3;await writeFile(filename,JSON.stringify(changed))
- await assert.rejects(post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1',visualChecked:true}),/Hash/)
+ await assert.rejects(post(f.api,'adopt',{executionId:f.x.id,candidateId:'candidate-1'}),/Hash/)
 })
 test('request deduplication, budget failure persistence, and input fingerprint collision protect repeated execution',async t=>{
  const f=await prepared(t),body={planId:f.p.id,requestId:randomUUID(),options:{maxAssignments:0}}
  const x=await post(f.api,'execute',body);assert.equal(x.record.status,'budget_exhausted');assert.deepEqual(x.record.candidates,[])
  const reboot=createMagneticIntake(f.directory);assert.deepEqual(await post(reboot,'execute',body),x)
  await assert.rejects(post(reboot,'execute',{...body,options:{maxAssignments:4}}),/不同输入/)
- await assert.rejects(post(reboot,'adopt',{executionId:x.record.id,candidateId:'candidate-1',visualChecked:true}),/复核失败/)
+ await assert.rejects(post(reboot,'adopt',{executionId:x.record.id,candidateId:'candidate-1'}),/复核失败/)
 })
 test('same source shared, separate 2D prompt and both providers use explicit Visible3D contracts',async()=>{
  const f=await visibleFixture(),prepared={image:png,input:{geometryContract:canonicalGeometryManifest(f.input.profiles),geometryInput:f.input,catalog:f.assembly.profiles}}

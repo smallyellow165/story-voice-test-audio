@@ -22,7 +22,7 @@ try{
  server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-spatial-inspection',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&!route.startsWith('assembly3d-review/')&&route!=='visible3d/build-check')throw Error('Models / Planning / Execution / source writes forbidden')
+   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&route!=='visible3d/build-check')throw Error('Models / Planning / Execution / source writes forbidden')
    let raw='';for await(const c of req)raw+=c
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})

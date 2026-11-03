@@ -7,7 +7,7 @@
 - 记录 hash：`8bf04540eac8de9c3c80a1eb275174f08f34e151a9e7730edb7750e4cb2d4ea6`。
 - Front 9 Tiles / 12 Connections；Rear 12 / 10；Combined 21 / 22。
 - 输入参考面 `rear-top-left` 的世界法向为 +Y；两组实体 Y Min 均为 −0.53。
-- 输入严格 Validator 有 10 个 intersection：Front 内 4 个、Rear 内 6 个；其中 5 个有现有人工接受证据，没有连接约束错误。
+- 输入严格 Validator 有 10 个 intersection：Front 内 4 个、Rear 内 6 个；没有连接约束错误；历史人工接受记录现已不参与操作。
 
 正式快照全程只读。测试把原始存档、固定 Parents 及审核记录复制到临时目录，使用同一服务 API 和同一求解器。此结论不覆盖尚未保存且与该快照不同的浏览器 Draft。
 
@@ -63,7 +63,7 @@ Canonical Profile 在局部 XY 平面，以面积质心居中；正面法向为�
 - 只有用户明确在 Orient 执行朝上 / 朝前，才记录该 Group 的本次会话参考 Tile 与世界目标。Snap 另选 Moving Tile 不覆盖它。已朝向目标时重复点击只记录目标，不改变 Pose、Revision 或 Undo。
 - 显示参考面实际世界法向和目标偏角。若方向冲突，从 A 的真实 Port 轴解析计算保持方向所需的 Dihedral；只显示数值，由用户手动修改并重新验证，不生成另一套姿态。
 - 若 normal 沿 Port 轴的分量与目标不同，绕轴旋转无法达到该目标，明确提示仅调 Dihedral 也无解。
-- 碰撞完全来自原有 Validator。按实际 Tile pair 区分已有、消失、新增跨 Group、新增组内及既有跨组诊断变化；输入人工接受数不授予预览新审核。
+- 碰撞完全来自原有 Validator。按实际 Tile pair 区分已有、消失、新增跨 Group、新增组内及既有跨组诊断变化；不再读取或显示人工接受数。
 - 输入审核尚不可用时显示“未读取”，不把未知状态当作 0 个接受项；若 Validator 存在非碰撞错误，明确显示无可确认解及实际错误类型。
 - 加载后没有可靠方向目标时明确显示未指定，不依据颜色、名称、当前法向或移动连接片猜测。会话目标不写入存档，也不作为几何历史。
 
@@ -73,7 +73,7 @@ Canonical Profile 在局部 XY 平面，以面积质心居中；正面法向为�
 
 ```sh
 npm run test:magnetic-3d
-node --experimental-strip-types --test test/magnetic-module-snap-diagnostics.test.mjs test/magnetic-module-transform.test.mjs test/magnetic-spatial-inspection.test.mjs test/magnetic-human-collision.test.mjs test/magnetic-symmetry-fill.test.mjs
+node --experimental-strip-types --test test/magnetic-module-snap-diagnostics.test.mjs test/magnetic-module-transform.test.mjs test/magnetic-spatial-inspection.test.mjs test/magnetic-symmetry-fill.test.mjs
 npm run typecheck:magnetic-3d
 npm run build
 node --experimental-strip-types scripts/verify-magnetic-snap-diagnostics.mjs
@@ -83,6 +83,6 @@ node --experimental-strip-types scripts/verify-magnetic-spatial-inspection.mjs
 node --experimental-strip-types scripts/verify-magnetic-3d-inspector.mjs
 ```
 
-Node 测试包括原快照两种 Flip、精确残差、刚体关系、固定组不动、同约束姿态唯一性、解析角度、无效 Port、确定性、人工接受隔离、Undo/Redo、CAS、恢复、原始作品与 Lineage 不变及严格 Build 拦截。Vitest 另有正常 Geometry Valid 与仅改 Dihedral 也无法满足方向的通用样例。WebGL 脚本使用独立临时服务与真实快照，覆盖预览 / 取消 / 确认 / 刷新、明确方向参考、0° 与手动 −30° 结果及窄屏布局。
+Node 测试包括原快照两种 Flip、精确残差、刚体关系、固定组不动、同约束姿态唯一性、解析角度、无效 Port、确定性、Undo/Redo、CAS、恢复、原始作品与 Lineage 不变及 Build 保留真实 Invalid 诊断。Vitest 另有正常 Geometry Valid 与仅改 Dihedral 也无法满足方向的通用样例。WebGL 脚本使用独立临时服务与真实快照，覆盖预览 / 取消 / 确认 / 刷新、明确方向参考、0° 与手动 −30° 结果及窄屏布局。
 
 本次结果：328 项 Vitest 几何测试、15 项相关 Node 测试、类型检查和生产构建全部通过；5 组隔离 Chrome / SwiftShader WebGL 验收通过（本案例诊断、原 Port Picker、Module Transform、Spatial / Bounds Align、单片 Inspector）。全部正式来源文件比对保持不变，付费模型调用为 0。诊断验收结果与截图位于 `/tmp/magnetic-snap-diagnostics/`。生产构建保留既有大 chunk 提示。

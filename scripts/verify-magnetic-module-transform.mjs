@@ -16,7 +16,7 @@ try{
  await mkdir(out,{recursive:true});server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-multi-assembly',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&!route.startsWith('assembly3d-review/')&&route!=='visible3d/build-check')throw Error('Model / Planning / Execution / Selected writes forbidden')
+   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&route!=='visible3d/build-check')throw Error('Model / Planning / Execution / Selected writes forbidden')
    let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
  }}]});await server.listen()
@@ -29,7 +29,7 @@ try{
  async function select(id){await edit(id).click();await until(async()=>await row(id).getAttribute('aria-current')==='true');await until(()=>button('保存 3D Draft').isEnabled())}
  async function save(){const response=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/assembly3d/save')&&r.request().method()==='POST');await button('保存 3D Draft').click();assert.equal((await response).status(),200);await until(()=>button('保存 3D Draft').isEnabled())}
  const url=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=assembly`
- await page.goto(url);await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await stage(page,'assembly','workspace');await edit(f.rear.assembly.id).waitFor();await page.getByTestId('human-collision-approved').waitFor()
+ await page.goto(url);await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await stage(page,'assembly','workspace');await edit(f.rear.assembly.id).waitFor();await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor()
  const head=await api.dispatch('GET','visible3d/head/'+f.source.id)
  await visible(f.rear.assembly.id).check();await until(async()=>await page.getByTestId('multi-assembly-display').count()&&(await displayed()).length===2)
  assert.equal((await api.dispatch('GET','assembly3d/projects/'+f.source.id)).assemblies.length,2,'visibility does not create Combined')
@@ -72,8 +72,8 @@ try{
  await button('3D Undo').click();assert.deepEqual(await exported(),before);await button('3D Redo').click();assert.deepEqual(await exported(),snapped);console.log('PASS Snap history; saving');await save();console.log('PASS Combined save')
  const saved=await api.dispatch('GET','assembly3d/records/'+combinedId);assert.equal(saved.type,'combined');assert.equal(saved.parent.assemblies.length,2);assert.ok(saved.parent.assemblies.every(p=>p.hash&&p.snapshotHash&&Number.isInteger(p.revision)));assert.ok(!saved.snapshot.photoOrigin.origin.executionId)
  await page.reload();await stage(page,'assembly','workspace');await until(async()=>await row(combinedId).getAttribute('aria-current')==='true');await field('当前 Group').waitFor();await until(()=>button('保存 3D Draft').isEnabled());assert.deepEqual(await exported(),snapped);console.log('PASS Combined refresh')
- await select(f.front.assembly.id);assert.deepEqual(await exported(),f.front.snapshot.assembly);await page.getByTestId('human-collision-approved').waitFor();await select(f.rear.assembly.id);assert.deepEqual(await exported(),f.rear.snapshot.assembly);await select(combinedId);assert.deepEqual(await exported(),snapped);console.log('PASS Source / Combined independent restoration')
- await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'严格复验失败'}).waitFor();assert.match(await page.locator('.magnetic-3d-summary').innerText(),/Geometry Invalid/)
+ await select(f.front.assembly.id);assert.deepEqual(await exported(),f.front.snapshot.assembly);await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor();await select(f.rear.assembly.id);assert.deepEqual(await exported(),f.rear.snapshot.assembly);await select(combinedId);assert.deepEqual(await exported(),snapped);console.log('PASS Source / Combined independent restoration')
+ await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'几何诊断'}).waitFor();assert.match(await page.locator('.magnetic-3d-summary').innerText(),/Geometry Invalid/)
  for(const original of [f.front,f.rear])assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+original.assembly.id)).snapshot,original.snapshot)
  for(const width of [1840,1100,680]){await page.setViewportSize({width,height:1100});await stage(page,'assembly','inspector');await page.getByRole('region',{name:'Module Transform / Snap',exact:true}).scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);await page.screenshot({path:`${out}/${width}.png`})}
  assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head);assert.deepEqual(errors,[]);for(const [file,raw]of f.copied)assert.equal(await readFile(path.join(f.official,file),'utf8'),raw)

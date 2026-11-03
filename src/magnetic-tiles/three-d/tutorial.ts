@@ -7,19 +7,17 @@ import { editorProject } from './editor-project.ts'
 import type { EditorProject } from './editor-project.ts'
 import type { BuildStepV2, StepCamera } from './vendor/components/tutorial/types.ts'
 import { uid } from './vendor/editor/id.ts'
-import {collisionErrorsAccepted,grantMatches} from './human-collision-policy.ts'
-import type {HumanCollisionGrant,HumanCollisionReference} from './human-collision-policy.ts'
 import { canonical } from '../build-plan.ts'
 
 export type Tutorial3D = {
   kind: 'magnetic-tutorial-3d'; schemaVersion: 1; id: string; revision: number; title: string
-  source: { assemblyId: string; assemblyRevision: number; humanCollisionApproval?:HumanCollisionReference; reconstructionOrigin?:{id:string;hash:string} }
+  source: { assemblyId: string; assemblyRevision: number; reconstructionOrigin?:{id:string;hash:string} }
   assembly: Assembly3D; steps: BuildStepV2[]
 }
 export type TutorialProject = EditorProject & { steps: BuildStepV2[] }
-export type TutorialIssue = { code: string; severity: 'error' | 'warning'; message: string; stepId?: number;humanAccepted?:boolean }
-export type TutorialDiagnostics = { issues: TutorialIssue[]; verified: boolean; finalValid: boolean;humanApproved?:boolean; steps: {
-  stepId: number; geometryValid: boolean; connected: boolean; components: number; grounded: boolean;humanApproved?:boolean
+export type TutorialIssue = { code: string; severity: 'error' | 'warning'; message: string; stepId?: number }
+export type TutorialDiagnostics = { issues: TutorialIssue[]; verified: boolean; finalValid: boolean; steps: {
+  stepId: number; geometryValid: boolean; connected: boolean; components: number; grounded: boolean
 }[] }
 const fail = (s: string): never => { throw Error(s) }
 function obj(x: unknown, keys: string[]) {
@@ -40,7 +38,6 @@ export function assertTutorial3D(t: Tutorial3D): void {
   if(t.kind!=='magnetic-tutorial-3d'||t.schemaVersion!==1||!safeId(t.id)||!Number.isSafeInteger(t.revision)||t.revision<0||!text(t.title)) fail('Unsupported Tutorial3D')
   assertAssembly3D(t.assembly); obj(t.source,['assemblyId','assemblyRevision','humanCollisionApproval','reconstructionOrigin'])
   if(t.source.reconstructionOrigin){const r=t.source.reconstructionOrigin;obj(r,['id','hash']);if(!safeId(r.id)||typeof r.hash!=='string'||!/^[a-f0-9]{64}$/.test(r.hash))fail('Invalid Reconstruction origin reference')}
-  if(t.source.humanCollisionApproval){const r=t.source.humanCollisionApproval;obj(r,['id','assemblyHash','diagnosticHash']);if(!safeId(r.id)||![r.assemblyHash,r.diagnosticHash].every(v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)))fail('Invalid human collision approval reference')}
   if(t.source.assemblyId!==t.assembly.id || t.source.assemblyRevision!==t.assembly.revision) fail('Tutorial source version does not match embedded Assembly3D')
   if(!Array.isArray(t.steps)||t.steps.length>1000) fail('Invalid tutorial steps')
   const ids=new Set<number>(),pieces=new Set(t.assembly.pieces.map(p=>p.id))
@@ -83,19 +80,17 @@ export function stepAssembly(t: Tutorial3D,index: number): Assembly3D {
   const ids=new Set(t.steps.slice(0,index+1).flatMap(s=>s.addedPieceIds))
   return assemblyGeometrySubset(t.assembly,ids)
 }
-export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): TutorialDiagnostics {
+export function validateTutorial3D(t: Tutorial3D): TutorialDiagnostics {
   assertTutorial3D(t)
   const issues: TutorialIssue[]=[],final=validateAssembly3D(t.assembly)
-  const approved=grantMatches(t.assembly,grant)&&t.source.humanCollisionApproval?.id===grant?.id&&t.source.humanCollisionApproval?.assemblyHash===grant?.assemblyHash&&t.source.humanCollisionApproval?.diagnosticHash===grant?.diagnosticHash
-  const accepted=(i:typeof final.issues[number],assembly:Assembly3D=t.assembly,partial=false)=>approved&&collisionErrorsAccepted({...final,issues:[i]},grant,assembly,partial)
-  for(const i of final.issues)issues.push({code:'FINAL_GEOMETRY',severity:'error',message:`最终结构：${i.message}`,...(accepted(i)?{humanAccepted:true}:{})})
+  for(const i of final.issues)issues.push({code:'FINAL_GEOMETRY',severity:i.severity,message:`最终结构：${i.message}`})
   if(!t.assembly.pieces.length)issues.push({code:'EMPTY_ASSEMBLY',severity:'error',message:'来源结构没有零件'})
   const assigned=new Set<string>()
   const steps=t.steps.map((s,index)=>{
     if(!s.addedPieceIds.length)issues.push({stepId:s.id,code:'EMPTY_STEP',severity:'warning',message:'本步没有新增零件'})
     for(const id of s.addedPieceIds){if(assigned.has(id))issues.push({stepId:s.id,code:'DUPLICATE_PIECE',severity:'error',message:`零件 ${id} 重复分配`});assigned.add(id)}
     const a=stepAssembly(t,index),geometry=validateAssembly3D(a),components=componentCount(a)
-    for(const i of geometry.issues)issues.push({stepId:s.id,code:'STEP_GEOMETRY',severity:'error',message:i.message,...(accepted(i,a,true)?{humanAccepted:true}:{})})
+    for(const i of geometry.issues)issues.push({stepId:s.id,code:'STEP_GEOMETRY',severity:i.severity,message:i.message})
     const connected=!!a.pieces.length&&components===1
     if(!connected)issues.push({stepId:s.id,code:'DISCONNECTED',severity:'warning',message:`本步有 ${components} 个组件，未满足 Connected Construction`})
     // Reuse the same Validator's ground check; this is only ground contact, not support simulation.
@@ -103,13 +98,19 @@ export function validateTutorial3D(t: Tutorial3D,grant?:HumanCollisionGrant): Tu
     for(const i of ground.issues.filter(i=>i.code==='ground'))issues.push({stepId:s.id,code:'GROUND',severity:'warning',message:i.message})
     const grounded=createViewerModel(a).some(p=>pieceWorldVertices(p.shape,p.transform.position,p.transform.quaternion).some(v=>Math.abs(v.y)<=.02))
     if(!grounded)issues.push({stepId:s.id,code:'NO_GROUND_CONTACT',severity:'warning',message:'当前步骤没有接触地面；支撑与现实可搭建性尚未验证'})
-    return {stepId:s.id,geometryValid:geometry.valid,connected,components,grounded,...(!geometry.valid&&approved&&collisionErrorsAccepted(geometry,grant,a,true)?{humanApproved:true}:{})}
+    return {stepId:s.id,geometryValid:geometry.valid,connected,components,grounded}
   })
   const missing=t.assembly.pieces.filter(p=>!assigned.has(p.id))
   if(missing.length)issues.push({code:'UNASSIGNED',severity:'error',message:`尚有 ${missing.length} 片未安排到步骤：${missing.map(p=>p.id).join(', ')}`})
   if(!t.steps.length)issues.push({code:'NO_STEPS',severity:'error',message:'尚未创建步骤'})
-  return {issues,finalValid:final.valid&&!!t.assembly.pieces.length,verified:!issues.length,steps,...(!final.valid&&approved&&collisionErrorsAccepted(final,grant,t.assembly)?{humanApproved:true}:{})}
+  return {issues,finalValid:final.valid&&!!t.assembly.pieces.length,verified:!issues.length,steps}
 }
 export function tutorialMatchesAssembly(t: Tutorial3D,a: Assembly3D|null) {return !!a&&canonical(t.assembly)===canonical(a)}
-export function serializeTutorial3D(t: Tutorial3D) {assertTutorial3D(t);return JSON.stringify(t)}
-export function parseTutorial3D(raw: string): Tutorial3D {if(new TextEncoder().encode(raw).byteLength>2_000_000)fail('Tutorial JSON 超过 2 MB');const t=JSON.parse(raw);assertTutorial3D(t);return t}
+// Read old Tutorial files without using their retired approval metadata. New writes omit it.
+function withoutLegacyApproval(t:Tutorial3D):Tutorial3D{
+ const source={...t.source} as Tutorial3D['source'] & {humanCollisionApproval?:unknown}
+ delete source.humanCollisionApproval
+ return {...t,source}
+}
+export function serializeTutorial3D(t: Tutorial3D) {assertTutorial3D(t);return JSON.stringify(withoutLegacyApproval(t))}
+export function parseTutorial3D(raw: string): Tutorial3D {if(new TextEncoder().encode(raw).byteLength>2_000_000)fail('Tutorial JSON 超过 2 MB');const t=JSON.parse(raw);assertTutorial3D(t);return withoutLegacyApproval(t)}

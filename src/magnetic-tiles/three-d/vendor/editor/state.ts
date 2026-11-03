@@ -96,7 +96,7 @@ export function redo(h: EditorHistory): EditorHistory {
   };
 }
 
-/** Metadata-only history step: geometry/revision and human acceptance are untouched. */
+/** Metadata-only history step: geometry/revision are untouched. */
 export function setNonRepairableCollisionAction(h:EditorHistory,key:string,checked:boolean):EditorHistory{
  const normalized=nonRepairableKeys(h.current,[key])[0]
  if(!normalized)throw Error('不可修复标记不属于当前作品')

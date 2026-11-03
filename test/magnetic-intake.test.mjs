@@ -59,8 +59,8 @@ test('immutable review/reconstruction lineage and hash integrity (fixture analys
   const invalidReference=await seed('reconstructions',outside)
   await assert.rejects(store.result(invalidReference.id),/Profile/)
   const c=result.candidates[0]
-  const origin=await store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,revision:8}})
-  await assert.rejects(store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,visualChecked:true,assembly:{...c.assembly,schemaVersion:2,mode:'flat-mosaic'}}),/不一致/)
+  const origin=await store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,assembly:{...c.assembly,revision:8}})
+  await assert.rejects(store.dispatch('POST','origins',{reconstructionId:result.id,reconstructionHash:result.hash,candidateId:c.id,assembly:{...c.assembly,schemaVersion:2,mode:'flat-mosaic'}}),/不一致/)
   assert.equal(origin.assembly.revision,8);assert.equal(origin.assemblyHash,await contentHash(origin.assembly))
   await assert.rejects(store.dispatch('POST','reconstruct',{reviewId:r.id,reviewHash:'bad'}))
   const raw=JSON.parse(await readFile(path.join(dir,'reviews',r.id+'.json'),'utf8'));raw.evidence.reason='tampered';await writeFile(path.join(dir,'reviews',r.id+'.json'),JSON.stringify(raw));await assert.rejects(store.result(result.id),/Hash/)

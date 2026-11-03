@@ -13,7 +13,7 @@ try{
  await mkdir(out,{recursive:true});server=await createServer({root,configFile:false,base:'/story-voice-test-audio/',cacheDir:path.join(dir,'cache'),server:{host:'127.0.0.1',port:0},plugins:[{name:'assembly-selector-isolated',configureServer(s){
   s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{const route=req.url.slice(1).split('?')[0];calls.push([req.method,route]);try{
-   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&!route.startsWith('assembly3d-review/')&&!['visible3d/selected','visible3d/adopt','visible3d/build-check'].includes(route))throw Error('Models/Planning/Execution/unrelated writes forbidden')
+   if(req.method!=='GET'&&!route.startsWith('assembly3d/')&&!['visible3d/selected','visible3d/adopt','visible3d/build-check'].includes(route))throw Error('Models/Planning/Execution/unrelated writes forbidden')
    let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})
  }}]});await server.listen()
@@ -26,21 +26,21 @@ try{
  const url=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=assembly`
  await page.goto(url);await page.getByRole('group',{name:'Studio 工作模式',exact:true}).waitFor({state:'attached'});await studioMode(page,'3d');await stage(page,'assembly','workspace')
  await button('编辑作品 '+f.rear.id).waitFor();await until(async()=>await editingId()===f.rear.id);assert.deepEqual(await exported(),f.rear)
- await page.getByTestId('human-collision-approved').waitFor();assert.equal(await button('Edit Draft').getAttribute('aria-pressed'),'true');assert.equal(await button('3D Undo').isDisabled(),true)
+ await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor();assert.equal(await button('Edit Draft').getAttribute('aria-pressed'),'true');assert.equal(await button('3D Undo').isDisabled(),true)
  const rearSaved=await api.dispatch('GET','assembly3d/records/'+f.rear.id);assert.equal(rearSaved.version,1);assert.equal(rearSaved.snapshot.assembly.pieces.length,12);assert.equal(rearSaved.snapshot.assembly.connections.length,10)
  // Current Front reconstruction selection must not overwrite Rear's saved editor document.
  await stage(page,'reconstruction','workspace');await field('重建 Group').selectOption(f.front.group.id);await until(async()=>await field('Geometry Execution History').inputValue()===f.front.execution.id)
  assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+f.rear.id)).snapshot.assembly,f.rear)
- await stage(page,'reconstruction','inspector');const candidate=f.front.execution.candidates.find(c=>c.assembly.pieces.length===9);await field('3D Reconstruction Candidate').selectOption(candidate.id);await field('已对照照片审核候选').check();await button('采用候选到 3D Assembly Editor').click()
+ await stage(page,'reconstruction','inspector');const candidate=f.front.execution.candidates.find(c=>c.assembly.pieces.length===9);await field('3D Reconstruction Candidate').selectOption(candidate.id);await button('采用候选到 3D Assembly Editor').click()
  await until(async()=>await page.locator('.studio').getAttribute('data-active-stage')==='assembly');await until(()=>button('保存 3D Draft').isEnabled());let front=await exported();assert.equal(front.pieces.length,9);assert.notEqual(front.id,f.rear.id)
  const savedResponse=page.waitForResponse(r=>r.url().endsWith('/api/magnetic-intake/assembly3d/save')&&r.request().method()==='POST');await button('保存 3D Draft').click();assert.equal((await savedResponse).status(),200);await until(()=>button('保存 3D Draft').isEnabled());await until(async()=>await editingId()===front.id);const frontSaved=await api.dispatch('GET','assembly3d/records/'+front.id)
  assert.equal((await api.dispatch('GET','assembly3d/projects/'+f.source.id)).assemblies.length,2)
  const head=await api.dispatch('GET','visible3d/head/'+f.source.id)
  await choose(f.rear.id);assert.deepEqual(await exported(),f.rear);assert.equal(await field('Spatial Planning History').inputValue(),f.origin.planId);assert.equal(await field('Geometry Execution History').inputValue(),f.origin.executionId)
- await page.getByTestId('human-collision-approved').waitFor();assert.match(await page.getByTestId('assembly-origin-summary').innerText(),/g-rear-ramp/);assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head)
+ await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor();assert.match(await page.getByTestId('assembly-origin-summary').innerText(),/g-rear-ramp/);assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head)
  // Source reload is explicitly the original 8-tile result, not saved-Draft restore.
  await button('重新加载来源').click();assert.equal((await exported()).pieces.length,8);assert.match(await row(f.rear.id).innerText(),/未保存/);assert.equal((await api.dispatch('GET','assembly3d/records/'+f.rear.id)).version,rearSaved.version)
- await choose(f.rear.id);assert.deepEqual(await exported(),f.rear);await page.getByTestId('human-collision-approved').waitFor()
+ await choose(f.rear.id);assert.deepEqual(await exported(),f.rear);await page.getByRole('region',{name:'Collision Diagnostics',exact:true}).waitFor()
  await choose(front.id);assert.deepEqual(await exported(),front);assert.equal(await field('Spatial Planning History').inputValue(),f.front.plan.id)
  await page.reload();await stage(page,'assembly','workspace');await until(async()=>await editingId()===front.id);assert.deepEqual(await exported(),front)
  await choose(f.rear.id);assert.deepEqual(await exported(),f.rear);await choose(front.id)
@@ -62,6 +62,6 @@ try{
  }
  assert.deepEqual(errors,[]);assert.equal(calls.some(([method,route])=>method==='POST'&&['visible3d/analyze','visible3d/plan','visible3d/execute'].includes(route)),false)
  for(const [file,raw]of f.copied)assert.equal(await readFile(path.join(f.official,file),'utf8'),raw)
- const result={passed:true,rear:'saved real 8-tile geometry + four explicit mirror copies = 12 tiles / original 10 connections; exact poses and original lineage restored',front:'independent 9-tile deterministic storage fixture',checks:['one-time preservation of existing saved working slot','Project-wide selector, independent of current Group/Execution','Front adoption does not overwrite Rear','exact Rear/Front save and restore','explicit original-source reload remains distinct from saved 12-tile restore','read-only actual origin History in Assembly','no Selected mutations on Assembly selection','saved human review restored from server evidence','refresh and independent identities','dirty Cancel/discard; no autosave of edits','stale lineage remains viewable; strict server Build blocked','1760/1100/680 layout'],modelCalls:0,formalWrites:0,errors};await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
+ const result={passed:true,rear:'saved real 8-tile geometry + four explicit mirror copies = 12 tiles / original 10 connections; exact poses and original lineage restored',front:'independent 9-tile deterministic storage fixture',checks:['one-time preservation of existing saved working slot','Project-wide selector, independent of current Group/Execution','Front adoption does not overwrite Rear','exact Rear/Front save and restore','explicit original-source reload remains distinct from saved 12-tile restore','read-only actual origin History in Assembly','no Selected mutations on Assembly selection','saved geometry restored without approval','refresh and independent identities','dirty Cancel/discard; no autosave of edits','stale lineage remains viewable; strict server Build blocked','1760/1100/680 layout'],modelCalls:0,formalWrites:0,errors};await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
 }catch(e){console.error(e);if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',String(e)+'\n'+await page.locator('body').innerText().catch(()=>'<browser unavailable>')+'\n'+JSON.stringify(calls))}throw e}
 finally{await browser?.close();await server?.close();await rm(dir,{recursive:true,force:true})}

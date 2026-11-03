@@ -1,56 +1,79 @@
-// Actual nine-piece orange geometry, isolated API/storage and real Chrome/WebGL.
+// Full direct workflow in isolated HTTP storage + Chrome/WebGL; no model calls.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {createServer} from 'vite'
 import {createMagneticIntake} from '../server/magnetic-intake.mjs'
-import {confirmSymmetryFill,previewSymmetryFill,proposeSymmetryPlane} from '../src/magnetic-tiles/three-d/symmetry-fill.ts'
-import {createInitialHistory} from '../src/magnetic-tiles/three-d/vendor/editor/state.ts'
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
+import {randomUUID} from 'node:crypto'
 import assert from 'node:assert/strict'
-const root=new URL('../',import.meta.url).pathname,dir=await mkdtemp(path.join(tmpdir(),'magnetic-assembly-actions-')),out='/tmp/magnetic-assembly-actions'
-const official=path.join(root,'generated/magnetic-intake/visible3d/origins/69852d9f-009d-42fd-86a4-4dd4d7780d2f.json'),originRaw=await readFile(official,'utf8'),origin=JSON.parse(originRaw),six=origin.assembly,sourceIds=['tile2','tile3','tile4']
-const nine=confirmSymmetryFill(createInitialHistory(six),previewSymmetryFill(six,{sourceIds,plane:proposeSymmetryPlane(six,sourceIds),planeMode:'auto'})).current
-const api=createMagneticIntake(dir,{enableHumanReview:true}),errors=[],consoleErrors=[],calls=[],layout=[]
+import {png} from '../test/magnetic-visible3d-fixtures.mjs'
+import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
+const root=new URL('../',import.meta.url).pathname,dir=await mkdtemp(path.join(tmpdir(),'magnetic-direct-browser-')),out='/tmp/magnetic-direct-browser'
+const api=createMagneticIntake(dir),calls=[],errors=[]
 let server,browser,page
 try{
- await mkdir(out,{recursive:true});await mkdir(path.join(dir,'visible3d/origins'),{recursive:true});await writeFile(path.join(dir,'visible3d/origins',origin.id+'.json'),originRaw)
- server=await createServer({configFile:false,root,cacheDir:path.join(dir,'vite-cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-assembly-actions',configureServer(s){s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{calls.push([req.method,req.url]);try{res.setHeader('Content-Type','application/json');const route=req.url.slice(1).split('?')[0];if(req.method!=='GET'&&!route.startsWith('assembly3d-review/'))throw Object.assign(Error('No models/formal writes'),{statusCode:403});let body='';for await(const c of req)body+=c;res.end(JSON.stringify(await api.dispatch(req.method,route,body?JSON.parse(body):{},{request:req})))}catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}})}}]});await server.listen()
- browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});page=await browser.newPage({viewport:{width:1660,height:1050},acceptDownloads:true});page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text())});page.on('dialog',d=>d.accept())
- await page.addInitScript(({nine,origin})=>{if(!sessionStorage.getItem('actions-seeded')){localStorage.setItem('magnetic-tiles.assembly3d-draft.v1',JSON.stringify(nine));localStorage.setItem('magnetic-tiles.assembly3d-origin.v1',JSON.stringify({origin,assemblyRaw:JSON.stringify(origin.assembly)}));localStorage.setItem('magnetic-studio.mode.v1','3d');sessionStorage.setItem('actions-seeded','yes')}},{nine,origin})
- const button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true}),field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),bar=()=>page.getByRole('region',{name:'3D Assembly 操作栏',exact:true}),workspace=()=>page.locator('.studio-workspace'),inspector=()=>page.locator('.magnetic-3d-inspector'),review=()=>page.getByRole('region',{name:'Collision Review',exact:true}),rows=()=>review().locator('tbody tr')
- async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,50))}throw Error('Timed out waiting for UI state')}
+ await mkdir(out,{recursive:true})
+ const fixture=JSON.parse(await readFile(new URL('../checks/magnetic-3d/fixtures/orange-reviewed-geometry.json',import.meta.url),'utf8'))
+ const post=(r,b)=>api.dispatch('POST','visible3d/'+r,b)
+ const source=await api.dispatch('POST','sources',{name:'OFFLINE direct workflow.png',original:png,view:png})
+ const analysis=await post('annotate',{sourceId:source.id,evidence:fixture.input.evidence}),review=await post('reviews',{analysisId:analysis.id,review:fixture.input.review,expectedRevision:0,thickness:.06})
+ const plan=await post('manual-plan',{reviewId:review.record.id,plan:fixture.plan}),execution=(await post('execute',{planId:plan.id,requestId:randomUUID()})).record
+ const original=structuredClone(execution.diagnosticCandidates[0].assembly)
+ server=await createServer({configFile:false,root,cacheDir:path.join(dir,'vite-cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-direct-api',configureServer(s){
+  s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()})
+  s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
+   const route=req.url.slice(1).split('?')[0];calls.push([req.method,route])
+   try{
+    res.setHeader('Content-Type','application/json')
+    if(req.method!=='GET'&&!['visible3d/selected','visible3d/open-diagnostic-draft','visible3d/build-check','assembly3d/save','gallery/publish'].includes(route))throw Error('Model or unrelated write forbidden: '+route)
+    let raw='';for await(const c of req)raw+=c
+    res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{})))
+   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}
+  })
+ }}]});await server.listen()
+ const base=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/`
+ browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']})
+ page=await browser.newPage({viewport:{width:1660,height:1050},acceptDownloads:true});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept())
+ await page.addInitScript(sourceId=>{
+  if(sessionStorage.getItem('direct-seeded'))return
+  localStorage.setItem('magnetic-studio.mode.v1','3d');localStorage.setItem('magnetic-visible3d-context.v1',JSON.stringify({sourceId}));sessionStorage.setItem('direct-seeded','yes')
+ },source.id)
+ const button=name=>page.getByRole('button',{name,exact:true}).filter({visible:true}),field=name=>page.getByLabel(name,{exact:true}).filter({visible:true})
+ async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,50))}throw Error('UI state did not settle')}
  async function open(d){if(!await d.evaluate(e=>e.open))await d.locator(':scope>summary').click()}
- async function exported(){await open(page.locator('.magnetic-3d-load'));const event=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await event).path(),'utf8'))}
- async function progress(n){await until(async()=> (await review().getByTestId('collision-review-progress').innerText()).includes(`${n}/8`));assert.match(await bar().innerText(),new RegExp(`${n}/8 已审核`))}
- async function approveAll(){for(let i=0;i<8;i++){const c=rows().nth(i).getByRole('checkbox',{name:/^接受碰撞 /});await until(()=>c.isEnabled());if(!await c.isChecked())await c.click();await progress(i+1);if(i<7)assert.equal(await button('批准当前作品').isDisabled(),true)}await until(()=>button('批准当前作品').isEnabled());await button('批准当前作品').click();await page.getByTestId('human-collision-approved').waitFor();assert.match(await bar().innerText(),/Geometry Invalid.*Human Approved/)}
- async function entries(editing=true){for(const n of ['Revalidate Geometry','批准当前作品',...(editing?['保存 3D Draft']:[])]){assert.equal(await page.getByRole('button',{name:n,exact:true}).count(),1);assert.equal(await bar().getByRole('button',{name:n,exact:true}).count(),1);assert.equal(await inspector().getByRole('button',{name:n,exact:true}).count(),0)}}
- const overlap=(a,b)=>a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y
- await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=assembly`);await bar().waitFor();await entries(false);assert.equal(await button('保存 3D Draft').count(),0,'View retains existing read-only/save visibility');await button('Edit Draft').click();await entries();assert.equal(await rows().count(),8);await progress(0);assert.equal(await button('批准当前作品').isDisabled(),true)
- await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'严格复验失败'}).waitFor();assert.match(await bar().innerText(),/Geometry Invalid.*碰撞 8/);await button('保存 3D Draft').click();assert.deepEqual(await exported(),nine)
- // Scroll only the Inspector: primary actions remain visible and independently reachable.
- await page.locator('.studio-inspector').evaluate(e=>e.scrollTop=e.scrollHeight);assert.equal(await button('Revalidate Geometry').isVisible(),true);assert.equal(await button('保存 3D Draft').isVisible(),true);assert.equal(await button('批准当前作品').isVisible(),true)
- await approveAll();assert.deepEqual(await exported(),nine);await button('Revalidate Geometry').click();await until(async()=> (await bar().innerText()).includes('Human Approved'))
- await rows().first().locator('td').first().click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});assert.match(await bar().innerText(),/Human Approved/);await button('聚焦碰撞').click();await button('取消碰撞选择').click();assert.match(await bar().innerText(),/Human Approved/)
- await button('对称补全').click();await page.getByRole('region',{name:'Symmetry Fill',exact:true}).waitFor();assert.equal(await button('批准当前作品').isDisabled(),true);assert.equal(await button('保存 3D Draft').isEnabled(),true);await button('关闭工具').click();await button('View').click();await entries(false);assert.equal(await button('保存 3D Draft').count(),0);await button('Edit Draft').click();await entries();assert.match(await bar().innerText(),/Human Approved/)
- await page.locator('[data-3d-piece="tile1"]').click();const x=Number(await field('3D 位置 X').inputValue());await field('3D 位置 X').fill(String(x+.1));await field('3D 位置 X').press('Enter');assert.equal((await bar().innerText()).includes('Human Approved'),false);assert.equal(await button('批准当前作品').isDisabled(),true);await button('3D Undo').click();await progress(0);assert.equal((await bar().innerText()).includes('Human Approved'),false);await button('3D Redo').click();assert.equal(await button('批准当前作品').isDisabled(),true);await button('3D Undo').click();await progress(0);await button('保存 3D Draft').click();await page.reload();await button('Edit Draft').click();await entries();assert.deepEqual(await exported(),nine);await progress(0)
- await approveAll();await page.reload();await page.getByTestId('human-collision-approved').waitFor();await button('Edit Draft').click();await entries()
- // Opening the existing IO provides realistic workspace overflow for sticky checks.
- await open(page.locator('.magnetic-3d-load'))
- for(const width of [1660,1100,680,430]){
-  await page.setViewportSize({width,height:900});if(!await workspace().isVisible())await button('工作区').click();await workspace().evaluate(e=>e.scrollTop=0)
-  const canvas=page.locator('.magnetic-3d-editor-canvas canvas');await canvas.waitFor();await until(()=>canvas.evaluate(e=>e.width>100))
-  const initial=await bar().boundingBox();assert.ok(initial.height<(width>760?145:200),'compact bar leaves room for Viewer');const boxes=[]
-  for(const n of ['Revalidate Geometry','保存 3D Draft','批准当前作品']){const b=await button(n).boundingBox();boxes.push(b);assert.ok(b.x>=initial.x-1&&b.x+b.width<=initial.x+initial.width+1);assert.ok(b.y>=initial.y&&b.y+b.height<=initial.y+initial.height+1)}
-  for(let i=0;i<boxes.length;i++)for(let j=0;j<i;j++)assert.equal(overlap(boxes[i],boxes[j]),false)
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false);assert.equal(await bar().evaluate(e=>e.scrollWidth>e.clientWidth+2),false);await page.screenshot({path:`${out}/top-${width}.png`})
-  await workspace().evaluate(e=>e.scrollTop=220);await until(async()=>Math.abs((await bar().boundingBox()).y-(await workspace().boundingBox()).y)<2)
-  const sticky=await bar().boundingBox(),b=await button('保存 3D Draft').boundingBox();assert.equal(await button('保存 3D Draft').evaluate(e=>{const b=e.getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('button')===e}),true,'sticky controls must not be occluded')
-  for(const name of ['Revalidate Geometry','保存 3D Draft','批准当前作品'])assert.equal(await button(name).evaluate(e=>{const b=e.getBoundingClientRect();return [.2,.5,.8].every(f=>[.2,.5,.8].every(g=>document.elementFromPoint(b.x+b.width*f,b.y+b.height*g)?.closest('button')===e))}),true,'Viewer controls must not cover any primary action')
-  assert.ok((await workspace().evaluate(e=>e.scrollTop))>60);assert.ok((await canvas.boundingBox()).height>=320);await page.screenshot({path:`${out}/sticky-${width}.png`});layout.push({width,barHeight:initial.height,stickyY:sticky.y,buttonHeight:b.height})
- }
- await page.setViewportSize({width:1660,height:1050});await workspace().evaluate(e=>e.scrollTop=0);await page.locator('[data-stage="build"]').click();await until(()=>button('生成搭建教程').isEnabled());await button('生成搭建教程').click();await page.getByTestId('tutorial-player').waitFor();assert.match(await page.getByTestId('tutorial-source').innerText(),/9 片 \/ 12 条连接/);assert.match(await page.getByTestId('tutorial-validation').innerText(),/Invalid \+ Human Approved/)
- assert.equal(await readFile(official,'utf8'),originRaw);assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[]);assert.ok(calls.every(([m,r])=>m==='GET'||r.startsWith('/assembly3d-review/')))
- const result={passed:true,placement:'three unique workspace actions; no Inspector duplicates; original View visibility preserved',nine:'9 pieces / 12 connections / 8 real collisions; 0–8 review reflected in sticky bar, strict Invalid + Human Approved',behavior:'native Revalidate/save/approve, collision selection, symmetry tool, Undo/Redo revocation, reload and nine-step Build',layout,productionWrites:0,modelCalls:0,errors,consoleErrors};await writeFile(out+'/result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
-}catch(e){if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',await page.locator('body').innerText().catch(()=>''))}throw e}
+ async function exported(){await open(page.locator('.magnetic-3d-load'));const next=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await next).path(),'utf8'))}
+ async function noApprovalUI(){assert.equal(await page.getByRole('checkbox',{name:/接受碰撞|已对照照片审核候选/}).count(),0);assert.equal(await button('批准当前作品').count(),0);assert.doesNotMatch(await page.locator('body').innerText(),/Human Accepted|Human Approved/)}
+ await page.goto(base+'magnetic-tiles.html?stage=reconstruction')
+ await field('3D Reconstruction Candidate').waitFor();await field('3D Reconstruction Candidate').selectOption(execution.diagnosticCandidates[0].id)
+ await noApprovalUI();await button('打开 Diagnostic 到 Assembly Editor').click()
+ const diagnostics=page.getByRole('region',{name:'Collision Diagnostics',exact:true});await diagnostics.waitFor()
+ const adopted=await exported();assert.deepEqual(adopted.pieces,original.pieces);assert.deepEqual(adopted.connections,original.connections);assert.equal(validateAssembly3D(adopted).valid,false)
+ assert.equal(await diagnostics.locator('tbody tr').count(),4);await noApprovalUI()
+ await diagnostics.locator('tbody tr').first().locator('td').first().click();await page.locator('[data-collision-overlay]').waitFor({state:'attached'});await button('聚焦碰撞').click();await button('取消碰撞选择').click()
+ await button('Revalidate Geometry').click();await page.getByRole('alert').filter({hasText:'几何诊断'}).waitFor()
+ await button('保存 3D Draft').click()
+ const add=page.getByRole('link',{name:/^Add to Gallery /}).first();await add.waitFor();const addUrl=await add.getAttribute('href')
+ await page.screenshot({path:out+'/editor-diagnostics.png',fullPage:true})
+ await page.goto(new URL(addUrl,base).href);await field('作品描述').fill('包含几何碰撞的个人作品');await button('加入 Gallery').click();await page.waitForURL(/magnetic-gallery.html\?id=/);await page.locator('canvas').waitFor()
+ const galleryId=new URL(page.url()).searchParams.get('id'),published=await api.dispatch('GET','gallery/items/'+galleryId)
+ assert.deepEqual(published.assembly,adopted);await page.screenshot({path:out+'/invalid-gallery.png',fullPage:true})
+ // Tutorial generation and save no longer need a server grant or revalidation receipt.
+ await page.goto(base+'magnetic-tiles.html?stage=build');await until(()=>button('生成搭建教程').isEnabled());await button('生成搭建教程').click();await page.getByTestId('tutorial-player').waitFor()
+ assert.match(await page.getByTestId('tutorial-validation').innerText(),/Geometry Invalid/)
+ assert.match(await page.getByTestId('tutorial-source').innerText(),/6 片/)
+ await until(()=>button('保存教程').isEnabled());await button('保存教程').click();await until(async()=>(await page.getByTestId('tutorial-save-status').innerText()).includes('已保存'))
+ await button('下一步').click();await page.reload();await page.getByTestId('tutorial-player').waitFor();await noApprovalUI()
+ await page.screenshot({path:out+'/invalid-tutorial.png',fullPage:true})
+ // Editing and Undo/Redo keep real diagnostics and do not synchronize approvals.
+ await page.locator('[data-stage="assembly"]').click();await button('Edit Draft').click();await page.locator('[data-3d-piece="'+adopted.pieces[0].id+'"]').click()
+ const x=Number(await field('3D 位置 X').inputValue());await field('3D 位置 X').fill(String(x+.1));await field('3D 位置 X').press('Enter')
+ await button('3D Undo').click();assert.deepEqual(await exported(),adopted);await button('3D Redo').click();await button('3D Undo').click()
+ assert.deepEqual(await exported(),adopted);await noApprovalUI()
+ await page.setViewportSize({width:680,height:1000});await page.screenshot({path:out+'/editor-mobile.png',fullPage:true})
+ assert.deepEqual((await api.dispatch('GET','gallery/items/'+galleryId)).assembly,adopted)
+ assert.deepEqual(errors,[]);assert.ok(!calls.some(([,r])=>r.startsWith('assembly3d-review/')))
+ assert.ok(!calls.some(([m,r])=>m==='POST'&&/analyze|plan|execute/.test(r)))
+ console.log('PASS: Diagnostic → Editor → Invalid save → Gallery → Tutorial generate/save/reload → Undo/Redo; collision focus and strict Invalid preserved; no approval UI/API or model calls. '+out)
+}catch(e){if(page){await page.screenshot({path:out+'/failure.png',fullPage:true}).catch(()=>{});console.error((await page.locator('body').innerText()).slice(0,9000))}console.error({errors,calls:calls.slice(-20)});throw e}
 finally{await browser?.close();await server?.close();await rm(dir,{recursive:true,force:true})}

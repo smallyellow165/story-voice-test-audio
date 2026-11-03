@@ -4,7 +4,8 @@ import {createViewerModel} from './viewer-model.ts'
 import {moduleBounds,moduleCenter,moduleById} from './module-transform.ts'
 import type {ModulePreview} from './module-transform.ts'
 import {validateAssembly3D} from './engine-adapter.ts'
-import {collisionErrorKey} from './human-collision-policy.ts'
+import {canonical} from '../build-plan.ts'
+const collisionErrorKey=(issue:unknown)=>canonical(issue)
 import {computeAllConnectionResiduals,portWorldEndpoints} from './vendor/engine/solver.ts'
 
 /** Explicit session intent, independent of the Tile subsequently chosen for Snap.
@@ -20,7 +21,7 @@ const pairKey=(ids:readonly string[])=>JSON.stringify([...ids].sort())
 /** Read-only projection of the EXISTING solver / strict Validator results.
  * A directed segment correspondence plus signed dihedral fixes a single SE(3)
  * pose. Flip/angle changes are different inputs, never alternative candidates. */
-export function moduleSnapDiagnostics(before:Assembly3D,preview:ModulePreview,movingId:string,fixedId:string,target?:SnapOrientationTarget,acceptedKeys:readonly string[]=[],beforeReport=validateAssembly3D(before)){
+export function moduleSnapDiagnostics(before:Assembly3D,preview:ModulePreview,movingId:string,fixedId:string,target?:SnapOrientationTarget,beforeReport=validateAssembly3D(before)){
  const c=preview.connection;if(!c)throw Error('需要 Module Snap 预览')
  const next=preview.assembly,models=createViewerModel(next),transforms=Object.fromEntries(models.map(p=>[p.id,p.transform])),getShape=(id:string)=>models.find(p=>p.id===id)?.shape
  const residual=computeAllConnectionResiduals([c],transforms,getShape)[0]
@@ -37,9 +38,6 @@ export function moduleSnapDiagnostics(before:Assembly3D,preview:ModulePreview,mo
  const isCross=(ids:readonly string[])=>ids.length===2&&belongs.get(ids[0])!==belongs.get(ids[1])
  const added=after.filter(i=>!oldPairs.has(pairKey(i.relatedPieceIds??[])))
  const collisions={before:old.length,retained:after.filter(i=>oldPairs.has(pairKey(i.relatedPieceIds??[]))).length,removed:old.filter(i=>!afterPairs.has(pairKey(i.relatedPieceIds??[]))).length,
-  // Acceptance describes ONLY the authoritative input snapshot. It is not
-  // propagated by pair identity and never grants acceptance to this preview.
-  acceptedBefore:old.filter(i=>acceptedKeys.includes(collisionErrorKey(i))).length,
   newCross:added.filter(i=>isCross(i.relatedPieceIds??[])).length,newInternal:added.filter(i=>!isCross(i.relatedPieceIds??[])).length,
   newCrossMaxDepth:Math.max(0,...added.filter(i=>isCross(i.relatedPieceIds??[])).map(i=>i.penetrationDepth??0)),
   changedCross:after.filter(i=>isCross(i.relatedPieceIds??[])&&oldPairs.has(pairKey(i.relatedPieceIds??[]))&&!old.some(o=>collisionErrorKey(o)===collisionErrorKey(i))).length}

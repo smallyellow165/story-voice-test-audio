@@ -1,3 +1,5 @@
+> 当前直接操作策略见 [magnetic-direct-operations.md](magnetic-direct-operations.md)；本文件末尾保留的验证结果为历史记录。
+
 # Canonical Geometry 调查与契约
 
 本轮契约：`magnetic-canonical-profile-ports-v1`。
@@ -29,8 +31,8 @@ Planning Prompt：`magnetic-spatial-canonical-geometry-v1`。
 | Review | 明确选择 ID@Version 后，服务端 `canonicalProfileSnapshot` 从 Registry 创建快照；不再有 Review 厚度覆盖控件。图像 feature ID 与 Port ID 是不同命名空间。 |
 | Spatial Planning | 请求包含完整 manifest（原点、法向、局部顶点、有向边和分段 Ports），并在付费调用前验证存在契约输入；输出仍沿用原 Spatial Schema/Parser。模型只能推断观测边到已存在 Canonical Port 的对应，不得重排或创造编号。新 Plan 保存契约标识。 |
 | Execution / adoption | `executionPlan` 在执行/重放/采用前校验契约标识和 Registry 快照；缺失标识明确拒绝并要求重新规划，不转换旧编号。普通 Candidate 和 Diagnostic 均保持原严格验证与来源校验。 |
-| Assembly / Snap / Auto Fix / Viewer | 共同消费 adaptProfile；导入、重新加载、交接、保存、Revalidate 及服务端审核/Build 使用 Registry 校验。移除同版本快照厚度编辑。Auto Fix 只执行当前采用 Plan 的当前解释、人工作出的约束及其 Execution 遗留假设；不再查询历史修复证据。 |
-| 正式授权 / Build | 服务端独立比较 Registry 几何，仍运行原 Validator 和 Human Accepted 授权；改错版本/改厚度不能靠前端放行。 |
+| Assembly / Snap / Auto Fix / Viewer | 共同消费 adaptProfile；导入、重新加载、交接、保存、Revalidate 及服务端 Build 来源核验 使用 Registry 校验。移除同版本快照厚度编辑。Auto Fix 只执行当前采用 Plan 的当前解释、人工作出的约束及其 Execution 遗留假设；不再查询历史修复证据。 |
+| Build 来源完整性 | 服务端独立比较 Registry 几何，运行原 Validator 返回真实诊断；错误版本/同版本厚度变化仍被拒绝，碰撞无需授权。 |
 
 数学引擎 adapter 保留可测试的显式 snapshot 参数（用于独立几何实验）；它不是 Registry。正式工作流入口必须 `assertCanonicalProfiles`，不会因为某个任意凸体在数学上有效就冒充已登记的 ID@Version。
 
@@ -50,7 +52,7 @@ Planning Prompt：`magnetic-spatial-canonical-geometry-v1`。
 
 ## 验证与操作
 
-见 `checks/magnetic-3d/canonical-geometry.vitest.ts`、`connection-repair.vitest.ts`、`test/magnetic-canonical-geometry.test.mjs` 及三个隔离浏览器脚本。覆盖 Registry 持久化、正方形/三角形/直角三角形/对称形、分段 Ports、旋转/反向正面、版本不一致拒绝、完整闭环与实体错误、Human Accepted → Build。
+见 `checks/magnetic-3d/canonical-geometry.vitest.ts`、`connection-repair.vitest.ts`、`test/magnetic-canonical-geometry.test.mjs` 及三个隔离浏览器脚本。覆盖 Registry 持久化、正方形/三角形/直角三角形/对称形、分段 Ports、旋转/反向正面、版本不一致拒绝、完整闭环与实体错误、直接进入 Build。
 
 用户新流程：确认 Catalog 规格 → 保存 Review（厚度随 Profile 版本）→ 明确执行新的 Spatial Planning → Geometry Execution → 对照照片检查 → 采用进入 Assembly → Find Fix。检查连接证据应来自当前 Plan；没有当前配对时如实保持无建议，不能再依赖其他历史 Plan。相机调整仅用于观察；不要据此认定真实世界姿态已标定。
 

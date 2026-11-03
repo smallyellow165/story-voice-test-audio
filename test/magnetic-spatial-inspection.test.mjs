@@ -33,7 +33,7 @@ test('isolated Front9 / Rear12 bounds alignment: world Y up, rigid poses, strict
  assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+record.assembly.id)).snapshot.assembly,next)
  await assert.rejects(api.dispatch('POST','assembly3d/save',{snapshot:record.snapshot,expectedHash:record.hash}),e=>e.statusCode===409)
  assert.equal(preview.geometry.valid,false,'original strict collision diagnostics remain present')
- await assert.rejects(api.dispatch('POST','assembly3d/build-check',{originId:record.assembly.id,assembly:next}),/Invalid/)
+ assert.equal((await api.dispatch('POST','assembly3d/build-check',{originId:record.assembly.id,assembly:next})).geometry.valid,false)
  for(const original of [f.front,f.rear])assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+original.assembly.id)).snapshot,original.snapshot)
  assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head)
  for(const [file,bytes]of f.copied)assert.equal(await readFile(path.join(f.official,file),'utf8'),bytes)

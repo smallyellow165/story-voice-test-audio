@@ -22,7 +22,7 @@ describe('tutorial UI preview acceptance',()=>{
   expect(generatedPreview(generateBuildOrder3D(assembly,{maxEvaluations:0}),assembly)).toBeNull()
   const incomplete=structuredClone(t);incomplete.steps.pop();expect(tutorialReadyToSave(incomplete,validateTutorial3D(incomplete),assembly)).toBe(false)
   const invalid=structuredClone(t);invalid.assembly.pieces[1].pose=structuredClone(invalid.assembly.pieces[0].pose)
-  expect(tutorialReadyToSave(invalid,validateTutorial3D(invalid),invalid.assembly)).toBe(false)
+  expect(validateTutorial3D(invalid).finalValid).toBe(false);expect(tutorialReadyToSave(invalid,validateTutorial3D(invalid),invalid.assembly)).toBe(true)
  })
 })
 describe('same-key tutorial saved collection',()=>{

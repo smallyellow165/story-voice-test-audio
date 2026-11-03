@@ -58,7 +58,7 @@ test('joint canonical record travels through existing Review, Planning, Executio
  }})
  const post=(route,body)=>workflow.dispatch('POST',route,body),a=await post('analyze',{sourceId:f.source.id,model:'gpt-6.1-sol',requestId:randomUUID()});assert.equal(a.usable,true);assert.equal(a.state,'complete');assert.equal(a.record.evidence.observations.length,2);assert.equal(calls.length,1);assert.equal(calls[0].prepared.images.length,4)
  const review=await post('reviews',{analysisId:a.record.id,review:f.review,thickness:.06,expectedRevision:0}),plan=await post('plan',{reviewId:review.record.id,model:'gpt-6.1-sol',requestId:randomUUID()});assert.equal(calls.length,2);assert.equal(calls[1].prepared.input.geometryInput.evidence.observations[0].imageEvidence.length,4)
- const x=await post('execute',{planId:plan.record.id,requestId:randomUUID()}),o=await post('adopt',{executionId:x.record.id,candidateId:x.record.candidates[0].id,visualChecked:true});assert.equal(o.assembly.pieces.length,2);assert.equal(o.sourceId,f.source.id);assert.equal(o.sourceHash,f.source.hash)
+ const x=await post('execute',{planId:plan.record.id,requestId:randomUUID()}),o=await post('adopt',{executionId:x.record.id,candidateId:x.record.candidates[0].id});assert.equal(o.assembly.pieces.length,2);assert.equal(o.sourceId,f.source.id);assert.equal(o.sourceHash,f.source.hash)
  const restarted=createMagneticIntake(f.dir);assert.deepEqual(await restarted.dispatch('GET','visible3d/origins/'+o.id),o)
  const changed=await restarted.dispatch('POST','source-sets',{images:f.images.slice(0,3)});assert.notEqual(changed.hash,f.source.hash);assert.equal((await restarted.dispatch('GET','visible3d/history')).analyses.filter(a=>a.sourceId===changed.id).length,0)
 })

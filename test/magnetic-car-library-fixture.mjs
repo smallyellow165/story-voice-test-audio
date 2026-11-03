@@ -18,7 +18,7 @@ export async function carLibraryFixture(dir){
  modules=await copy(`visible3d/module-plans/${origin.reconstructionScope.modulePlan.id}.json`);let m=modules;while(m.parent)m=await copy(`visible3d/module-plans/${m.parent.id}.json`)
  await copy(`visible3d/module-heads/${origin.reviewId}.json`)
  for(const file of await readdir(path.join(official,'profile-registry')))if(file.endsWith('.json'))await copy('profile-registry/'+file)
- const api=createMagneticIntake(dir,{enableHumanReview:true}),front=modules.modules.find(m=>m.name==='g-front'),scope=reconstructionInput(review.input,source,{groupId:front.id,imageId:'all'},modules).scope
+ const api=createMagneticIntake(dir),front=modules.modules.find(m=>m.name==='g-front'),scope=reconstructionInput(review.input,source,{groupId:front.id,imageId:'all'},modules).scope
  // A test-only connected chain, not a photo reconstruction accuracy claim.
  const ids=scope.observationIds,parts=ids.map(id=>{const p=review.input.review.pieces.find(p=>p.id===id);return {id,profileId:p.profileId,profileVersion:p.profileVersion,orientationEvidence:'isolated saved-work selection fixture'}})
  const frontPlan={version:1,parts,connections:parts.slice(1).map((p,i)=>({pieceA:parts[i].id,pieceB:p.id,portA:parts[i].profileId==='square'?'e1-p0':'e1-p0',portB:p.profileId==='square'?'e3-p0':'e0-p0',intent:'connect',angles:[0],angleRange:null,flip:true,evidenceRefs:[parts[i].id,p.id],evidence:'isolated deterministic chain, not photo evidence',uncertainty:'UI/storage fixture only'})),alternatives:[],relations:[],unknowns:['No model call; deterministic UI/storage fixture']}
@@ -29,8 +29,6 @@ export async function carLibraryFixture(dir){
   const before=history.current.revision,p=previewSymmetryFill(history.current,{sourceIds:[id],plane:referenceSymmetryPlane(history.current,'ramp-lower-left',axis,offset),planeMode:'reference'})
   history=confirmSymmetryFill(history,p);sidecar.symmetryFills.push({sourceIds:[id],addedIds:p.addedIds,plane:p.request.plane,sourceRevision:before,addedRevision:history.current.revision})
  }
- const rear=history.current,request={socket:{remoteAddress:'127.0.0.1'},headers:{host:'127.0.0.1:9999',origin:'http://127.0.0.1:9999','sec-fetch-site':'same-origin'}},{token}=await api.dispatch('POST','assembly3d-review/session',{}, {request}),context={request:{...request,headers:{...request.headers,authorization:'Bearer '+token}}},post=(r,b)=>api.dispatch('POST','assembly3d-review/'+r,b,context)
- let state=await post('accept-diagnostic',{assembly:origin.assembly,originId:origin.id,expectedVersion:null})
- state=await post('sync',{assembly:rear,expectedVersion:state.version});state=await post('accept',{assembly:rear,expectedVersion:state.version,acceptedKeys:state.collisionKeys});state=await post('approve',{assembly:rear,expectedVersion:state.version,acceptedKeys:state.collisionKeys})
- return {api,origin,rear,sidecar,front:{group:front,plan:p,execution:x.record},source,review,modules,plan,copied,official,reviewState:state}
+ const rear=history.current
+ return {api,origin,rear,sidecar,front:{group:front,plan:p,execution:x.record},source,review,modules,plan,copied,official}
 }

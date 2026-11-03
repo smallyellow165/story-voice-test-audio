@@ -3,7 +3,6 @@ import {Vector3} from 'three'
 import {parseAssembly3D,serializeAssembly3D} from '../../src/magnetic-tiles/three-d/assembly.ts'
 import {combineAssemblySnapshots,previewModuleSnap} from '../../src/magnetic-tiles/three-d/module-transform.ts'
 import {moduleSnapDiagnostics} from '../../src/magnetic-tiles/three-d/module-snap-diagnostics.ts'
-import {collisionErrorKey} from '../../src/magnetic-tiles/three-d/human-collision-policy.ts'
 import pair from '../../src/magnetic-tiles/three-d/examples/right-angle.json' with {type:'json'}
 const parent=(id:string)=>({id,version:1,hash:'a'.repeat(64),snapshotHash:'b'.repeat(64),revision:0})
 function fixture(){
@@ -37,9 +36,9 @@ describe('read-only Snap diagnostics; no new solver or candidates',()=>{
   // Report classification only: use supplied Validator reports, never a new
   // collision detector. Same pair with changed severity is explicitly retained.
   const before={valid:false,issues:[issue]},after={...p,geometry:{...p.geometry,valid:false,issues:[{...issue,penetrationDepth:.2}]}}
-  const d=moduleSnapDiagnostics(a,after,'module-1','module-0',undefined,[collisionErrorKey(issue)],before)
-  expect(d.collisions).toMatchObject({before:1,retained:1,acceptedBefore:1,newCross:0,changedCross:1});expect(d.geometryValid).toBe(false)
-  const added=moduleSnapDiagnostics(a,after,'module-1','module-0',undefined,[collisionErrorKey(issue)],{valid:true,issues:[]})
-  expect(added.collisions).toMatchObject({before:0,retained:0,acceptedBefore:0,newCross:1,newCrossMaxDepth:.2})
+  const d=moduleSnapDiagnostics(a,after,'module-1','module-0',undefined,before)
+  expect(d.collisions).toMatchObject({before:1,retained:1,newCross:0,changedCross:1});expect(d.geometryValid).toBe(false)
+  const added=moduleSnapDiagnostics(a,after,'module-1','module-0',undefined,{valid:true,issues:[]})
+  expect(added.collisions).toMatchObject({before:0,retained:0,newCross:1,newCrossMaxDepth:.2})
  })
 })

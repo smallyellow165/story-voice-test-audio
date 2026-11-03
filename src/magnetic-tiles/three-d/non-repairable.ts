@@ -1,5 +1,5 @@
 import type {Assembly3D} from './assembly.ts'
-/** An optimization preference, never a validation exemption or human approval.
+/** An optimization preference, never a validation exemption.
  * Keep pair intent through pose changes and incidental collision disappearance;
  * drop deleted instances and never transfer it to another Assembly identity. */
 export function nonRepairableKeys(assembly:Assembly3D,keys:readonly string[]):string[]{

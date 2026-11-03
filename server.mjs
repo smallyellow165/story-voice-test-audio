@@ -50,7 +50,7 @@ import {
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const generatedDirectory = path.join(projectRoot, 'generated')
-const magneticIntake = createMagneticIntake(path.join(generatedDirectory, 'magnetic-intake'),{enableHumanReview:()=>vite.config.command==='serve'&&!vite.config.isProduction&&process.env.NODE_ENV!=='production'})
+const magneticIntake = createMagneticIntake(path.join(generatedDirectory, 'magnetic-intake'))
 const timestampHistory = createTimestampHistory(path.join(generatedDirectory, 'fish-timestamp-history'))
 const ringHistory = createRingHistory(path.join(generatedDirectory, 'ring-history'))
 const sourceImages = createSourceImageStore(path.join(generatedDirectory, 'brick-source-images'))

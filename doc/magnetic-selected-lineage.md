@@ -28,7 +28,7 @@
 | Plan | 现有 result.id/hash + reviewId/hash + reconstructionScope + Canonical Geometry 契约。 |
 | Execution | 现有 result.id/hash + planId/hash + 相同 scope；Refinement 仍是该唯一 Plan 的明确输入。 |
 | Assembly Draft | 复用单个工作区 Draft CAS 与不可变 Origin；Origin 保存实际 Execution、Plan、Review、Analysis、Source、Candidate/Diagnostic 身份。编辑和 Undo/Redo 不重绑这些父来源。 |
-| Tutorial | 原有 Assembly 快照与 Revision；照片来源的教程额外保留 `source.reconstructionOrigin: {id,hash}`。Human Accepted 仍保留原授权引用及真实 Invalid 诊断。 |
+| Tutorial | 原有 Assembly 快照与 Revision；照片来源的教程额外保留 `source.reconstructionOrigin: {id,hash}`。保留真实 Invalid 诊断，不再生成或依赖人工批准引用。 |
 
 **唯一 Selected Source of Truth**：复用 `visible3d/heads/<Project Source ID>.json`，增加：
 
@@ -59,22 +59,22 @@ Project 的当前打开 ID、模型偏好、图片显示偏好、Candidate 预�
 - 切回历史 Review 时，先明确选择其完整 Analysis，再选 Review，之后选对应 Group 的完整 Plan/Execution。不从多个旧结果收集零散 Port、Pose 或关系。
 - 新正式执行链只消费当前 V5 Execution；旧无范围、旧格式结果可读取，但不会自动升级、回放采用或补齐元数据。没有历史迁移、Port Mapping 或备用来源路径。
 
-## Assembly、Auto Fix、Human Accepted 与 Build
+## Assembly、Auto Fix 与 Build
 
 Assembly 的当前 Draft 继续由既有 Draft CAS 选择；创建 Origin 不会冒充 Draft 保存成功，也不会因客户端取消/失败而改绑另一个 Draft。多个历史 Origin 可以存在，但消费者只能使用 Draft 明确记录的那个 Origin，而且其父 Plan/Execution 必须仍为该 Group 的 Selected。
 
 `selected-origin/<id>` 校验完整来源链和最新 Group 输入。角度建议及 Auto Fix 定期/焦点刷新该检查，应用候选前再次校验；来源改变会阻断，绝不寻找另一份历史 Plan。手动 Snap 只使用当前 Draft 的真实 Port/Pose，不从历史补证据。
 
-Human Accepted 原有服务端授权机制不变；每次正式操作还检查 Origin 与 Selected 链，原始 Invalid / 已接受错误不会变成 Valid。Pose 修改导致新错误的规则不变。
+人工批准机制已移除；操作仍检查 Origin 与 Selected 链及 Hash。Pose 修改后的错误直接反映在诊断中。
 
-严格 Geometry Valid 的照片来源 Build，在本地 Worker 生成前、使用生成结果及正式保存前调用服务端 `build-check`，重查 Selected Origin、Assembly ID、Registry 和原严格 Validator。Invalid 的 Human Accepted Build 继续使用既有服务端授权/生成/保存链。没有第二套 Build Player 或几何判定。失效 Draft 可以继续保留/导出/编辑，但不能把旧来源当成当前重建结果用于正式 Build。
+照片来源 Build，在本地 Worker 生成前、使用生成结果及正式保存前调用服务端 `build-check`，重查 Selected Origin、Assembly ID、Registry 和原严格 Validator。Invalid 作品也使用同一本地 Worker 和 Player；碰撞不再需要授权，错误不会改写成 Valid。没有第二套 Build Player 或几何判定。失效 Draft 可以继续保留/导出/编辑，但不能把旧来源当成当前重建结果用于正式 Build。
 
 ## 验证
 
 - 266 项磁力片 Node 测试：新增 Project + Front/Back 各两份 Plan/Execution、显式历史选择、成员变更、图片范围唯一链、跨 Project/Hash/CAS、真实延迟 Planning 响应不抢占新选择、严格采用和 Build 阻断。
 - 297 项 3D Vitest 几何/编辑回归；专项 TypeScript 和生产构建通过。
 - 新隔离 Chrome 浏览器脚本 `verify-magnetic-selected-lineage.mjs`：故意写入错误本地结果 ID，验证服务端恢复；Front/Back 独立历史切换；刷新；另一页面改选；正常 Candidate → Assembly → Build/保存；旧来源 Build 阻断；新旧 Review 完整选择；1780/1100/680 布局。
-- 既有 Back 八片 Auto Fix/Snap 与 Front 九片 Human Accepted → Build 浏览器脚本使用明确的隔离 Canonical 测试记录。正式小车存档只读取和逐字节校验，不改写。
+- 既有 Back 八片 Auto Fix/Snap 与 Front 九片 直接进入 Build 浏览器脚本使用明确的隔离 Canonical 测试记录。正式小车存档只读取和逐字节校验，不改写。
 - 实际 LLM 调用 0、正式记录写入 0；接口模型测试仅使用拦截 HTTP 或明确离线 Fixture。
 
 结果与截图：`/tmp/magnetic-selected-lineage/`；Back/Front 浏览器回归仍输出至原有 `/tmp/magnetic-canonical-geometry/browser`、`/tmp/magnetic-human-diagnostic/browser`。

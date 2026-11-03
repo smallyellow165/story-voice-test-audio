@@ -13,11 +13,10 @@ export async function multiAssemblyFixture(dir){
   for(const [kind,id]of [['analyses',o.analysisId],['reviews',o.reviewId],['plans',o.planId],['executions',o.executionId]]){const r=await copy(`visible3d/${kind}/${id}.json`);if(r.traceId)await copy(`visible3d/model-traces/${r.traceId}.json`)}
   let m=await copy(`visible3d/module-plans/${o.reconstructionScope.modulePlan.id}.json`);while(m.parent)m=await copy(`visible3d/module-plans/${m.parent.id}.json`)
   await copy(`visible3d/module-heads/${o.reviewId}.json`)
-  const heads=`assembly3d-review/heads/${saved.assembly.id}`
-  for(const file of await readdir(path.join(official,heads))){if(!file.endsWith('.json'))continue;const h=await copy(heads+'/'+file);if(h.approvalId)await copy('assembly3d-review/approvals/'+h.approvalId+'.json')}
+
  }
  const source=await copy(`sources/${front.project.id}.json`);await copy(`visible3d/heads/${source.id}.json`)
  for(const id of new Set([source.id,...source.images.map(i=>i.sourceId)])){const s=await copy(`sources/${id}.json`);for(const hash of new Set([s.originalHash,s.view.hash]))await copy(`assets/${hash}.json`)}
  for(const file of await readdir(path.join(official,'profile-registry')))if(file.endsWith('.json'))await copy('profile-registry/'+file)
- return {api:createMagneticIntake(dir,{enableHumanReview:true}),source,front,rear,copied,official}
+ return {api:createMagneticIntake(dir),source,front,rear,copied,official}
 }

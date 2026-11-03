@@ -22,9 +22,11 @@ import {refineConstraints} from '../src/magnetic-tiles/three-d/reconstruction/co
 import {executeVisible3D} from '../src/magnetic-tiles/three-d/reconstruction/execute.ts'
 import {assertAssembly3D} from '../src/magnetic-tiles/three-d/assembly.ts'
 import {validateAssembly3D} from '../src/magnetic-tiles/three-d/engine-adapter.ts'
-import {diagnosticHandoffCheck,humanDiagnosticHandoffCheck} from '../src/magnetic-tiles/three-d/reconstruction/diagnostic-handoff.ts'
+import {diagnosticHandoffCheck} from '../src/magnetic-tiles/three-d/reconstruction/diagnostic-handoff.ts'
 const fail=(message,statusCode=422)=>{throw Object.assign(Error(message),{statusCode})}
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
+// Legacy execution labels carry no geometry or authorization semantics.
+const candidateDigest=c=>{const {humanReview:legacyLabel,...snapshot}=c;return hash(snapshot)}
 const kinds=['analyses','reviews','plans','executions','origins','refinements','module-plans']
 const identifier=x=>{if(typeof x!=='string'||!/^([a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(x))fail('Visible 3D 记录 ID 无效');return x}
 export function createVisible3DWorkflow(directory,{readSource,readImage,readImages,getRegistry,runModel=runVisibleModel}){
@@ -239,7 +241,6 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    assertCanonicalProfiles(a.profiles,(await getRegistry()).profiles)
    if(body.tutorial){const t=body.tutorial;assertTutorial3D(t);if(canonical(t.assembly)!==canonical(a)||t.source.reconstructionOrigin?.id!==origin.id||t.source.reconstructionOrigin?.hash!==origin.hash)fail('Tutorial 与当前 Assembly / Origin 来源不一致',409)}
    const geometry=validateAssembly3D(a)
-   if(!geometry.valid)fail('Geometry Invalid：必须使用既有服务端人工授权流程',409)
    return {origin:{id:origin.id,hash:origin.hash},assemblyHash:hash(a),geometry}
   }
   if(method==='POST'&&route==='selected')return selectResult(body)
@@ -386,40 +387,36 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
     const l=await lineage('executions',body.executionId),r=l.record
     await assertSelected(l,'execution')
     if(l.outdated)fail('Review 已改变：Diagnostic 过期，禁止进入编辑器',409)
-    if(body.override!==true&&body.humanAccepted!==true)fail('请明确授权强制允许进入 Assembly Editor 或人工采用 Diagnostic')
     if(body.executionHash!==r.hash)fail('Diagnostic Execution Hash 不一致',409)
     const p=await read('plans',r.planId)
     if(r.sourceId!==l.source.id||l.review.sourceId!==l.source.id||p.sourceId!==l.source.id||p.reviewId!==l.review.id)fail('Diagnostic 来源身份不一致',409)
     const verified=await replayExecution(r,p,l.review)
     const c=r.diagnosticCandidates?.find(c=>c.id===body.candidateId),actual=verified.diagnosticCandidates?.find(c=>c.id===body.candidateId)
-    if(r.version<3||!c||!actual||(body.humanAccepted===true?hash({...c,geometry:actual.geometry,validation:actual.validation,collisions:actual.collisions})!==hash(actual):hash(c)!==hash(actual)))fail('Diagnostic 身份或快照复核失败')
-    const check=diagnosticHandoffCheck(c),acceptance=body.humanAccepted===true?humanDiagnosticHandoffCheck(c):null
-    if(acceptance&&!acceptance.allowed)fail('Diagnostic 包含无法可靠定位或比较的错误，不能人工采用')
-    if(!acceptance&&!check.allowed)fail('仅 Ideal Geometry Valid 且 Solid Collision Invalid 的 Diagnostic 可进入待修复 Draft')
+    if(r.version<3||!c||!actual||candidateDigest(c)!==candidateDigest(actual))fail('Diagnostic 身份或快照复核失败')
+    const check=diagnosticHandoffCheck(c)
     const observationMap=c.observationMap??candidateObservationMap(c.assembly,l.geometryReview.input),spatialConsistency=inspectSpatialConsistency(c.assembly,l.geometryReview.input,observationMap)
-    if(spatialConsistency.status==='contradicted')fail('违反已审核空间关系，不能通过实体碰撞 Override 进入编辑器')
+    if(spatialConsistency.status==='contradicted')fail('违反已审核空间关系，请修正空间关系后再进入编辑器')
     const assembly={...structuredClone(c.assembly),id:'visible-'+randomUUID(),revision:0}
-    return publishOrigin({sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),...(r.reconstructionScope?{reconstructionScope:r.reconstructionScope}:{}),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.geometryReview.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.geometryReview.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.geometryReview.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:acceptance?'accepted':'pending'},observationMap,spatialConsistency,
-     entryMode:acceptance?'human-accepted-diagnostic':'diagnostic-override',authorization:{scope:acceptance?'accepted-diagnostic-errors':'editor-draft-only',explicit:true,at:new Date().toISOString()},diagnostic:{id:c.id,hash:hash(c),geometry:c.geometry,validation:c.validation??check.validation,recheckedGeometry:check.geometry,collisions:c.collisions??[],construction:c.construction??null}},l)
+    return publishOrigin({sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),...(r.reconstructionScope?{reconstructionScope:r.reconstructionScope}:{}),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.geometryReview.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.geometryReview.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.geometryReview.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,observationMap,spatialConsistency,
+     entryMode:'diagnostic-draft',diagnostic:{id:c.id,hash:hash(c),geometry:c.geometry,validation:c.validation??check.validation,recheckedGeometry:check.geometry,collisions:c.collisions??[],construction:c.construction??null}},l)
    })
   }
   if(route==='adopt'){
    const initial=await lineage('executions',body.executionId)
    return locked(initial.source.id,async()=>{
     const l=await lineage('executions',body.executionId);await assertSelected(l,'execution');if(l.outdated)fail('Review 已改变：Candidate 过期，禁止采用',409)
-    if(body.visualChecked!==true)fail('请先对照原图，确认候选及未验证项')
     const r=l.record;if(body.executionHash!==undefined&&body.executionHash!==r.hash)fail('Execution Hash 不一致',409)
     if(r.diagnosticCandidates?.some(c=>c.id===body.candidateId))fail('Diagnostic Candidate 未通过严格 Validator，仅供观察，禁止普通采用',422)
     const p=await read('plans',r.planId),verified=await replayExecution(r,p,l.review)
     const c=r.candidates.find(c=>c.id===body.candidateId),actual=verified.candidates.find(c=>c.id===body.candidateId)
-    const matches=c&&actual&&hash(c)===hash(actual)
+    const matches=c&&actual&&candidateDigest(c)===candidateDigest(actual)
     if(r.version===5&&(!c||!actual)&&verified.diagnostics.some(d=>d.startsWith('REVIEW_BLOCKED')))fail('Candidate 未满足人工硬约束或已审核空间关系；请核对 Review',422)
     if((!r.completeSearch&&r.version!==5)||!c||!actual||!matches||!validateAssembly3D(c.assembly).valid)fail('Candidate 复核失败或不是 Geometry Valid',422)
     const observationMap=c.observationMap??candidateObservationMap(c.assembly,l.geometryReview.input),spatialConsistency=inspectSpatialConsistency(c.assembly,l.geometryReview.input,observationMap)
     if(spatialConsistency.status==='contradicted')fail('Geometry Valid 但违反已审核空间关系；请修正 Review 后重新执行',422)
     // Identity is unique per adoption, all authoritative poses/profiles remain exact.
     const assembly={...c.assembly,id:'visible-'+randomUUID(),revision:0}
-    return publishOrigin({sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),...(r.reconstructionScope?{reconstructionScope:r.reconstructionScope}:{}),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.geometryReview.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.geometryReview.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.geometryReview.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,humanReview:{status:'accepted',at:new Date().toISOString()},observationMap,spatialConsistency},l)
+    return publishOrigin({sourceId:l.source.id,sourceHash:l.source.hash,analysisId:l.analysis.id,analysisHash:l.analysis.hash,reviewId:l.review.id,reviewHash:l.review.hash,planId:p.id,planHash:p.hash,executionId:r.id,executionHash:r.hash,...(r.refinement?{refinement:r.refinement,effectivePlanHash:r.effectivePlanHash}:{}),candidateId:c.id,candidateHash:hash(c),...(r.reconstructionScope?{reconstructionScope:r.reconstructionScope}:{}),assembly,coverage:c.coverage,...(r.version===5?{pendingObservations:l.geometryReview.input.review.pieces.filter(p=>!p.excluded&&!c.assembly.pieces.some(x=>x.id===p.id)).map(p=>({...p,profileSnapshot:l.geometryReview.input.profiles.find(s=>s.profile.id===p.profileId&&s.profile.version===p.profileVersion)??null,observation:l.geometryReview.input.evidence.observations.find(o=>o.id===p.id)})),searchProgress:r.search.progressive}:{}),unverifiedConstraints:c.unverifiedConstraints,photoMatch:c.photoMatch,observationMap,spatialConsistency},l)
    })
   }
   fail('未知 Visible 3D 操作',404)

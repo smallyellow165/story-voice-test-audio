@@ -11,8 +11,8 @@ import {restoreAssemblySnapshot,ASSEMBLY_SAVED_REF_KEY} from '../src/magnetic-ti
 import {DRAFT_3D_KEY,DRAFT_COLLISION_POLICY_KEY} from '../src/magnetic-tiles/three-d/draft-storage.ts'
 import {PHOTO_ORIGIN_3D_KEY} from '../src/magnetic-tiles/three-d/reconstruction/adopt-draft.ts'
 const request={socket:{remoteAddress:'127.0.0.1'},headers:{host:'127.0.0.1:9999',origin:'http://127.0.0.1:9999','sec-fetch-site':'same-origin'}}
-async function setup(t){const dir=await mkdtemp(path.join(tmpdir(),'assembly-library-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));const api=createMagneticIntake(dir,{enableHumanReview:true}),f=await selectedProject(api);return {dir,api,f}}
-async function origin(api,f,name){const p=f.plans[name][1],x=f.executions[name][1];await selectFixture(api,f.source.id,'plan',p);await selectFixture(api,f.source.id,'execution',x);return api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1',visualChecked:true})}
+async function setup(t){const dir=await mkdtemp(path.join(tmpdir(),'assembly-library-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));const api=createMagneticIntake(dir),f=await selectedProject(api);return {dir,api,f}}
+async function origin(api,f,name){const p=f.plans[name][1],x=f.executions[name][1];await selectFixture(api,f.source.id,'plan',p);await selectFixture(api,f.source.id,'execution',x);return api.dispatch('POST','visible3d/adopt',{executionId:x.id,executionHash:x.hash,candidateId:'candidate-1'})}
 function snapshot(o,count=2){const a=structuredClone(o.assembly);for(let i=a.pieces.length;i<count;i++)a.pieces.push({...structuredClone(a.pieces[0]),id:'manual-'+i,pose:{...a.pieces[0].pose,position:[i*3,0,0]}});return {assembly:a,photoOrigin:{origin:o,assemblyRaw:serializeAssembly3D(o.assembly)},nonRepairable:[]}}
 const save=(api,s,expectedHash=null)=>api.dispatch('POST','assembly3d/save',{snapshot:s,expectedHash})
 test('Project-wide Front/Rear snapshots are independent of selected Group/Plan; 8 -> 12 restores edited data, not Execution',async t=>{
@@ -21,7 +21,7 @@ test('Project-wide Front/Rear snapshots are independent of selected Group/Plan; 
  const list=await api.dispatch('GET','assembly3d/projects/'+f.source.id);assert.deepEqual(list.assemblies.map(r=>r.name),['Back','Front']);assert.ok(list.assemblies.every(r=>r.type==='group'))
  const loaded=await api.dispatch('GET','assembly3d/records/'+back.assembly.id);assert.deepEqual(loaded.snapshot,twelve);assert.deepEqual(loaded.parent,{kind:'geometry-origin',id:back.id,hash:back.hash})
  assert.equal(loaded.snapshot.photoOrigin.assemblyRaw,serializeAssembly3D(back.assembly));assert.equal(back.assembly.pieces.length,2,'fixture Execution/origin stays immutable')
- const restart=createMagneticIntake(dir,{enableHumanReview:true});assert.deepEqual((await restart.dispatch('GET','assembly3d/records/'+fore.assembly.id)).snapshot.assembly,snapshot(front,9).assembly)
+ const restart=createMagneticIntake(dir);assert.deepEqual((await restart.dispatch('GET','assembly3d/records/'+fore.assembly.id)).snapshot.assembly,snapshot(front,9).assembly)
  const head=await api.dispatch('GET','visible3d/head/'+f.source.id);await api.dispatch('GET','assembly3d/records/'+back.assembly.id);assert.deepEqual(await api.dispatch('GET','visible3d/head/'+f.source.id),head)
 })
 test('CAS detects stale/concurrent writes; repeated registration is idempotent and Parent cannot be rebound',async t=>{
@@ -48,19 +48,13 @@ test('restoration reuses one working-slot CAS and restores exact document/sideca
  assert.equal(JSON.parse(storage.getItem(ASSEMBLY_SAVED_REF_KEY)).hash,r.hash);assert.deepEqual(JSON.parse(storage.getItem(DRAFT_COLLISION_POLICY_KEY)).nonRepairable,[])
  await assert.rejects(async()=>restoreAssemblySnapshot(storage,r,expected),/其他页面/)
 })
-test('saved human review restores exact authorized errors, never changed geometry, forged receipts or later revocations',async t=>{
+test('Invalid versions save and restore without approval metadata',async t=>{
  const {api,f}=await setup(t),o=await origin(api,f,'Back'),s=snapshot(o,3);s.assembly.pieces[2].pose=structuredClone(s.assembly.pieces[0].pose)
- const {token}=await api.dispatch('POST','assembly3d-review/session',{}, {request}),context={request:{...request,headers:{...request.headers,authorization:'Bearer '+token}}},review=(route,body)=>api.dispatch('POST','assembly3d-review/'+route,body,context)
- let state=await review('sync',{assembly:s.assembly,originId:o.id,expectedVersion:null});assert.ok(state.collisionKeys.length)
- state=await review('accept',{assembly:s.assembly,expectedVersion:state.version,acceptedKeys:state.collisionKeys});state=await review('approve',{assembly:s.assembly,expectedVersion:state.version,acceptedKeys:state.collisionKeys})
- const approval=state.grant.id,r=await save(api,s),changed=structuredClone(s.assembly);changed.pieces[2].pose.position=[5,5,5]
- state=await review('sync',{assembly:changed,expectedVersion:state.version});assert.equal(state.grant,null)
- await assert.rejects(review('restore-saved',{assembly:changed,expectedVersion:state.version,savedHash:r.hash}),e=>e.statusCode===409)
- await assert.rejects(review('restore-saved',{assembly:s.assembly,expectedVersion:state.version,savedHash:'forged'}),e=>e.statusCode===409)
- await assert.rejects(api.dispatch('POST','assembly3d-review/restore-saved',{assembly:s.assembly,expectedVersion:state.version,savedHash:r.hash},{request}),e=>e.statusCode===401)
- state=await review('restore-saved',{assembly:s.assembly,expectedVersion:state.version,savedHash:r.hash});assert.equal(state.grant.id,approval);assert.equal(state.geometry.valid,false)
- state=await review('accept',{assembly:s.assembly,expectedVersion:state.version,acceptedKeys:[]});assert.equal(state.grant,null)
- state=await review('restore-saved',{assembly:s.assembly,expectedVersion:state.version,savedHash:r.hash});assert.equal(state.grant,null);assert.deepEqual(state.acceptedKeys,[],'restoring a file cannot undo an explicit review revocation')
+ const r=await save(api,s);assert.equal('reviewRef' in r,false)
+ assert.deepEqual((await api.dispatch('GET','assembly3d/records/'+r.assembly.id)).snapshot,s)
+ const newer=structuredClone(s);newer.assembly.revision++;newer.assembly.pieces[2].pose.position=[5,5,5]
+ const next=await save(api,newer,r.hash);assert.equal(next.version,r.version+1)
+ assert.deepEqual((await api.dispatch('GET',`assembly3d/records/${r.assembly.id}/versions/${r.version}`)).snapshot,s)
 })
 test('tampered files and invalid Profile snapshots fail closed',async t=>{
  const {dir,api,f}=await setup(t),o=await origin(api,f,'Back'),s=snapshot(o),r=await save(api,s),bad=structuredClone(s);bad.assembly.profiles[0].thickness=.5
