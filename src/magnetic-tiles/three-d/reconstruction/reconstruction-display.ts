@@ -38,9 +38,22 @@ export function analysisDisplay(request:OperationRecord|undefined):DisplayStatus
  if(b?.state==='running'||b?.state==='submitting'||request.state==='running'&&!b)return {tone:'running',label:b?.responseId?'Running · 后台识别中':'Submitting · 正在提交',message:b?.responseId?`Response ${b.responseId} · 只查询同一任务，不会重新生成。`:'正在等待供应商确认；不会自动重发。'}
  if(b?.state==='timeout'||t?.transportError==='TimeoutError')return {tone:'error',label:'Timeout · 请求或查询超时',message:b?.responseId?`可查询同一个 Response ${b.responseId}；超时不代表供应商停止执行。`:'未保存 Provider Response ID，无法安全恢复。供应商执行及计费状态未知，不会自动重发。'}
  if(b?.state==='unknown')return {tone:'error',label:'Unknown · 执行状态未知',message:`${detail??'网络或响应异常。'} ${b.responseId?'可查询同一个 Response。':'没有 Response ID，无法安全恢复。'} 可能已产生费用；不会自动重发。`}
+ if(request.usable&&request.record){
+  const validation=request.record.analysisValidation as {state?:string;diagnostics?:unknown[]}|undefined;
+  if(validation?.state==='reviewable')return {tone:'review',label:'Reviewable · 待人工 Review（含诊断）',message:`已保存 ${validation.diagnostics?.length??0} 条标注诊断及原始输出；主图重复字段已按声明的主图标注规范化。尚未验证照片匹配或几何。`}
+  return {tone:'review',label:'Completed · 待人工 Review',message:'已保存模型输出；不代表照片匹配或几何验证通过。'}
+ }
  const failure=requestFailure(request)
- if(failure)return {tone:'error',label:t?.validation?.valid===false?'输出契约校验失败':'Analysis Failed',message:detail??failure}
+ if(failure)return {tone:'error',label:t?.validation?.valid===false?'Validation Failed · 结果校验失败':'Analysis Failed',message:`${detail??failure}${b?.state==='completed'?' 供应商请求已完成，Raw Response 已保留；可本地重新校验，无法安全解释的数据仍会阻断。':''}`}
  return {tone:'review',label:'Completed · 待人工 Review',message:'已保存模型输出；不代表照片匹配或几何验证通过。'}
+}
+/** One source-bound list: requests own the lifecycle, snapshots without a
+ * request (manual annotations) are included once. Never infer ownership. */
+export function analysisHistoryEntries(requests:OperationRecord[],analyses:{id:string;sourceId:string;sourceHash:string;createdAt:string;origin?:string}[],source:Ref|null){
+ if(!source)return []
+ const related=requests.filter(r=>analysisRequest([r],source,null)),linked=new Set(related.map(r=>r.record?.id))
+ return [...related.map(request=>({id:request.record?.id??request.id,createdAt:request.createdAt,label:`${request.createdAt} · ${analysisDisplay(request).label} · ${request.id.slice(0,8)}`,request,analysisId:request.record?.id})),
+ ...analyses.filter(a=>a.sourceId===source.id&&a.sourceHash===source.hash&&!linked.has(a.id)).map(a=>({id:a.id,createdAt:a.createdAt,label:`${a.createdAt} · ${a.origin==='model'?'已保存结果':'人工标注'} · ${a.id.slice(0,8)}`,request:undefined,analysisId:a.id}))].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id))
 }
 export function requestFailure(request:OperationRecord|undefined):string|null{
  if(!request)return null

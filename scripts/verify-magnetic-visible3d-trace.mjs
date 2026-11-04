@@ -49,7 +49,7 @@ try{
  const base=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html`,field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true}),dialog=()=>page.getByRole('dialog',{name:'Magnetic Tiles Trace',exact:true}),state=id=>page.getByTestId(id)
  async function openSource(s,a,r){
   await stage(page,'source','inspector');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s.id)
-  await page.locator('select[aria-label="3D Analysis 历史"]').locator(`option[value="${a.id}"]`).waitFor({state:'attached'});await field('3D Analysis 历史').selectOption(a.id);await field('3D Review 历史').selectOption(r.id);await stage(page,'reconstruction','inspector')
+  await page.locator('select[aria-label="Analysis History"]').locator(`option[value="${a.id}"]`).waitFor({state:'attached'});await field('Analysis History').selectOption(a.id);await field('3D Review 历史').selectOption(r.id);await stage(page,'reconstruction','inspector')
  }
  async function trace(tab='Spatial Planning'){
   await button('Trace / Raw').click();await dialog().getByRole('button',{name:tab,exact:true}).click();return readTrace()

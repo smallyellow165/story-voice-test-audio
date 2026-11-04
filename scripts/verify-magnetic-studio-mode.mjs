@@ -55,14 +55,14 @@ try{
  await studioMode(page,'3d');assert.equal(await mode(),'3d');await page.getByTestId('tutorial-source').waitFor()
  assert.deepEqual(Object.fromEntries(Object.entries(await data()).filter(([k])=>k in saved2)),saved2,'first 3D switch preserves every 2D save')
  await modeStage('3d','source');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s3.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s3.id)
- await field('3D Analysis 历史').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption(candidateId);await camera()
+ await field('Analysis History').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption(candidateId);await camera()
  await page.locator('[data-linked-observation]').filter({visible:true}).first().click();await button('以所选面为上方观察').click();await button('保存当前视角').click();const savedCamera=await camera()
  await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();assert.equal(await mode(),'3d');assert.equal(await active(),'assembly')
  const adopted=await data();await modeStage('3d','build');await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:'已生成 · 2 步'}).waitFor({timeout:20000});await button('保存教程').click();await field('3D 教程查看步骤').selectOption('1')
  const tutorial=await exportTutorial(),baseline=await data(),postCount=calls.filter(c=>c.method==='POST').length,dialogCount=dialogs,workerCount=workers
  for(const s of ['source','review','reconstruction','assembly','build']){
-  await modeStage('3d',s);assert.equal(await field('3D Analysis 历史').inputValue(),a3.id);assert.equal(await field('3D Review 历史').inputValue(),r3.id);assert.equal(await field('Spatial Planning History').inputValue(),p3.id);assert.equal(await field('Geometry Execution History').inputValue(),x3.id);assert.equal(await field('历史 Reconstruction').count(),0)
-  await studioMode(page,'2d');assert.equal(await active(),s);assert.equal(await field('历史 Reconstruction').inputValue(),twoD.id);assert.equal(await field('3D Analysis 历史').count(),0)
+  await modeStage('3d',s);assert.equal(await field('Analysis History').inputValue(),a3.id);assert.equal(await field('3D Review 历史').inputValue(),r3.id);assert.equal(await field('Spatial Planning History').inputValue(),p3.id);assert.equal(await field('Geometry Execution History').inputValue(),x3.id);assert.equal(await field('历史 Reconstruction').count(),0)
+  await studioMode(page,'2d');assert.equal(await active(),s);assert.equal(await field('历史 Reconstruction').inputValue(),twoD.id);assert.equal(await field('Analysis History').count(),0)
   if(s==='reconstruction')assert.equal(await field('几何重建候选').inputValue(),twoD.candidates[0].id)
   if(s==='assembly')assert.equal(await page.locator('[data-tile-id]').filter({visible:true}).count(),1)
   await studioMode(page,'3d');assert.equal(await active(),s);assert.equal(await field('3D Reconstruction Candidate').count(),s==='reconstruction'?1:0)

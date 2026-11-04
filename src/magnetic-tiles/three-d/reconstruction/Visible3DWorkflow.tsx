@@ -36,7 +36,7 @@ import {SourceImagePicker} from '../../intake/SourceImagePicker.tsx';
 import {workflowTerms} from '../../studio-terms.ts';
 import {TraceViewer} from '../../intake/TraceViewer.tsx';
 import type {TraceSource} from '../../intake/TraceViewer.tsx';
-import {analysisRequest,analysisDisplay,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
+import {analysisRequest,analysisDisplay,analysisHistoryEntries,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
 import type {OperationRecord,OperationAttempt,ModelTrace,DisplayStatus} from './reconstruction-display.ts';
 import {planningParticipation} from './planning-preflight.ts';
 import type { Source, Evidence } from '../../intake/contracts.ts';
@@ -62,6 +62,7 @@ type Base = {
 };
 type Analysis = Base & {
     evidence: VisibleEvidence3D;
+    analysisValidation?: {state:string;diagnostics:{code:string;observationId:string;message:string}[]};
 };
 type Review = Base & {
     analysisId: string;
@@ -339,8 +340,32 @@ export default function Visible3DWorkflow() {
         await refresh();
     }
     const analysisModelRequest=analysisRequest(requests,source,analysis,analysisTraceSelection);
+    const analysisHistory=analysisHistoryEntries(requests,history.analyses,source);
+    const historySelection=analysisTraceSelection==='record'?analysisHistory.find(e=>e.analysisId===analysis?.id)?.id??'':analysisHistory.find(e=>e.request?.id===analysisModelRequest?.id)?.id??'';
+    async function selectHistory(id:string){
+      const entry=analysisHistory.find(e=>e.id===id);if(!entry)return;
+      setAnalysisQueryError('');setError('');setTrace(null);
+      if(entry.analysisId){
+        const a=history.analyses.find(a=>a.id===entry.analysisId)??(entry.request?.record as Analysis|undefined);
+        if(a&&a.id!==analysis?.id){await chooseSelected('analysis',a);selectAnalysis(a)}
+      }
+      setAnalysisTraceSelection(entry.request?.id??'record');
+      if(!entry.analysisId)navigate('source');
+    }
+    async function openAnalysisResult(){
+      if(!analysisModelRequest||!source)return;
+      const context={...selectionContext.current};
+      const result=analysisModelRequest.usable?analysisModelRequest:await api<OperationRecord>('resume-analyze',{requestId:analysisModelRequest.id,sourceId:source.id,sourceHash:source.hash});
+      await refresh();
+      if(!result.usable||!result.record)throw Error(result.error??'结果仍未通过完整性校验；原始响应已保留。');
+      if(context.project!==selectionContext.current.project||context.revision!==selectionContext.current.revision)throw Error('当前来源或选择已变化，恢复结果保留在历史，未替换当前工作区');
+      const a=result.record as Analysis;
+      if(a.id!==analysis?.id){await chooseSelected('analysis',a);selectAnalysis(a)}
+      navigate('review');
+    }
     const analysisQueryScope=useRef('');analysisQueryScope.current=JSON.stringify([source?.id,source?.hash,analysisModelRequest?.id]);
-    const analysisStatus=analysisDisplay(analysisModelRequest),analysisBackground=analysisModelRequest?.trace?.background;
+    const analysisStatus:DisplayStatus=analysisModelRequest?analysisDisplay(analysisModelRequest):analysis?{tone:'review',label:'已保存 Analysis · 可 Review',message:analysis.origin==='model'?'当前选择的是已保存结果；不代表照片匹配或 Geometry Valid。':'当前选择的是人工标注；不代表模型识别成功或 Geometry Valid。'}:analysisDisplay(undefined);
+    const analysisBackground=analysisModelRequest?.trace?.background;
     const analysisPending=analysisModelRequest?.state==='running';
     async function queryAnalysis(request=analysisModelRequest){
       if(!request||!source||analysisQueryLock.current)return;
@@ -387,9 +412,8 @@ export default function Visible3DWorkflow() {
     return <>
   <StudioSlot column="workflow" stages={['source','review','reconstruction','assembly','build']} intake="visible3d" view="3d"><p title={source?.id}>Visible 3D · {source?.name ?? '未选照片'}</p><button disabled={busy} onClick={() => void run(async () => { await refresh(); if (source)
         setHead(await api('head/' + source.id)); })}>刷新 3D 历史</button>
-   {source&&(stage==='assembly'||stage==='build')&&assemblyOrigin3D?.kind==='combined-assembly'?<div data-testid="combined-parent-lineage"><b>Combined Assembly · 多 Parent</b>{(assemblyOrigin3D.parents as {id:string;revision:number;hash:string}[]).map(p=><small style={{display:'block',overflowWrap:'anywhere'}} key={p.id}>Assembly {p.id} · r{p.revision} · {p.hash.slice(0,12)}</small>)}<small>固定输入快照；当前 Reconstruction Selected 未重绑。</small></div>:source&&(stage==='assembly'||stage==='build')&&assemblyOrigin3D?<><small data-testid="assembly-history-origin">作品来源 · {String(assemblyOrigin3D.sourceId).slice(0,8)} · {String((assemblyOrigin3D.reconstructionScope as {groupName?:string})?.groupName??'全部模块')}</small>{([['3D Analysis 历史','analysisId'],['3D Review 历史','reviewId'],['Spatial Planning History','planId'],['Geometry Execution History','executionId']] as const).map(([label,key])=><label key={key}>{label}<select aria-label={label} disabled value={String(assemblyOrigin3D[key]??'')}><option value={String(assemblyOrigin3D[key]??'')}>{String(assemblyOrigin3D[key]??'尚无来源').slice(0,8)} · Assembly Origin</option></select></label>)}<small>上方为当前作品的不可变来源；重建选择未重绑。返回 Reconstruction 可修改重建范围。</small></>:<>
-   {source && <><small data-testid="selected-project">Project {source.id.slice(0,8)}</small><label>3D Analysis 历史<select aria-label="3D Analysis 历史" value={analysis?.id ?? ''} disabled={busy} onChange={e => { const a = history.analyses.find(a => a.id === e.target.value); if (a)
-            void run(async()=>{await chooseSelected('analysis',a);selectAnalysis(a)}); }}><option value="">选择 Analysis</option>{history.analyses.filter(a => a.sourceId === source.id).map(a => <option key={a.id} value={a.id}>{a.id.slice(0,8)} · {a.origin} · {a.createdAt}</option>)}</select></label>
+   {source&&(stage==='assembly'||stage==='build')&&assemblyOrigin3D?.kind==='combined-assembly'?<div data-testid="combined-parent-lineage"><b>Combined Assembly · 多 Parent</b>{(assemblyOrigin3D.parents as {id:string;revision:number;hash:string}[]).map(p=><small style={{display:'block',overflowWrap:'anywhere'}} key={p.id}>Assembly {p.id} · r{p.revision} · {p.hash.slice(0,12)}</small>)}<small>固定输入快照；当前 Reconstruction Selected 未重绑。</small></div>:source&&(stage==='assembly'||stage==='build')&&assemblyOrigin3D?<><small data-testid="assembly-history-origin">作品来源 · {String(assemblyOrigin3D.sourceId).slice(0,8)} · {String((assemblyOrigin3D.reconstructionScope as {groupName?:string})?.groupName??'全部模块')}</small>{([['Analysis 来源快照','analysisId'],['3D Review 历史','reviewId'],['Spatial Planning History','planId'],['Geometry Execution History','executionId']] as const).map(([label,key])=><label key={key}>{label}<select aria-label={label} disabled value={String(assemblyOrigin3D[key]??'')}><option value={String(assemblyOrigin3D[key]??'')}>{String(assemblyOrigin3D[key]??'尚无来源').slice(0,8)} · Assembly Origin</option></select></label>)}<small>上方为当前作品的不可变来源；重建选择未重绑。返回 Reconstruction 可修改重建范围。</small></>:<>
+   {source && <><small data-testid="selected-project">Project {source.id.slice(0,8)}</small><label>Analysis History / Analysis 历史<select aria-label="Analysis History" value={historySelection} disabled={busy||analysisQuerying} onChange={e=>void run(()=>selectHistory(e.target.value))}><option value="">选择请求或已保存结果</option>{analysisHistory.map(entry=><option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
    <label>3D Review 历史<select aria-label="3D Review 历史" value={review?.id ?? ''} disabled={busy} onChange={e => { const r = history.reviews.find(r => r.id === e.target.value); if (r) {
             void run(async()=>{await chooseSelected('review',r);selectReview(r);});
         } }}><option value="">选择 Review</option>{history.reviews.filter(r => r.analysisId === analysis?.id).map(r => <option key={r.id} value={r.id}>{r.id.slice(0, 8)}{head.reviewId === r.id ? ' · Selected' : ''}</option>)}</select></label>
@@ -403,8 +427,8 @@ export default function Visible3DWorkflow() {
   </StudioSlot>
   <StudioSlot column="workspace" stages={['source']} intake="visible3d"><section className="analysis-image-preview" aria-label="Visible 3D Analysis 原图">
    <h3>原图与可见证据（Source）</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
-   {imageStrip}<VisibleEvidenceImage fit source={frame.displaySource} image={frame.image} evidence={displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>
-   {selected&&<p className="hint">当前零件：{selected} <button onClick={()=>navigate('review')}>修正选中零件</button></p>}
+   {imageStrip}<VisibleEvidenceImage fit source={frame.displaySource} image={frame.image} evidence={analysisModelRequest&&analysisModelRequest.record?.id!==analysis?.id?undefined:displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>
+   {selected&&(!analysisModelRequest||analysisModelRequest.record?.id===analysis?.id)&&<p className="hint">当前零件：{selected} <button onClick={()=>navigate('review')}>修正选中零件</button></p>}
   </section></StudioSlot>
   <StudioSlot column="workspace" stages={['review']} intake="visible3d"><ReviewWorkspace spatial moduleNames={moduleNames} moduleControls={selection=><ModulePlanControls key={review?.id??'unsaved'} store={moduleStore} display={reviewDisplay} selection={selection} busy={busy}/>}  bulkControl={<><button disabled={busy||!bulkPlan?.adopted} onClick={adoptAllSuggestions}>采用所有 AI 建议</button>{bulkNotice&&<span role="status" className="review-bulk-summary">{bulkNotice}</span>}</>} inputHelp={!review?'请先保存完整 Review。进入下一页不会执行模型；Spatial Planning 仅使用已保存、已确认且未排除的实例。':dirty?'当前 Review 有未保存修改，请先保存。Planning 不会使用未保存的草稿。':head.reviewId!==review.id?'当前 Review 已过期，请重新加载最新审核记录后执行 Planning。':`已保存 Review。${participation?.blocker??'可进入 Reconstruction；未确认或已排除实例不参与 Spatial Planning。'}`} currentImageId={frame.activeId} display={moduleDisplay} imageControls={reviewImageControls} evidenceLabel={frame.displaySource?.name} spatialLabels={Object.fromEntries((analysis?.evidence.observations??[]).map(o=>[o.id,o.shapeAssessment?familyLabels[o.shapeAssessment.family]:'V1 未记录 Shape Family']))} confirmedIds={form.pieces.filter(p => p.confirmed && !p.excluded).map(p => p.id)} active={active && stage === 'review'} evidence={projectedReview} imageWidth={source?.view.width ?? 1} imageHeight={source?.view.height ?? 1} selected={selected} onSelect={selectReviewedObservation} busy={busy} saveControl={<button disabled={busy || !analysis} onClick={() => void run(async () => { const r = await api<{
         record: Review;
@@ -420,7 +444,7 @@ export default function Visible3DWorkflow() {
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece} geometryIssue={issueVisual} issueFocus={issueSelection?.sequence} collision={issueVisual?.collision} collisionFocus={issueCollisionFocus}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{executionInput?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>selectComparisonObservation(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
   </StudioSlot>
-  <StudioSlot column="inspectorActions" stages={['source']} intake="visible3d" view="3d">{active&&stage==='source'&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</StudioSlot>
+  <StudioSlot column="inspectorActions" stages={['source','review']} intake="visible3d" view="3d">{active&&(stage==='source'||stage==='review')&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</StudioSlot>
   <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector visible3d-review-inspector'}>{stage==='reconstruction'&&<div className="review-inspector-heading visible3d-reconstruction-heading"><h2>{workflowTerms.reconstruction.label}</h2>{active&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</div>}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
    {stage==='source'&&<section className="intake-controls source-inspector" aria-label="Visible 3D 图片与识别操作">
     <SourceImagePicker onPendingChange={setImagePending} onSelectImage={frame.select} activeImageId={frame.activeId} sourceType={imageSource} onSourceTypeChange={setImageSource} currentSource={source} disabled={busy}
@@ -429,17 +453,18 @@ export default function Visible3DWorkflow() {
     <label className="compact-field">下次识别模型<select aria-label="3D Vision 模型" value={model} onChange={e=>setModel(e.target.value)} disabled={busy}><option value="">选择已配置模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
     <button className="primary" disabled={busy||analysisPending||!source||!model} onClick={()=>{if(analysisBackground&&['unknown','timeout'].includes(analysisBackground.state)&&!window.confirm('上次请求可能仍在执行或已产生费用。建议先查询已有任务。确定要创建一次新的付费识别请求吗？'))return;void run(()=>modelAction('analyze'))}}>Analyze Visible 3D（调用模型）</button>
     <ExecutionStatus value={analysisStatus} testId="visible3d-analysis-state"/>
-    {source&&requests.some(r=>analysisRequest([r],source,null))&&<label className="compact-field">识别请求（已有记录）<select aria-label="Analysis 已有请求" value={analysisTraceSelection} disabled={busy||analysisQuerying} onChange={e=>{setAnalysisTraceSelection(e.target.value);setAnalysisQueryError('');setError('');setTrace(null)}}><option value="latest">当前图片集合 · 最新请求</option>{analysis&&<option value="record">当前选中 Analysis 的请求</option>}{requests.filter(r=>analysisRequest([r],source,null)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(r=><option key={r.id} value={r.id}>{r.createdAt} · {r.trace?.background?.state??r.trace?.status??r.state} · {r.id.slice(0,8)}</option>)}</select></label>}
-    {analysisQueryError&&<p role="alert">{analysisQueryError}</p>}
-    {analysisBackground?.responseId&&<button disabled={busy||analysisQuerying||['completed','failed'].includes(analysisBackground.state)} onClick={()=>void queryAnalysis()}>{analysisQuerying?'查询中…':'查询 / 恢复已有识别任务'}</button>}
-    {analysisBackground?.state==='completed'&&analysisModelRequest?.usable&&analysisModelRequest.record&&analysis?.id!==analysisModelRequest.record.id&&<button onClick={()=>void run(async()=>{const a=analysisModelRequest.record as Analysis;await chooseSelected('analysis',a);selectAnalysis(a);navigate('review')})}>打开已完成识别并 Review</button>}
 
-    {analysis&&<p role="status">{analysis.origin==='model'?'已保存模型识别':'人工标注'} · {analysis.evidence.observations.length} 个可见实例 · {analysis.id.slice(0,8)}</p>}
+    {analysisQueryError&&<p role="alert">{analysisQueryError}</p>}
+    {analysisBackground?.responseId&&!['completed','failed'].includes(analysisBackground.state)&&<button disabled={busy||analysisQuerying} onClick={()=>void queryAnalysis()}>{analysisQuerying?'查询中…':'查询 / 恢复已有识别任务'}</button>}
+    {!analysisModelRequest&&analysis&&<button disabled={busy} onClick={()=>navigate('review')}>进入 Review</button>}
+    {analysisModelRequest&&(analysisModelRequest.usable&&analysisModelRequest.record||analysisBackground?.state==='completed'||analysisModelRequest.trace?.status==='invalid_plan')&&<button disabled={busy||analysisQuerying} onClick={()=>void run(openAnalysisResult)}>{analysisModelRequest.usable?'进入 Review':'恢复结果并 Review（不调用模型）'}</button>}
+
+    {analysis&&analysisModelRequest&&analysisModelRequest.record?.id!==analysis.id?<p role="status">所选请求未打开为当前 Analysis；原 Analysis / Review {analysis.id.slice(0,8)} 保留。</p>:analysis&&<p role="status">{analysis.origin==='model'?'已保存模型识别':'人工标注'} · {analysis.evidence.observations.length} 个可见实例 · {analysis.id.slice(0,8)}</p>}
    <details><summary>人工标注 / 离线验证（不调用模型）</summary><p>导入 VisibleEvidence3D JSON；必须保留可见区域或边角证据。人工标注不代表 Vision 识别成功率。</p><textarea spellCheck={false} aria-label="Visible 3D 人工标注 JSON" value={annotation} onChange={e => setAnnotation(e.target.value)}/><input aria-label="导入 3D 标注文件" type="file" accept="application/json" disabled={busy} onChange={e => { const f = e.target.files?.[0]; if (f)
         void f.text().then(setAnnotation); }}/><button disabled={busy || !source} onClick={() => void run(async () => { const a = await api<Analysis>('annotate', { sourceId: source!.id, evidence: parseVisibleEvidence(JSON.parse(annotation)) }); await chooseSelected('analysis',a);selectAnalysis(a); await refresh(); navigate('review'); })}>保存人工标注并 Review</button></details>
 
    </section>}
-   {stage === 'review' && <>{selectedReview ? <ReviewObservationInspector key={`${analysis?.id}/${selectedReview.id}`} piece={selectedReview} evidence={selectedEvidence} profiles={registry.profiles} busy={busy} currentImageId={frame.activeId} onEdit={editPiece} onImage={frame.select} images={(selectedEvidence?.imageEvidence??[]).map(e=>({id:e.imageId,name:frame.entries.find(i=>i.sourceId===e.imageId)?.name??e.imageId,selected:frame.activeId===e.imageId,available:reviewDisplay.imageIds.includes(e.imageId)}))}/> : <p>请先在图片阶段分析或导入标注。</p>}
+   {stage === 'review' && <>{analysis?.analysisValidation?.diagnostics.length?<details className="analysis-validation-diagnostics"><summary>Analysis 标注诊断 · {analysis.analysisValidation.diagnostics.length}</summary><p>Review 使用声明的主图 bbox/features；原始图片级标注及坐标保存在 Trace / Raw。规范化不表示识别正确或 Geometry Valid。</p><ul>{analysis.analysisValidation.diagnostics.map((d,i)=><li key={i}>{d.observationId}：{d.message}</li>)}</ul></details>:null}{selectedReview ? <ReviewObservationInspector key={`${analysis?.id}/${selectedReview.id}`} piece={selectedReview} evidence={selectedEvidence} profiles={registry.profiles} busy={busy} currentImageId={frame.activeId} onEdit={editPiece} onImage={frame.select} images={(selectedEvidence?.imageEvidence??[]).map(e=>({id:e.imageId,name:frame.entries.find(i=>i.sourceId===e.imageId)?.name??e.imageId,selected:frame.activeId===e.imageId,available:reviewDisplay.imageIds.includes(e.imageId)}))}/> : <p>请先在图片阶段分析或导入标注。</p>}
     <details className="review-spatial-evidence" data-testid="review-spatial-evidence"><summary>空间解释与证据 · {analysis?.evidence.spatialInterpretation?.connections.length??0} 条可见连接</summary>
      <SpatialUnderstandingPanel key={analysis?.id} compact label="Vision 整体空间理解" value={analysis?.evidence.spatialInterpretation} onChoose={chooseVisualConnection} disabled={busy}/>
     <label>整体解释人工审核<select aria-label="3D 整体解释审核" disabled={busy} value={form.interpretationReview?.status??'unreviewed'} onChange={e=>setForm(f=>({...f,interpretationReview:{status:e.target.value as 'unreviewed'|'accepted'|'corrected'|'rejected',note:f.interpretationReview?.note??''}}))}><option value="unreviewed">未确认</option><option value="accepted">接受为待几何验证的解释</option><option value="corrected">已纠正（填写说明）</option><option value="rejected">拒绝此解释</option></select></label><label>空间解释修正说明<textarea aria-label="3D 空间解释修正说明" disabled={busy} value={form.interpretationReview?.note??''} onChange={e=>setForm(f=>({...f,interpretationReview:{status:f.interpretationReview?.status??'corrected',note:e.target.value}}))}/></label>

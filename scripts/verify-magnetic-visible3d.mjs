@@ -125,7 +125,7 @@ await field('3D Reconstruction Candidate').selectOption('candidate-2');await but
   await step('source');await button('3D').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${live.sourceId}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(live.sourceId)
   await button('刷新 3D 历史').click()
   const h=await api.dispatch('GET','visible3d/history'),a=h.analyses.find(a=>a.sourceId===live.sourceId),r=h.reviews.find(r=>r.analysisId===a.id),p=h.plans.find(p=>p.reviewId===r.id),x=h.executions.find(x=>x.planId===p.id)
-  await field('3D Analysis 历史').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)
+  await field('Analysis History').selectOption(a.id);await step('review');await field('3D Review 历史').selectOption(r.id);await step('reconstruction');await field('Spatial Planning History').selectOption(p.id);await field('Geometry Execution History').selectOption(x.id)
   await page.getByTestId('visible3d-execution-status').filter({hasText:/2 (?:合法 )?Candidates/}).waitFor();
   if(v21){
    const top=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='horizontal').pieceId,side=a.evidence.spatialInterpretation.faces.find(f=>f.orientation==='vertical').pieceId

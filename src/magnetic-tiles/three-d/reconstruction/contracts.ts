@@ -118,7 +118,10 @@ const ref = (id: unknown, version: unknown): void => {
 const color = (x: unknown): void => { if (typeof x !== 'string' || !/^#[a-fA-F0-9]{6}$/.test(x))
     fail('颜色需要 #RRGGBB'); };
 function strings(x: unknown): void { list(x); (x as unknown[]).forEach(text); }
-export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
+/** Analysis may retain conflicting duplicate annotations for diagnosis. All
+ * structural, coordinate and reference checks still run. Executable inputs use
+ * the strict default; only the Analysis adapter supplies this callback. */
+export function parseVisibleEvidence(value: unknown, onReferenceMismatch?: (observationId:string)=>void): VisibleEvidence3D {
     const v = value as VisibleEvidence3D;
     fields(v, ['version', 'observations', 'unknowns'],v.version === 2 ? ['spatialInterpretation','referenceImageId'] : []);
     if (![1,2].includes(v.version))
@@ -163,7 +166,9 @@ export function parseVisibleEvidence(value: unknown): VisibleEvidence3D {
                 parseVisibleEvidence({version:1,observations:[{id:o.id,color:o.color,bbox:e.bbox,features:e.features,occlusion:e.occlusion,evidence:e.evidence,uncertainty:e.uncertainty,profileCandidates:[]}],unknowns:[]});
             }
             if(v.referenceImageId){const anchor=o.imageEvidence.find(e=>e.imageId===v.referenceImageId);
-                const features=anchor?.features??[];if(JSON.stringify(o.bbox)!==JSON.stringify(anchor?.bbox??null)||o.features.length!==features.length||o.features.some(f=>!features.some(e=>e.id===f.id&&e.visibility===f.visibility&&JSON.stringify(e.points)===JSON.stringify(f.points))))fail('主图坐标必须与对应图片证据一致');}
+                const features=anchor?.features??[];if(JSON.stringify(o.bbox)!==JSON.stringify(anchor?.bbox??null)||o.features.length!==features.length||o.features.some(f=>!features.some(e=>e.id===f.id&&e.visibility===f.visibility&&JSON.stringify(e.points)===JSON.stringify(f.points)))){
+                    if(onReferenceMismatch)onReferenceMismatch(o.id);else fail('主图坐标必须与对应图片证据一致');
+                }}
         }
         if (!o.bbox && !o.features.some(f => f.visibility === 'visible') && !o.imageEvidence?.length)
             fail('不得添加没有可见区域或边角证据的零件');

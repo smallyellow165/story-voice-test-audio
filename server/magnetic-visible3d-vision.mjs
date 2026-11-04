@@ -1,11 +1,11 @@
 import {canonicalGeometryContract} from '../src/magnetic-tiles/three-d/canonical-geometry.ts'
 import {multiImagePrompt,multiImagePromptVersion,multiImagePromptStatus,multiImageSchema,openaiMultiImageFormat,imageRequestParts,openaiImageParts} from './magnetic-multi-image-vision.mjs'
-import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
 import {readFile} from 'node:fs/promises'
 import {resolveModel,modelSettings} from './brick-model-registry.mjs'
 import {buildOpenaiRequest} from './openai-responses.mjs'
 import {runStructuredSpatialModel,resumeStructuredSpatialModel} from './spatial-model-run.mjs'
-import {parseVisibleEvidence,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
+import {parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
+import {validateAnalysisEvidence} from './magnetic-analysis-validation.mjs'
 const string={type:'STRING'},number={type:'NUMBER'},boolean={type:'BOOLEAN'},array=items=>({type:'ARRAY',items}),nullable=s=>({...s,nullable:true})
 const object=properties=>({type:'OBJECT',properties,required:Object.keys(properties)})
 const profile={profileId:string,profileVersion:{type:'INTEGER'}}
@@ -60,7 +60,7 @@ export function buildVisibleRequest(model,prepared,kind){
  return {model,contents:[{role:'user',parts:[{text:content},{inlineData:{mimeType:prepared.image.mimeType,data:prepared.image.imageBase64}}]}],config:{systemInstruction:prompt,responseMimeType:'application/json',responseSchema:schema,...modelSettings(model,task)}}
 }
 function visibleContract(prepared,kind){
- return {background:kind==='analysis'&&prepared.images?.length>1,runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:kind==='plan'?planningPromptVersion:prepared.images?.length>1?multiImagePromptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');if(kind==='analysis'){parseVisibleEvidence(value);if(prepared.source)assertImageEvidence(value,prepared.source);if(prepared.source?.images?.length>1&&value.referenceImageId!==prepared.source.primaryImageId)throw Error('参考图片来源不一致')}else parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}}
+ return {background:kind==='analysis'&&prepared.images?.length>1,runtimeStatus:visiblePromptStatus,task:kind==='analysis'?'reverse':'design',recordTask:'magnetic-visible3d-'+kind,promptVersion:kind==='plan'?planningPromptVersion:prepared.images?.length>1?multiImagePromptVersion:visiblePromptVersion,buildRequest:(m,p)=>buildVisibleRequest(m,p,kind),validate:(value,input)=>{if(kind==='analysis')return validateAnalysisEvidence(value,prepared.source);try{if(value?.version!==2)throw Error('本次模型请求需要 Visible 3D V2 契约；V1 仅供历史读取和人工导入');parseSpatialHypothesis(value,input.geometryInput);return {valid:true,issues:[]}}catch(e){return {valid:false,issues:[e.message]}}}}
 }
 export function runVisibleModel(prepared,options,kind){return runStructuredSpatialModel(prepared,options,visibleContract(prepared,kind))}
 export function resumeVisibleAnalysis(directory,id,source,onTrace){return resumeStructuredSpatialModel(directory,id,visibleContract({source},'analysis'),onTrace)}

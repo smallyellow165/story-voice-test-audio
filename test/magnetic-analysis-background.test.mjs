@@ -79,6 +79,29 @@ test('single-image path remains foreground/store:false and immediately uses the 
  const f=await setup(t),e=structuredClone(f.evidence);delete e.referenceImageId;e.observations.forEach(o=>delete o.imageEvidence);provider=()=>response('completed',e)
  const result=await f.api.dispatch('POST','visible3d/analyze',{requestId:randomUUID(),sourceId:f.sources[0].id,model:'gpt-6.1-sol'});assert.equal(result.usable,true);assert.equal(calls.length,1);assert.equal(calls[0].body.background,undefined);assert.equal(calls[0].body.store,false);assert.equal(calls[0].body.text.format.type,'json_object');assert.equal(result.trace.background,undefined)
 })
+test('new completions retain alias diagnostics and raw output while saving a strictly valid Review projection',async t=>{
+ const f=await setup(t),raw=structuredClone(f.evidence)
+ raw.observations.forEach(o=>o.imageEvidence[0].features=[])
+ provider=()=>response('completed',raw)
+ const result=await f.start()
+ assert.equal(result.usable,true);assert.equal(result.state,'complete');assert.equal(result.trace.validation.valid,true)
+ assert.equal(result.trace.validation.state,'reviewable');assert.equal(result.record.analysisValidation.diagnostics.length,raw.observations.length)
+ assert.deepEqual(JSON.parse(result.trace.rawOutput),raw);assert.deepEqual(result.record.rawEvidence,raw)
+ assert.deepEqual(result.record.evidence.observations[0].imageEvidence[0].features,raw.observations[0].features)
+ const r=await f.api.dispatch('POST','visible3d/reviews',{analysisId:result.record.id,review:f.review,expectedRevision:0})
+ assert.equal(r.record.analysisHash,result.record.hash);assert.equal(calls.length,1)
+})
+test('foreground postprocessing failure keeps the complete request Trace and usage in history',async t=>{
+ const f=await setup(t),raw=structuredClone(f.evidence)
+ delete raw.referenceImageId;raw.observations.forEach(o=>delete o.imageEvidence)
+ raw.observations[0].profileCandidates[0].profileId='not-in-registry'
+ provider=()=>response('completed',raw)
+ const result=await f.api.dispatch('POST','visible3d/analyze',{requestId:randomUUID(),sourceId:f.sources[0].id,model:'gpt-6.1-sol'})
+ assert.equal(result.state,'failed');assert.match(result.error,/候选 Profile 不在 Registry/)
+ assert.deepEqual(JSON.parse(result.trace.rawOutput),raw);assert.equal(result.trace.usageMetadata.total_tokens,126)
+ assert.equal((await f.api.dispatch('GET','visible3d/requests')).find(r=>r.id===result.id).trace.id,result.trace.id)
+ assert.equal((await f.api.dispatch('GET','visible3d/history')).analyses.length,0);assert.equal(calls.length,1)
+})
 test('both real failed traces remain byte-for-byte unchanged and are never submitted during offline tests',async()=>{
  const files=['9be836a5-870c-448e-a89f-f7e8f3cc0688','9cc581af-e87a-40e5-b336-6b32dedbd2e2'];const sha=b=>createHash('sha256').update(b).digest('hex')
  for(const id of files){const file=new URL('../generated/magnetic-intake/visible3d/model-traces/'+id+'.json',import.meta.url);let raw;try{raw=await readFile(file)}catch(e){if(e.code==='ENOENT')continue;throw e}const t=JSON.parse(raw);assert.equal(t.background,undefined);assert.equal(t.request.store,false);if(id===files[0])assert.equal(sha(raw),'5c56c593dad449794eb816422d626dacb64d9ef1eafe120f7bab021c79a8cf41');else{assert.equal(t.transportError,'TimeoutError');assert.equal(t.elapsedMs,180032)}assert.equal(sha(await readFile(file)),sha(raw))}

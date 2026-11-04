@@ -73,7 +73,7 @@ test('DUPLO shared runner records an actual mocked HTTP wire once; incomplete re
 
 })
 test('analysis and planning service adapter preserve input and reject parsed output without captured wire',async t=>{
- const f=await setup(t),records=[]
+ const f=await setup(t),records=[];Object.assign(f,upgradeVisibleFixture(f))
  const runModel=async(prepared,options,kind)=>{records.push({prepared,options,kind});const plan=kind==='analysis'?f.evidence:f.plan;const trace={id:randomUUID(),requestInput:prepared.input,status:'plan_ready_for_review',parseStatus:'parsed',validation:{valid:true},wireStatus:'response_saved',finishReason:'completed',rawOutput:JSON.stringify(plan),plan};await mkdir(options.directory,{recursive:true});await writeFile(path.join(options.directory,trace.id+'.json'),JSON.stringify(trace));return trace}
  const workflow=createVisible3DWorkflow(path.join(f.directory,'direct'),{readSource:id=>f.api.read('sources',id),readImage:async()=>png,getRegistry:()=>f.api.dispatch('GET','profiles'),runModel})
  const a=await workflow.dispatch('POST','analyze',{sourceId:f.source.id,model:'gpt-4.1',requestId:randomUUID()});assert.equal(a.usable,true)

@@ -35,9 +35,9 @@ try{
  const field=n=>page.getByLabel(n,{exact:true}).filter({visible:true}),button=n=>page.getByRole('button',{name:n,exact:true}).filter({visible:true})
  async function openFixture(f){
   await stage(page,'source','inspector');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${f.source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(f.source.id)
-  await page.locator('select[aria-label="3D Analysis 历史"]').locator(`option[value="${f.analysis.id}"]`).waitFor({state:'attached'})
-  if(!await field('3D Analysis 历史').count())await button('工作阶段').click()
-  await field('3D Analysis 历史').selectOption(f.analysis.id);await stage(page,'review','workspace')
+  await page.locator('select[aria-label="Analysis History"]').locator(`option[value="${f.analysis.id}"]`).waitFor({state:'attached'})
+  if(!await field('Analysis History').count())await button('工作阶段').click()
+  await field('Analysis History').selectOption(f.analysis.id);await stage(page,'review','workspace')
  }
  const svg=()=>page.locator('.review-evidence-fit svg').filter({visible:true})
  async function inspect(f){

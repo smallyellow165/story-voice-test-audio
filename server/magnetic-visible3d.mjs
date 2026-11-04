@@ -15,6 +15,7 @@ import {shareText} from './llm-traces.mjs'
 import {planningParticipation} from '../src/magnetic-tiles/three-d/reconstruction/planning-preflight.ts'
 import {modelOptions,providerStatus} from './brick-model-registry.mjs'
 import {assertImageEvidence} from '../src/magnetic-tiles/intake/image-set.ts'
+import {prepareAnalysisEvidence,validateAnalysisEvidence} from './magnetic-analysis-validation.mjs'
 import {runVisibleModel,resumeVisibleAnalysis,visiblePromptStatus,visiblePromptVersion} from './magnetic-visible3d-vision.mjs'
 import {parseVisibleEvidence,validateVisibleInput,parseSpatialHypothesis} from '../src/magnetic-tiles/three-d/reconstruction/contracts.ts'
 import {adaptProfile} from '../src/magnetic-tiles/three-d/profile-adapter.ts'
@@ -103,7 +104,11 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
  async function verifyModelRecord(r){
   if(r.origin!=='model')return
   const trace=JSON.parse(await readFile(path.join(directory,'model-traces',identifier(r.traceId)+'.json'),'utf8'))
-  if(hash(trace)!==r.traceHash||trace.status!=='plan_ready_for_review'||trace.wireStatus!=='response_saved'||hash(trace.plan)!==hash(r.evidence??r.plan)||hash(JSON.parse(trace.rawOutput))!==hash(trace.plan)||trace.requestInput.source.hash!==r.sourceHash||trace.requestInput.source.id!==r.sourceId)fail('模型 Trace 与正式记录不一致',409)
+  if(hash(trace)!==r.traceHash||trace.wireStatus!=='response_saved'||hash(JSON.parse(trace.rawOutput))!==hash(trace.plan)||trace.requestInput.source.hash!==r.sourceHash||trace.requestInput.source.id!==r.sourceId)fail('模型 Trace 与正式记录不一致',409)
+  if(r.analysisValidation){
+   const source=await readSource(r.sourceId),prepared=prepareAnalysisEvidence(trace.plan,source)
+   if(!completeAnalysisTrace(trace)||hash(prepared.evidence)!==hash(r.evidence)||hash(prepared.rawEvidence??null)!==hash(r.rawEvidence??null)||hash(prepared.analysisValidation)!==hash(r.analysisValidation))fail('Analysis 规范化结果与原始 Trace 不一致',409)
+  }else if(trace.status!=='plan_ready_for_review'||hash(trace.plan)!==hash(r.evidence??r.plan))fail('模型 Trace 与正式记录不一致',409)
  }
  async function lineage(kind,id){
   const r=await read(kind,id),review=kind==='reviews'?r:kind==='plans'?await read('reviews',r.reviewId):['executions','refinements','module-plans'].includes(kind)?await read('reviews',r.reviewId):null
@@ -210,29 +215,37 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
   const images=readImages?await readImages(source):null
   if(geometryInput)assertCanonicalProfiles(geometryInput.profiles,registry.profiles)
-  const prepared={image,source,...(images?{images}:{}),input:{...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps. Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),geometryContract:canonicalGeometryManifest(geometryInput?.profiles??registry.profiles.map(canonicalProfileSnapshot)),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
+  const prepared={image,source,...(images?{images}:{}),input:{...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps.'+(kind==='analysis'?' Root bbox/features are canonical annotations in referenceImageId only; the reference imageEvidence entry must repeat exactly those bbox/features (including feature IDs, points and visibility).':'')+' Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),geometryContract:canonicalGeometryManifest(geometryInput?.profiles??registry.profiles.map(canonicalProfileSnapshot)),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
   const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true,onTrace:async t=>{if(t.background)await checkpoint({trace:t,state:'running'})}},kind==='analysis'?'analysis':'plan')
+  await checkpoint({trace})
   const result=await saveModelResult(kind,trace,source,registry,review,scope)
   if(kind==='plan'&&result.record)await selectResult({sourceId:source.id,stage:'plan',id:result.record.id,hash:result.record.hash,expectedRevision:selectedRevision})
   return result
  }
+ function completeAnalysisTrace(trace){
+  return ['plan_ready_for_review','invalid_plan'].includes(trace.status)&&!trace.error&&trace.parseStatus==='parsed'&&trace.wireStatus==='response_saved'&&['STOP','completed'].includes(trace.finishReason)&&hash(JSON.parse(trace.rawOutput))===hash(trace.plan)
+ }
  async function saveModelResult(kind,trace,source,registry,review,scope=null){
   const geometryInput=review?.input
-  // A parsed object alone is insufficient: require complete saved wire provenance.
-  const usable=trace.status==='plan_ready_for_review'&&trace.parseStatus==='parsed'&&trace.validation?.valid&&trace.wireStatus==='response_saved'&&['STOP','completed'].includes(trace.finishReason)&&hash(JSON.parse(trace.rawOutput))===hash(trace.plan)
+  // Completion/wire and source integrity are independent of AI annotation quality.
+  // Plans retain the original strict validation. Analysis is reclassified locally,
+  // keeping the original Trace bytes/status unchanged (including old failures).
+  const validation=kind==='analysis'&&completeAnalysisTrace(trace)?validateAnalysisEvidence(trace.plan,source):null
+  const usable=kind==='analysis'?!!validation?.valid:trace.status==='plan_ready_for_review'&&trace.parseStatus==='parsed'&&trace.validation?.valid&&trace.wireStatus==='response_saved'&&['STOP','completed'].includes(trace.finishReason)&&hash(JSON.parse(trace.rawOutput))===hash(trace.plan)
   if(!usable){
-   const error=trace.error?.message||(trace.parseStatus==='invalid_json'?'模型输出 JSON 解析失败；原始响应已保留。':trace.validation?.issues?.join('；'))||(trace.background?.state==='completed'?'后台请求已完成，但没有通过契约检查的输出；请查看 Trace。':'后台请求尚未完成；不会重新提交。')
-   return {trace,usable:false,...(trace.background?{state:['running','submitting'].includes(trace.background.state)?'running':['timeout','unknown'].includes(trace.background.state)?trace.background.state:'failed',error}:{})}
+   const error=trace.error?.message||(trace.parseStatus==='invalid_json'?'模型输出 JSON 解析失败；原始响应已保留。':(validation??trace.validation)?.issues?.join('；'))||(trace.background?.state==='completed'?'后台请求已完成，但没有可安全审核的输出；请查看 Trace。':'后台请求尚未完成；不会重新提交。')
+   return {trace,usable:false,state:trace.background&&['running','submitting'].includes(trace.background.state)?'running':trace.background&&['timeout','unknown'].includes(trace.background.state)?trace.background.state:'failed',error,...(validation?{analysisValidation:validation}:{})}
   }
-  if(kind==='analysis'){assertImageEvidence(trace.plan,source);if(source.images?.length>1&&trace.plan.referenceImageId!==source.primaryImageId)fail('参考图片来源不一致')}
-  if(kind==='analysis')for(const o of parseVisibleEvidence(trace.plan).observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('模型候选 Profile 不在 Registry')
-  const data=kind==='analysis'?{evidence:parseVisibleEvidence(trace.plan)}:{geometryContract:canonicalGeometryContract,plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash,...(scope?{reconstructionScope:scope}:{})}
-  // Stable ID makes completion recovery idempotent even after a server restart
-  // between immutable Analysis creation and the request checkpoint.
-  const target=kind==='analysis'?'analyses':'plans'
-  if(trace.background){const old=await read(target,trace.id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(old){if(old.traceHash!==hash(trace)||old.sourceHash!==source.hash)fail('完成记录与 Trace 不一致',409);return {record:old,trace,usable:true,state:'complete'}}}
-  const r=await put(target,{...data,...(trace.background?{id:trace.id}:{}),sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
-  return {record:r,trace,usable:true,...(trace.background?{state:'complete',error:null}:{})}
+  if(trace.requestInput?.source?.id!==source.id||trace.requestInput.source.hash!==source.hash)fail('模型输出来源 ID / Hash 不一致',409)
+  if(source.images?.length>1&&(hash(trace.requestInput.images)!==hash(source.images)||trace.requestInput.referenceImageId!==source.primaryImageId))fail('模型图片集合与来源不一致',409)
+  const data=kind==='analysis'?prepareAnalysisEvidence(trace.plan,source):{geometryContract:canonicalGeometryContract,plan:parseSpatialHypothesis(trace.plan,geometryInput),reviewId:review.id,reviewHash:review.hash,...(scope?{reconstructionScope:scope}:{})}
+  if(kind==='analysis')for(const o of data.evidence.observations)for(const p of o.profileCandidates)if(!registry.profiles.some(r=>r.id===p.profileId&&r.version===p.profileVersion))fail('模型候选 Profile 不在 Registry')
+  // Stable Analysis ID also covers a crash between snapshot creation and linking
+  // the operation, for foreground and background responses alike.
+  const target=kind==='analysis'?'analyses':'plans',stable=kind==='analysis'||trace.background
+  if(stable){const old=await read(target,trace.id).catch(e=>{if(e.code==='ENOENT')return null;throw e});if(old){if(old.traceHash!==hash(trace)||old.sourceHash!==source.hash)fail('完成记录与 Trace 不一致',409);return {record:old,trace,usable:true,state:'complete',error:null,...(old.analysisValidation?{analysisValidation:old.analysisValidation}:{})}}}
+  const r=await put(target,{...data,...(stable?{id:trace.id}:{}),sourceId:source.id,sourceHash:source.hash,origin:'model',promptVersion:trace.promptVersion??visiblePromptVersion,traceId:trace.id,traceHash:hash(trace),...(kind==='analysis'?{catalogHash:registry.hash}:{})})
+  return {record:r,trace,usable:true,state:'complete',error:null,...(r.analysisValidation?{analysisValidation:r.analysisValidation}:{})}
  }
  return {read,head,lineage,originSnapshot,selectedOrigin,async dispatch(method,route,body={}){
   if(method==='POST'&&route==='build-check'){
@@ -259,7 +272,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    for(const ref of body.refs){identifier(ref.id);for(const k of kinds){try{const r=await read(k,ref.id);if(r.hash!==ref.hash)fail('工作区历史 Hash 不一致',409);result[k].push(r)}catch(e){if(e.code!=='ENOENT')throw e}}}
    for(const k of kinds)result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))
    result.requests=[]
-   for(const id of body.requestIds){identifier(id);try{result.requests.push(JSON.parse(await readFile(path.join(directory,'requests',id+'.json'),'utf8')))}catch(e){if(e.code!=='ENOENT')throw e}}
+   for(const id of body.requestIds){identifier(id);try{
+    const request=JSON.parse(await readFile(path.join(directory,'requests',id+'.json'),'utf8'));result.requests.push(request)
+    // A workspace's own durable request is an exact receipt for its recovered
+    // result, including after a crash or offline recovery in another session.
+    if(request.kind==='analyze'&&request.usable&&request.record){
+     const a=await read('analyses',request.record.id)
+     if(a.hash!==request.record.hash||a.traceId!==request.trace?.id||!request.trace?.sources?.some(s=>s.sourceId===a.sourceId&&s.sourceHash===a.sourceHash))fail('工作区请求与 Analysis 结果不一致',409)
+     if(!result.analyses.some(r=>r.id===a.id))result.analyses.push(a)
+    }
+   }catch(e){if(e.code!=='ENOENT')throw e}}
+   result.analyses.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))
    return result
   }
   if(method==='GET'&&route==='history'){
@@ -287,7 +310,13 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const source=await readSource(body.sourceId),traceId=identifier(saved.trace?.id)
    const trace=JSON.parse(await readFile(path.join(directory,'model-traces',traceId+'.json'),'utf8'))
    if(saved.kind!=='analyze'||source.hash!==body.sourceHash||trace.requestInput?.source?.id!==source.id||trace.requestInput.source.hash!==source.hash||!trace.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash))fail('后台任务来源不一致；未查询或生成。',409)
-   if(saved.record)return saved
+   if(saved.record){const l=await lineage('analyses',saved.record.id);if(l.analysis.hash!==saved.record.hash||l.analysis.traceId!==traceId)fail('已保存结果与请求不一致',409);return saved}
+   // Completed raw output can be reclassified entirely offline. Do not poll,
+   // overwrite the Trace or generate a new provider response.
+   if(['plan_ready_for_review','invalid_plan'].includes(trace.status)&&!trace.error&&['STOP','completed'].includes(trace.finishReason)&&trace.wireStatus==='response_saved'){
+    await readImage(source);if(source.images?.length>1){if(!readImages)fail('多图来源缺少图片集合适配器');await readImages(source)}
+    return saveModelResult('analysis',trace,source,await getRegistry(),null)
+   }
    if(!trace.background?.responseId)fail('尚无 Provider Response ID，无法恢复该请求；不能确认是否已计费，不会自动重发。',409)
    const updated=await resumeVisibleAnalysis(path.join(directory,'model-traces'),traceId,source,async t=>checkpoint({trace:t}))
    return saveModelResult('analysis',updated,source,await getRegistry(),null)

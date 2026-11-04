@@ -71,9 +71,9 @@ try{
  await page.getByRole('link',{name:'家长制作入口 / Create New',exact:true}).click();await ready()
  const createUrl=page.url();assert.ok(new URL(createUrl).searchParams.get('workspaceId'))
  assert.equal((await exported()).pieces.length,0);assert.equal(await page.locator('[data-3d-piece]').count(),0)
- assert.equal(await field('3D Analysis 历史').count(),0)
+ assert.equal(await field('Analysis History').count(),0)
  await page.locator('[data-stage="source"]').click();await page.getByRole('button',{name:'Analyze Visible 3D（调用模型）',exact:true}).waitFor()
- assert.equal(await field('3D Analysis 历史').count(),0)
+ assert.equal(await field('Analysis History').count(),0)
  assert.equal(await field('3D Review 历史').count(),0)
  assert.equal(await page.getByText('重新打开图片集合',{exact:true}).isVisible(),false)
  await page.locator('[data-stage="assembly"]').click()
@@ -143,7 +143,7 @@ try{
  await until(()=>button('采用候选到 3D Assembly Editor').isEnabled());await button('采用候选到 3D Assembly Editor').click();await ready();assert.equal((await exported()).pieces.length,2)
  await saveUI();const fromSource=await exported();assert.equal(fromSource.pieces.length,2)
  await page.reload();await ready();assert.deepEqual(await exported(),fromSource)
- await page.locator('[data-stage="source"]').click();await field('3D Analysis 历史').waitFor();assert.equal(await field('3D Analysis 历史').locator('option').count(),2)
+ await page.locator('[data-stage="source"]').click();await field('Analysis History').waitFor();assert.equal(await field('Analysis History').locator('option').count(),2)
  assert.equal(await field('3D Review 历史').locator('option').count(),2)
  // Retain exact saved receipts produced in this Create. Combining these own
  // documents reuses the existing UI without loading a Project-wide library.

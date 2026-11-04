@@ -38,7 +38,7 @@ try{
  const select=async id=>{await field('3D Reconstruction Candidate').selectOption(id);await settled();assert.match(await comparison.innerText(),new RegExp(id));assert.match(await page.getByRole('region',{name:'Candidate Review 与 Assembly',exact:true}).innerText(),new RegExp(id))}
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?stage=source`)
  await button('3D').click();await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${source.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(source.id)
- await field('3D Analysis 历史').selectOption(analysis.id);await field('3D Review 历史').selectOption(review.id);await step('reconstruction');await field('Spatial Planning History').selectOption(plan.id);await field('Geometry Execution History').selectOption(execution.id);await settled()
+ await field('Analysis History').selectOption(analysis.id);await field('3D Review 历史').selectOption(review.id);await step('reconstruction');await field('Spatial Planning History').selectOption(plan.id);await field('Geometry Execution History').selectOption(execution.id);await settled()
  assert.equal(await field('3D Reconstruction Candidate').locator('option').count(),5)
  for(const name of ['Spatial Planning（调用模型）','Geometry Execution（不调用模型）'])assert.equal(await inspector.getByRole('button',{name,exact:true}).count(),1)
  assert.equal(await comparison.getByRole('button',{name:'Geometry Execution（不调用模型）',exact:true}).count(),0)

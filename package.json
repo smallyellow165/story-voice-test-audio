@@ -111,6 +111,8 @@
     "test:magnetic-analysis-trace:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-trace.mjs",
     "test:magnetic-multi-image-color": "node --experimental-strip-types --test test/magnetic-multi-image-color.test.mjs",
     "replay:magnetic-multi-image-color": "node --experimental-strip-types scripts/replay-magnetic-color-contract.mjs",
+    "test:magnetic-analysis-validation": "node --experimental-strip-types --test test/magnetic-analysis-validation.test.mjs",
+    "test:magnetic-analysis-recovery:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-recovery.mjs",
     "test:magnetic-analysis-background": "node --experimental-strip-types --test test/magnetic-analysis-background.test.mjs",
     "test:magnetic-analysis-background:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-background.mjs",
     "test:magnetic-review-evidence": "node --experimental-strip-types --test test/magnetic-review-display.test.mjs",
