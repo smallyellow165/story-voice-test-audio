@@ -117,6 +117,8 @@
     "test:magnetic-analysis-background:browser": "node --experimental-strip-types scripts/verify-magnetic-analysis-background.mjs",
     "test:magnetic-review-evidence": "node --experimental-strip-types --test test/magnetic-review-display.test.mjs",
     "test:magnetic-review-evidence:browser": "node --experimental-strip-types scripts/verify-magnetic-review-evidence.mjs",
+    "test:magnetic-project": "node --experimental-strip-types --test test/magnetic-project-lifecycle.test.mjs",
+    "test:magnetic-project:browser": "node --experimental-strip-types scripts/verify-magnetic-project-lifecycle.mjs",
     "test:magnetic-workspace": "node --experimental-strip-types --test test/magnetic-workspace.test.mjs",
     "test:magnetic-workspace:browser": "node --experimental-strip-types scripts/verify-magnetic-workspace.mjs",
     "test:magnetic-library": "node --experimental-strip-types --test test/magnetic-library.test.mjs test/magnetic-library-ui.test.mjs",

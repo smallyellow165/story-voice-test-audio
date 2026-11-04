@@ -1,10 +1,8 @@
 import {currentWorkspace,studioStorage,workspaceHistory,rememberWorkspaceResult,ownSelectedHead} from '../workspace-context.ts'
 export async function intakeApi<T>(route: string, body?: unknown): Promise<T> {
   const context=currentWorkspace(),storage=context?studioStorage():null
-  if(storage&&(route==='visible3d/history'||route==='visible3d/requests')){
-    const h=await intakeApi<Record<string,unknown>>('visible3d/workspace-history',workspaceHistory(storage))
-    return (route.endsWith('/requests')?h.requests:h) as T
-  }
+  const projectScoped=context?.mode==='create'&&route.startsWith('visible3d/')
+  if(projectScoped)route='visible3d/project/'+context.id+'/'+route.slice(10)
   if(storage&&body&&typeof body==='object'&&'requestId' in body)rememberWorkspaceResult(storage,null,(body as {requestId:unknown}).requestId)
   const response = await fetch('/api/magnetic-intake/'+route, body === undefined ? undefined : { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body) })
   let data
@@ -15,7 +13,7 @@ export async function intakeApi<T>(route: string, body?: unknown): Promise<T> {
       if(route==='visible3d/workspace-history')for(const r of data.requests??[])rememberWorkspaceResult(storage,r)
       else rememberWorkspaceResult(storage,data)
     }
-    if(route.startsWith('visible3d/head/')||route==='visible3d/selected')return ownSelectedHead(data,workspaceHistory(storage)) as T
+    if(!projectScoped&&(route.startsWith('visible3d/head/')||route==='visible3d/selected'))return ownSelectedHead(data,workspaceHistory(storage)) as T
   }
   return data
 }

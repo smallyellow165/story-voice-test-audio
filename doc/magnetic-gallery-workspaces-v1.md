@@ -18,26 +18,32 @@ Gallery 的「家长制作入口 / Create New」打开 `magnetic-tiles.html?work
 
 显式工作区不挂载隐藏的旧 2D Playground。普通旧 Studio URL 继续保留兼容行为；Gallery 的全部新建/编辑入口均使用显式工作区。View 页不初始化 Studio，也不写其 Draft。
 
-## 历史记录范围
+## 稳定 Project 与输入快照
 
-Create 的 Saved Assembly 列表同样只记录本工作区保存操作返回的确定版本收据；可重新打开这些版本、沿用原 Combined 创建界面组合本工作区同一 Project 的保存快照。不会把其他作品导入该列表。
+Create URL 中的 `workspaceId` 同时是作品 Project ID。从空白 Studio 开始固定，不因选择图片、删除图片、调整顺序或改变 Step / Final 角色而变化。没有增加第二个 Project UUID 或另一套 Project 管理界面。Gallery 明确 Create New 才生成新的 UUID。
 
-Create 使用本工作区操作实际返回的记录 ID/Hash 与请求 ID，查询只读 `visible3d/workspace-history`。相同照片、名字或 Project 不构成归属证据。服务器 Selected 指针中的未归属条目不会成为本地自动选择；真实 revision 仍用于 CAS。刷新后本工作区的来源选择及已产生记录可恢复。
+原来的 `Visible 3D Project ee79036f / 42cea00a` 实际是 `Source.id`：服务器对图片 ID/Hash、顺序、角色、方向、备注及主图选择计算的内容 Hash。生成新 Hash 是输入快照的正确行为；把它标为作品 Project，并按它截断 Analysis History，是生命周期混用。新的 UI 分别显示稳定 Project 与 Input Snapshot。
 
-Edit 仅展示保存 Sidecar 中的确切 Origin 和 Combined Parent 引用，作为只读追溯。不挂载 Reconstruction 控制器，不展示全局历史选择器，也不把历史 Spatial Plan 用作当前几何修复输入。当前 Assembly 的显式连接求解和 Validator 保持原样。Tutorial 使用 `assembly3d/snapshot-check` 核对确定版本/Origin、Canonical Profile、Group Parent 与实际教程数据，不要求历史 Selected 仍指向原作品。
+新数据通过 `visible3d/project/{workspaceId}/…` 使用同一套 Analysis/Review/Planning/Execution 服务。不可变记录与请求增加 `projectId`，Trace 的 requestInput 同样记录这个身份。History 按 Project 查询全部输入快照下的记录，不再以浏览器操作收据作为作品归属的唯一来源。每条 Analysis 的 `sourceId/sourceHash`、图片角色、主图、证据和后续精确版本仍是原来的不可变快照；没有取消来源 Hash 过滤来拼接结果。
 
-旧 Selected Head 缺少 selectedRevision 时只在读取结果补 0；缺失 Analysis 指针保持 null，不猜测最新记录，也不写回历史文件。
+Selected/CAS 按 `(projectId, sourceId)` 隔离：同一输入可以明确供两个作品使用，但两个作品不能互相选择 Analysis、Review、Plan、Execution、Trace 或恢复请求。Review/Plan/Execution 的父引用与 Hash 校验保留。Origin 记录 Project 归属，同时仍保留精确输入来源；现有 Assembly3D 几何、Editor、Tutorial 和固定 Gallery 快照使用原机制。
 
-无法可靠归属的旧 Analysis、Review、Plan、Execution、Saved Assembly、其他来源集合暂不放入这些工作区选择器。没有删除、搬迁、改写或批量迁移旧记录。
+浏览器 `magnetic-visible3d-context.v2` 在本工作区分别记住 `inputSourceId`（当前待分析输入）与 `sourceId`（正在查看的结果输入）。选择历史 Analysis 会加载其精确 Source 和结果，明确提示正在查看历史输入；右栏当前待分析图片不会被替换。可直接“查看当前输入”，也可选择另一条历史结果。刷新页面会恢复两个指针；不会自动选择最新 Analysis 或把三图结果套在两图上。Analyze 始终使用右栏当前输入，人工标注要求正在查看当前输入。
+
+新建作品即使尚未选择照片，也显示稳定 Project 与空 History。相同照片、名字、文件夹或 Source Hash 都不能推断作品归属。服务器新 Project History 只读取带该 Project ID 的记录，不合并无归属记录、不扫描来源关系猜归属、不调用旧 workspace-history 收据查询作为 fallback。
+
+已有 v1 浏览器上下文、旧 Source/Analysis/Review/Plan/Execution/Selected 文件保留原状，不迁移、合并、修复或重绑。旧记录不自动出现在新 Project 中；需要从 Gallery Create New 开始新流程。历史 Source 快照仍在原文件位置，不因这次修复被删除。Saved Assembly 列表继续只接受本工作区实际保存的版本收据；Edit 继续只恢复 Gallery 发布的固定快照及其 Sidecar/Parent 引用，不导入 Analysis 历史。
 
 ## 空白 Editor 作品
 
 原版本仓库要求不可变 Origin。`assembly3d/save-editor` 为当前 Create 的固定 Assembly ID 建立 `editor-created` Origin：基线为空 Assembly，Source/Project 摘要由明确的工作区 UUID 生成。它不伪造 Analysis、照片或 Execution。第一次保存后仍走原 snapshot/version/hash/CAS 机制；原点不能重绑。Assembly3D、Pose、Profile、Port、Connection、Geometry Validator 均未改结构或标准。
 
-本轮没有创建完整 Creation ID / Lineage Graph。未来跨浏览器恢复新建上下文、导入其他作品、合并多个来源或系统性浏览旧历史时，可增加持久 Creation ID；当前固定快照编辑与按操作收据隔离不需要先建设该系统。
+本轮没有创建完整 Lineage Graph。稳定 Project 复用现有 workspaceId；快照关系仍使用现有 Source/Analysis/Review/Plan/Execution 的 ID/Hash。未来导入其他作品或复制作品需要显式新建 Project，不能通过相同输入推断归属。
 
 ## 验证与 UI 验收
 
+- `npm run test:magnetic-project`：三图 25 Observations → 两图 → 单图，同一 Project 多次 Analysis，服务器重启及新客户端查询，跨作品/跨输入引用拒绝，精确来源恢复和 Assembly Origin 读取/保存。
+- `npm run test:magnetic-project:browser`：从 Gallery 新建、三图识别（离线模型夹具）、删除第三张并修改 Final、同一 History 的两次结果、历史预览保留当前输入、刷新、新 Project 和单图隔离；不调用付费模型。
 - `npm run test:magnetic-workspace`：URL/存储隔离、精确历史收据、发布基线与 save-head 分离、Combined、Editor 新建、原文件不变、旧 head 只读兼容。
 - `npm run test:magnetic-workspace:browser`：空白 Create、再次新建、手动添加/保存、A/B/Combined 精确恢复、离线完整来源链、仅本工作区 Parent 组合、未保存刷新恢复、取消离开、Draft 隔离、CAS 冲突、保存后 Gallery 不变、Tutorial、View 无写入。
 - Magnetic Node 全套、3D Vitest、Gallery/Editor/模式浏览器回归、LEGO Gallery 测试及构建。

@@ -56,7 +56,7 @@ test('a completed invalid_plan recovers offline, saves Review, is immutable/idem
  const f=await setup(t),old=await oldRequest(f),originalFetch=globalThis.fetch
  globalThis.fetch=()=>{throw Error('NO NETWORK ALLOWED')};t.after(()=>globalThis.fetch=originalFetch)
  assert.equal((await f.api.dispatch('GET','visible3d/history')).analyses.length,0)
- assert.match(analysisHistoryEntries([old.request],[],f.source)[0].label,/Validation Failed/)
+ assert.match(analysisHistoryEntries([{...old.request,projectId:'test-project'}],[],'test-project')[0].label,/Validation Failed/)
  const recovered=await resume(f,old.request)
  assert.equal(recovered.usable,true);assert.equal(recovered.state,'complete');assert.equal(recovered.error,null)
  assert.equal(recovered.record.id,old.trace.id);assert.equal(recovered.trace.status,'invalid_plan');assert.equal(recovered.trace.validation.valid,false)
@@ -66,7 +66,7 @@ test('a completed invalid_plan recovers offline, saves Review, is immutable/idem
  const restored=createMagneticIntake(f.dir);assert.deepEqual(await resume(f,old.request,restored),recovered)
  const records=await restored.dispatch('GET','visible3d/history');assert.equal(records.analyses.length,1);assert.equal(records.plans.length,0);assert.equal(records.executions.length,0)
  const own=await restored.dispatch('POST','visible3d/workspace-history',{refs:[],requestIds:[old.request.id]})
- assert.equal(own.analyses[0].hash,recovered.record.hash);assert.equal(analysisHistoryEntries(own.requests,own.analyses,f.source).length,1)
+ assert.equal(own.analyses[0].hash,recovered.record.hash);assert.equal(analysisHistoryEntries(own.requests.map(r=>({...r,projectId:'test-project'})),own.analyses.map(r=>({...r,projectId:'test-project'})),'test-project').length,1)
  const other=await restored.dispatch('POST','visible3d/workspace-history',{refs:[],requestIds:[]});assert.deepEqual(other.analyses,[]);assert.deepEqual(other.requests,[])
  const review=await restored.dispatch('POST','visible3d/reviews',{analysisId:recovered.record.id,review:f.review,expectedRevision:0})
  assert.equal(review.record.analysisHash,recovered.record.hash);assert.deepEqual(review.record.input.evidence,recovered.record.evidence)

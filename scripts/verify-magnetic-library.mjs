@@ -24,7 +24,7 @@ try{
   s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
    const route=req.url.slice(1).split('?')[0];calls.push([req.method,route])
    try{
-    if(req.method!=='GET'&&!['library-image','sources','source-sets','visible3d/workspace-history','visible3d/annotate','visible3d/selected'].includes(route))throw Error('No model calls or unrelated writes allowed: '+route)
+    const action=route.replace(/^visible3d\/project\/[a-f0-9-]+\//,'visible3d/');if(req.method!=='GET'&&!['library-image','sources','source-sets','visible3d/workspace-history','visible3d/annotate','visible3d/selected'].includes(action))throw Error('No model calls or unrelated writes allowed: '+route)
     let raw='';for await(const c of req)raw+=c
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{})))
    }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}
@@ -37,7 +37,7 @@ try{
  const check=name=>page.getByRole('checkbox',{name:'加入 '+name,exact:true}),list=()=>page.getByRole('region',{name:'服务器图片列表',exact:true})
  async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,50))}throw Error('UI state did not settle')}
  async function ready(){await page.getByTestId('studio-workspace-context').waitFor();await page.locator('[data-stage="source"]').click();await button('刷新 Server Library').waitFor();await until(()=>button('刷新 Server Library').isEnabled());await check('root.png').waitFor()}
- async function currentSource(){const id=await page.evaluate(()=>{const p=new URL(location.href).searchParams,key='magnetic-studio.workspace.v1.create.'+p.get('workspaceId')+'.magnetic-visible3d-context.v1';return JSON.parse(localStorage.getItem(key)||'null')?.sourceId});return id?api.dispatch('GET','sources/'+id):null}
+ async function currentSource(){const id=await page.evaluate(()=>{const p=new URL(location.href).searchParams,key='magnetic-studio.workspace.v1.create.'+p.get('workspaceId')+'.magnetic-visible3d-context.v2';return JSON.parse(localStorage.getItem(key)||'null')?.inputSourceId});return id?api.dispatch('GET','sources/'+id):null}
  async function selected(n){await page.getByText('本次 Analysis · '+n+'/4',{exact:true}).waitFor();await until(async()=>!n?await currentSource()===null:(await currentSource())?.images.length===n);await until(()=>button('刷新 Server Library').isEnabled())}
  async function layout(label){
   const tabs=await page.getByRole('tablist',{name:'右栏工具',exact:true}).boundingBox(),trace=await button('Trace / Raw').boundingBox(),box=await list().boundingBox()

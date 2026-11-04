@@ -17,7 +17,7 @@ async function acquire(lock){
 }
 export function recordedSpatialOperation(requests) { return async function operation(body,kind,work){
   const requestId=id(body.requestId),file=path.join(requests,requestId+'.json'),fingerprint=hash({kind,...body})
-  const pending={id:requestId,kind,fingerprint,state:'running',createdAt:new Date().toISOString(),analysisId:body.analysisId??null,planId:body.planId??null,...(body.refinement?{refinement:body.refinement}:{}),...(body.reconstructionScope?{reconstructionScope:body.reconstructionScope}:{}),...(body.sourceHash?{sourceId:body.sourceId,sourceHash:body.sourceHash}:{})}
+  const pending={id:requestId,kind,...(body.projectId?{projectId:body.projectId}:{}),fingerprint,state:'running',createdAt:new Date().toISOString(),analysisId:body.analysisId??null,planId:body.planId??null,...(body.refinement?{refinement:body.refinement}:{}),...(body.reconstructionScope?{reconstructionScope:body.reconstructionScope}:{}),...(body.sourceHash?{sourceId:body.sourceId,sourceHash:body.sourceHash}:{})}
   try{await write(file,pending,true)}catch(e){if(e.code!=='EEXIST')throw e;const old=await read(file);if(old.fingerprint!==fingerprint)fail('请求 ID 已用于不同输入',409);return old}
   const checkpoint=async partial=>{Object.assign(pending,partial);await write(file,pending)}
   const lock=kind==='analyze'?file+'.resume-lock':null

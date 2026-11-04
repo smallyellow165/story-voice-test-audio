@@ -35,7 +35,7 @@ try{
    const route=req.url.slice(1).split('?')[0];calls.push([req.method,route])
    try{
     res.setHeader('Content-Type','application/json')
-    if(req.method!=='GET'&&!['gallery/publish','assembly3d/save','assembly3d/save-editor','assembly3d/combine','assembly3d/snapshot-check','visible3d/workspace-history','sources','source-sets','visible3d/annotate','visible3d/reviews','visible3d/manual-plan','visible3d/selected','visible3d/execute','visible3d/adopt'].includes(route))throw Error('No model calls or unrelated writes in Gallery test: '+route)
+    const action=route.replace(/^visible3d\/project\/[a-f0-9-]+\//,'visible3d/');if(req.method!=='GET'&&!['gallery/publish','assembly3d/save','assembly3d/save-editor','assembly3d/combine','assembly3d/snapshot-check','visible3d/workspace-history','sources','source-sets','visible3d/annotate','visible3d/reviews','visible3d/manual-plan','visible3d/selected','visible3d/execute','visible3d/adopt'].includes(action))throw Error('No model calls or unrelated writes in Gallery test: '+route)
     let raw='';for await(const chunk of req)raw+=chunk
     res.end(JSON.stringify(await api.dispatch(req.method,route,raw?JSON.parse(raw):{},{request:req})))
    }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}
@@ -71,9 +71,9 @@ try{
  await page.getByRole('link',{name:'家长制作入口 / Create New',exact:true}).click();await ready()
  const createUrl=page.url();assert.ok(new URL(createUrl).searchParams.get('workspaceId'))
  assert.equal((await exported()).pieces.length,0);assert.equal(await page.locator('[data-3d-piece]').count(),0)
- assert.equal(await field('Analysis History').count(),0)
+ assert.equal(await field('Analysis History').locator('option').count(),1)
  await page.locator('[data-stage="source"]').click();await page.getByRole('button',{name:'Analyze Visible 3D（调用模型）',exact:true}).waitFor()
- assert.equal(await field('Analysis History').count(),0)
+ assert.equal(await field('Analysis History').locator('option').count(),1)
  assert.equal(await field('3D Review 历史').count(),0)
  assert.equal(await page.getByText('重新打开图片集合',{exact:true}).isVisible(),false)
  await page.locator('[data-stage="assembly"]').click()

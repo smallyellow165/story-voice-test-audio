@@ -16,15 +16,15 @@ const originalFetch=globalThis.fetch
 globalThis.fetch=(url,...args)=>{if(String(url).startsWith('https://api.openai.com/')){providerCalls++;throw Error('Provider network forbidden')}return originalFetch(url,...args)}
 const errors=[],requests=[],f=await multiFixture(dir),traceId=randomUUID(),requestId=randomUUID(),workspaceId=randomUUID()
 const raw=structuredClone(f.evidence);raw.observations.forEach(o=>o.imageEvidence[0].features=[])
-const trace={id:traceId,status:'invalid_plan',parseStatus:'parsed',validation:{valid:false,issues:['主图坐标必须与对应图片证据一致']},requestInput:f.prepared.input,sources:[{sourceId:f.source.id,sourceHash:f.source.hash}],rawOutput:JSON.stringify(raw),plan:raw,wireStatus:'response_saved',finishReason:'completed',usageMetadata:{total_tokens:123},background:{state:'completed',responseId:'resp_offline_fixture'}}
-const operation={id:requestId,kind:'analyze',createdAt:new Date().toISOString(),state:'failed',usable:false,error:'主图坐标必须与对应图片证据一致',sourceId:f.source.id,sourceHash:f.source.hash,trace}
+const trace={id:traceId,status:'invalid_plan',parseStatus:'parsed',validation:{valid:false,issues:['主图坐标必须与对应图片证据一致']},requestInput:{...f.prepared.input,projectId:workspaceId},sources:[{sourceId:f.source.id,sourceHash:f.source.hash}],rawOutput:JSON.stringify(raw),plan:raw,wireStatus:'response_saved',finishReason:'completed',usageMetadata:{total_tokens:123},background:{state:'completed',responseId:'resp_offline_fixture'}}
+const operation={id:requestId,projectId:workspaceId,kind:'analyze',createdAt:new Date().toISOString(),state:'failed',usable:false,error:'主图坐标必须与对应图片证据一致',sourceId:f.source.id,sourceHash:f.source.hash,trace}
 try{
  await mkdir(out,{recursive:true});for(const kind of ['model-traces','requests'])await mkdir(path.join(dir,'visible3d',kind),{recursive:true})
  const traceFile=path.join(dir,'visible3d/model-traces',traceId+'.json');await writeFile(traceFile,JSON.stringify(trace));const before=await readFile(traceFile)
  await writeFile(path.join(dir,'visible3d/requests',requestId+'.json'),JSON.stringify(operation))
  server=await createServer({configFile:false,root,cacheDir:path.join(dir,'cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'offline-analysis-recovery',configureServer(s){s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
   const route=req.url.slice(1).split('?')[0];requests.push({method:req.method,route});try{
-   if(['visible3d/analyze','visible3d/plan','visible3d/execute'].includes(route))throw Error('Provider/geometry generation forbidden in recovery test')
+   if(['analyze','plan','execute'].includes(route.split('/').at(-1)))throw Error('Provider/geometry generation forbidden in recovery test')
    let text='';for await(const c of req)text+=c
    const result=await f.api.dispatch(req.method,route,text?JSON.parse(text):{});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result))
   }catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}
@@ -36,7 +36,7 @@ try{
   const prefix='magnetic-studio.workspace.v1.create.'+workspaceId+'.'
   if(!localStorage.getItem(prefix+'history')){
    localStorage.setItem(prefix+'history',JSON.stringify({refs:[],requestIds:[requestId]}))
-   localStorage.setItem(prefix+'magnetic-visible3d-context.v1',JSON.stringify({sourceId,model:'gpt-6.1-sol',analysisTraceRequestId:requestId}))
+   localStorage.setItem(prefix+'magnetic-visible3d-context.v2',JSON.stringify({inputSourceId:sourceId,sourceId,model:'gpt-6.1-sol',analysisTraceRequestId:requestId}))
   }
  },{workspaceId,requestId,sourceId:f.source.id})
  const url=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html?workspace=create&workspaceId=${workspaceId}&stage=source`
@@ -69,15 +69,15 @@ try{
  await table.locator('[data-review-id="base"]').click();assert.deepEqual(await visibleRows(),['base']);await filterButton.click();await pop.getByLabel('Observation ID 筛选文本',{exact:true}).fill('wall');await pop.getByLabel('Observation ID 筛选文本',{exact:true}).press('Escape');assert.deepEqual(await visibleRows(),['base']);assert.equal(await pop.isVisible(),false)
  await filterButton.click();assert.equal(await pop.getByLabel('Observation ID 筛选文本',{exact:true}).inputValue(),'BA');await pop.getByRole('button',{name:'Clear',exact:true}).click();assert.equal(await filterButton.getAttribute('aria-pressed'),'false');assert.deepEqual(await visibleRows(),['base','wall']);assert.deepEqual(await visibleMarks(),['base'])
  await page.getByRole('group',{name:'Review 统计与筛选'}).getByRole('button',{name:/^全部 /}).click()
- const reviewResponse=page.waitForResponse(r=>r.url().endsWith('/visible3d/reviews')&&r.status()===200);await button('保存 3D Review').click();await reviewResponse
+ const reviewResponse=page.waitForResponse(r=>r.url().endsWith('/reviews')&&r.status()===200);await button('保存 3D Review').click();await reviewResponse
  assert.deepEqual(await readFile(traceFile),before);const result=(await f.api.dispatch('GET','visible3d/history'));assert.equal(result.analyses.length,1);assert.equal(result.reviews.length,1);assert.equal(result.reviews[0].input.review.pieces.filter(p=>p.confirmed).length,2);assert.equal(result.plans.length,0)
  await page.reload();await stage(page,'source','inspector');await page.getByTestId('visible3d-analysis-state').getByText('Reviewable · 待人工 Review（含诊断）',{exact:true}).waitFor();assert.equal(await history().locator('option').count(),2,'request/result appear once');assert.equal(await page.locator('.analysis-toolbar').getByRole('button',{name:'进入 Review',exact:true}).isEnabled(),true);assert.equal(await page.locator('.studio-inspector').getByRole('button',{name:'进入 Review',exact:true}).count(),0)
  await button('进入 Review').click();await stage(page,'review','inspector');await page.getByLabel('3D Review Profile',{exact:true}).waitFor();await page.screenshot({path:out+'/recovered-review.png'})
  // Another Create has no history, even for records in this same server library.
- await page.goto(url.replace(workspaceId,randomUUID()));await stage(page,'source','inspector');assert.equal(await history().count(),0)
+ await page.goto(url.replace(workspaceId,randomUUID()));await stage(page,'source','inspector');await history().waitFor();assert.equal(await history().locator('option').count(),1)
  await page.goto(url);await stage(page,'source','inspector');await history().waitFor();assert.equal(await history().locator('option').count(),2)
  assert.deepEqual(await readFile(traceFile),before);assert.deepEqual(errors,[]);assert.equal(providerCalls,0)
- assert.equal(requests.filter(r=>r.route==='visible3d/resume-analyze').length,1)
+ assert.equal(requests.filter(r=>r.route.endsWith('/resume-analyze')).length,1)
  const report={passed:true,modelCalls:0,productionWrites:0,checks:['one Analysis History','failed raw/usage trace','offline recovery -> Review','ID filter + independent evidence selection','diagnostics retained','Review persistence','refresh and reopen','one immutable result','raw Trace unchanged','Create receipt isolation','no Planning/Execution']}
  await writeFile(out+'/result.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2))
 }catch(e){if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',await page.locator('body').innerText().catch(()=>''))}throw e}

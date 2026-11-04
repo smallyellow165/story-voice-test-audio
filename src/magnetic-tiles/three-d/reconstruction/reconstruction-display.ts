@@ -4,7 +4,7 @@ import type {RefinementReference} from './constraint-refinement.ts'
 // Read-only presentation of existing request/record states. No planning or geometry.
 type Ref={id:string;hash:string}
 export type ModelTrace={id:string;status?:string;error?:unknown;validation?:{valid:boolean;issues?:unknown[]}|null;background?:{state:string;responseId:string|null;providerStatus?:string|null};sources?:{sourceId:string;sourceHash:string;reviewId?:string|null;reviewHash?:string|null}[];[key:string]:unknown}
-export type OperationRecord={id:string;kind:string;state:string;createdAt:string;sourceId?:string;sourceHash?:string;planId?:string|null;reconstructionScope?:ReconstructionScope;refinement?:RefinementReference|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
+export type OperationRecord={id:string;projectId?:string;kind:string;state:string;createdAt:string;sourceId?:string;sourceHash?:string;planId?:string|null;reconstructionScope?:ReconstructionScope;refinement?:RefinementReference|null;error?:string;usable?:boolean;trace?:ModelTrace;record?:{id:string;[key:string]:unknown}}
 export type OperationAttempt={id?:string;kind:'plan'|'execute';scope:string;error?:string}
 export const planningScope=(source:Ref|null,review:Ref|null,scope?:ReconstructionScope)=>JSON.stringify([source?.id,source?.hash,review?.id,review?.hash,...(scope?[scope.groupId,scope.imageId,scope.observationIds]:[])])
 export const executionScope=(plan:Ref|null)=>JSON.stringify([plan?.id,plan?.hash])
@@ -47,13 +47,14 @@ export function analysisDisplay(request:OperationRecord|undefined):DisplayStatus
  if(failure)return {tone:'error',label:t?.validation?.valid===false?'Validation Failed · 结果校验失败':'Analysis Failed',message:`${detail??failure}${b?.state==='completed'?' 供应商请求已完成，Raw Response 已保留；可本地重新校验，无法安全解释的数据仍会阻断。':''}`}
  return {tone:'review',label:'Completed · 待人工 Review',message:'已保存模型输出；不代表照片匹配或几何验证通过。'}
 }
-/** One source-bound list: requests own the lifecycle, snapshots without a
- * request (manual annotations) are included once. Never infer ownership. */
-export function analysisHistoryEntries(requests:OperationRecord[],analyses:{id:string;sourceId:string;sourceHash:string;createdAt:string;origin?:string}[],source:Ref|null){
- if(!source)return []
- const related=requests.filter(r=>analysisRequest([r],source,null)),linked=new Set(related.map(r=>r.record?.id))
- return [...related.map(request=>({id:request.record?.id??request.id,createdAt:request.createdAt,label:`${request.createdAt} · ${analysisDisplay(request).label} · ${request.id.slice(0,8)}`,request,analysisId:request.record?.id})),
- ...analyses.filter(a=>a.sourceId===source.id&&a.sourceHash===source.hash&&!linked.has(a.id)).map(a=>({id:a.id,createdAt:a.createdAt,label:`${a.createdAt} · ${a.origin==='model'?'已保存结果':'人工标注'} · ${a.id.slice(0,8)}`,request:undefined,analysisId:a.id}))].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id))
+/** The Project owns history; every entry still identifies its exact input. */
+export function analysisHistoryEntries(requests:OperationRecord[],analyses:{id:string;projectId?:string;sourceId:string;sourceHash:string;createdAt:string;origin?:string}[],projectId:string){
+ if(!projectId)return []
+ const related=requests.filter(r=>r.kind==='analyze'&&r.projectId===projectId),linked=new Set(related.map(r=>r.record?.id))
+ return [...related.map(request=>{
+  const source=request.trace?.sources?.[0],sourceId=request.sourceId??source?.sourceId??'',sourceHash=request.sourceHash??source?.sourceHash??''
+  return {id:request.record?.id??request.id,createdAt:request.createdAt,label:`${request.createdAt} · ${analysisDisplay(request).label} · Input ${sourceId.slice(0,8)} · ${request.id.slice(0,8)}`,request,analysisId:request.record?.id,sourceId,sourceHash}
+ }),...analyses.filter(a=>a.projectId===projectId&&!linked.has(a.id)).map(a=>({id:a.id,createdAt:a.createdAt,label:`${a.createdAt} · ${a.origin==='model'?'已保存结果':'人工标注'} · Input ${a.sourceId.slice(0,8)} · ${a.id.slice(0,8)}`,request:undefined,analysisId:a.id,sourceId:a.sourceId,sourceHash:a.sourceHash}))].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id))
 }
 export function requestFailure(request:OperationRecord|undefined):string|null{
  if(!request)return null

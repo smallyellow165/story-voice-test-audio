@@ -30,20 +30,22 @@ const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const candidateDigest=c=>{const {humanReview:legacyLabel,...snapshot}=c;return hash(snapshot)}
 const kinds=['analyses','reviews','plans','executions','origins','refinements','module-plans']
 const identifier=x=>{if(typeof x!=='string'||!/^([a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(x))fail('Visible 3D 记录 ID 无效');return x}
-export function createVisible3DWorkflow(directory,{readSource,readImage,readImages,getRegistry,runModel=runVisibleModel}){
+export function createVisible3DWorkflow(directory,options){
+ const {readSource,readImage,readImages,getRegistry,runModel=runVisibleModel,projectId}=options,projects=new Map()
  const operation=recordedSpatialOperation(path.join(directory,'requests'))
  const filename=(kind,id)=>path.join(directory,kind,identifier(id)+'.json')
  async function put(kind,data){
-  const payload={...data,id:data.id??randomUUID(),createdAt:data.createdAt??new Date().toISOString()},r={...payload,hash:hash(payload)},f=filename(kind,r.id),temp=f+'.'+randomUUID()+'.tmp'
+  const payload={...data,...(projectId?{projectId}:{}),id:data.id??randomUUID(),createdAt:data.createdAt??new Date().toISOString()},r={...payload,hash:hash(payload)},f=filename(kind,r.id),temp=f+'.'+randomUUID()+'.tmp'
   await mkdir(path.dirname(f),{recursive:true});await writeFile(temp,JSON.stringify(r),{flag:'wx',mode:0o600})
   try{await link(temp,f)}finally{await unlink(temp)} return r
  }
- async function read(kind,id){if(!kinds.includes(kind))fail('未知记录类型');const r=JSON.parse(await readFile(filename(kind,id),'utf8'));const {hash:h,...p}=r;if(h!==hash(p)||r.id!==id)fail('记录 Hash 不一致');return r}
- async function head(sourceId){try{const h=JSON.parse(await readFile(filename('heads',sourceId),'utf8'));return {analysisId:null,reviewId:null,groups:{},...h,selectedRevision:h.selectedRevision??0}}catch(e){if(e.code==='ENOENT')return {revision:0,selectedRevision:0,analysisId:null,reviewId:null,groups:{}};throw e}}
- async function locked(sourceId,work){const f=filename('heads',sourceId)+'.lock';await mkdir(path.dirname(f),{recursive:true});try{await writeFile(f,'lock',{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('该来源正在更新；请重新加载后重试',409);throw e}try{return await work()}finally{await unlink(f)}}
+ async function read(kind,id){if(!kinds.includes(kind))fail('未知记录类型');const r=JSON.parse(await readFile(filename(kind,id),'utf8'));const {hash:h,...p}=r;if(h!==hash(p)||r.id!==id)fail('记录 Hash 不一致');if(projectId&&r.projectId!==projectId)fail('记录不属于当前作品 Project',409);return r}
+ const headFile=(sourceId,owner=projectId)=>filename('heads'+(owner?'/'+identifier(owner):''),sourceId)
+ async function head(sourceId,owner=projectId){try{const h=JSON.parse(await readFile(headFile(sourceId,owner),'utf8'));return {analysisId:null,reviewId:null,groups:{},...h,selectedRevision:h.selectedRevision??0}}catch(e){if(e.code==='ENOENT')return {revision:0,selectedRevision:0,analysisId:null,reviewId:null,groups:{}};throw e}}
+ async function locked(sourceId,work){const f=headFile(sourceId)+'.lock';await mkdir(path.dirname(f),{recursive:true});try{await writeFile(f,'lock',{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('该来源正在更新；请重新加载后重试',409);throw e}try{return await work()}finally{await unlink(f)}}
  // Mutable Selected pointers live in the existing Project head. Never choose
  // by timestamps or by traversing the immutable result history.
- async function writeHead(sourceId,value){const f=filename('heads',sourceId),tmp=f+'.'+randomUUID()+'.tmp';await mkdir(path.dirname(f),{recursive:true});await writeFile(tmp,JSON.stringify(value),{flag:'wx',mode:0o600});await rename(tmp,f);return value}
+ async function writeHead(sourceId,value){const f=headFile(sourceId),tmp=f+'.'+randomUUID()+'.tmp';await mkdir(path.dirname(f),{recursive:true});await writeFile(tmp,JSON.stringify(value),{flag:'wx',mode:0o600});await rename(tmp,f);return value}
  const ref=r=>({id:r.id,hash:r.hash})
  async function liveScope(p,review,source){
   const saved=planScope(p),current=await requestedScope(review,source,saved)
@@ -51,7 +53,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   return current.scope
  }
  async function assertSelected(l,stage){
-  const h=await head(l.source.id)
+  const h=await head(l.source.id,l.analysis.projectId)
   if(h.analysisId!==l.analysis.id||h.analysisHash!==l.analysis.hash||h.reviewId!==l.review?.id||h.reviewHash!==l.review?.hash)fail('当前 Selected Analysis / Review 已变化，来源过期；不能消费其他历史来源',409)
   if(stage==='review')return h
   const p=stage==='plan'?l.record:await read('plans',l.record.planId)
@@ -67,7 +69,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    const kind={analysis:'analyses',review:'reviews',plan:'plans',execution:'executions'}[body.stage]
    if(!kind)fail('无效 Selected 阶段')
    const l=await lineage(kind,identifier(body.id)),r=l.record
-   if(l.source.id!==source.id||l.source.hash!==source.hash||body.hash!==r.hash)fail('Selected 结果与 Project / Hash 不一致',409)
+   if(l.analysis.projectId!==projectId||l.source.id!==source.id||l.source.hash!==source.hash||body.hash!==r.hash)fail('Selected 结果与 Project / Hash 不一致',409)
    let next={...h,analysisId:h.analysisId??null,groups:h.groups??{}}
    if(body.stage==='analysis'){
     if(h.analysisId===r.id&&h.analysisHash===r.hash)return h
@@ -91,6 +93,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
  async function originSnapshot(id){
   const origin=await read('origins',identifier(id)),l=await lineage('executions',origin.executionId)
   for(const k of ['sourceId','sourceHash','reviewId','reviewHash','planId','planHash'])if(origin[k]!==l.record[k])fail('Assembly 来源身份不一致',409)
+  if(origin.projectId!==l.analysis.projectId)fail('Assembly 来源跨作品 Project',409)
   if(origin.executionHash!==l.record.hash||origin.analysisId!==l.analysis.id||origin.analysisHash!==l.analysis.hash)fail('当前 Assembly 不属于该 Group 的 Selected 来源链；请重新选择并采用',409)
   return origin
  }
@@ -105,6 +108,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(r.origin!=='model')return
   const trace=JSON.parse(await readFile(path.join(directory,'model-traces',identifier(r.traceId)+'.json'),'utf8'))
   if(hash(trace)!==r.traceHash||trace.wireStatus!=='response_saved'||hash(JSON.parse(trace.rawOutput))!==hash(trace.plan)||trace.requestInput.source.hash!==r.sourceHash||trace.requestInput.source.id!==r.sourceId)fail('模型 Trace 与正式记录不一致',409)
+  if(r.projectId&&trace.requestInput?.projectId!==r.projectId)fail('模型 Trace 的作品 Project 不一致',409)
   if(r.analysisValidation){
    const source=await readSource(r.sourceId),prepared=prepareAnalysisEvidence(trace.plan,source)
    if(!completeAnalysisTrace(trace)||hash(prepared.evidence)!==hash(r.evidence)||hash(prepared.rawEvidence??null)!==hash(r.rawEvidence??null)||hash(prepared.analysisValidation)!==hash(r.analysisValidation))fail('Analysis 规范化结果与原始 Trace 不一致',409)
@@ -116,9 +120,10 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(analysis.sourceId!==source.id||r.sourceId!==source.id||analysis.sourceHash!==source.hash||review&&(review.sourceId!==source.id||review.analysisHash!==analysis.hash||review.sourceHash!==source.hash)||r.sourceHash!==source.hash)fail('来源关联不一致',409)
   if(kind==='plans'&&r.reviewHash!==review.hash||['executions','refinements','module-plans'].includes(kind)&&r.reviewHash!==review.hash)fail('Review Hash 不一致',409)
   if(['executions','refinements'].includes(kind)){const p=await read('plans',r.planId);if(p.hash!==r.planHash||p.sourceId!==source.id||p.sourceHash!==source.hash||p.reviewId!==review.id||p.reviewHash!==review.hash)fail('Execution Plan 来源不一致',409)}
+  if(r.projectId!==analysis.projectId||review&&review.projectId!==analysis.projectId)fail('来源跨作品 Project',409)
   await verifyModelRecord(analysis);if(kind==='plans')await verifyModelRecord(r);if(['executions','refinements'].includes(kind))await verifyModelRecord(await read('plans',r.planId))
   if(kind==='module-plans'){if(r.kind!=='magnetic-module-plan'||r.schemaVersion!==1||r.analysisId!==analysis.id||r.analysisHash!==analysis.hash||r.sourceId!==source.id||r.reviewId!==review.id)fail('Module Plan 来源不一致',409);assertModules(r.modules,review.input.review)}
-  const current=await head(source.id)
+  const current=await head(source.id,analysis.projectId)
   const planRecord=kind==='plans'?r:['executions','refinements'].includes(kind)?await read('plans',r.planId):null
   const geometryReview=planRecord?await scopedPlanReview(planRecord,review,source):review
   if(kind==='executions'&&r.reconstructionScope&&hash(r.reconstructionScope)!==hash(planScope(planRecord)))fail('Execution 重建范围与 Plan 不一致',409)
@@ -206,8 +211,16 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   const actual=await requestedScope(l.review,l.source,body.reconstructionScope)
   if(!reconstructionScopeMatches(l.record.reconstructionScope,actual.scope,l.record.plan.parts.map(p=>p.id)))fail('所选 Plan 不属于当前 Group / Image 范围',409)
  }
+ async function assertWriteProject(body){
+  // Global immutable reads used by saved Assembly provenance do not authorize
+  // writes into another Project. Recorded operations keep failures in their log.
+  for(const [field,kind] of [['analysisId','analyses'],['reviewId','reviews'],['planId','plans'],['executionId','executions']])if(body[field]){
+   const parent=await read(kind,identifier(body[field]));if(parent.projectId!==projectId)fail('写入必须使用所属作品 Project',409)
+  }
+ }
  async function modelRecord(kind,body,checkpoint){
   const source=kind==='analysis'?await readSource(body.sourceId):(await lineage('reviews',body.reviewId)).source
+  if(kind==='analysis'&&body.sourceHash!==undefined&&body.sourceHash!==source.hash)fail('Analysis 输入 Hash 不一致；未调用模型',409)
   let review=null,scope=null,selectedRevision=null
   if(kind==='plan'){const l=await lineage('reviews',body.reviewId);selectedRevision=(await assertSelected(l,'review')).selectedRevision??0;if(body.expectedSelectedRevision!==undefined&&body.expectedSelectedRevision!==selectedRevision)fail('Selected 已变化，请刷新后明确执行；未调用模型',409);const {blocker:globalBlocker}=planningParticipation(l.review.input.review);if(globalBlocker)fail(globalBlocker,422);const projected=await requestedScope(l.review,l.source,body.reconstructionScope);if(!projected.scope.observationIds.length)fail('当前 Group 与 Image 没有可重建的交集；未调用模型',422);scope=projected.scope;review={...l.review,input:projected.input};const {blocker}=planningParticipation(review.input.review);if(blocker)fail(blocker,422)}
   const image=await readImage(source),registry=await getRegistry()
@@ -215,7 +228,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(source.images?.length>1&&!readImages)fail('多图来源缺少图片集合适配器；未调用模型')
   const images=readImages?await readImages(source):null
   if(geometryInput)assertCanonicalProfiles(geometryInput.profiles,registry.profiles)
-  const prepared={image,source,...(images?{images}:{}),input:{...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps.'+(kind==='analysis'?' Root bbox/features are canonical annotations in referenceImageId only; the reference imageEvidence entry must repeat exactly those bbox/features (including feature IDs, points and visibility).':'')+' Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),geometryContract:canonicalGeometryManifest(geometryInput?.profiles??registry.profiles.map(canonicalProfileSnapshot)),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
+  const prepared={image,source,...(images?{images}:{}),input:{...(projectId?{projectId}:{}),...(scope?{reconstructionScope:scope}:{}),source:{id:source.id,hash:source.hash,width:source.view.width,height:source.view.height},...(source.images?{referenceImageId:source.primaryImageId,images:source.images,...(source.images.length>1?{analysisMode:'visible3d',imageEvidencePolicy:'Target final state only. A physical tile may move between steps.'+(kind==='analysis'?' Root bbox/features are canonical annotations in referenceImageId only; the reference imageEvidence entry must repeat exactly those bbox/features (including feature IDs, points and visibility).':'')+' Per-frame feature IDs are local to their image. Executable evidenceRefs use observation IDs or reference-image observationId:featureId; cite other image IDs explicitly in evidence/uncertainty. Never treat step poses/connections as final by default.'}:{})}:{}),geometryContract:canonicalGeometryManifest(geometryInput?.profiles??registry.profiles.map(canonicalProfileSnapshot)),...(geometryInput?{geometryInput,ports:geometryInput.profiles.map(s=>({profileId:s.profile.id,profileVersion:s.profile.version,...adaptProfile(s)}))}:{catalog:registry.profiles})},imagePayloadSha256:source.view.hash,geometrySnapshot:geometryInput?.profiles??registry.profiles}
   const trace=await runModel(prepared,{model:body.model,directory:path.join(directory,'model-traces'),sources:[{sourceId:source.id,sourceHash:source.hash,reviewId:review?.id??null,reviewHash:review?.hash??null}],execute:true,onTrace:async t=>{if(t.background)await checkpoint({trace:t,state:'running'})}},kind==='analysis'?'analysis':'plan')
   await checkpoint({trace})
   const result=await saveModelResult(kind,trace,source,registry,review,scope)
@@ -248,6 +261,17 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   return {record:r,trace,usable:true,state:'complete',error:null,...(r.analysisValidation?{analysisValidation:r.analysisValidation}:{})}
  }
  return {read,head,lineage,originSnapshot,selectedOrigin,async dispatch(method,route,body={}){
+  if(!projectId&&route.startsWith('project/')){
+   const [,owner,...parts]=route.split('/')
+   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(owner))fail('作品 Project ID 无效')
+   if(!projects.has(owner))projects.set(owner,createVisible3DWorkflow(directory,{...options,projectId:owner}))
+   return projects.get(owner).dispatch(method,parts.join('/'),body)
+  }
+  if(projectId&&method==='POST'){
+   if(body.projectId!==undefined&&body.projectId!==projectId)fail('请求跨作品 Project',409)
+   body={...body,projectId}
+  }
+  if(method==='POST'&&!['workspace-history','build-check','analyze','plan','execute'].includes(route))await assertWriteProject(body)
   if(method==='POST'&&route==='build-check'){
    const origin=await selectedOrigin(body.originId),a=body.assembly;assertAssembly3D(a)
    if(a.id!==origin.assembly.id)fail('Assembly 与所选来源不一致',409)
@@ -259,14 +283,15 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(method==='POST'&&route==='selected')return selectResult(body)
   if(method==='GET'&&route.startsWith('selected-origin/'))return selectedOrigin(route.slice(16))
   if(method==='GET'&&route==='status')return {models:modelOptions('reverse'),planningModels:modelOptions('design'),providers:providerStatus(),prompt:await visiblePromptStatus()}
-  if(method==='GET'&&route==='requests'){const files=await readdir(path.join(directory,'requests')).catch(e=>{if(e.code==='ENOENT')return [];throw e});return Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(async f=>{
+  if(method==='GET'&&route==='requests'){const files=await readdir(path.join(directory,'requests')).catch(e=>{if(e.code==='ENOENT')return [];throw e});return (await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(async f=>{
    const r=JSON.parse(await readFile(path.join(directory,'requests',f),'utf8')),b=r.trace?.background
    // Presentation only: an interrupted submit cannot be called "running"
    // forever. Keep the saved evidence unchanged and never retry the POST.
    if(b?.state==='submitting'&&!b.responseId&&Date.now()-Date.parse(r.createdAt)>95000)return {...r,state:'unknown',error:'提交确认中断；未保存 Provider Response ID，执行与计费状态未知，不会自动重发。',trace:{...r.trace,background:{...b,state:'unknown'}}}
    return r
-  }))}
+  }))).filter(r=>!projectId||r.projectId===projectId)}
   if(method==='POST'&&route==='workspace-history'){
+   if(projectId)fail('Project History 不使用浏览器收据查询',404)
    if(!Array.isArray(body.refs)||body.refs.length>10000||!Array.isArray(body.requestIds)||body.requestIds.length>10000)fail('工作区历史引用无效')
    const result=Object.fromEntries(kinds.map(k=>[k,[]]))
    for(const ref of body.refs){identifier(ref.id);for(const k of kinds){try{const r=await read(k,ref.id);if(r.hash!==ref.hash)fail('工作区历史 Hash 不一致',409);result[k].push(r)}catch(e){if(e.code!=='ENOENT')throw e}}}
@@ -286,12 +311,20 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    return result
   }
   if(method==='GET'&&route==='history'){
-   const result={};for(const k of kinds){const files=await readdir(path.join(directory,k)).catch(e=>{if(e.code==='ENOENT')return [];throw e});result[k]=await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(f=>read(k,f.slice(0,-5))));result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return result
+   const result={};for(const k of kinds){const files=await readdir(path.join(directory,k)).catch(e=>{if(e.code==='ENOENT')return [];throw e});result[k]=(await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(async f=>{if(projectId){const raw=JSON.parse(await readFile(path.join(directory,k,f),'utf8'));if(raw.projectId!==projectId)return null}return read(k,f.slice(0,-5))}))).filter(Boolean);result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
+   if(projectId){
+    result.projectId=projectId;result.sources=[]
+    for(const r of kinds.flatMap(k=>result[k])){
+     const found=result.sources.find(s=>s.id===r.sourceId),source=found??await readSource(r.sourceId);if(source.hash!==r.sourceHash)fail('Project 历史输入 Hash 不一致',409);if(!found)result.sources.push(source)
+    }
+   }
+   return result
   }
   if(method==='GET'&&route.startsWith('trace/')){
    const [,value,section,...extra]=route.split('/'),traceId=identifier(value)
    if(extra.length||section&&section!=='wire')fail('未知 Trace 内容',404)
    const prefix=path.join(directory,'model-traces',traceId),trace=JSON.parse(await readFile(prefix+'.json','utf8'))
+   if(projectId&&trace.requestInput?.projectId!==projectId)fail('Trace 不属于当前作品 Project',409)
    if(!section)return trace
    // Read-only view adapter: derive paths from the validated ID, never from a
    // stored absolute path. Reuse the existing Trace redaction and availability.
@@ -305,10 +338,12 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   if(method==='GET'&&route.startsWith('head/'))return head(identifier(route.slice(5)))
   if(method==='GET'&&route.includes('/')){const [kind,id]=route.split('/');if(kind==='origins')return read(kind,id);return lineage(kind,id)}
   if(method!=='POST')fail('未知 Visible 3D 操作',404)
-  if(route==='analyze'||route==='plan')return operation(body,route,checkpoint=>modelRecord(route==='analyze'?'analysis':'plan',body,checkpoint))
+  if(route==='analyze'||route==='plan')return operation(body,route,async checkpoint=>{await assertWriteProject(body);return modelRecord(route==='analyze'?'analysis':'plan',body,checkpoint)})
   if(route==='resume-analyze')return resumeSpatialOperation(path.join(directory,'requests'),body.requestId,async(saved,checkpoint)=>{
+   if(projectId&&saved.projectId!==projectId)fail('请求不属于当前作品 Project',409)
    const source=await readSource(body.sourceId),traceId=identifier(saved.trace?.id)
    const trace=JSON.parse(await readFile(path.join(directory,'model-traces',traceId+'.json'),'utf8'))
+   if(projectId&&trace.requestInput?.projectId!==projectId)fail('Trace 不属于当前作品 Project',409)
    if(saved.kind!=='analyze'||source.hash!==body.sourceHash||trace.requestInput?.source?.id!==source.id||trace.requestInput.source.hash!==source.hash||!trace.sources?.some(s=>s.sourceId===source.id&&s.sourceHash===source.hash))fail('后台任务来源不一致；未查询或生成。',409)
    if(saved.record){const l=await lineage('analyses',saved.record.id);if(l.analysis.hash!==saved.record.hash||l.analysis.traceId!==traceId)fail('已保存结果与请求不一致',409);return saved}
    // Completed raw output can be reclassified entirely offline. Do not poll,
@@ -349,7 +384,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
      const record=await put('module-plans',{kind:'magnetic-module-plan',schemaVersion:1,modulePlanId:randomUUID(),revision:1,parent:null,sourceId:source.id,sourceHash:source.hash,analysisId:analysis.id,analysisHash:analysis.hash,reviewId:review.id,reviewHash:review.hash,...inheritedModules(previous,review)})
      await writeModuleHead(record)
     }
-    const next={revision:current.revision+1,selectedRevision:(current.selectedRevision??0)+1,analysisId:analysis.id,analysisHash:analysis.hash,reviewId:review.id,reviewHash:review.hash,groups:{}},f=filename('heads',source.id),temp=f+'.tmp';await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,f);return {record:review,head:next}
+    const next={revision:current.revision+1,selectedRevision:(current.selectedRevision??0)+1,analysisId:analysis.id,analysisHash:analysis.hash,reviewId:review.id,reviewHash:review.hash,groups:{}},f=headFile(source.id),temp=f+'.tmp';await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,f);return {record:review,head:next}
    })
   }
   if(route==='module-plans'){
@@ -413,6 +448,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    return put('refinements',{version:1,planId:l.record.id,planHash:l.record.hash,reviewId:l.review.id,reviewHash:l.review.hash,sourceId:l.source.id,sourceHash:l.source.hash,refinement,candidateHashes:Object.fromEntries(refinement.candidates.map(c=>[c.id,hash(c)]))})
   }
   if(route==='execute')return operation(body,route,async()=>{
+   await assertWriteProject(body)
    const l=await lineage('plans',body.planId);await assertSelected(l,'plan')
    await assertRequestedPlanScope(body,l)
    const effectivePlan=await executionPlan(l.record,l.geometryReview,body.refinement)
