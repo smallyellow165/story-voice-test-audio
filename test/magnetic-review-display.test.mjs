@@ -68,3 +68,12 @@ test('legacy preferences without an annotation scope migrate by current photo, w
  assert.deepEqual(reviewImageSelection(legacy,'step1',ids,visible).markedIds,['p03'])
  assert.deepEqual(observations,before)
 })
+
+test('3D filter scope preserves hidden marks without disabling later image synchronization',()=>{
+ const defaults=reviewDisplayDefaults(),all=['p01','p03','p10'],first=reviewImageSelection(defaults,'final',['p01','p10'],all,true)
+ const filtered=reviewImageSelection(defaults,'final',['p01','p10'],['p01'],true)
+ const saved={...defaults,markedIds:first.markedIds,annotationScope:filtered.scope}
+ assert.deepEqual(reviewImageSelection(saved,'final',['p01','p10'],['p01'],true).markedIds,['p01','p10'])
+ assert.deepEqual(reviewImageSelection(saved,'step1',['p01','p03'],all,true).markedIds,['p01','p03'])
+ assert.deepEqual(reviewImageSelection(saved,'final',['p01','p10'],['p01'],false).markedIds,['p01'])
+})

@@ -23,11 +23,12 @@ export function filteredReviewRows<T extends Observation>(observations:readonly 
 }
 /** One UI selection for the actual frame and visible table. A matching scope
  * restores manual subsets (including explicit empty); a new scope selects its
- * evidenced rows. Sorting alone does not reset a manual selection. */
+ * evidenced rows. A matching 3D scope can retain marks hidden by a filter;
+ * sorting alone does not reset a manual selection. */
 export function reviewImageSelection(state:ReviewDisplayState,imageId:string,evidencedIds:readonly string[],visibleIds:readonly string[],persistent=false){
  const visible=[...new Set(visibleIds)].sort(),evidenced=new Set(imageId?evidencedIds:[]),eligibleIds=visible.filter(id=>evidenced.has(id)),scope=JSON.stringify([imageId,visible,eligibleIds]),eligible=new Set(eligibleIds)
  if(persistent&&state.manualSelection)return {scope:JSON.stringify(['manual', [...state.markedIds].sort()]),eligibleIds:visible,markedIds:state.markedIds}
- return {scope,eligibleIds:persistent?visible:eligibleIds,markedIds:state.annotationScope===scope?state.markedIds.filter(id=>eligible.has(id)):eligibleIds}
+ return {scope,eligibleIds:persistent?visible:eligibleIds,markedIds:state.annotationScope===scope?(persistent?state.markedIds:state.markedIds.filter(id=>eligible.has(id))):eligibleIds}
 }
 export type ReviewDisplay=ReturnType<typeof useReviewDisplay>
 export function useReviewDisplay(scope:string,source:Source|null,observations:readonly EvidenceLink[]){
