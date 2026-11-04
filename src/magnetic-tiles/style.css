@@ -196,6 +196,14 @@
 .review-parts-table th:first-child,.review-parts-table td:first-child{position:sticky;left:0;background:#f9fbf5;z-index:2}
 .review-parts-table th:nth-child(2),.review-parts-table td:nth-child(2){position:sticky;left:32px;background:#f9fbf5;z-index:2;min-width:86px}
 .review-parts-table thead th:first-child,.review-parts-table thead th:nth-child(2){background:#e7eee6;z-index:4}
+.review-parts-table .review-id-filter-trigger{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;width:23px;height:23px;min-height:0;margin:0 0 0 4px;padding:3px;border:1px solid transparent;border-radius:4px;background:transparent;color:#52615d}
+.review-parts-table .review-id-filter-trigger[aria-pressed=true]{background:#d6dcd9;border-color:#88938f;color:#26332f}
+.review-id-filter-popover{position:fixed;inset:auto;margin:0;width:min(240px,calc(100vw - 16px));box-sizing:border-box;padding:9px;border:1px solid #b9c9c2;border-radius:6px;background:#fffdf7;color:#243e3a;box-shadow:0 4px 18px #203b3026;font-size:12px;white-space:normal}
+.review-id-filter-popover form,.review-id-filter-popover label{display:grid;gap:4px}
+.review-id-filter-popover form{gap:8px}
+.review-id-filter-popover input,.review-id-filter-popover select{width:100%;box-sizing:border-box;min-height:28px;padding:4px 6px;font-size:12px}
+.review-id-filter-popover form>div{display:flex;justify-content:flex-end;gap:6px}
+.review-id-filter-popover button{min-height:28px;padding:3px 9px;font-size:12px}
 .review-parts-table tr[aria-selected=true] td:first-child,.review-parts-table tr[aria-selected=true] td:nth-child(2){background:#dcefe8}
 .review-parts-table td:nth-child(3){min-width:130px}.review-parts-table td:nth-child(4){min-width:100px}
 .review-evidence-tools>span[title]{max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
