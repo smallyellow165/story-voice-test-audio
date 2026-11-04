@@ -134,7 +134,7 @@ try{
  // Exercise the normal Source → Analysis → Review → Plan → Execution path
  // with offline annotation. New records must be owned without importing history.
  await page.goto(base+'magnetic-gallery.html');await page.getByRole('link',{name:'家长制作入口 / Create New',exact:true}).click();await ready()
- await page.locator('[data-stage="source"]').click();const image=await page.screenshot({type:'png',clip:{x:0,y:0,width:64,height:64}});await page.getByLabel('上传磁力片图片文件',{exact:true}).setInputFiles({name:'workspace-proof.png',mimeType:'image/png',buffer:image})
+ await page.locator('[data-stage="source"]').click();const image=await page.screenshot({type:'png',clip:{x:0,y:0,width:64,height:64}});await page.getByRole('tab',{name:'上传图片',exact:true}).click();await page.getByLabel('上传磁力片图片文件',{exact:true}).setInputFiles({name:'workspace-proof.png',mimeType:'image/png',buffer:image})
  await page.getByText('人工标注 / 离线验证（不调用模型）',{exact:true}).click();const annotate=button('保存人工标注并 Review');await until(()=>annotate.isEnabled());const fixture=await visibleFixture();await field('Visible 3D 人工标注 JSON').fill(JSON.stringify(fixture.evidence));await annotate.click()
  await button('采用所有 AI 建议').waitFor();await until(()=>button('采用所有 AI 建议').isEnabled());await button('采用所有 AI 建议').click();await button('保存 3D Review').click()
  await until(()=>button('进入 3D Reconstruction').isEnabled());await button('进入 3D Reconstruction').click()

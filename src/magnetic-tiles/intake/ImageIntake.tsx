@@ -50,7 +50,7 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
  const [working,setBusy]=useState(false),[message,setMessage]=useState('选择当前图片或历史快照，继续工作。'),[error,setError]=useState(''),[currentHash,setCurrentHash]=useState('')
  const [imagePending,setImagePending]=useState(false);const busy=working||imagePending
  const [target,setTarget]=useState(''),[intent,setIntent]=useState<'connect'|'separate'|'uncertain'>('connect')
- const [imageSource,setImageSource]=useState<''|'upload'|'server'>('upload')
+ const [imageSource,setImageSource]=useState<''|'upload'|'server'>('server')
  const [preferencesRestored,setPreferencesRestored]=useState<typeof urlRequest|null>(null)
  const [preferencesReady,setPreferencesReady]=useState(false),[preferenceWarnings,setPreferenceWarnings]=useState({sourceType:'',model:''})
  const [preferenceStorageError,setPreferenceStorageError]=useState('')
@@ -201,8 +201,9 @@ export function ImageIntake({assembly,onApply,onSourceChange}:{assembly:Assembly
     }/>
     {selected&&stage!=='review'&&<p className="hint">当前零件：{selected} <button onClick={()=>navigate('review')}>修正选中零件</button></p>}</ReviewWorkspace>
   </StudioSlot>
+  <StudioSlot column="inspectorActions" stages={['source']}><TraceViewer analysisId={analysis?.id} reviewId={review?.id}/></StudioSlot>
   <StudioSlot column="inspector" stages={['source']}><section className="intake-controls source-inspector" aria-label="图片与识别操作">
-   <div className="review-inspector-heading"><h2>{workflowTerms.source.label}</h2><TraceViewer analysisId={analysis?.id} reviewId={review?.id}/><InfoHint label="图片与识别操作">上传本地图片或选择服务器图库会保存 Source 快照，不调用模型。下次识别模型与历史 Analysis 的实际模型独立；只有明确点击「识别图片（调用模型）」才发起新识别。支持清晰二维平铺照片 / 分块示意图，1–25 片。</InfoHint></div>
+
    <SourceImagePicker onPendingChange={setImagePending} onSelectImage={frame.select} activeImageId={frame.activeId} sourceType={imageSource} onSourceTypeChange={chooseSource} currentSource={source} disabled={disabled}
     onSource={async s=>{if(s){await openSource(s);await refresh()}else{await preserveEdits();setSource(null);setAnalysis(null);setDraft(null);setReview(null);setResult(null);setSelected('')}}}
     onOpenSource={id=>void run(async()=>{const s=await intakeApi<Source>('sources/'+id);await openSource(s)})}/>

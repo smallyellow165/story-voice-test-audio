@@ -28,11 +28,11 @@ type Column = 'workflow' | 'workspace' | 'inspector'
 export const imageStages: Stage[] = ['source', 'review', 'reconstruction']
 const stages: {id:Stage;label:string;detail:string}[] = (['source','review','reconstruction','assembly','build'] as const).map(id=>({id,label:workflowTerms[id].label,detail:workflowTerms[id].hint}))
 type Adoption3DRequest = {assembly:Assembly3D;origin:Record<string,unknown>;cameraView?:CameraView3D;complete:(error?:unknown)=>void}
-const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: Adoption3DRequest|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>Promise<void>; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; showInspector:()=>void; showWorkspace:()=>void; project3D:{id:string;name:string}|null; setProject3D:(p:{id:string;name:string}|null)=>void; assemblyOrigin3D:Record<string,unknown>|null; setAssemblyOrigin3D:(o:Record<string,unknown>|null)=>void; hosts:Partial<Record<Column|'assemblies',HTMLDivElement>>}|null>(null)
+const Context = createContext<{stage:Stage; mode:StudioMode; viewMode:ViewMode; intakeMode:'2d'|'visible3d'; adoption3D: Adoption3DRequest|null; adopt3D:(assembly:Assembly3D,origin:Record<string,unknown>,cameraView?:CameraView3D)=>Promise<void>; clearAdoption3D:()=>void; assembly3D:Assembly3D|null; setAssembly3D:(a:Assembly3D)=>void; navigate:(s:Stage)=>void; showInspector:()=>void; showWorkspace:()=>void; project3D:{id:string;name:string}|null; setProject3D:(p:{id:string;name:string}|null)=>void; assemblyOrigin3D:Record<string,unknown>|null; setAssemblyOrigin3D:(o:Record<string,unknown>|null)=>void; hosts:Partial<Record<Column|'assemblies'|'inspectorActions',HTMLDivElement>>}|null>(null)
 export function useStudio(){const value=useContext(Context);if(!value)throw Error('Studio layout required');return value}
 // Stable portal hosts keep each feature's existing state and DOM alive across navigation.
 // Only presentation changes; storage and feature controllers remain owned by their modules.
-export function StudioSlot({column,stages:visible,children,view='2d',intake='2d'}:{column:Column;stages:Stage[];children:ReactNode;view?:ViewMode;intake?:'2d'|'visible3d'}){
+export function StudioSlot({column,stages:visible,children,view='2d',intake='2d'}:{column:Column|'inspectorActions';stages:Stage[];children:ReactNode;view?:ViewMode;intake?:'2d'|'visible3d'}){
   const {stage,viewMode,intakeMode,hosts}=useStudio(),host=hosts[column]
   return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)||(imageStages.includes(stage)&&intakeMode!==intake)||((stage==='assembly'||stage==='build')&&viewMode!==view)}>{children}</div>,host) : null
 }
@@ -62,6 +62,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     try{storage.setItem(PANEL_PREFERENCES_KEY,JSON.stringify({rightTab,catalogProfile,lastStage:stage}));setStorageWarning('')}catch{setStorageWarning('右栏 UI 偏好无法保存；URL 仍可恢复 Tab 与 Profile，工作数据未修改。')}
   },[stage,rightTab,catalogProfile,appliedRequest,request])
   useLayoutEffect(()=>{if(rightColumn.current)rightColumn.current.scrollTop=scrollOffsets.current[rightTab]},[rightTab])
+  const [inspectorActions,setInspectorActions]=useState<HTMLDivElement|null>(null)
   const [workflow,setWorkflow]=useState<HTMLDivElement|null>(null),[workspace,setWorkspace]=useState<HTMLDivElement|null>(null),[inspector,setInspector]=useState<HTMLDivElement|null>(null)
   useEffect(()=>{if(workspace)workspace.scrollTop=0;if(rightTab==='inspector'&&rightColumn.current){rightColumn.current.scrollTop=0;scrollOffsets.current.inspector=0}},[stage,workspace])
   const [mobileColumn,setMobileColumn]=useState<Column>(boot.rightTab==='catalog'?'inspector':'workspace')
@@ -74,7 +75,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     setMobileColumn('workspace')
     try{saveStudioMode(storage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
   }
-  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,project3D,setProject3D,assemblyOrigin3D,setAssemblyOrigin3D,navigate,showWorkspace:()=>{setMobileColumn('workspace');if(workspace)workspace.scrollTop=0},showInspector:()=>{selectTab('inspector');setMobileColumn('inspector')},hosts:{assemblies:assembliesHost??undefined,workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
+  return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,project3D,setProject3D,assemblyOrigin3D,setAssemblyOrigin3D,navigate,showWorkspace:()=>{setMobileColumn('workspace');if(workspace)workspace.scrollTop=0},showInspector:()=>{selectTab('inspector');setMobileColumn('inspector')},hosts:{inspectorActions:inspectorActions??undefined,assemblies:assembliesHost??undefined,workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
     <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode} data-studio-mode={mode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
@@ -106,6 +107,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
           </div>
           {(warnings.length>0||storageWarning)&&<InfoHint label="右栏状态">{[...warnings,storageWarning].filter(Boolean).map(w=><p key={w}>{w}</p>)}</InfoHint>}
           <div className="studio-mobile-controls"><button onClick={()=>setMobileColumn('workflow')}>工作阶段</button><button onClick={()=>setMobileColumn('workspace')}>工作区</button></div>
+          <div ref={setInspectorActions} className="studio-inspector-actions"/>
         </div>
         <div id="studio-inspector-content" role="tabpanel" aria-labelledby="studio-inspector-tab" hidden={rightTab!=='inspector'} ref={setInspector}/>
         <div id="studio-catalog-content" role="tabpanel" aria-labelledby="studio-catalog-tab" hidden={rightTab!=='catalog'}><SupportedTiles selected={catalogProfile} onSelect={key=>{setCatalogProfile(key);setWarnings([])}}/></div>

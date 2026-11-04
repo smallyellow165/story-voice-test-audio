@@ -22,3 +22,56 @@
 .source-image-actions{position:fixed;inset:auto;margin:0;width:128px;box-sizing:border-box;padding:4px;border:1px solid #b6cbc3;border-radius:6px;background:#fffdf5;box-shadow:0 3px 10px #173c2926}
 .source-image-actions:popover-open{display:flex;flex-direction:column;gap:2px}
 .source-image-actions button{width:100%;min-height:32px;margin:0;padding:5px 8px;font-size:12px;text-align:left}
+
+/* Analysis uses the available pane height for the library, rather than a fixed
+   14rem list. Remaining controls keep their own compact, non-shrinking rows. */
+.studio-inspector-actions{display:flex;align-items:center;flex:none;margin-left:auto}
+.studio-inspector-actions>.studio-slot{display:flex;align-items:center;margin:0}
+.studio-inspector-actions .trace-open{white-space:nowrap;margin:0;min-height:28px;padding:4px 5px;font-size:10.5px}
+.studio[data-active-stage=source] .studio-inspector{display:flex;flex-direction:column;overflow:hidden}
+.studio[data-active-stage=source] .studio-inspector-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;flex:none;margin-bottom:6px;gap:4px;padding-block:4px}
+.studio[data-active-stage=source] .inspector-tabs [role=tab]{font-size:11px;min-height:28px;padding:4px 5px}
+.studio[data-active-stage=source] #studio-inspector-content{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.studio[data-active-stage=source] #studio-catalog-content{min-height:0;overflow:auto}
+.studio[data-active-stage=source] #studio-inspector-content>.studio-slot:not([hidden]){display:flex;flex-direction:column;flex:1;min-height:0;margin:0}
+.studio[data-active-stage=source] .visible3d-analysis-inspector{padding:0;overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:0;gap:4px}
+.studio[data-active-stage=source] .source-inspector{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;gap:6px;margin:0;padding:0;border:0}
+.studio[data-active-stage=source] .source-inspector>*{flex-shrink:0}
+.studio[data-active-stage=source] .source-inspector>.source-image-picker{flex:0 0 auto;gap:5px}
+.studio[data-active-stage=source] .source-inspector>.source-image-picker:has(>.source-library-panel){flex:1 0 auto}
+.studio[data-active-stage=source] .source-inspector button,.studio[data-active-stage=source] .source-inspector select,.studio[data-active-stage=source] .source-inspector input:not([type=checkbox]):not([type=file]){min-height:28px;padding:4px 6px;font-size:12px;margin:0}
+.studio[data-active-stage=source] .source-inspector .compact-field{grid-template-columns:auto minmax(0,1fr);gap:5px;font-size:11px}
+.studio[data-active-stage=source] .source-inspector p{margin:0;font-size:11px;line-height:1.45}
+.studio[data-active-stage=source] .source-inspector .visible3d-execution-state{margin:0;padding:5px 7px;font-size:11px}
+.studio[data-active-stage=source] .source-tabs{margin:0;gap:4px;flex:none}
+.studio[data-active-stage=source] .source-tabs button{min-height:28px;padding:4px 6px}
+.studio[data-active-stage=source] .source-library-panel{display:flex;flex-direction:column;flex:1 1 auto;min-height:220px;gap:4px}
+.studio[data-active-stage=source] .source-library-row{flex:none;gap:4px}
+.studio[data-active-stage=source] .source-library-list{height:0;min-height:160px;flex:1 1 0px;max-height:none;margin:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.studio[data-active-stage=source] .source-library-list td:first-child{width:38px}
+.studio[data-active-stage=source] .source-library-list .source-thumbnail{width:32px;height:30px}
+.source-library-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.source-library-list input[type=checkbox]{width:14px;height:14px;min-height:14px;padding:0;margin:0;flex:0 0 14px}
+.studio .source-library-breadcrumbs{position:static;top:auto;margin:0;padding:0;display:flex;align-items:center;gap:3px;flex:none;min-width:0;max-width:100%;overflow:auto;white-space:nowrap;font-size:11px}
+.source-library-breadcrumbs>span{display:flex;align-items:center;gap:3px;flex:none}
+.source-library-breadcrumbs button{background:transparent;border-color:transparent;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-library-breadcrumbs button[aria-current=location]{font-weight:700;color:#286855}
+.source-library-breadcrumbs small{color:#5e7068;flex:none}
+.source-library-folder{display:flex;align-items:center;gap:6px;width:100%;min-width:0;text-align:left;border:0;border-bottom:1px solid #d6e1dc;border-radius:0;background:transparent}
+.source-library-folder>span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-library-folder small{flex:none;color:#5e7068;font-size:10px}
+.source-library-empty{padding:12px 4px;color:#5e7068}
+.studio[data-active-stage=source] .source-set-heading{margin:3px 0 0;gap:3px;font-size:12px;flex:none}
+.studio[data-active-stage=source] .source-set-heading small{font-size:10px;color:#5e7068}
+.studio[data-active-stage=source] .source-set-table-scroll{margin:0;max-height:164px;flex:none;overflow:auto;overscroll-behavior:contain}
+
+.source-inspector .source-library-list label{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;margin:0}
+/* Reserve one header row for both tabs and Trace even at the 240px panel min.
+   Mobile navigation gets its own row, rather than pushing Trace below the tabs. */
+.studio[data-active-stage=source] .studio-inspector-heading .inspector-tabs{grid-column:1;grid-row:1;min-width:0;gap:3px}
+.studio[data-active-stage=source] .studio-inspector-heading .studio-inspector-actions{grid-column:2;grid-row:1}
+.studio[data-active-stage=source] .studio-inspector-heading .studio-mobile-controls{grid-column:1/-1;grid-row:2}
+.studio[data-active-stage=source] .studio-inspector-heading>.vision-info-hint{grid-column:1/-1;grid-row:3;justify-self:end}
+.studio .studio-inspector-actions>.studio-slot:not([hidden]){margin:0}
+
+@media(max-width:760px){.studio[data-active-stage=source] .studio-panel-inspector{height:100dvh}}
