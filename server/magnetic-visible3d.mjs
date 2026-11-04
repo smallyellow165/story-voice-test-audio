@@ -38,7 +38,7 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
   try{await link(temp,f)}finally{await unlink(temp)} return r
  }
  async function read(kind,id){if(!kinds.includes(kind))fail('未知记录类型');const r=JSON.parse(await readFile(filename(kind,id),'utf8'));const {hash:h,...p}=r;if(h!==hash(p)||r.id!==id)fail('记录 Hash 不一致');return r}
- async function head(sourceId){try{return JSON.parse(await readFile(filename('heads',sourceId),'utf8'))}catch(e){if(e.code==='ENOENT')return {revision:0,selectedRevision:0,analysisId:null,reviewId:null,groups:{}};throw e}}
+ async function head(sourceId){try{const h=JSON.parse(await readFile(filename('heads',sourceId),'utf8'));return {analysisId:null,reviewId:null,groups:{},...h,selectedRevision:h.selectedRevision??0}}catch(e){if(e.code==='ENOENT')return {revision:0,selectedRevision:0,analysisId:null,reviewId:null,groups:{}};throw e}}
  async function locked(sourceId,work){const f=filename('heads',sourceId)+'.lock';await mkdir(path.dirname(f),{recursive:true});try{await writeFile(f,'lock',{flag:'wx',mode:0o600})}catch(e){if(e.code==='EEXIST')fail('该来源正在更新；请重新加载后重试',409);throw e}try{return await work()}finally{await unlink(f)}}
  // Mutable Selected pointers live in the existing Project head. Never choose
  // by timestamps or by traversing the immutable result history.
@@ -253,6 +253,15 @@ export function createVisible3DWorkflow(directory,{readSource,readImage,readImag
    if(b?.state==='submitting'&&!b.responseId&&Date.now()-Date.parse(r.createdAt)>95000)return {...r,state:'unknown',error:'提交确认中断；未保存 Provider Response ID，执行与计费状态未知，不会自动重发。',trace:{...r.trace,background:{...b,state:'unknown'}}}
    return r
   }))}
+  if(method==='POST'&&route==='workspace-history'){
+   if(!Array.isArray(body.refs)||body.refs.length>10000||!Array.isArray(body.requestIds)||body.requestIds.length>10000)fail('工作区历史引用无效')
+   const result=Object.fromEntries(kinds.map(k=>[k,[]]))
+   for(const ref of body.refs){identifier(ref.id);for(const k of kinds){try{const r=await read(k,ref.id);if(r.hash!==ref.hash)fail('工作区历史 Hash 不一致',409);result[k].push(r)}catch(e){if(e.code!=='ENOENT')throw e}}}
+   for(const k of kinds)result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))
+   result.requests=[]
+   for(const id of body.requestIds){identifier(id);try{result.requests.push(JSON.parse(await readFile(path.join(directory,'requests',id+'.json'),'utf8')))}catch(e){if(e.code!=='ENOENT')throw e}}
+   return result
+  }
   if(method==='GET'&&route==='history'){
    const result={};for(const k of kinds){const files=await readdir(path.join(directory,k)).catch(e=>{if(e.code==='ENOENT')return [];throw e});result[k]=await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(f=>read(k,f.slice(0,-5))));result[k].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}return result
   }

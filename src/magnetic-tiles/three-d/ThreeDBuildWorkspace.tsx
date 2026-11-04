@@ -1,3 +1,5 @@
+import {currentWorkspace,WORKSPACE_RECORD_KEY} from '../workspace-context.ts'
+import {studioStorage} from '../workspace-context.ts'
 import {intakeApi} from '../intake/api.ts'
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { StudioSlot, useStudio } from '../StudioLayout.tsx'
@@ -22,11 +24,13 @@ import {loadPhotoOrigin} from './reconstruction/adopt-draft.ts'
 
 export default function ThreeDBuildWorkspace(){
   const {stage,viewMode,assembly3D}=useStudio(),active=stage==='build'&&viewMode==='3d'
-  const photoOrigin=loadPhotoOrigin(localStorage),linkedOrigin=photoOrigin&&assembly3D?.id===JSON.parse(photoOrigin.assemblyRaw).id?photoOrigin:null;
+  const photoOrigin=loadPhotoOrigin(studioStorage()),linkedOrigin=photoOrigin&&assembly3D?.id===JSON.parse(photoOrigin.assemblyRaw).id?photoOrigin:null;
   async function checkSelectedBuild(a:NonNullable<typeof assembly3D>,tutorial?:Tutorial3D){
+    const ref=currentWorkspace()?JSON.parse(studioStorage().getItem(WORKSPACE_RECORD_KEY)||'null'):null
+    if(ref){await intakeApi('assembly3d/snapshot-check',{assemblyRef:ref,assembly:a,...(tutorial?{tutorial}:{})});return}
     if(linkedOrigin)await intakeApi(linkedOrigin.origin.kind==='combined-assembly'?'assembly3d/build-check':'visible3d/build-check',{originId:linkedOrigin.origin.id,assembly:a,...(tutorial?{tutorial}:{})})
   }
-  const [boot]=useState(()=>{try{return {...loadTutorial3D(localStorage),error:''}}catch(e){return {tutorial:null,saved:[],raw:null,error:`原教程存档无法读取，禁止覆盖：${String(e)}`}}})
+  const [boot]=useState(()=>{try{return {...loadTutorial3D(studioStorage()),error:''}}catch(e){return {tutorial:null,saved:[],raw:null,error:`原教程存档无法读取，禁止覆盖：${String(e)}`}}})
   const [history,setHistory]=useState<EditorHistory|null>(()=>boot.tutorial?actions.createInitialHistory(boot.tutorial):null)
   const historyRef=useRef(history);historyRef.current=history
   const [savedTutorials,setSavedTutorials]=useState(boot.saved),[savedId,setSavedId]=useState(boot.tutorial?.id??'')
@@ -49,6 +53,7 @@ export default function ThreeDBuildWorkspace(){
   const index=tutorial?Math.max(0,tutorial.steps.findIndex(s=>s.id===selected)):0,step=tutorial?.steps[index]
   const reportCamera=useCallback((c:TutorialCamera)=>{camera.current=c;setCameraReady(true)},[])
   const replaceGuard=useRef(false);replaceGuard.current=!!tutorial&&!saved&&(dirty||tutorial.steps.length>0)
+  useEffect(()=>{if(!currentWorkspace())return;const warn=(e:BeforeUnloadEvent)=>{if(replaceGuard.current){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[])
   function allowReplace(){return !replaceGuard.current||confirm('当前教程有未保存修改或预览。确认替换？可先取消并保存或导出。')}
   function accept(t:Tutorial3D){
     documentEpoch.current++;setGenerated(false)
@@ -83,11 +88,11 @@ export default function ThreeDBuildWorkspace(){
     if(boot.error)throw Error(boot.error);if(!tutorial)return
     if(!asDraft){if(!assembly3D)throw Error('尚无当前 Assembly');await checkSelectedBuild(assembly3D,tutorial);if(linkedOrigin&&(tutorial.source.reconstructionOrigin?.id!==linkedOrigin.origin.id||tutorial.source.reconstructionOrigin?.hash!==linkedOrigin.origin.hash))throw Error('教程来源链与当前 Assembly 不一致，请重新生成')}
     if(!asDraft&&!ready)throw Error('教程未满足当前作品的来源与步骤分配检查；可在高级区域保存未完成草稿。')
-    expected.current=saveTutorial3D(localStorage,tutorial,expected.current);setSavedTutorials(loadTutorial3D(localStorage).saved);setSavedId(tutorial.id)
+    expected.current=saveTutorial3D(studioStorage(),tutorial,expected.current);setSavedTutorials(loadTutorial3D(studioStorage()).saved);setSavedId(tutorial.id)
     setClean(serializeTutorial3D(tutorial));setGenerated(false);setNotice(asDraft?'已保存未完成草稿，不代表几何与顺序检查通过。':'教程已保存；仍需人工检查实际搭建风险，Physical Stability 未验证。');setError('')
   }catch(e){setError(String(e))}}
-  function reload(){if(!allowReplace())return;try{const loaded=loadTutorial3D(localStorage);if(!loaded.tutorial)throw Error('尚无已保存教程');fileRequest.current++;expected.current=loaded.raw;setSavedTutorials(loaded.saved);setSavedId(loaded.tutorial.id);accept(loaded.tutorial)}catch(e){setError(String(e))}}
-  function openSaved(){if(!allowReplace())return;try{const loaded=openSavedTutorial3D(localStorage,savedId,expected.current);fileRequest.current++;expected.current=loaded.raw;setSavedTutorials(loaded.saved);accept(loaded.tutorial);setNotice('已打开保存教程；来源作品和当前 Assembly 均保持原样。')}catch(e){setError(String(e))}}
+  function reload(){if(!allowReplace())return;try{const loaded=loadTutorial3D(studioStorage());if(!loaded.tutorial)throw Error('尚无已保存教程');fileRequest.current++;expected.current=loaded.raw;setSavedTutorials(loaded.saved);setSavedId(loaded.tutorial.id);accept(loaded.tutorial)}catch(e){setError(String(e))}}
+  function openSaved(){if(!allowReplace())return;try{const loaded=openSavedTutorial3D(studioStorage(),savedId,expected.current);fileRequest.current++;expected.current=loaded.raw;setSavedTutorials(loaded.saved);accept(loaded.tutorial);setNotice('已打开保存教程；来源作品和当前 Assembly 均保持原样。')}catch(e){setError(String(e))}}
   function load(json:string){try{if(!allowReplace())return;const t=parseTutorial3D(json);accept(t)}catch(e){setError(`导入失败，当前教程保留：${String(e)}`)}}
   return <>
     <StudioSlot column="workspace" stages={['build']} view="3d">

@@ -1,3 +1,4 @@
+import {assertTutorial3D} from '../src/magnetic-tiles/three-d/tutorial.ts'
 import {mkdir,readdir,readFile,writeFile,link,unlink} from 'node:fs/promises'
 import path from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
@@ -30,6 +31,7 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
  async function state(r,depth=0){try{
   if(depth>8)throw Error('Combined Parent 链过深')
   if(r.type==='combined'){for(const ref of r.parent.assemblies){const p=await latest(ref.id,ref.version);if(!p||p.hash!==ref.hash||p.snapshotHash!==ref.snapshotHash||p.snapshot.assembly.revision!==ref.revision||p.project.id!==r.project.id)throw Error('Combined Parent Snapshot 不一致');const status=await state(p,depth+1);if(!status.selected)throw Error(status.error)}}
+  else if(r.snapshot.photoOrigin.origin.kind==='editor-created'){const {hash:stored,...data}=r.snapshot.photoOrigin.origin;if(hash(data)!==stored||stored!==r.parent.hash)throw Error('Editor Origin Hash 不一致')}
   else{const o=await selectedOrigin(r.parent.id);if(o.hash!==r.parent.hash)throw Error('Origin Hash 不一致')}
   return {selected:true,error:null}
  }catch(e){return {selected:false,error:String(e.message)}}}
@@ -41,10 +43,20 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
    const records=await Promise.all(dirs.filter(d=>d.isDirectory()).map(d=>latest(d.name)))
    return {assemblies:records.filter(r=>r?.project.id===p).map(summary).sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
   }
+  if(method==='GET'&&route.startsWith('save-head/')){const r=await latest(route.slice(10));if(!r)fail('Assembly 尚未保存',404);return {id:r.assembly.id,version:r.version,hash:r.hash}}
   const fixed=route.match(/^records\/([^/]+)\/versions\/([1-9]\d*)$/)
   if(method==='GET'&&fixed){const r=await latest(fixed[1],Number(fixed[2]));if(!r)fail('Assembly 固定版本不存在',404);return r}
   if(method==='GET'&&route.startsWith('records/')){const r=await latest(route.slice(8));if(!r)fail('Assembly 尚未保存',404);return {...r,lineage:await state(r)}}
   if(method==='GET'&&route.startsWith('selected-origin/'))return combinedOrigin(route.slice(16))
+  if(method==='POST'&&route==='snapshot-check'){
+   const ref=body.assemblyRef,r=await latest(ref?.id,ref?.version)
+   if(!r||!Number.isSafeInteger(ref.version)||r.hash!==ref.hash)fail('作品固定版本 / Hash 不一致',409)
+   const a=body.assembly,o=r.snapshot.photoOrigin.origin;assertAssembly3D(a)
+   if(a.id!==r.assembly.id)fail('当前 Assembly 与工作区版本不一致',409)
+   assertCanonicalProfiles(a.profiles,await getProfiles());assertModuleOrigin(a,o)
+   if(body.tutorial){const t=body.tutorial;assertTutorial3D(t);if(canonical(t.assembly)!==canonical(a)||t.source.reconstructionOrigin?.id!==o.id||t.source.reconstructionOrigin?.hash!==o.hash)fail('Tutorial 与工作区 Assembly / Origin 不一致',409)}
+   return {origin:{id:o.id,hash:o.hash},geometry:validateAssembly3D(a)}
+  }
   if(method==='POST'&&route==='build-check'){
    const o=await combinedOrigin(body.originId);assertAssembly3D(body.assembly);if(body.assembly.id!==o.id)fail('Combined Build ID 不一致',409);assertCanonicalProfiles(body.assembly.profiles,await getProfiles());assertModuleOrigin(body.assembly,o);const geometry=validateAssembly3D(body.assembly);return {origin:o,geometry}
   }
@@ -59,6 +71,16 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
    const snapshot={assembly:a,photoOrigin:{origin,assemblyRaw:serializeAssembly3D(a)},nonRepairable}
    return dispatch('POST','save',{snapshot,expectedHash:null},origin)
   }
+  if(method==='POST'&&route==='save-editor'){
+   if(typeof body.workspaceId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(body.workspaceId))fail('新建工作区 ID 无效')
+   const a=body.assembly;assertAssembly3D(a)
+   if(a.id!=='creation-'+body.workspaceId)fail('新建 Assembly 与工作区不一致',409)
+   if(await latest(a.id))fail('作品已保存，请使用正常版本保存与 CAS',409)
+   const baseline={kind:'magnetic-assembly-3d',schemaVersion:1,id:a.id,revision:0,profiles:[],pieces:[],connections:[]}
+   const sourceId=hash({workspaceId:body.workspaceId}),data={kind:'editor-created',id:a.id,name:'新建作品',sourceId,sourceHash:sourceId,assembly:baseline},origin={...data,hash:hash(data)}
+   const snapshot={assembly:a,photoOrigin:{origin,assemblyRaw:serializeAssembly3D(baseline),...(body.cameraView?{cameraView:body.cameraView}:{})},nonRepairable:body.nonRepairable??[]}
+   return dispatch('POST','save',{snapshot,expectedHash:null},origin)
+  }
   if(method!=='POST'||route!=='save')fail('未知 Assembly 操作',404)
   if(!body||Object.keys(body).some(k=>!['snapshot','expectedHash'].includes(k)))fail('Assembly 保存字段无效')
   const s=body.snapshot,a=s?.assembly;assertAssembly3D(a);id(a.id)
@@ -70,14 +92,14 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
   projectId(o.sourceId);if(sidecar.cameraView)assertCameraView(sidecar.cameraView)
   const previous=await latest(a.id)
   if(previous){if(canonical(previous.snapshot.photoOrigin.origin)!==canonical(o)||previous.snapshot.photoOrigin.assemblyRaw!==sidecar.assemblyRaw)fail('Assembly 的 Parent Lineage 不可重绑',409)}
-  else if(o.kind==='combined-assembly'){if(!createdOrigin||canonical(createdOrigin)!==canonical(o))fail('Combined 来源必须由明确的组合操作创建',409)}
+  else if(o.kind==='combined-assembly'||o.kind==='editor-created'){if(!createdOrigin||canonical(createdOrigin)!==canonical(o))fail('Combined 来源必须由明确的组合操作创建',409)}
   else{const stored=await readOrigin(o.id);if(canonical(stored)!==canonical(o))fail('Assembly Origin 与实际来源不一致',409)}
   const snapshotHash=hash(s)
   // Safe registration of an already saved working slot; never overwrites a
   // different/newer server document or increments a geometry Revision.
   if(previous&&snapshotHash===previous.snapshotHash&&(body.expectedHash===null||body.expectedHash===previous.hash))return {...previous,lineage:await state(previous)}
   if(body.expectedHash!==(previous?.hash??null))fail('Assembly 已被其他页面更新；保存未覆盖，请重新选择已保存作品。',409)
-  const payload={schemaVersion:1,type:o.kind==='combined-assembly'?'combined':'group',assembly:{id:a.id},name:o.kind==='combined-assembly'?o.name:o.reconstructionScope?.groupName??'Group Assembly',group:{id:o.kind==='combined-assembly'?'combined':o.reconstructionScope?.groupId??'all',name:o.kind==='combined-assembly'?o.name:o.reconstructionScope?.groupName??'全部模块'},project:{id:o.sourceId,hash:o.sourceHash},parent:o.kind==='combined-assembly'?{kind:'assemblies',assemblies:o.parents}:{kind:'geometry-origin',id:o.id,hash:o.hash},version:(previous?.version??0)+1,previousHash:previous?.hash??null,snapshot:s,snapshotHash,savedAt:new Date().toISOString()}
+  const payload={schemaVersion:1,type:o.kind==='combined-assembly'?'combined':'group',assembly:{id:a.id},name:['combined-assembly','editor-created'].includes(o.kind)?o.name:o.reconstructionScope?.groupName??'Group Assembly',group:{id:o.kind==='combined-assembly'?'combined':o.reconstructionScope?.groupId??'all',name:['combined-assembly','editor-created'].includes(o.kind)?o.name:o.reconstructionScope?.groupName??'全部模块'},project:{id:o.sourceId,hash:o.sourceHash},parent:o.kind==='combined-assembly'?{kind:'assemblies',assemblies:o.parents}:{kind:'geometry-origin',id:o.id,hash:o.hash},version:(previous?.version??0)+1,previousHash:previous?.hash??null,snapshot:s,snapshotHash,savedAt:new Date().toISOString()}
   const r={...payload,hash:hash(payload)},dir=path.join(directory,a.id),target=path.join(dir,String(r.version).padStart(12,'0')+'.json'),temp=target+'.'+randomUUID()+'.tmp'
   await mkdir(dir,{recursive:true});try{await writeFile(temp,JSON.stringify(r),{flag:'wx',mode:0o600});try{await link(temp,target)}catch(e){if(e.code==='EEXIST')fail('Assembly 并发保存冲突；未覆盖现有存档。',409);throw e}}finally{await unlink(temp).catch(e=>{if(e.code!=='ENOENT')throw e})}
   return {...r,lineage:await state(r)}

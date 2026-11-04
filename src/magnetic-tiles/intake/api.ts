@@ -1,8 +1,22 @@
+import {currentWorkspace,studioStorage,workspaceHistory,rememberWorkspaceResult,ownSelectedHead} from '../workspace-context.ts'
 export async function intakeApi<T>(route: string, body?: unknown): Promise<T> {
+  const context=currentWorkspace(),storage=context?studioStorage():null
+  if(storage&&(route==='visible3d/history'||route==='visible3d/requests')){
+    const h=await intakeApi<Record<string,unknown>>('visible3d/workspace-history',workspaceHistory(storage))
+    return (route.endsWith('/requests')?h.requests:h) as T
+  }
+  if(storage&&body&&typeof body==='object'&&'requestId' in body)rememberWorkspaceResult(storage,null,(body as {requestId:unknown}).requestId)
   const response = await fetch('/api/magnetic-intake/'+route, body === undefined ? undefined : { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body) })
   let data
   try { data = await response.json() } catch { throw Error('Image Intake 需要 Test Audio 服务：请用 npm run dev 启动，不能只启动 Vite。') }
-  if(!response.ok)throw Error(data.error || `HTTP ${response.status}`)
+  if(!response.ok)throw Object.assign(Error(data.error || `HTTP ${response.status}`),{statusCode:response.status})
+  if(storage){
+    if(body!==undefined||route==='visible3d/workspace-history'){
+      if(route==='visible3d/workspace-history')for(const r of data.requests??[])rememberWorkspaceResult(storage,r)
+      else rememberWorkspaceResult(storage,data)
+    }
+    if(route.startsWith('visible3d/head/')||route==='visible3d/selected')return ownSelectedHead(data,workspaceHistory(storage)) as T
+  }
   return data
 }
 const base64 = (blob: Blob): Promise<string> => new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('无法读取图片'));r.readAsDataURL(blob)})

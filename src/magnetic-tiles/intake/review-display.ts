@@ -1,3 +1,4 @@
+import {studioStorage} from '../workspace-context.ts'
 import {useEffect,useMemo,useState} from 'react'
 import {sourceImages} from './image-set.ts'
 import type {Source,Observation} from './contracts.ts'
@@ -32,9 +33,9 @@ export type ReviewDisplay=ReturnType<typeof useReviewDisplay>
 export function useReviewDisplay(scope:string,source:Source|null,observations:readonly EvidenceLink[]){
  const key=scope?'magnetic-review-display.v1:'+scope:'',entries=sourceImages(source),imageKey=entries.map(e=>e.sourceId).join('\0'),observationKey=observations.map(o=>o.id).join('\0')
  const [local,setLocal]=useState<{key:string;value:unknown}>({key:'',value:null})
- const raw=useMemo(()=>{if(local.key===key)return local.value;try{return key?JSON.parse(localStorage.getItem(key)??'null'):null}catch{return null}},[key,local])
+ const raw=useMemo(()=>{if(local.key===key)return local.value;try{return key?JSON.parse(studioStorage().getItem(key)??'null'):null}catch{return null}},[key,local])
  const state=useMemo(()=>normalizeReviewDisplay(raw,imageKey?imageKey.split('\0'):[],observationKey?observationKey.split('\0'):[]),[raw,imageKey,observationKey])
- useEffect(()=>{if(key)try{localStorage.setItem(key,JSON.stringify(state))}catch{/* Optional view preferences never block saving real Review data. */}},[key,state])
+ useEffect(()=>{if(key)try{studioStorage().setItem(key,JSON.stringify(state))}catch{/* Optional view preferences never block saving real Review data. */}},[key,state])
  const imageIds=state.imageIds??entries.map(e=>e.sourceId),referenceId=source?.primaryImageId??source?.id??''
  return {state,imageIds,visibleIds:imageFilteredIds(observations,imageIds,referenceId),idsForImage:(id:string)=>imageFilteredIds(observations,[id],referenceId),update:(patch:Partial<ReviewDisplayState>)=>setLocal({key,value:{...state,...patch}})}
 }

@@ -1,5 +1,7 @@
+import {visibleFixture,png} from '../test/magnetic-visible3d-fixtures.mjs'
+import {randomUUID} from 'node:crypto'
 import {openSavedImageSources} from './magnetic-studio-browser.mjs'
-// One real saved 2D case + saved purple 3D records, copied to an isolated API.
+// One saved 2D case + a current-contract offline 3D fixture in an isolated API.
 // No model calls, no production mutations, no runtime application state injection.
 import {chromium} from '../../story-voice-pipecat-poc-v4/client/node_modules/playwright/index.mjs'
 import {createServer} from 'vite'
@@ -18,18 +20,19 @@ try{
  await mkdir(out,{recursive:true})
  const twoD=(await records('reconstructions')).filter(r=>r.candidates[0]?.assembly.instances.length===1).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];assert.ok(twoD)
  const r2=await read('reviews',twoD.reviewId),a2=await read('analyses',r2.analysisId),s2=await read('sources',twoD.sourceId)
- const s3=(await records('sources')).find(s=>s.name==='qisimiaoxiang_square.png');assert.ok(s3)
  for(const kind of ['sources','assets','analyses','reviews','reconstructions'])await mkdir(path.join(dir,kind),{recursive:true})
- for(const s of [s2,s3]){await cp(path.join(stored,'sources',s.id+'.json'),path.join(dir,'sources',s.id+'.json'));for(const id of new Set([s.originalHash,s.view.hash]))await cp(path.join(stored,'assets',id+'.json'),path.join(dir,'assets',id+'.json'))}
+ for(const s of [s2]){await cp(path.join(stored,'sources',s.id+'.json'),path.join(dir,'sources',s.id+'.json'));for(const id of new Set([s.originalHash,s.view.hash]))await cp(path.join(stored,'assets',id+'.json'),path.join(dir,'assets',id+'.json'))}
  for(const [kind,id] of [['analyses',a2.id],['reviews',r2.id],['reconstructions',twoD.id]])await cp(path.join(stored,kind,id+'.json'),path.join(dir,kind,id+'.json'))
  await cp(path.join(stored,'profile-registry'),path.join(dir,'profile-registry'),{recursive:true})
- for(const kind of ['analyses','reviews','plans','executions','heads','model-traces'])await cp(path.join(stored,'visible3d',kind),path.join(dir,'visible3d',kind),{recursive:true})
- const api=createMagneticIntake(dir),h3=await api.dispatch('GET','visible3d/history'),x3=h3.executions.find(x=>x.sourceId===s3.id&&x.candidates.length===4)
- const p3=h3.plans.find(p=>p.id===x3.planId),r3=h3.reviews.find(r=>r.id===p3.reviewId),a3=h3.analyses.find(a=>a.id===r3.analysisId)
+ const api=createMagneticIntake(dir),fixture=await visibleFixture(),s3=await api.dispatch('POST','sources',{name:'OFFLINE mode test.png',original:png,view:png})
+ const a3=await api.dispatch('POST','visible3d/annotate',{sourceId:s3.id,evidence:fixture.evidence})
+ const r3=(await api.dispatch('POST','visible3d/reviews',{analysisId:a3.id,review:fixture.review,expectedRevision:0})).record
+ const p3=await api.dispatch('POST','visible3d/manual-plan',{reviewId:r3.id,plan:fixture.plan})
+ const x3=(await api.dispatch('POST','visible3d/execute',{planId:p3.id,requestId:randomUUID()})).record,candidateId=x3.candidates[0].id
  const calls=[],errors=[],consoleErrors=[];let dialogs=0,workers=0
  server=await createServer({configFile:false,root,cacheDir:path.join(dir,'vite-cache'),base:'/story-voice-test-audio/',server:{host:'127.0.0.1',port:0},plugins:[{name:'isolated-mode-api',configureServer(s){s.middlewares.use('/favicon.ico',(_req,res)=>{res.statusCode=204;res.end()});s.middlewares.use('/api/magnetic-intake',async(req,res)=>{
   const route=req.url.slice(1).split('?')[0];calls.push({method:req.method,route})
-  if(req.method!=='GET'&&!['origins','visible3d/adopt'].includes(route)){res.statusCode=403;res.end(JSON.stringify({error:'Model and generation calls forbidden in mode test'}));return}
+  if(req.method!=='GET'&&!['origins','visible3d/adopt','visible3d/selected','visible3d/build-check','assembly3d/save'].includes(route)){res.statusCode=403;res.end(JSON.stringify({error:'Model and generation calls forbidden in mode test'}));return}
   try{let body='';for await(const c of req)body+=c;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await api.dispatch(req.method,route,body?JSON.parse(body):{})))}catch(e){res.statusCode=e.statusCode??422;res.end(JSON.stringify({error:e.message}))}
  })}}]});await server.listen()
  const base=`http://127.0.0.1:${server.httpServer.address().port}/story-voice-test-audio/magnetic-tiles.html`
@@ -52,10 +55,10 @@ try{
  await studioMode(page,'3d');assert.equal(await mode(),'3d');await page.getByTestId('tutorial-source').waitFor()
  assert.deepEqual(Object.fromEntries(Object.entries(await data()).filter(([k])=>k in saved2)),saved2,'first 3D switch preserves every 2D save')
  await modeStage('3d','source');await openSavedImageSources(page);await field('已有图片来源').focus();await field('已有图片来源').locator(`option[value="${s3.id}"]`).waitFor({state:'attached'});await field('已有图片来源').selectOption(s3.id)
- await field('3D Analysis 历史').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption('candidate-2');await camera()
+ await field('3D Analysis 历史').selectOption(a3.id);await field('3D Review 历史').selectOption(r3.id);await modeStage('3d','reconstruction');await field('Spatial Planning History').selectOption(p3.id);await field('Geometry Execution History').selectOption(x3.id);await field('3D Reconstruction Candidate').selectOption(candidateId);await camera()
  await page.locator('[data-linked-observation]').filter({visible:true}).first().click();await button('以所选面为上方观察').click();await button('保存当前视角').click();const savedCamera=await camera()
  await button('采用候选到 3D Assembly Editor').click();await button('Edit Draft').waitFor();assert.equal(await mode(),'3d');assert.equal(await active(),'assembly')
- const adopted=await data();await modeStage('3d','build');await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:'已生成 · 3 步'}).waitFor({timeout:20000});await button('保存教程').click();await field('3D 教程查看步骤').selectOption('1')
+ const adopted=await data();await modeStage('3d','build');await button('生成搭建教程').click();await page.getByTestId('build-order-status').filter({hasText:'已生成 · 2 步'}).waitFor({timeout:20000});await button('保存教程').click();await field('3D 教程查看步骤').selectOption('1')
  const tutorial=await exportTutorial(),baseline=await data(),postCount=calls.filter(c=>c.method==='POST').length,dialogCount=dialogs,workerCount=workers
  for(const s of ['source','review','reconstruction','assembly','build']){
   await modeStage('3d',s);assert.equal(await field('3D Analysis 历史').inputValue(),a3.id);assert.equal(await field('3D Review 历史').inputValue(),r3.id);assert.equal(await field('Spatial Planning History').inputValue(),p3.id);assert.equal(await field('Geometry Execution History').inputValue(),x3.id);assert.equal(await field('历史 Reconstruction').count(),0)
@@ -63,7 +66,7 @@ try{
   if(s==='reconstruction')assert.equal(await field('几何重建候选').inputValue(),twoD.candidates[0].id)
   if(s==='assembly')assert.equal(await page.locator('[data-tile-id]').filter({visible:true}).count(),1)
   await studioMode(page,'3d');assert.equal(await active(),s);assert.equal(await field('3D Reconstruction Candidate').count(),s==='reconstruction'?1:0)
-  if(s==='reconstruction'){assert.equal(await field('3D Reconstruction Candidate').inputValue(),'candidate-2');cameraNear(await camera(),savedCamera)}
+  if(s==='reconstruction'){assert.equal(await field('3D Reconstruction Candidate').inputValue(),candidateId);cameraNear(await camera(),savedCamera)}
   if(s==='assembly')assert.equal((await data())['magnetic-tiles.assembly3d-draft.v1'],adopted['magnetic-tiles.assembly3d-draft.v1'])
   if(s==='build')assert.deepEqual(await exportTutorial(),tutorial)
   assert.deepEqual(await data(),baseline,'navigation/mode changes do not write business storage')
@@ -72,7 +75,7 @@ try{
  await studioMode(page,'2d');await page.getByTestId('build-playback-source').waitFor();assert.equal(await page.getByTestId('build-playback-source').textContent(),twoDPlayback);assert.match(await page.locator('.build-step-heading').filter({visible:true}).textContent(),/已完成/)
  await page.reload();await page.getByTestId('build-playback-source').waitFor();assert.equal(await mode(),'2d');assert.match(await page.locator('.build-step-heading').filter({visible:true}).textContent(),/已完成/)
  await studioMode(page,'3d');await page.getByTestId('tutorial-source').waitFor();await page.reload();await page.getByTestId('tutorial-source').waitFor();assert.equal(await mode(),'3d');assert.deepEqual(await exportTutorial(),tutorial)
- await modeStage('3d','reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();assert.equal(await field('3D Reconstruction Candidate').inputValue(),'candidate-2');cameraNear(await camera(),savedCamera)
+ await modeStage('3d','reconstruction');await page.getByTestId('visible3d-execution-status').waitFor();assert.equal(await field('3D Reconstruction Candidate').inputValue(),candidateId);cameraNear(await camera(),savedCamera)
  await modeStage('3d','assembly');await page.goBack();await page.waitForFunction(()=>document.querySelector('main').dataset.activeStage==='reconstruction');assert.equal(await mode(),'3d')
  for(const width of [1650,1100,680]){
   await page.setViewportSize({width,height:1000});await studioMode(page,'2d');await studioMode(page,'3d');await stage(page,'reconstruction');await camera()

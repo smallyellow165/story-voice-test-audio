@@ -4,7 +4,7 @@ import type {Assembly3D} from '../magnetic-tiles/three-d/assembly.ts'
 import type {SavedAssembly} from '../magnetic-tiles/three-d/assembly-library.ts'
 import type {CameraView3D} from '../magnetic-tiles/three-d/camera-view.ts'
 import {MagnetScene3D} from '../magnetic-tiles/three-d/vendor/components/MagnetScene3D.tsx'
-import {magneticGalleryUrl,openGalleryItemUrl} from './links.ts'
+import {magneticGalleryUrl,openGalleryItemUrl,createMagneticWorkspaceUrl,editMagneticWorkspaceUrl} from './links.ts'
 import type {AssemblyReference} from './links.ts'
 import '../brick-gallery/gallery.css'
 import '../magnetic-tiles/three-d/viewer.css'
@@ -48,7 +48,7 @@ export function MagneticGallery(){
   }catch(e){setError(String(e));publishing.current=false;setBusy(false)}
  }
  return <main className="gallery-page magnetic-gallery">
-  <header className="gallery-header"><a className="gallery-brand" href={magneticGalleryUrl()}>Magnetic Tiles · 我的作品集</a><a href={import.meta.env.BASE_URL+'magnetic-tiles.html'}>家长制作入口</a></header>
+  <header className="gallery-header"><a className="gallery-brand" href={magneticGalleryUrl()}>Magnetic Tiles · 我的作品集</a><a href={createMagneticWorkspaceUrl()}>家长制作入口 / Create New</a></header>
   {error&&<p className="gallery-error" role="alert">{error}</p>}
   {loading&&<p role="status">正在打开作品…</p>}
   {!loading&&adding&&source&&<section className="gallery-form">
@@ -61,14 +61,14 @@ export function MagneticGallery(){
   </section>}
   {!loading&&!adding&&!id&&<>
    <div className="gallery-intro"><span>一起动手，一起发现</span><h1>今天想看哪个作品？</h1><p>从 Studio 保存 Assembly 后，点击 Add to Gallery，把作品留在这里。</p></div>
-   <div className="gallery-grid">{items.map(item=><a className="gallery-card magnetic-gallery-card" key={item.id} href={openGalleryItemUrl(item.id)} aria-label={'打开作品：'+item.description}>
-    <div><p className="magnetic-gallery-description">{item.description}</p><p>固定版本 v{item.assemblyRef.version}</p><span className="magnetic-gallery-open">Open Assembly · 打开作品 →</span></div>
-   </a>)}</div>
+   <div className="gallery-grid">{items.map(item=><article className="gallery-card magnetic-gallery-card" key={item.id}>
+    <div><p className="magnetic-gallery-description">{item.description}</p><p>固定版本 v{item.assemblyRef.version}</p><a className="magnetic-gallery-open" href={openGalleryItemUrl(item.id)} aria-label={'打开作品：'+item.description}>Open Assembly · 打开作品 →</a><p><a href={editMagneticWorkspaceUrl(item.id,item.assemblyRef)} aria-label={'Edit 作品：'+item.description}>Edit · 编辑作品 →</a></p></div>
+   </article>)}</div>
    {items.length===0&&<p className="gallery-empty">还没有作品。请从家长制作入口保存作品，再加入 Gallery。</p>}
    {warnings.length>0&&<details className="gallery-error"><summary>{warnings.length} 条作品记录无法读取</summary>{warnings.map(w=><p key={w.id}>{w.error}</p>)}</details>}
   </>}
   {!loading&&!adding&&opened&&<section>
-   <a href={magneticGalleryUrl()}>← 所有作品</a><h1>作品预览</h1>
+   <a href={magneticGalleryUrl()}>← 所有作品</a><h1>作品预览</h1><a href={editMagneticWorkspaceUrl(opened.item.id,opened.item.assemblyRef)}>Edit · 编辑作品</a>
    <p className="magnetic-gallery-description">{opened.item.description}</p><p>固定保存版本 v{opened.item.assemblyRef.version} · 只读查看</p>
    <MagnetScene3D assembly={opened.assembly} selected={null} onSelect={()=>{}} initialCameraView={opened.cameraView??undefined}/>
   </section>}

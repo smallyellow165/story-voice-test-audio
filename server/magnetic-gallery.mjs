@@ -39,6 +39,11 @@ export function createMagneticGallery(directory,{readAssembly}){
    // Opening never restores editor state, consults Selected lineage or rebuilds parents.
    return {item,assembly:saved.snapshot.assembly,cameraView:saved.snapshot.photoOrigin?.cameraView??null}
   }
+  if(method==='GET'&&/^edit-context\/[a-f0-9]{64}$/.test(route)){
+   const item=await readItem(route.slice(13)),saved=await resolve(item.assemblyRef)
+   const head=await readAssembly(item.assemblyRef.id)
+   return {item,saved,saveHead:{id:head.assembly.id,version:head.version,hash:head.hash}}
+  }
   if(method==='POST'&&route==='publish'){
    if(!body||Object.keys(body).some(k=>!['description','assemblyRef'].includes(k))||typeof body.description!=='string'||!body.description.trim()||body.description.length>500)fail('请填写 1–500 个字符的作品描述')
    const assemblyRef=reference(body.assemblyRef),saved=await resolve(assemblyRef)

@@ -24,9 +24,9 @@ export function groupSnapshot(assembly:Assembly3D,origin:PhotoOrigin3D|null,nonR
  delete sidecar.geometryReview
  return {assembly,photoOrigin:sidecar,nonRepairable:[...nonRepairable]}
 }
-export async function saveAssemblySnapshot(snapshot:AssemblySnapshot,expected:SavedAssemblyRef|null){
+export async function saveAssemblySnapshot(snapshot:AssemblySnapshot,expected:SavedAssemblyRef|null,expectedSaveHash?:string|null){
  if(expected&&expected.id===snapshot.assembly.id&&expected.projectId!==snapshot.photoOrigin.origin.sourceId)throw Error('Assembly Project 不一致')
- return intakeApi<SavedAssembly>('assembly3d/save',{snapshot,expectedHash:expected?.id===snapshot.assembly.id?expected.hash:null})
+ return intakeApi<SavedAssembly>('assembly3d/save',{snapshot,expectedHash:expectedSaveHash!==undefined?expectedSaveHash:expected?.id===snapshot.assembly.id?expected.hash:null})
 }
 /** Register the already SAVED working document before replacement. Never copies
  * unsaved editor memory or reconstructs geometry from an Execution. */

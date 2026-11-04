@@ -1,3 +1,5 @@
+import {currentWorkspace,studioStorage} from './workspace-context.ts'
+import {loadPhotoOrigin} from './three-d/reconstruction/adopt-draft.ts'
 import {loadStudioMode,saveStudioMode} from './studio-mode.ts'
 import type {StudioMode} from './studio-mode.ts'
 import {magneticGalleryUrl} from '../magnetic-gallery/links.ts'
@@ -35,7 +37,8 @@ export function StudioSlot({column,stages:visible,children,view='2d',intake='2d'
   return host ? createPortal(<div className="studio-slot" hidden={!visible.includes(stage)||(imageStages.includes(stage)&&intakeMode!==intake)||((stage==='assembly'||stage==='build')&&viewMode!==view)}>{children}</div>,host) : null
 }
 export function StudioLayout({children,dragging}:{children:ReactNode;dragging:boolean}){
-  const [modeBoot]=useState(()=>loadStudioMode(localStorage))
+  const scope=currentWorkspace(),storage=studioStorage()
+  const [modeBoot]=useState(()=>scope?{mode:'3d' as const,warning:''}:loadStudioMode(storage))
   const [mode,setMode]=useState<StudioMode>(modeBoot.mode),[modeWarning,setModeWarning]=useState(modeBoot.warning)
   // Compatibility aliases for feature controllers; both derive from one state.
   const viewMode=mode,intakeMode=mode==='3d'?'visible3d':'2d'
@@ -43,11 +46,11 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const [opened3D,setOpened3D]=useState(modeBoot.mode==='3d'),[openedVisible3D,setOpenedVisible3D]=useState(modeBoot.mode==='3d')
   const [adoption3D,setAdoption3D]=useState<Adoption3DRequest|null>(null)
   const [assembly3D,setAssembly3D]=useState<Assembly3D|null>(null)
-  const [project3D,setProject3D]=useState<{id:string;name:string}|null>(null),[assemblyOrigin3D,setAssemblyOrigin3D]=useState<Record<string,unknown>|null>(null),[assembliesHost,setAssembliesHost]=useState<HTMLDivElement|null>(null)
+  const [project3D,setProject3D]=useState<{id:string;name:string}|null>(()=>scope&&loadPhotoOrigin(storage)?{id:String(loadPhotoOrigin(storage)!.origin.sourceId),name:'当前作品'}:null),[assemblyOrigin3D,setAssemblyOrigin3D]=useState<Record<string,unknown>|null>(null),[assembliesHost,setAssembliesHost]=useState<HTMLDivElement|null>(null)
   const {registry:{profiles}}=useProfileRegistry()
   const layout=useDefaultLayout({id:'magnetic-studio-columns-v1',onlySaveAfterUserInteractions:true})
   const request=useUrlRequest(), parsed=readStudioUrl(request.href)
-  const readPreferences=()=>{try{return {saved:JSON.parse(localStorage.getItem(PANEL_PREFERENCES_KEY)||'{}'),warning:''}}catch{return {saved:{},warning:'右栏 UI 偏好无法读取；工作快照和草稿未修改。'}}}
+  const readPreferences=()=>{try{return {saved:JSON.parse(storage.getItem(PANEL_PREFERENCES_KEY)||'{}'),warning:''}}catch{return {saved:{},warning:'右栏 UI 偏好无法读取；工作快照和草稿未修改。'}}}
   const [boot]=useState(()=>{const p=readPreferences();return {...resolvePanelState(request.href,p.saved,profiles),storageWarning:p.warning}})
   const [stage,setStage]=useState<Stage>(boot.stage),[rightTab,setRightTab]=useState<RightTab>(boot.rightTab),[catalogProfile,setCatalogProfile]=useState(boot.catalogProfile)
   const [appliedRequest,setAppliedRequest]=useState(request),[warnings,setWarnings]=useState(boot.warnings),[storageWarning,setStorageWarning]=useState(boot.storageWarning)
@@ -56,7 +59,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   useEffect(()=>{
     if(appliedRequest!==request)return
     writeStudioUrl({stage,rightTab,catalogProfile})
-    try{localStorage.setItem(PANEL_PREFERENCES_KEY,JSON.stringify({rightTab,catalogProfile,lastStage:stage}));setStorageWarning('')}catch{setStorageWarning('右栏 UI 偏好无法保存；URL 仍可恢复 Tab 与 Profile，工作数据未修改。')}
+    try{storage.setItem(PANEL_PREFERENCES_KEY,JSON.stringify({rightTab,catalogProfile,lastStage:stage}));setStorageWarning('')}catch{setStorageWarning('右栏 UI 偏好无法保存；URL 仍可恢复 Tab 与 Profile，工作数据未修改。')}
   },[stage,rightTab,catalogProfile,appliedRequest,request])
   useLayoutEffect(()=>{if(rightColumn.current)rightColumn.current.scrollTop=scrollOffsets.current[rightTab]},[rightTab])
   const [workflow,setWorkflow]=useState<HTMLDivElement|null>(null),[workspace,setWorkspace]=useState<HTMLDivElement|null>(null),[inspector,setInspector]=useState<HTMLDivElement|null>(null)
@@ -69,16 +72,16 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     setMode(next)
     if(next==='3d'){setOpened3D(true);setOpenedVisible3D(true)}
     setMobileColumn('workspace')
-    try{saveStudioMode(localStorage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
+    try{saveStudioMode(storage,next);setModeWarning('')}catch{setModeWarning('当前模式仅在本页生效：模式偏好保存失败。工作数据未修改。')}
   }
   return <Context.Provider value={{stage,mode,viewMode,intakeMode,adoption3D,clearAdoption3D:()=>setAdoption3D(null),adopt3D:async(assembly,origin,cameraView)=>{if(modeRef.current!=='3d')throw Error('当前已切换至 2D；3D 候选未载入，请回到 3D 后明确采用。');await new Promise<void>((resolve,reject)=>{setAdoption3D({assembly,origin,cameraView,complete:error=>error===undefined?resolve():reject(error)});setOpened3D(true);setRightTab('inspector')})},assembly3D,setAssembly3D,project3D,setProject3D,assemblyOrigin3D,setAssemblyOrigin3D,navigate,showWorkspace:()=>{setMobileColumn('workspace');if(workspace)workspace.scrollTop=0},showInspector:()=>{selectTab('inspector');setMobileColumn('inspector')},hosts:{assemblies:assembliesHost??undefined,workflow:workflow??undefined,workspace:workspace??undefined,inspector:inspector??undefined}}}>
     <main className="tiles-app studio" data-mobile-column={mobileColumn} data-active-stage={stage} data-view-mode={viewMode} data-studio-mode={mode}>
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
-        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1><a href={magneticGalleryUrl()} target="_blank" rel="noreferrer">我的作品集 ↗</a></header>
-        <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
-        <div className="studio-mode-switch" role="group" aria-label="Studio 工作模式"><span>工作模式</span><div>
+        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1>{scope&&<p data-testid="studio-workspace-context">{scope.mode==='create'?'Create · 新建作品':`Edit · 发布基线 v${scope.version}`}<small> · {scope.id.slice(0,12)}</small></p>}<a href={magneticGalleryUrl()} target="_blank" rel="noreferrer">我的作品集 ↗</a></header>
+        <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging||scope?.mode==='edit'&&imageStages.includes(s.id)} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
+        <div hidden={!!scope} className="studio-mode-switch" role="group" aria-label="Studio 工作模式"><span>工作模式</span><div>
           <button aria-pressed={mode==='2d'} disabled={dragging} onClick={()=>switchMode('2d')}>2D</button>
           <button aria-pressed={mode==='3d'} disabled={dragging} onClick={()=>switchMode('3d')}>3D</button>
         </div></div>
@@ -109,7 +112,9 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
       </aside></Panel>
     </Group></main>
     {children}
-    {openedVisible3D&&<Suspense fallback={null}><Visible3DWorkflow/></Suspense>}
+    {scope?.mode==='edit'&&<StudioSlot column="workflow" stages={['assembly','build']} view="3d"><details><summary>本作品来源（仅追溯）</summary><p>历史 Analysis / Plan / Execution 未作为当前几何求解输入。</p><pre>{JSON.stringify(loadPhotoOrigin(storage)?.origin,null,2)}</pre></details></StudioSlot>}
+
+    {openedVisible3D&&scope?.mode!=='edit'&&<Suspense fallback={null}><Visible3DWorkflow/></Suspense>}
     {opened3D&&<Suspense fallback={<StudioSlot column="workspace" stages={['assembly']} view="3d"><p role="status">正在加载 3D Viewer…</p></StudioSlot>}><ThreeDWorkspace/></Suspense>}
     {opened3D&&<Suspense fallback={<StudioSlot column="workspace" stages={['build']} view="3d"><p role="status">正在加载 3D Tutorial…</p></StudioSlot>}><ThreeDBuildWorkspace/></Suspense>}
   </Context.Provider>

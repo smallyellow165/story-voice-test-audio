@@ -1,3 +1,4 @@
+import {studioStorage} from '../workspace-context.ts'
 import {useEffect,useRef,useState} from 'react'
 import {intakeApi} from './api.ts'
 import {sourceImages} from './image-set.ts'
@@ -10,11 +11,11 @@ export function SourceThumbnail({id,library=false}:{id:string;library?:boolean})
 export function useSourceFrame(source:Source|null,scope:'2d'|'visible3d'='2d',availableIds?:readonly string[]){
  const entries=sourceImages(source),available=availableIds?entries.filter(e=>availableIds.includes(e.sourceId)):entries,primary=source?.primaryImageId??source?.id??'',fallback=available.some(e=>e.sourceId===primary)?primary:available[0]?.sourceId??''
  const [choice,setChoice]=useState({group:'',id:''}),[loaded,setLoaded]=useState({id:'',url:''}),[error,setError]=useState('')
- let remembered='';try{remembered=source?localStorage.getItem('magnetic-source-frame:'+scope+':'+source.id)??'':''}catch{/* metadata remains server-side */}
+ let remembered='';try{remembered=source?studioStorage().getItem('magnetic-source-frame:'+scope+':'+source.id)??'':''}catch{/* metadata remains server-side */}
  const wanted=choice.group===source?.id?choice.id:remembered,activeId=available.some(e=>e.sourceId===wanted)?wanted:fallback
  const entry=entries.find(e=>e.sourceId===activeId)
  useEffect(()=>{let live=true;setError('');if(activeId)void sourceImageUrl(activeId).then(url=>{if(live)setLoaded({id:activeId,url})}).catch(e=>{if(live)setError(String(e))});return()=>{live=false}},[activeId])
- const select=(id:string)=>{if(!source||!available.some(e=>e.sourceId===id))return;setChoice({group:source.id,id});try{localStorage.setItem('magnetic-source-frame:'+scope+':'+source.id,id)}catch{/* view selection only */}}
+ const select=(id:string)=>{if(!source||!available.some(e=>e.sourceId===id))return;setChoice({group:source.id,id});try{studioStorage().setItem('magnetic-source-frame:'+scope+':'+source.id,id)}catch{/* view selection only */}}
  // In Review, a filter can force a different frame. Keep that frame when the
  // filter is expanded again, instead of jumping back to a previously hidden one.
  const restricted=availableIds!==undefined

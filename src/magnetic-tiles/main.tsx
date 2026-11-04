@@ -1,3 +1,4 @@
+import {StudioWorkspaceEntry} from './StudioWorkspaceEntry.tsx'
 import {clickSnap} from './click-snap.ts'
 import {InfoHint} from '../brick-vision/InfoHint.tsx'
 import { useProfileRegistry, ProfileRegistryProvider } from './ProfileRegistry.tsx'
@@ -237,4 +238,4 @@ function Playground() {
     </StudioSlot><BuildPanel sourceContextId={imageSourceContext} assembly={current} savedAssemblies={workspace.saved} workspaceError={storageError} profiles={profiles} dragging={!!drag}/>
   </StudioLayout>
 }
-createRoot(document.getElementById('root')!).render(<ProfileRegistryProvider><Playground/></ProfileRegistryProvider>)
+createRoot(document.getElementById('root')!).render(<ProfileRegistryProvider>{new URL(location.href).searchParams.has('workspace')?<StudioWorkspaceEntry/>:<Playground/>}</ProfileRegistryProvider>)
