@@ -39,10 +39,10 @@ try{
  async function ready(){await page.getByTestId('studio-workspace-context').waitFor();await page.locator('[data-stage="source"]').click();await button('刷新 Server Library').waitFor();await until(()=>button('刷新 Server Library').isEnabled());await check('root.png').waitFor()}
  async function currentSource(){const id=await page.evaluate(()=>{const p=new URL(location.href).searchParams,key='magnetic-studio.workspace.v1.create.'+p.get('workspaceId')+'.magnetic-visible3d-context.v1';return JSON.parse(localStorage.getItem(key)||'null')?.sourceId});return id?api.dispatch('GET','sources/'+id):null}
  async function selected(n){await page.getByText('本次 Analysis · '+n+'/4',{exact:true}).waitFor();await until(async()=>!n?await currentSource()===null:(await currentSource())?.images.length===n);await until(()=>button('刷新 Server Library').isEnabled())}
- async function layout(label,minHeight){
+ async function layout(label){
   const tabs=await page.getByRole('tablist',{name:'右栏工具',exact:true}).boundingBox(),trace=await button('Trace / Raw').boundingBox(),box=await list().boundingBox()
   assert.ok(Math.abs(tabs.y-trace.y)<=3,label+' Trace alignment');assert.ok(trace.x>=tabs.x+tabs.width,label+' Trace right alignment')
-  assert.ok(box.height>=minHeight,label+' library height '+box.height)
+  assert.ok(box.height>=160&&box.height<=241,label+' library height '+box.height)
   const dimensions=await page.locator('.studio-inspector').evaluate(e=>({width:e.clientWidth,scrollWidth:e.scrollWidth,height:e.clientHeight,scrollHeight:e.scrollHeight}))
   assert.ok(dimensions.scrollWidth<=dimensions.width+2,label+' horizontal overflow')
   assert.ok(await list().evaluate(e=>e.scrollHeight>e.clientHeight),label+' internal list scrolling')
@@ -51,13 +51,13 @@ try{
  await page.goto(base+'magnetic-gallery.html');await page.evaluate(sourceId=>{localStorage.setItem('magnetic-visible3d-context.v1',JSON.stringify({sourceId}));localStorage.setItem('unrelated-draft','keep me')},fixture.source.id)
  await page.goto(base+'magnetic-tiles.html?workspace=create');await ready()
  const aUrl=page.url();assert.equal(await page.getByRole('tab',{name:'服务器图片',exact:true}).getAttribute('aria-selected'),'true')
- await layout('desktop',420)
+ await layout('desktop');assert.equal(await page.getByRole('navigation',{name:'服务器图片文件夹'}).count(),0);const reviewButton=page.locator('.analysis-toolbar').getByRole('button',{name:'进入 Review',exact:true});assert.equal(await reviewButton.isDisabled(),true);assert.match(await reviewButton.getAttribute('title'),/先选择图片/);assert.equal(await page.locator('.analysis-image-preview h3').count(),0);const heading=await page.locator('.analysis-toolbar h2').boundingBox(),reviewBox=await reviewButton.boundingBox();assert.ok(Math.abs(heading.y+heading.height/2-reviewBox.y-reviewBox.height/2)<3&&reviewBox.x>heading.x+heading.width,'Analysis title and Review action share the toolbar')
  assert.ok((await button('刷新 Server Library').boundingBox()).height<=30);assert.ok((await field('搜索服务器图片').boundingBox()).height<=30)
  await list().locator('img').first().waitFor();await until(()=>list().locator('img').first().evaluate(e=>e.naturalWidth>0))
  await page.screenshot({path:out+'/desktop.png',fullPage:true})
  await button('Trace / Raw').click();await page.getByRole('dialog',{name:'Magnetic Tiles Trace',exact:true}).waitFor();await button('关闭 Trace').click()
  assert.equal(await currentSource(),null,'Create must not restore global historical source')
- await check('root.png').click();await selected(1)
+ await list().evaluate(e=>{e.scrollTop=e.scrollHeight});assert.ok(await list().evaluate(e=>e.scrollTop>0),'list scrolls internally');await list().evaluate(e=>{e.scrollTop=0});await check('root.png').click();await selected(1);assert.ok((await page.locator('.analysis-toolbar-info').innerText()).includes('root.png'))
  await button('打开文件夹 car').click();await check('car/front.png').click();await selected(2)
  await button('打开文件夹 car/details').click();await check('car/details/rear.png').click();await selected(3)
  await page.getByRole('navigation',{name:'服务器图片文件夹'}).getByRole('button',{name:'图库',exact:true}).click();await button('打开文件夹 castle').click()
@@ -72,9 +72,9 @@ try{
  const before=await currentSource();await rename(path.join(lib,'car','front.png'),path.join(lib,'car','renamed.png'));await button('刷新 Server Library').click();await until(()=>button('刷新 Server Library').isEnabled());assert.deepEqual(await currentSource(),before)
  for(const image of before.images)assert.ok((await api.dispatch('GET','image/'+image.sourceId)).imageBase64,'saved input remains readable after a file rename')
  await field('搜索服务器图片').fill('');await page.getByRole('navigation',{name:'服务器图片文件夹'}).getByRole('button',{name:'图库',exact:true}).click()
- for(const [width,height,min] of [[1100,900,250],[680,900,230],[390,844,180]]){
+ for(const [width,height] of [[1100,900],[680,900],[390,844]]){
   await page.setViewportSize({width,height});if(width<=760&&!await page.locator('.studio-inspector').isVisible()){if(await button('检查器').count())await button('检查器').click();else await button('查看检查器').click()}
-  await layout(String(width),min);await page.screenshot({path:out+`/width-${width}.png`,fullPage:true})
+  await layout(String(width));await page.screenshot({path:out+`/width-${width}.png`,fullPage:true})
  }
  await page.setViewportSize({width:1550,height:1100});await page.goto(base+'magnetic-tiles.html?workspace=create');await ready();const bUrl=page.url();assert.notEqual(new URL(aUrl).searchParams.get('workspaceId'),new URL(bUrl).searchParams.get('workspaceId'));assert.equal(await currentSource(),null)
  await page.goto(aUrl);await ready();await selected(4);assert.equal((await currentSource()).hash,before.hash)
@@ -91,6 +91,6 @@ try{
  await two.getByRole('tab',{name:'服务器图片',exact:true}).waitFor();assert.equal(await two.getByRole('tab',{name:'服务器图片',exact:true}).getAttribute('aria-selected'),'true')
  await two.getByRole('button',{name:'Trace / Raw',exact:true}).filter({visible:true}).waitFor();await two.screenshot({path:out+'/2d.png',fullPage:true});await context.close()
  assert.deepEqual(errors,[]);await writeFile(out+'/result.json',JSON.stringify({passed:true,metrics,modelCalls:0},null,2))
- console.log('PASS: compact header; default server tab; responsive tall scrolling list; nested folders; same basenames; global path search; thumbnails; refresh/rename; select/unselect 1–4 cross-folder snapshots; offline Analysis; Create isolation; 2D header/default; immutable old records. '+JSON.stringify(metrics))
+ console.log('PASS: compact header; default server tab; responsive compact scrolling list; nested folders; same basenames; global path search; thumbnails; refresh/rename; select/unselect 1–4 cross-folder snapshots; offline Analysis; Create isolation; 2D header/default; immutable old records. '+JSON.stringify(metrics))
 }catch(e){if(page){await page.screenshot({path:out+'/failure.png',fullPage:true}).catch(()=>{});console.error((await page.locator('body').innerText()).slice(0,7000))}console.error({metrics,errors,calls:calls.slice(-18)});throw e}
 finally{await browser?.close();await server?.close();await rm(dir,{recursive:true,force:true})}

@@ -48,6 +48,10 @@
 .studio[data-active-stage=source] .source-library-panel{display:flex;flex-direction:column;flex:1 1 auto;min-height:220px;gap:4px}
 .studio[data-active-stage=source] .source-library-row{flex:none;gap:4px}
 .studio[data-active-stage=source] .source-library-list{height:0;min-height:160px;flex:1 1 0px;max-height:none;margin:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+/* Keep the 3D Analysis actions visible instead of stretching the library. */
+.studio[data-active-stage=source] .visible3d-analysis-inspector .source-inspector>.source-image-picker:has(>.source-library-panel){flex:0 0 auto}
+.studio[data-active-stage=source] .visible3d-analysis-inspector .source-library-panel{flex:0 0 auto;min-height:0}
+.studio[data-active-stage=source] .visible3d-analysis-inspector .source-library-list{height:clamp(160px,25vh,240px);min-height:0;max-height:240px;flex:none}
 .studio[data-active-stage=source] .source-library-list td:first-child{width:38px}
 .studio[data-active-stage=source] .source-library-list .source-thumbnail{width:32px;height:30px}
 .source-library-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}

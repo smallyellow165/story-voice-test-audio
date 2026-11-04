@@ -426,7 +426,7 @@ export default function Visible3DWorkflow() {
    </>}
   </StudioSlot>
   <StudioSlot column="workspace" stages={['source']} intake="visible3d"><section className="analysis-image-preview" aria-label="Visible 3D Analysis 原图">
-   <h3>原图与可见证据（Source）</h3>{source&&<p>{source.name} · 快照 {source.id.slice(0,8)}</p>}
+   <div className="analysis-toolbar"><div className="analysis-toolbar-info"><h2>Analysis</h2><span title={source?`${source.name} · Source ${source.id} · Hash ${source.hash}`:'尚未选择图片'}>{source?.name??'尚未选择图片'}</span></div><button className="analysis-review-button primary" disabled={busy||analysisQuerying||!(analysisModelRequest?analysisModelRequest.usable&&analysisModelRequest.record:analysis)} title={busy||analysisQuerying?'正在处理，请稍候':analysisModelRequest?.usable&&analysisModelRequest.record||!analysisModelRequest&&analysis?'打开当前 Analysis 的 Review':analysisModelRequest?'此请求尚无可审核的结果；请查看 Analysis 状态。':'请先选择图片并完成 Analysis 或导入人工标注。'} onClick={()=>{if(analysisModelRequest)void run(openAnalysisResult);else navigate('review')}}>进入 Review</button></div>
    {imageStrip}<VisibleEvidenceImage fit source={frame.displaySource} image={frame.image} evidence={analysisModelRequest&&analysisModelRequest.record?.id!==analysis?.id?undefined:displayEvidence} selected={selected} onSelect={setSelected} excluded={form.pieces.filter(p=>p.excluded).map(p=>p.id)}/>
    {selected&&(!analysisModelRequest||analysisModelRequest.record?.id===analysis?.id)&&<p className="hint">当前零件：{selected} <button onClick={()=>navigate('review')}>修正选中零件</button></p>}
   </section></StudioSlot>
@@ -452,12 +452,11 @@ export default function Visible3DWorkflow() {
      onOpenSource={id=>void run(async()=>{const s=await intakeApi<Source>('sources/'+id);await openSourceImage(s)})}/>
     <label className="compact-field">下次识别模型<select aria-label="3D Vision 模型" value={model} onChange={e=>setModel(e.target.value)} disabled={busy}><option value="">选择已配置模型</option>{config?.models.map(m=><option key={m.id} value={m.id} disabled={!config.providers[m.provider]}>{m.label}{config.providers[m.provider]?'':'（未配置）'}</option>)}</select></label>
     <button className="primary" disabled={busy||analysisPending||!source||!model} onClick={()=>{if(analysisBackground&&['unknown','timeout'].includes(analysisBackground.state)&&!window.confirm('上次请求可能仍在执行或已产生费用。建议先查询已有任务。确定要创建一次新的付费识别请求吗？'))return;void run(()=>modelAction('analyze'))}}>Analyze Visible 3D（调用模型）</button>
-    <ExecutionStatus value={analysisStatus} testId="visible3d-analysis-state"/>
+    <ExecutionStatus value={analysisBackground?.responseId&&['timeout','unknown'].includes(analysisBackground.state)?{...analysisStatus,tone:'neutral'}:analysisStatus} testId="visible3d-analysis-state"/>
 
     {analysisQueryError&&<p role="alert">{analysisQueryError}</p>}
     {analysisBackground?.responseId&&!['completed','failed'].includes(analysisBackground.state)&&<button disabled={busy||analysisQuerying} onClick={()=>void queryAnalysis()}>{analysisQuerying?'查询中…':'查询 / 恢复已有识别任务'}</button>}
-    {!analysisModelRequest&&analysis&&<button disabled={busy} onClick={()=>navigate('review')}>进入 Review</button>}
-    {analysisModelRequest&&(analysisModelRequest.usable&&analysisModelRequest.record||analysisBackground?.state==='completed'||analysisModelRequest.trace?.status==='invalid_plan')&&<button disabled={busy||analysisQuerying} onClick={()=>void run(openAnalysisResult)}>{analysisModelRequest.usable?'进入 Review':'恢复结果并 Review（不调用模型）'}</button>}
+    {analysisModelRequest&&!analysisModelRequest.usable&&(analysisBackground?.state==='completed'||analysisModelRequest.trace?.status==='invalid_plan')&&<button disabled={busy||analysisQuerying} onClick={()=>void run(openAnalysisResult)}>恢复结果并 Review（不调用模型）</button>}
 
     {analysis&&analysisModelRequest&&analysisModelRequest.record?.id!==analysis.id?<p role="status">所选请求未打开为当前 Analysis；原 Analysis / Review {analysis.id.slice(0,8)} 保留。</p>:analysis&&<p role="status">{analysis.origin==='model'?'已保存模型识别':'人工标注'} · {analysis.evidence.observations.length} 个可见实例 · {analysis.id.slice(0,8)}</p>}
    <details><summary>人工标注 / 离线验证（不调用模型）</summary><p>导入 VisibleEvidence3D JSON；必须保留可见区域或边角证据。人工标注不代表 Vision 识别成功率。</p><textarea spellCheck={false} aria-label="Visible 3D 人工标注 JSON" value={annotation} onChange={e => setAnnotation(e.target.value)}/><input aria-label="导入 3D 标注文件" type="file" accept="application/json" disabled={busy} onChange={e => { const f = e.target.files?.[0]; if (f)

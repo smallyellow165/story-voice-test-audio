@@ -43,7 +43,7 @@ try{
  const button=name=>page.getByRole('button',{name,exact:true}).filter({visible:true}),history=()=>page.getByLabel('Analysis History',{exact:true}).filter({visible:true})
  await page.goto(url);await stage(page,'source','inspector')
  await history().locator(`option[value="${requestId}"]`).waitFor({state:'attached'});assert.equal(await history().locator('option').count(),2)
- await page.getByTestId('visible3d-analysis-state').getByText('Validation Failed · 结果校验失败',{exact:true}).waitFor()
+ await page.getByTestId('visible3d-analysis-state').getByText('Validation Failed · 结果校验失败',{exact:true}).waitFor();assert.equal(await page.getByTestId('visible3d-analysis-state').getAttribute('data-tone'),'error');assert.equal(await page.locator('.analysis-toolbar').getByRole('button',{name:'进入 Review',exact:true}).isDisabled(),true)
  assert.equal(await page.getByText('识别请求（已有记录）',{exact:true}).count(),0)
  await button('Trace / Raw').click();const dialog=page.getByRole('dialog',{name:'Magnetic Tiles Trace',exact:true})
  await page.waitForFunction(()=>document.querySelector('dialog[open] textarea[aria-label="Trace JSON"]')?.value.includes('resp_offline_fixture'))
@@ -53,7 +53,7 @@ try{
  await page.getByText(`Analysis 标注诊断 · ${raw.observations.length}`,{exact:true}).click();assert.ok((await page.locator('.analysis-validation-diagnostics').innerText()).includes('原始图片级标注及坐标保存在 Trace'))
  const reviewResponse=page.waitForResponse(r=>r.url().endsWith('/visible3d/reviews')&&r.status()===200);await button('保存 3D Review').click();await reviewResponse
  assert.deepEqual(await readFile(traceFile),before);const result=(await f.api.dispatch('GET','visible3d/history'));assert.equal(result.analyses.length,1);assert.equal(result.reviews.length,1);assert.equal(result.plans.length,0)
- await page.reload();await stage(page,'source','inspector');await page.getByTestId('visible3d-analysis-state').getByText('Reviewable · 待人工 Review（含诊断）',{exact:true}).waitFor();assert.equal(await history().locator('option').count(),2,'request/result appear once')
+ await page.reload();await stage(page,'source','inspector');await page.getByTestId('visible3d-analysis-state').getByText('Reviewable · 待人工 Review（含诊断）',{exact:true}).waitFor();assert.equal(await history().locator('option').count(),2,'request/result appear once');assert.equal(await page.locator('.analysis-toolbar').getByRole('button',{name:'进入 Review',exact:true}).isEnabled(),true);assert.equal(await page.locator('.studio-inspector').getByRole('button',{name:'进入 Review',exact:true}).count(),0)
  await button('进入 Review').click();await stage(page,'review','inspector');await page.getByLabel('3D Review Profile',{exact:true}).waitFor();await page.screenshot({path:out+'/recovered-review.png'})
  // Another Create has no history, even for records in this same server library.
  await page.goto(url.replace(workspaceId,randomUUID()));await stage(page,'source','inspector');assert.equal(await history().count(),0)
