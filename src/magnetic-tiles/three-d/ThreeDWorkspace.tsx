@@ -7,6 +7,7 @@ import {TileSelectionDetails,GroupSelectionDetails} from './AssemblySelectionDet
 import {ModuleTransformPanel,CreateCombinedPanel} from './ModuleTransformPanel.tsx'
 import type {AssemblyOperation,ModuleTool} from './ModuleTransformPanel.tsx'
 import {modulePivot,pivotDelta,transformModule,confirmModulePreview,previewModuleTransform} from './module-transform.ts'
+import {parentModule,parentInternalConnection} from './combined-editing.ts'
 import type {ModulePreview} from './module-transform.ts'
 import type {SnapOrientationTarget} from './module-snap-diagnostics.ts'
 import {geometryIssueReferences} from './reconstruction/diagnostic-visual.ts'
@@ -221,6 +222,10 @@ export default function ThreeDWorkspace() {
   const repairProject=useMemo(()=>currentRepair?{...editorProject(currentRepair.candidate.assembly,catalog),shapes}:null,[currentRepair,catalog,shapes])
   useEffect(()=>{setSelectionMode(current.modules?'group':'tile');setSelectOnly(false);setOperation('move');setTool('move');setCreateCombinedOpen(false);setModulePreview(null);setModuleLive(null);if(current.modules){const fixed=current.modules[0],moving=current.modules[1],joint=[...current.connections].reverse().find(c=>fixed.pieces.some(p=>p.id===c.pieceA)&&moving.pieces.some(p=>p.id===c.pieceB));setModuleTool({fixed:fixed.id,moving:moving.id,face:joint?.pieceB??moving.pieces[0].id,space:'global',mode:'translate'});setSnapSelection({fixedTile:joint?.pieceA??fixed.pieces[0].id,fixedPort:joint?.portA??'',movingPort:joint?.portB??''})}},[current.id])
   const selectedGroup=selection.kind==='piece'?current.modules?.find(m=>m.pieces.some(p=>p.id===selection.id)):undefined
+  const parentTile=selection.kind==='piece'?parentModule(current,selection.id):undefined
+  const internalConnection=selection.kind==='connection'&&!!current.connections[selection.index]&&parentInternalConnection(current,current.connections[selection.index])
+  const parentReadOnly=!moduleToolOpen&&(parentTile?'Parent 成员保持固定；请切换 Group 进行整体变换，或插入自由 Tile 编辑。':internalConnection?'Parent 内部 Connection 保持固定；可以编辑自由 Tile 与 Group 的外部连接。':'')
+  useEffect(()=>{if(current.modules&&(selection.kind==='connection'||selection.kind==='piece'&&!parentTile))setSelectionMode('tile')},[current.id,selection,parentTile?.id])
   useEffect(()=>{if(!selectedGroup||selection.kind!=='piece')return;setModuleTool(t=>({...t,moving:selectedGroup.id,face:selection.id,fixed:t.fixed!==selectedGroup.id?t.fixed:current.modules!.find(m=>m.id!==selectedGroup.id)!.id}))},[selectedGroup?.id,selection.kind==='piece'?selection.id:''])
   const snapFixedMembers=current.modules?.find(m=>m.id===moduleTool.fixed)?.pieces.map(p=>p.id)??[]
   const effectiveSnap=normalizeModuleSnapSelection(items,snapFixedMembers,moduleTool.face,snapSelection)
@@ -245,7 +250,7 @@ export default function ThreeDWorkspace() {
   function chooseSelect(){setSelectOnly(true);setSnapPicker(null);setSymmetryOpen(false);setSymmetrySources([]);setTool('select')}
   function toggleSymmetry(){if(!symmetryOpen)showInspector();setSymmetryOpen(v=>!v);setSymmetrySources(!symmetryOpen&&selection.kind==='piece'?[selection.id]:[]);setSymmetryPreview(null);setSelection({kind:'none'})}
   const toolbarDisabled=!editing?'请切换到 Edit Draft':operationBusy?'请先完成或取消当前操作':!activeVisible?'请先显示当前作品':''
-  const transformDisabled=moduleToolOpen?!selectedGroup?'请先选择 Group':'':!chosen?'请先选择 Tile':''
+  const transformDisabled=moduleToolOpen?!selectedGroup?'请先选择 Group':'':parentReadOnly||(!chosen?'请先选择 Tile':'')
   const copyDisabled=symmetryOpen?'请先关闭对称补全':moduleToolOpen?'Group 不支持复制，请切换 Tile 模式':!chosen?'请先选择 Tile':''
   const deleteDisabled=copyDisabled||(current.modules?.some(m=>m.pieces.some(p=>p.id===selected))?'Combined Parent 成员不可删除；请在来源作品中编辑':'')
   const symmetryDisabled=moduleToolOpen?'Group 不支持镜像复制，请切换 Tile 模式':!current.pieces.length?'请先添加 Tile':''
@@ -503,14 +508,14 @@ export default function ThreeDWorkspace() {
         {readOnlySelection&&<p className="assembly-display-inspection" role="status" data-testid="read-only-assembly-selection">{readOnlyAssemblies.find(a=>a.id===readOnlySelection.assemblyId)?.name} · {readOnlySelection.pieceId} · 只读；请在左栏点击作品名称切换编辑。</p>}
         {(moduleLive||modulePreview)&&<p role="status" data-testid="module-viewer-preview">模块{modulePreview?(modulePreview.boundsAlignment?'边界对齐预览 · 尚未修改 Draft':'吸附预览 · 尚未修改 Draft'):'刚体拖动预览'} · 全部内部 Pose 联动；固定模块保持不动。</p>}
         {currentRepair&&<p className="magnetic-constraint-repair-banner" data-testid="repair-viewer-preview" data-repair-angles={JSON.stringify(currentRepair.candidate.angles)}>自动修复预览 · {currentRepair.candidate.id} · {currentRepair.candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 部分改善'} · {currentRepair.candidate.proposedConnection?'建议新增 Connection':'仅改善碰撞'} · 碰撞 {currentRepair.candidate.collisions.length} · 当前 Draft 尚未修改</p>}
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?selectedGroup?.pieces.map(p=>p.id):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={selectOnly||moduleToolOpen||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?selectedGroup?.pieces.map(p=>p.id):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={selectOnly||moduleToolOpen||!!parentReadOnly||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
           onSelectPiece={id => {if(operationBusy||snapPicker)return;setSelection({kind:'piece',id});if(symmetryOpen)setSymmetrySources(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}}
           onSelectConnection={index => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'connection', index }) }}
           onSelectPort={(id,portId)=>{if(operationBusy||symmetryOpen||moduleToolOpen)return;if(!selectOnly&&operation==='snap'&&snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
           onClearSelection={() => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'none' }) }} focusRequest={errorFocus} fitRequest={moduleFit}
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
-          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen} interactionLocked={!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
+          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen&&!parentReadOnly} interactionLocked={!!parentReadOnly||!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
           cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
           : <MagnetScene3D key={loaded.sequence} assembly={assembly} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
@@ -540,7 +545,7 @@ export default function ThreeDWorkspace() {
           <p>连接使用当前 Assembly 中的索引 # 作为身份；两端表格按钮指向同一条连接。标签被其他零件遮挡时隐藏，选中标签仍保留并使用虚线；标签不拦截鼠标。</p>
           <p>几何校验不代表真实磁力或物理稳定性保证。Invalid Draft 可继续编辑、保存和展示；教程仍显示真实几何诊断。</p>
         </InfoHint></header>
-        <EditorInspector editing={editing&&!moduleToolOpen&&!symmetryOpen} operation={selectOnly?'select':operation}
+        <EditorInspector editing={editing&&!moduleToolOpen&&!symmetryOpen&&!parentReadOnly} canInsert={editing&&!symmetryOpen} onInserted={id=>{setSelectionMode('tile');setSelection({kind:'piece',id});chooseOperation('move')}} readOnlyReason={parentReadOnly||undefined} operation={selectOnly?'select':operation}
           currentToolLabel={!editing?'View':symmetryOpen?'Symmetry Fill':selectOnly?'Select':`${moduleToolOpen?'Group · ':''}${({move:'Move',rotate:'Rotate',orient:'Orient',snap:'Snap'})[operation]}`}
           currentToolPanel={<>
             {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
@@ -554,6 +559,7 @@ export default function ThreeDWorkspace() {
             {moduleToolOpen&&<label>Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>}
           </div>}
           selectionInfo={<>
+        {current.modules&&chosen&&!parentTile&&<small data-testid="combined-free-tile">自由 Tile · 当前 Combined 自有，不属于固定 Parent Group</small>}
         {moduleToolOpen&&selectedGroup?<GroupSelectionDetails assembly={moduleLive??modulePreview?.assembly??current} groupId={selectedGroup.id} format={format} preview={!!moduleLive||!!modulePreview}/>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
           <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className="magnetic-3d-blocker">Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
           <p>{collisionLocality(selectedCollision.evidence.locality)} · Revision {assembly.revision} · 当前完整快照</p>

@@ -8,6 +8,7 @@ import {computeSnapTransform,portsCompatible} from './vendor/editor/snap.ts';
 import {portPairKey} from './vendor/engine/port-compatibility.ts';
 import {editorProject} from './editor-project.ts';
 import {validateAssembly3D} from './engine-adapter.ts';
+import {parentModule} from './combined-editing.ts';
 
 export type EdgeSnapPreview={sourceRaw:string;connection:Connection;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>};
 /** Shared exact Port compatibility/alignment, also used by connection-aware repair.
@@ -26,10 +27,11 @@ export function edgeSnapTransform(assembly:Assembly3D,c:Connection){
 }
 /** Use upstream port math; change only B, never solve/reposition its neighbours. */
 export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeSnapPreview{
+ if(parentModule(assembly,connection.pieceB))throw Error('固定 Parent 成员不能单片吸附移动；请选择自由 Tile 为源 B，或使用 Group Snap');
  const sourceRaw=serializeAssembly3D(assembly),c=structuredClone(connection),b=assembly.pieces.find(p=>p.id===c.pieceB)!;
  const tf=edgeSnapTransform(assembly,c);
  const moving=tf.position.distanceTo(new Vector3(...b.pose.position))>1e-8||1-Math.abs(tf.quaternion.dot(new Quaternion(...b.pose.quaternion)))>1e-10;
- if(moving&&assembly.connections.some(x=>x.pieceA===b.id||x.pieceB===b.id))throw Error('源零件仍有连接；移动前请解除相关连接，不会自动移动邻片或修改闭环');
+ if(moving&&assembly.connections.some(x=>x.pieceA===b.id||x.pieceB===b.id))throw Error(`源零件仍有连接；本次吸附需平移 ${tf.position.distanceTo(new Vector3(...b.pose.position)).toPrecision(5)}、旋转 ${(tf.quaternion.angleTo(new Quaternion(...b.pose.quaternion))*180/Math.PI).toPrecision(5)}°。不会移动邻片或 Group；请解除相关连接，或仅建立约束（不移动）查看几何不匹配诊断。`);
  const next=structuredClone(assembly);next.pieces.find(p=>p.id===b.id)!.pose=fromEnginePose(tf);next.connections.push(c);
  const geometry=validateAssembly3D(next),before=validateAssembly3D(assembly);
  const key=(i:typeof geometry.issues[number])=>JSON.stringify([i.code,i.pieceId,i.message]);

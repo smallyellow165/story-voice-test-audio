@@ -7,6 +7,7 @@ import {edgeSnapTransform} from './editor-snap.ts'
 import {validateAssembly3D} from './engine-adapter.ts'
 import type {Connection} from './vendor/engine/types.ts'
 import {canonical} from '../build-plan.ts'
+import {assertFixedModuleGeometry} from './combined-editing.ts'
 export const IDENTITY_FRAME:Pose3D={position:[0,0,0],quaternion:[0,0,0,1]}
 export type ModuleSpace='global'|'local'|'face'
 export type BoundsAxis='x'|'y'|'z'
@@ -75,6 +76,7 @@ export function confirmModulePreview(a:Assembly3D,preview:ModulePreview){if(seri
 export function assertModuleOrigin(a:Assembly3D,origin:{kind?:unknown;assembly?:unknown}){
  if(origin.kind==='combined-assembly'){
   const baseline=origin.assembly as Assembly3D
-  if(!a.modules||canonical(a.modules.map(({frame,...m})=>m))!==canonical(baseline?.modules?.map(({frame,...m})=>m)))throw Error('Combined Parent 与模块成员不可重绑')
+  if(!baseline?.modules)throw Error('Combined Origin 缺少固定 Parent 模块')
+  assertFixedModuleGeometry(a,baseline)
  }else if(a.modules)throw Error('模块布局必须属于独立 Combined Assembly')
 }

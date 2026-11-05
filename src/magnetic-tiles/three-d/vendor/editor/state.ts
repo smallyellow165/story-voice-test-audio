@@ -9,6 +9,7 @@ import {nonRepairableKeys} from '../../non-repairable.ts'
 import { solveAssembly3D, validateAssembly3D } from '../../engine-adapter.ts'
 import type { Connection } from '../engine/types.ts'
 import { uniqueId, uid } from './id.ts'
+import {assertFixedModuleGeometry,combinedSolveReason} from '../../combined-editing.ts'
 
 export interface EditorHistory { past: Assembly3D[]; current: Assembly3D; future: Assembly3D[]; collisionPolicy?:{current:string[];past:string[][];future:string[][]} }
 export const currentNonRepairable=(h:EditorHistory)=>h.collisionPolicy?.current??[]
@@ -41,7 +42,7 @@ function pushHistory(h: EditorHistory): EditorHistory {
 export function updateCurrent(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D): EditorHistory {
   // P0-四.7: 克隆 current 后再传给 updater,避免 updater 中的 in-place mutation
   // 在 React Strict Mode(double-invocation)下污染原始状态。
-  const current=updater(cloneProject(h.current));return { ...h, current,...policyForCurrent(h,current) };
+  const current=updater(cloneProject(h.current));assertFixedModuleGeometry(current,h.current);return { ...h, current,...policyForCurrent(h,current) };
 }
 
 /** 修改 current 并入栈(用于用户主动操作)。 */
@@ -52,6 +53,7 @@ export function commit(h: EditorHistory, updater: (p: Assembly3D) => Assembly3D)
   // 第二次 pushHistory 会 clone 已被污染的 h.current → past 条目值错误,撤销无效。
   const current = updater(cloneProject(next.current));
   assertAssembly3D(current);
+  assertFixedModuleGeometry(current,h.current);
   if (canonical(current) === canonical(h.current)) return h;
   return { ...next, current: { ...current, revision: h.current.revision + 1 },...policyForCurrent(next,current) };
 }
@@ -68,6 +70,7 @@ export function commitBatch(h: EditorHistory, updaters: ((p: Assembly3D) => Asse
     current = u(current);
   }
   assertAssembly3D(current);
+  assertFixedModuleGeometry(current,h.current);
   if (canonical(current) === canonical(h.current)) return h;
   return { ...next, current: { ...current, revision: h.current.revision + 1 },...policyForCurrent(next,current) };
 }
@@ -160,6 +163,7 @@ export function setPieceTransformAction(h: EditorHistory, pieceId: string, pose:
 }
 // Resolve only the chosen connected component. Unrelated drafts/free poses stay exact.
 export function solveComponent(p: Assembly3D, root: string): Assembly3D {
+  const reason=combinedSolveReason(p,root);if(reason)throw Error(reason)
   if (!p.pieces.some(piece => piece.id === root)) throw Error('请选择求解固定片')
   const members = new Set([root]), queue = [root]
   while (queue.length) {
