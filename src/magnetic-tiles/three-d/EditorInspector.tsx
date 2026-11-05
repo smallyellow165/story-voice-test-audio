@@ -1,3 +1,6 @@
+import {SnapSelector} from './SnapSelector.tsx'
+import type {SnapPicker} from './module-snap-selection.ts'
+import {parentModule} from './combined-editing.ts'
 import { useEffect, useState } from 'react'
 import type {ReactNode} from 'react'
 import type { Profile } from '../geometry.ts'
@@ -19,15 +22,17 @@ type Props = {
   editing:boolean;canInsert:boolean;onInserted:(id:string)=>void;readOnlyReason?:string;selectionInfo:ReactNode;globalTools:ReactNode;
   currentToolLabel:string;currentToolPanel:ReactNode;toolControls:ReactNode;selectionTitle:ReactNode;selectionControls:ReactNode
   assembly: Assembly3D; project: EditorProject; profiles: readonly Profile[]; selection: Selection
+  tileSnap:{fixedTile:string;fixedPort:string};setTileSnap:(s:{fixedTile:string;fixedPort:string})=>void;picker:SnapPicker|null;togglePicker:(kind:SnapPicker)=>void
   ownPort: string; setOwnPort: (id: string) => void
   apply: (action: (h: EditorHistory) => EditorHistory) => void
   select: (s: Selection) => void; busy: boolean; operation:AssemblyOperation|'select'
   onPreviewSnap:(connection:Connection)=>void;snapSettings:{dihedralDeg:number;flip:boolean};setSnapSettings:(settings:{dihedralDeg:number;flip:boolean})=>void
 }
-export function EditorInspector({ editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
+export function EditorInspector({ editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection,tileSnap,setTileSnap,picker,togglePicker, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
   const [color, setColor] = useState('#55b8ac')
-  const [baseId, setBaseId] = useState(''), [basePort, setBasePort] = useState('e0-p0')
+  const {fixedTile:baseId,fixedPort:basePort}=tileSnap
+  const setBaseId=(id:string)=>setTileSnap({fixedTile:id,fixedPort:''}),setBasePort=(port:string)=>setTileSnap({...tileSnap,fixedPort:port})
   const [angle,setAngleText]=useState(()=>Number.isFinite(snapSettings.dihedralDeg)?String(snapSettings.dihedralDeg):'')
   const flip=snapSettings.flip
   const setAngle=(angle:string)=>{setAngleText(angle);setSnapSettings({...snapSettings,dihedralDeg:angle.trim()?Number(angle):NaN})},setFlip=(flip:boolean)=>setSnapSettings({...snapSettings,flip})
@@ -66,20 +71,30 @@ export function EditorInspector({ editing,canInsert,onInserted,readOnlyReason,se
       onUpdateConnection={(i, patch) => apply(h => actions.updateConnectionAction(h, i, patch))}
       onRemoveConnection={i => apply(h => { select({ kind: 'none' }); return actions.removeConnectionAction(h, i) })}/>
     {piece && <>
-      {operation==='snap'&&<details open><summary>选择边并连接</summary>
-        <p>固定目标 A，移动选中零件 B。先选择 B 的连接边，再点击 A 的兼容边或使用下方选项；预览后确认。</p>
-        <label>B 端口<select aria-label="3D 自身端口 B" value={effectiveOwn?.portId ?? ''} onChange={e => setOwnPort(e.target.value)}>
-          {ownShape?.ports.map(p => <option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select></label>
-        <label>目标 A<select aria-label="3D 目标零件 A" value={base?.id ?? ''} onChange={e => setBaseId(e.target.value)}>
-          {assembly.pieces.filter(p => p.id !== selectedId).map(p => <option key={p.id} value={p.id}>{p.id}</option>)}</select></label>
-        <label>A 端口<select aria-label="3D 目标端口 A" value={effectiveBase?.portId ?? ''} onChange={e => setBasePort(e.target.value)}>
-          {baseShape?.ports.map(p => <option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select></label>
-        <label>二面角<input aria-label="新连接二面角" type="number" min="-180" max="180" value={angle} onChange={e => setAngle(e.target.value)}/></label>
-        <label><input aria-label="新连接 flip" type="checkbox" checked={flip} onChange={e => setFlip(e.target.checked)}/>flip · 反向端点</label>
-        <p className="hint">当前 B 端口有 {compatible.length} 个空闲兼容目标。90° 常用 flip 关闭；相邻共面通常为 0°、flip 开启。仅建立约束不会调整 Pose；不匹配会在 Geometry Check 中显示 Invalid。</p>
-        <button disabled={!canSnap || !angle.trim()} onClick={() => onPreviewSnap(connection())}>预览吸附</button>
-        <button disabled={!base || !effectiveOwn || !effectiveBase || !angle.trim()} onClick={() => apply(h => actions.createConnectionAction(h, connection(), false))}>仅建立约束（不移动）</button>
-      </details>}
+      {operation==='snap'&&<div className="module-snap-parameters" aria-label="Tile Snap 参数">
+        <div className="snap-side-heading snap-moving"><b>Moving</b><small>仅移动此 Tile</small></div>
+        <div className="snap-fields-row">
+          <label>Moving Tile<div className="snap-select-field"><select aria-label="3D 移动零件 B" value={selectedId} onChange={e=>select({kind:'piece',id:e.target.value})}>
+            {assembly.pieces.filter(p=>!parentModule(assembly,p.id)).map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><SnapSelector kind="moving-tile" active={picker} toggle={togglePicker} disabled={!piece}/></div></label>
+          <label>Moving Port<div className="snap-select-field"><select aria-label="3D 自身端口 B" value={effectiveOwn?.portId??''} onChange={e=>setOwnPort(e.target.value)}>
+            {ownShape?.ports.map(p=><option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select><SnapSelector kind="moving-port" active={picker} toggle={togglePicker} disabled={!effectiveOwn}/></div></label>
+        </div>
+        <div className="snap-side-heading snap-fixed"><b>Fixed</b><small>不动 · 可选 Group 成员</small></div>
+        <div className="snap-fields-row">
+          <label>Fixed Tile<div className="snap-select-field"><select aria-label="3D 目标零件 A" value={base?.id??''} onChange={e=>setBaseId(e.target.value)}>
+            {assembly.pieces.filter(p=>p.id!==selectedId).map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><SnapSelector kind="fixed-tile" active={picker} toggle={togglePicker} disabled={!base}/></div></label>
+          <label>Fixed Port<div className="snap-select-field"><select aria-label="3D 目标端口 A" value={effectiveBase?.portId??''} onChange={e=>setBasePort(e.target.value)}>
+            {baseShape?.ports.map(p=><option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select><SnapSelector kind="fixed-port" active={picker} toggle={togglePicker} disabled={!effectiveBase}/></div></label>
+        </div>
+        <div className="snap-options">
+          <label>Dihedral °<input aria-label="新连接二面角" type="number" min="-180" max="180" value={angle} onChange={e=>setAngle(e.target.value)}/></label>
+          <label><input aria-label="新连接 flip" type="checkbox" checked={flip} onChange={e=>setFlip(e.target.checked)}/>Flip</label>
+          <button disabled={!!picker||!canSnap||!angle.trim()} onClick={()=>onPreviewSnap(connection())}>预览吸附</button>
+        </div>
+        {picker&&<small className="snap-picker-hint">Viewer：{picker.replace('-',' ')} · Esc 取消</small>}
+        <p className="hint">{compatible.length} 个空闲兼容目标。预览后确认；也可直接点击目标兼容边。仅建立约束不调整 Pose，不匹配会显示 Invalid。</p>
+        <button disabled={!!picker||!base||!effectiveOwn||!effectiveBase||!angle.trim()} onClick={()=>apply(h=>actions.createConnectionAction(h,connection(),false))}>仅建立约束（不移动）</button>
+      </div>}
     </>}
     {selection.kind === 'connection' && <>
       <button onClick={()=>select({kind:'piece',id:assembly.connections[selection.index].pieceB})}>重新吸附 B（先解除相关连接）</button>
