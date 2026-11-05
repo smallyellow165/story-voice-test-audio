@@ -6,6 +6,7 @@ import {selectedProject} from '../test/magnetic-selected-project-fixture.mjs'
 import {selectFixture} from '../test/magnetic-selected-fixture.mjs'
 import {serializeAssembly3D} from '../src/magnetic-tiles/three-d/assembly.ts'
 import {stage} from './magnetic-studio-browser.mjs'
+import {OrthographicCamera,Vector3} from 'three'
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto'
 import {tmpdir} from 'node:os'
@@ -31,6 +32,11 @@ try{
  async function open(item){await page.goto(url(item));await stage(page,'assembly','workspace');await button('保存 3D Draft').waitFor();await page.waitForFunction(()=>document.querySelector('.magnetic-3d-editor-canvas canvas')?.width>200);await button('Edit Draft').click()}
  async function exported(){const d=page.locator('.magnetic-3d-load');if(!await d.evaluate(e=>e.open))await d.locator(':scope>summary').click();const next=page.waitForEvent('download');await button('导出 Assembly3D').click();return JSON.parse(await readFile(await(await next).path(),'utf8'))}
  async function select(id){await page.locator(`[data-3d-piece="${id}"]`).click()}
+ async function highlights(expected){await page.waitForFunction(ids=>JSON.stringify([...document.querySelectorAll('.magnetic-3d-editor-canvas [data-tile-label][data-selected="true"]')].map(e=>e.dataset.tileLabel).sort())===JSON.stringify(ids),[...expected].sort())}
+ async function viewerClick(id){
+  const state=JSON.parse(await page.getByLabel('3D Editor 相机状态',{exact:true}).textContent()),f=state.frustum,camera=new OrthographicCamera(f.left,f.right,f.top,f.bottom,f.near,f.far);camera.position.fromArray(state.position);camera.quaternion.fromArray(state.quaternion);camera.zoom=state.zoom;camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
+  const point=new Vector3(...redAssembly.pieces.find(p=>p.id===id).pose.position).project(camera),box=await page.locator('.magnetic-3d-editor-canvas canvas').boundingBox();await page.mouse.click(box.x+(point.x+1)*box.width/2,box.y+(1-point.y)*box.height/2);
+ }
  async function number(name,value){await field(name).fill(String(value));await field(name).press('Enter')}
  await open(items[0]);assert.equal(await tool('Copy').isDisabled(),true);assert.match(await tool('Copy').locator('..').getAttribute('title'),/选择 Tile/)
  assert.equal(await page.locator('.magnetic-3d-workspace h2').count(),0);assert.equal(await page.locator('.magnetic-3d-inspector').getByRole('button',{name:'Move',exact:true}).count(),0)
@@ -49,6 +55,19 @@ try{
  await button('预览吸附').click();await button('取消吸附').click();assert.deepEqual(await exported(),copied);await button('预览吸附').click();await button('确认吸附').click();assert.equal((await exported()).connections.length,17);await button('3D Undo').click();await select(newPiece.id);
  await tool('Delete').click();assert.equal((await exported()).pieces.length,11);await button('3D Undo').click();assert.equal((await exported()).pieces.length,12);await button('3D Redo').click();assert.equal((await exported()).pieces.length,11)
  await tool('对称补全').click();assert.equal(await currentTool.getByRole('region',{name:'Symmetry Fill',exact:true}).count(),1);assert.equal(await page.getByRole('region',{name:'Symmetry Fill',exact:true}).count(),1);for(const id of ['r01','r02','r03','r04','r05','r06'])await field('对称来源 '+id).check()
+ const six=['r01','r02','r03','r04','r05','r06'],selectionBaseline=await exported();await highlights(six);
+ await select('r10');await highlights(six);assert.equal(await detail.locator('h4').first().innerText(),'Selection Detail · r10','focus does not replace sources');
+ await field('对称来源 r01').uncheck();await highlights(six.filter(id=>id!=='r01'));
+ await field('对称来源 r01').check();await highlights(six);
+ await button('前').click();await page.waitForFunction(()=>{try{return JSON.parse(document.querySelector('[aria-label="3D Editor 相机状态"]').textContent).position[2]>5}catch{return false}});
+ await viewerClick('r02');await page.waitForFunction(()=>!document.querySelector('[aria-label="对称来源 r02"]')?.checked);await highlights(six.filter(id=>id!=='r02'));assert.equal(await detail.locator('h4').first().innerText(),'Selection Detail · r02');
+ await viewerClick('r02');await page.waitForFunction(()=>document.querySelector('[aria-label="对称来源 r02"]')?.checked);await highlights(six);
+ await page.screenshot({path:out+'/symmetry-multi-highlight.png'});
+ for(const id of six)await field('对称来源 '+id).uncheck();await highlights([]);assert.equal(await detail.locator('h4').first().innerText(),'Selection Detail · r02','empty source set retains focus without highlighting it');
+ await button('关闭工具').click();await highlights(['r02']);await select('r03');await highlights(['r03']);
+ await tool('对称补全').click();for(const id of six)await field('对称来源 '+id).check();await highlights(six);
+ await select('r03');await highlights(six);await tool('Move').click();await highlights(['r03']);assert.deepEqual(await exported(),selectionBaseline,'source selection and focus never edit geometry or revision');
+ await tool('对称补全').click();for(const id of six)await field('对称来源 '+id).check();await highlights(six);
  await button('预览补全').click();await page.getByTestId('symmetry-preview-summary').filter({hasText:'新增 6 片 · 12 条连接 · 总计 17 片'}).waitFor();assert.equal((await exported()).pieces.length,11)
  await button('确认加入').click();let filled=await exported();assert.equal(filled.pieces.length,17);assert.equal(filled.connections.length,28);await button('3D Undo').click();assert.equal((await exported()).pieces.length,11);await button('3D Redo').click();assert.deepEqual(await exported(),filled)
  await button('Revalidate Geometry').click();await button('保存 3D Draft').click();await page.getByRole('status').filter({hasText:'3D Draft 已保存'}).waitFor();await page.reload();await stage(page,'assembly','workspace');await toolbar().waitFor();assert.equal((await exported()).pieces.length,17)
@@ -56,7 +75,7 @@ try{
  await button('Edit Draft').click();await tool('Select').click();assert.equal(await tool('Select').isEnabled(),true)
  for(const width of [1734,1100,680]){await page.setViewportSize({width,height:1100});await stage(page,'assembly','workspace');const rects=await toolbar().locator('button').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().y));assert.ok(rects.every(y=>Math.abs(y-rects[0])<1),'toolbar stays on one row');assert.ok((await page.locator('.magnetic-3d-assembly-actions').boundingBox()).height<=115);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await page.screenshot({path:out+`/toolbar-${width}.png`})}
  await page.setViewportSize({width:1734,height:1100});await open(items[2]);assert.equal(await tool('Copy').isDisabled(),true);assert.match(await tool('对称补全').locator('..').getAttribute('title'),/Group/)
- await field('当前 Group').selectOption('module-1');assert.equal(await detail.locator('h4').first().innerText(),'Selection Detail · Back');assert.equal(await detail.getByTestId('selection-size').isVisible(),true);const groupBaseline=await exported(),ids=new Set(groupBaseline.modules[1].pieces.map(p=>p.id)),fixed=groupBaseline.pieces.filter(p=>!ids.has(p.id))
+ await field('当前 Group').selectOption('module-1');assert.equal(await detail.locator('h4').first().innerText(),'Selection Detail · Back');assert.equal(await detail.getByTestId('selection-size').isVisible(),true);const groupBaseline=await exported(),ids=new Set(groupBaseline.modules[1].pieces.map(p=>p.id)),fixed=groupBaseline.pieces.filter(p=>!ids.has(p.id));await highlights([...ids])
  await tool('Move').click();await field('模块轴').selectOption('x');await field('模块位移').fill('2');await button('移动 Group').click();const moved=await exported();assert.deepEqual(moved.pieces.filter(p=>!ids.has(p.id)),fixed);for(const p of moved.pieces.filter(p=>ids.has(p.id)))assert.ok(Math.abs(p.pose.position[0]-groupBaseline.pieces.find(o=>o.id===p.id).pose.position[0]-2)<1e-9);await button('3D Undo').click();assert.deepEqual(await exported(),groupBaseline)
  await field('当前 Group').selectOption('module-1');await tool('Rotate').click();await field('模块旋转角度').fill('15');await button('旋转 Group').click();assert.notDeepEqual((await exported()).pieces,groupBaseline.pieces);await button('3D Undo').click()
  await field('当前 Group').selectOption('module-1');await tool('Orient').click();await button('所选面朝上').waitFor();await tool('Snap').click();await field('模块 Snap 移动 Port').waitFor();await tool('Select').click();assert.equal(await page.getByLabel('模块 Gizmo',{exact:true}).count(),0)
@@ -66,6 +85,6 @@ try{
  const grid=detail.locator('.assembly-property-grid').first();assert.equal((await grid.evaluate(e=>getComputedStyle(e).gridTemplateColumns)).split(' ').length,1);assert.equal(await detail.evaluate(e=>e.scrollWidth>e.clientWidth+1),false);await page.screenshot({path:out+'/inspector-narrow.png'});
  await aside.evaluate(e=>{e.style.width='';e.style.minWidth='';e.style.maxWidth='';e.style.flexBasis=''});await button('Edit Draft').click();await button('重新加载来源').click();assert.deepEqual((await exported()).pieces,sourceBaseline.pieces)
  assert.deepEqual(errors,[]);assert.equal(calls.some(([m,r])=>m==='POST'&&/\/(analyze|plan|execute)$/.test(r)),false)
- const report={passed:true,topHeight:emptyHeight,widths:[1734,1100,680],checks:['Current Tool first; single live tool panel; Selection Detail ID once and actual dimensions visible; narrow single column','Select + Move/Rotate/Orient/Snap Inspector controls','single Copy/Delete + Undo/Redo','red-pole six-source preview ->17 pieces/28 connections, Undo/Redo/save/reload','Group transform scope and disabled unsupported tools','View/Edit and source reload','one stable toolbar row, disabled hover reasons, no duplicate Inspector tools'],modelCalls:0,productionWrites:0,errors};await writeFile(out+'/result.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2))
+ const report={passed:true,topHeight:emptyHeight,widths:[1734,1100,680],checks:['Symmetry checkbox/viewer multi-highlight sync, independent focus, empty sources, exit cleanup and unchanged geometry','Current Tool first; single live tool panel; Selection Detail ID once and actual dimensions visible; narrow single column','Select + Move/Rotate/Orient/Snap Inspector controls','single Copy/Delete + Undo/Redo','red-pole six-source preview ->17 pieces/28 connections, Undo/Redo/save/reload','Group transform scope and disabled unsupported tools','View/Edit and source reload','one stable toolbar row, disabled hover reasons, no duplicate Inspector tools'],modelCalls:0,productionWrites:0,errors};await writeFile(out+'/result.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2))
 }catch(e){if(page){await page.screenshot({path:out+'/failure.png'}).catch(()=>{});await writeFile(out+'/failure.txt',String(e)+'\n'+await page.locator('body').innerText().catch(()=>''))}throw e}
 finally{await browser?.close();await server?.close();await rm(dir,{recursive:true,force:true})}
