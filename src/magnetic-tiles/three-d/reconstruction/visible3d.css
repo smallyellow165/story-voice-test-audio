@@ -38,13 +38,31 @@
 .visible3d-control-section .visible3d-candidate-interpretation{font-size:12px;color:#53695d}
 @container(max-width:560px){.visible3d-reconstruction .visible3d-compare{grid-template-columns:minmax(0,1fr)}}
 .visible3d-control-section label.intake-check{display:flex;font-size:13px}
-.visible3d-reconstruction-inspector{overflow:visible}
-.visible3d-reconstruction-heading{position:sticky;top:44px;z-index:2;background:#fffdf7;padding:8px 0;flex-wrap:wrap}
-.visible3d-reconstruction-heading h2{margin:0;flex:1}
 .visible3d-execution-state{padding:9px 10px;border:1px solid #c7d2cb;border-left-width:4px;border-radius:5px;background:#f0f3ef;font-size:12px}
 .visible3d-execution-state p{margin:5px 0 0}
 .visible3d-execution-state[data-tone=error],.visible3d-reconstruction-inspector [role=alert],.visible3d-failure-diagnostics{color:#a12626;border-color:#bd3838;background:#fff0ed}
 .visible3d-reconstruction-inspector>[role=alert]{padding:8px;border-left:4px solid #bd3838}
+
+/* Reconstruction-only density; other stages retain their existing controls. */
+.visible3d-inspector.visible3d-reconstruction-inspector{padding:0;overflow:visible;font-size:12px;line-height:1.45;color:#243e3a;container-type:inline-size}
+.visible3d-reconstruction-inspector .visible3d-control-section{gap:6px;padding:8px 0}
+.visible3d-reconstruction-inspector .visible3d-control-section:first-child{padding-top:0;border-top:0}
+.visible3d-inspector.visible3d-reconstruction-inspector h3{font-size:13px;font-weight:600;margin:0}
+.visible3d-inspector.visible3d-reconstruction-inspector h4{font-size:12px;font-weight:600;margin:0 0 4px}
+.visible3d-inspector.visible3d-reconstruction-inspector p,.visible3d-inspector.visible3d-reconstruction-inspector label,.visible3d-inspector.visible3d-reconstruction-inspector details,.visible3d-inspector.visible3d-reconstruction-inspector li{font-size:12px;line-height:1.45;margin:0}
+.visible3d-reconstruction-inspector label{gap:3px}
+.visible3d-reconstruction-inspector button,.visible3d-reconstruction-inspector select,.visible3d-reconstruction-inspector input{font-size:12px;line-height:1.3;min-height:28px;padding:4px 6px;margin:0;border-radius:6px;box-sizing:border-box;max-width:100%;min-width:0}
+.visible3d-reconstruction-inspector summary{font-weight:600;padding:4px 0;cursor:pointer}
+.visible3d-reconstruction-inspector details[open]>summary{margin-bottom:4px}
+.visible3d-reconstruction-inspector details>p,.visible3d-reconstruction-inspector details>label,.visible3d-reconstruction-inspector details>button{margin-block:4px}
+.visible3d-reconstruction-inspector .visible3d-budget{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.visible3d-reconstruction-inspector .visible3d-execution-state{padding:0;border:0;border-radius:0;background:transparent;color:inherit}
+.visible3d-reconstruction-inspector .visible3d-execution-state b{font-weight:500}
+.visible3d-reconstruction-inspector .visible3d-execution-state p{display:inline;margin-left:6px}
+.visible3d-reconstruction-inspector .visible3d-execution-state[data-tone=error],.visible3d-inspector.visible3d-reconstruction-inspector [role=alert],.visible3d-reconstruction-inspector .visible3d-failure-diagnostics{color:#a12626;background:transparent;border:0;padding:0}
+.visible3d-reconstruction-inspector .visible3d-refinement{padding:5px 0}
+.visible3d-reconstruction-inspector .visible3d-refinement-table tr[aria-selected=true]{background:#edf1ef}
+@container(max-width:320px){.visible3d-reconstruction-inspector .visible3d-budget{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .visible3d-analysis-heading{position:sticky;top:44px;z-index:2;justify-content:flex-end;background:#fffdf7;padding:8px 0}
 /* The base inspector's overflow:auto must not capture this sticky entrance. */

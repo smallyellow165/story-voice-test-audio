@@ -37,7 +37,6 @@ import { intakeApi } from '../../intake/api.ts';
 import {useSourceFrame,SourceImageStrip} from '../../intake/SourceImages.tsx';
 import {evidenceForImage} from './image-evidence.ts';
 import {SourceImagePicker} from '../../intake/SourceImagePicker.tsx';
-import {workflowTerms} from '../../studio-terms.ts';
 import {TraceViewer} from '../../intake/TraceViewer.tsx';
 import type {TraceSource} from '../../intake/TraceViewer.tsx';
 import {analysisRequest,analysisDisplay,analysisHistoryEntries,planningScope,executionScope,planningRequest,executionRequest,planningDisplay,executionDisplay} from './reconstruction-display.ts';
@@ -290,7 +289,7 @@ export default function Visible3DWorkflow() {
             const [c,h] = await Promise.all([api<Config>('status'),refresh()]);
             setConfig(c);
             setModel(c.models.find(m=>m.id==='gpt-6.1-sol')?.id??c.models.find(m => c.providers[m.provider])?.id ?? '');
-            setPlanningModel(c.planningModels.find(m => c.providers[m.provider])?.id ?? '');
+            setPlanningModel(c.planningModels.find(m=>m.id==='gpt-6.1-sol')?.id??c.planningModels.find(m => c.providers[m.provider])?.id ?? '');
             if(projectId){
                 try{
                     const saved=readWorkflowDraft(studioStorage(),projectId);if(!saved.value)throw Error('工作流程草稿缺失；未自动加载服务器最新记录');
@@ -504,8 +503,8 @@ export default function Visible3DWorkflow() {
     {candidate ? <><div className="visible3d-compare"><section aria-label="原图对照"><h4>原图 · 点击可见片或使用下方列表</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate · 按保存 Pose 查看</h4>{active && stage === 'reconstruction' && <CandidateCameraViewer key={`${execution!.id}/${candidate.id}/${viewRequest}`} reference={{executionId:execution!.id,executionHash:execution!.hash,candidateId:candidate.id}} assembly={candidate.assembly} selected={selectedPieceId} onSelect={selectPiece} geometryIssue={issueVisual} issueFocus={issueSelection?.sequence} collision={issueVisual?.collision} collisionFocus={issueCollisionFocus}/>}</section></div><p className="hint">观察辅助只改变相机；不会校准照片、重排零件或改动 Pose。镜像解释仍须逐片核对。</p><div role="group" aria-label="Observation 与 Piece 对应">{executionInput?.evidence.observations.map(o=>{const state=executionInput?observationState(o.id,executionInput,mapping):'unresolved';return <button key={o.id} data-linked-observation={o.id} aria-pressed={selected===o.id} onClick={()=>selectComparisonObservation(o.id)}>{o.id} → {mapping.find(m=>m.observationId===o.id)?.pieceId??'未重建'} · {state}</button>})}</div></> : <div className="visible3d-compare"><section aria-label="原图对照"><h4>原图</h4>{imageView}</section><section aria-label="Candidate 对照"><h4>3D Candidate</h4><p className="studio-empty">在右侧 Inspector 完成 Spatial Planning 和 Geometry Execution，再选择候选进行对照。</p></section></div>}
    </section>
   </StudioSlot>
-  <StudioSlot column="inspectorActions" stages={['source','review']} intake="visible3d" view="3d">{active&&(stage==='source'||stage==='review')&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</StudioSlot>
-  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector visible3d-review-inspector'}>{stage==='reconstruction'&&<div className="review-inspector-heading visible3d-reconstruction-heading"><h2>{workflowTerms.reconstruction.label}</h2>{active&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</div>}{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+  <StudioSlot column="inspectorActions" stages={['source','review','reconstruction']} intake="visible3d" view="3d">{active&&['source','review','reconstruction'].includes(stage)&&<TraceViewer key={stage} source={traceSource} openRequest={traceOpenRequest}/>}</StudioSlot>
+  <StudioSlot column="inspector" stages={imageStages} intake="visible3d"><section className={stage==='source'?'visible3d-inspector visible3d-analysis-inspector':stage==='reconstruction'?'visible3d-inspector visible3d-reconstruction-inspector':'visible3d-inspector visible3d-review-inspector'}>{busy && <p role="status">正在处理；不会自动重试模型请求…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
    {stage==='source'&&<section className="intake-controls source-inspector" aria-label="Visible 3D 图片与识别操作">
     <span className="hint">当前待分析输入{inputSource?' · '+inputSource.name:''}</span><SourceImagePicker onPendingChange={setImagePending} onSelectImage={id=>{if(source?.id===inputSource?.id)frame.select(id);else if(inputSource)void run(async()=>{requestedInputImage.current=id;try{await openSourceImage(inputSource,false)}catch(e){requestedInputImage.current='';throw e}})}} activeImageId={source?.id===inputSource?.id?frame.activeId:''} sourceType={imageSource} onSourceTypeChange={setImageSource} currentSource={inputSource} disabled={busy}
      onSource={async s=>{if(!s&&!allowReviewReplace())return;if(s)await openSourceImage(s);else{sourceRequest.current++;setAnalysisTraceSelection('latest');setInputSource(null);setSource(null);setAnalysis(null);setReview(null);setForm(emptyReview);setSelected('');setAnnotation(JSON.stringify(emptyEvidence,null,2));setTrace(null)}}}
@@ -540,7 +539,6 @@ export default function Visible3DWorkflow() {
    </>}
    {stage==='reconstruction'&&<>
     <section className="intake-controls visible3d-control-section" aria-label="Spatial Planning 操作"><h3>1 · Spatial Planning</h3><p className="hint" data-testid="selected-lineage">Analysis {analysis?.id.slice(0,8)??'未选择'} → Review {review?.id.slice(0,8)??'未选择'} → {reconstruction?.scope.groupName??'Group'} · Plan {plan?.id.slice(0,8)??'未选择'} → Execution {execution?.id.slice(0,8)??'未选择'}</p>
-     <p className="context-notice">Review {review?.id.slice(0,8)??'未保存'} · Plan {plan?.id.slice(0,8)??'未生成'}</p>
      <ExecutionStatus value={planStatus} testId="visible3d-planning-state"/>
      {dirty&&<p role="alert">Review 有未保存修改，请先保存后再 Planning / Execution。</p>}
      {review&&head.reviewId!==review.id&&<p role="alert">Outdated：当前 Review 已过期。</p>}
@@ -590,7 +588,7 @@ export default function Visible3DWorkflow() {
    {stage==='reconstruction'&&candidate&&<section className="intake-controls visible3d-control-section" aria-label="Candidate Review 与 Assembly"><h3>4 · Candidate Review / Assembly</h3>
     <p data-testid="candidate-validation" data-candidate-kind={diagnostic?'diagnostic':'candidate'}><b>{candidate.id} · {diagnostic?'Diagnostic / Geometry Invalid':'Geometry Valid'}</b><br/>Ideal Geometry {validation?.idealGeometry.valid?'Valid':'Invalid'} · Solid Collision {validation?.solidCollision.valid?'Valid':'Invalid'}<br/>Evidence Coverage {candidate.coverage.reconstructed.length}/{candidate.coverage.totalConfirmed}</p>
     {diagnostic&&<p role="alert">Diagnostic Candidate：严格几何验证未通过，可打开到 Editor 继续编辑；原始 Error / Blocker 保留。</p>}
-    {candidate.coverage.reconstructed.length<candidate.coverage.totalConfirmed&&<p role="alert">局部重建：未覆盖 {candidate.coverage.totalConfirmed-candidate.coverage.reconstructed.length} 个已确认实例；不能代表完整作品。</p>}
+    {candidate.coverage.reconstructed.length<candidate.coverage.totalConfirmed&&<p role="status">局部重建：未覆盖 {candidate.coverage.totalConfirmed-candidate.coverage.reconstructed.length} 个已确认实例；不能代表完整作品。</p>}
     <p>Photo Match 未验证；可将当前快照打开到 Editor 继续编辑。</p>
     <p data-testid="visible3d-spatial-status">Spatial Interpretation Consistency · {spatial?.status??'unverified'}（仅已审核相对关系）</p>
     {spatial?.status==='contradicted'&&<p role="alert">候选违反已审核空间关系，禁止采用。请回到 Review 修正。</p>}
