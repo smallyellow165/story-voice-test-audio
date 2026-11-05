@@ -93,7 +93,7 @@ try{
  await page.goto(aUrl);await ready();assert.deepEqual(await exported(),aDraft)
 
  await page.reload();await ready();assert.deepEqual(await exported(),aDraft)
- await page.getByTestId('workspace-recovery-status').filter({hasText:'已恢复本作品未保存修改'}).waitFor()
+ await page.getByTestId('workspace-recovery-status').filter({hasText:'已恢复未保存修改'}).waitFor()
  await page.goto(editUrl(b));await ready();assert.deepEqual(await exported(),back.snapshot.assembly)
  await editColor('#abc123');const bDraft=await exported();await page.goto(aUrl);await ready();assert.deepEqual(await exported(),aDraft)
  // A different server edit creates a later head after this workspace initialized.

@@ -11,7 +11,7 @@ const colorSwatch = (c: string) => c
 let fieldIdCounter = 0
 const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
 interface Props {
-  operation?:AssemblyOperation; project: EditorProject; selection: Selection
+  operation?:AssemblyOperation|'select';showPieceActions?:boolean; project: EditorProject; selection: Selection
   onSetPieceColor: (id: string, color: string) => void
   onDuplicatePiece: () => void; onDeleteSelected: () => void
   onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
@@ -191,10 +191,10 @@ function PieceProps(props: Props) {
         </div>
       </fieldset>}
       {props.operation==='orient'&&<div className="button-row">{(['up','front'] as const).map(d=><button key={d} onClick={()=>{const q=faceOrientationQuaternion(curQuat,d).multiply(curQuat).normalize();onSetPieceTransform(piece.id,{position:[...curPos],quaternion:q.toArray()})}}>{d==='up'?'所选面朝上':'所选面朝前'}</button>)}</div>}
-      <div className="flex gap-2 pt-2 border-t">
+      {props.showPieceActions!==false&&<div className="flex gap-2 pt-2 border-t">
         <button onClick={onDuplicatePiece} className="text-xs px-2 py-1 border rounded hover:bg-gray-50">复制</button>
         <button onClick={onDeleteSelected} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">删除</button>
-      </div>
+      </div>}
 
 
     </div>

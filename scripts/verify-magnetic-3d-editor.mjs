@@ -74,7 +74,7 @@ try {
  await button('3D Redo').click();await valid()
  const triangle=await add('right-triangle@1');await field('3D 目标零件 A').selectOption(base);await field('3D 目标端口 A').selectOption('e2-p0')
  await button('预览吸附').click();await button('确认吸附').click();await valid();assert.match(await summary(),/3 片 · 2 条连接/)
- await button('复制').click();assert.match(await summary(),/4 片/);await button('删除').click();assert.match(await summary(),/3 片/)
+ await button('Copy').click();assert.match(await summary(),/4 片/);await button('Delete').click();assert.match(await summary(),/3 片/)
  await button('3D Undo').click();assert.match(await summary(),/4 片/);await button('3D Redo').click();await select(triangle)
  await field('当前 3D 零件颜色').fill('#123456')
  await tools();await page.getByText('修改当前 Profile 快照厚度',{exact:true}).click();await field('当前 Profile 厚度').fill('.08');await button('应用快照厚度').click()
@@ -108,7 +108,7 @@ try {
  // Existing cube becomes an editable Draft without losing any of its twelve constraints.
  await page.locator('.magnetic-3d-examples-debug').filter({visible:true}).evaluate(e=>e.open=true);await page.locator('[data-3d-example="closed-cube"]').click();await button('Edit Draft').click();await select('top')
  assert.match(await summary(),/6 片 · 12 条连接/);await setNumber('3D 位置 X',.2);assert.match(await summary(),/Geometry Invalid/)
- await button('3D Undo').click();await valid();await select('top');await button('删除').click();assert.match(await summary(),/5 片 · 8 条连接/)
+ await button('3D Undo').click();await valid();await select('top');await button('Delete').click();assert.match(await summary(),/5 片 · 8 条连接/)
  await button('3D Undo').click();await valid();assert.match(await summary(),/6 片 · 12 条连接/)
  await button('保存 3D Draft').click();const savedCube=await exported();await page.reload();await button('3D').click();await jsonOpen()
  assert.deepEqual(await exported(),savedCube)

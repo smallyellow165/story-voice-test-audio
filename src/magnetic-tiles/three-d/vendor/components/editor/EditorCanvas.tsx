@@ -866,8 +866,8 @@ export function EditorCanvas({
       </div>
 
       <div className="magnetic-3d-editor-help">
-        <div>点击选中 · 左键拖空白旋转视角 · 右键平移 · 滚轮缩放 · {toolMode === 'rotate' ? '拖圆环旋转' : toolMode === 'snap' ? '拖轴移动并磁吸' : toolMode === 'move' ? '拖轴移动' : '右栏切换移动/旋转工具'}</div>
-        <div>{moduleMode?'Group 整体编辑 · Inspector 切换 Move / Rotate / Orient / Snap · 拖拽单次撤销':'WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销'}</div>
+        <div>点击选中 · 左键拖空白旋转视角 · 右键平移 · 滚轮缩放 · {toolMode === 'rotate' ? '拖圆环旋转' : toolMode === 'snap' ? '拖轴移动并磁吸' : toolMode === 'move' ? '拖轴移动' : 'Toolbar 选择编辑工具'}</div>
+        <div>{moduleMode?'Group 整体编辑 · Toolbar 切换 Move / Rotate / Orient / Snap · 拖拽单次撤销':'WASDQE:移动 · RTFGVB:旋转 · Shift 大步 · Gizmo 模式下拖拽单次撤销'}</div>
       </div>
     </div>
   );
