@@ -280,7 +280,7 @@ export default function ThreeDWorkspace() {
     else if(refs.pieceIds[0])setSelection({kind:'piece',id:refs.pieceIds[0]})
     if(refs.pieceIds[0])setErrorFocus({pieceId:refs.pieceIds[0],ts:Date.now()})
   }
-  function accept(next: EditorHistory) { setModuleLive(null);setModulePreview(null); const geometryChanged=canonical(next.current)!==canonical(historyRef.current.current);setRepairPreview(null);setRepairTargets(ids=>geometryChanged?[]:ids.filter(id=>!actions.currentNonRepairable(next).includes(id))); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(false);setSymmetrySources([]); setSelection(s=>geometryChanged&&s.kind==='collision'?{kind:'none'}:s);if(geometryChanged)setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { const sameAssembly=next.current.id===historyRef.current.current.id;setModuleLive(null);setModulePreview(null); const geometryChanged=canonical(next.current)!==canonical(historyRef.current.current);setRepairPreview(null);setRepairTargets(ids=>geometryChanged?[]:ids.filter(id=>!actions.currentNonRepairable(next).includes(id))); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(open=>open&&sameAssembly);setSymmetrySources([]); setSelection(s=>geometryChanged&&s.kind==='collision'?{kind:'none'}:s);if(geometryChanged)setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
