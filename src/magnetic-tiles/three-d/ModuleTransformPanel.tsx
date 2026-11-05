@@ -1,7 +1,6 @@
 import type {ModuleSnapSelection,SnapPicker} from './module-snap-selection.ts'
 import {useEffect,useMemo,useState} from 'react'
 import type {Assembly3D} from './assembly.ts'
-import type {SavedAssemblySummary} from './assembly-library.ts'
 import {createViewerModel} from './viewer-model.ts'
 import {moduleStep,alignModuleFace,previewModuleSnap,previewModuleTransform,moduleBoundsAlignment,previewModuleBoundsAlign} from './module-transform.ts'
 import type {ModulePreview,ModuleSpace,BoundsAxis,BoundsMode} from './module-transform.ts'
@@ -72,11 +71,7 @@ export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showS
  </section>
 }
 
-/** Creation belongs to the Assembly list, independent of existing Group editing. */
-export function CreateCombinedPanel({saved,visible,currentId,busy,onCreate}:{saved:SavedAssemblySummary[];visible:Record<string,boolean>;currentId:string;busy:boolean;onCreate:(name:string,ids:string[])=>Promise<void>}){
- const [error,setError]=useState(''),[name,setName]=useState('Combined Assembly'),[parents,setParents]=useState(()=>saved.filter(a=>a.id===currentId||visible[a.id]).slice(0,2).map(a=>a.id))
- return <section className="module-transform-panel" aria-label="创建 Combined Assembly"><p>选择来源作品，创建独立 Combined Assembly。编辑其中的 Group 不会修改来源作品。</p><div className="module-fields"><label>组合名称<input aria-label="组合名称" value={name} onChange={e=>setName(e.target.value)}/></label>{[0,1].map((n)=><label key={n}>来源作品 {n+1}<select aria-label={n?'组合移动作品':'组合固定作品'} value={parents[n]??''} onChange={e=>setParents(ids=>[n===0?e.target.value:ids[0],n===1?e.target.value:ids[1]])}><option value="">选择保存作品</option>{saved.map(a=><option key={a.id} value={a.id}>{a.name} · {a.tiles} Tiles</option>)}</select></label>)}</div><button disabled={busy||!name.trim()||parents.length!==2||!parents[0]||!parents[1]||parents[0]===parents[1]} onClick={()=>{setError('');void onCreate(name,parents).catch(e=>setError(String(e)))}}>创建 Combined Assembly</button>{error&&<p role="alert">{error}</p>}</section>
-}
+export {CreateCombinedPanel} from './scene-registration/CreateCombinedPanel.tsx'
 
 function SnapSelector({kind,active,toggle,disabled}:{kind:SnapPicker;active:SnapPicker|null;toggle:(kind:SnapPicker)=>void;disabled:boolean}){
  const name=kind.split('-').map(s=>s[0].toUpperCase()+s.slice(1)).join(' ')

@@ -16,7 +16,7 @@ const projectId=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value
 /** Saved versions of the existing Assembly3D + origin sidecar, not another geometry model.
  * The editor Revision may go backwards through Undo. Storage version/hash is the CAS.
  */
-export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getProfiles}){
+export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getProfiles,applyRegistration}){
  async function latest(assemblyId,version){
   if(version!==undefined&&(!Number.isSafeInteger(version)||version<1))fail('Assembly 固定版本无效')
   const dir=path.join(directory,id(assemblyId)),files=(await readdir(dir).catch(e=>{if(e.code==='ENOENT')return [];throw e})).filter(n=>/^\d{12}\.json$/.test(n)).sort()
@@ -61,14 +61,16 @@ export function createAssemblyLibrary(directory,{readOrigin,selectedOrigin,getPr
    const o=await combinedOrigin(body.originId);assertAssembly3D(body.assembly);if(body.assembly.id!==o.id)fail('Combined Build ID 不一致',409);assertCanonicalProfiles(body.assembly.profiles,await getProfiles());assertModuleOrigin(body.assembly,o);const geometry=validateAssembly3D(body.assembly);return {origin:o,geometry}
   }
   if(method==='POST'&&route==='combine'){
-   if(!body||Object.keys(body).some(k=>!['name','parents'].includes(k))||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||!Array.isArray(body.parents)||body.parents.length<2||body.parents.length>8)fail('请选择 2–8 个已保存作品并填写组合名称')
+   if(!body||Object.keys(body).some(k=>!['name','parents','registration'].includes(k))||typeof body.name!=='string'||!body.name.trim()||body.name.length>100||!Array.isArray(body.parents)||body.parents.length<2||body.parents.length>8)fail('请选择 2–8 个已保存作品并填写组合名称')
    const parents=await Promise.all(body.parents.map(async ref=>{if(!Number.isSafeInteger(ref.version)||ref.version<1)fail('Parent version 无效');const r=await latest(ref.id,ref.version);if(!r||r.hash!==ref.hash)fail('Parent CAS / Snapshot 已变化',409);return r}))
    if(new Set(parents.map(r=>r.project.id)).size!==1||new Set(parents.map(r=>r.project.hash)).size!==1)fail('不能跨 Project 组合',409)
    const refs=parents.map(r=>({id:r.assembly.id,version:r.version,hash:r.hash,snapshotHash:r.snapshotHash,revision:r.snapshot.assembly.revision})),a=combineAssemblySnapshots('combined-'+randomUUID(),parents.map((r,i)=>({name:r.name,parent:refs[i],assembly:r.snapshot.assembly})))
    if(a.pieces.length>64||a.connections.length>512)fail('组合 Draft V1 最多 64 片 / 512 条连接')
-   const data={kind:'combined-assembly',id:a.id,name:body.name.trim(),sourceId:parents[0].project.id,sourceHash:parents[0].project.hash,parents:refs,assembly:a,createdAt:new Date().toISOString()},origin={...data,hash:hash(data)}
+   const registered=body.registration?await applyRegistration(body.registration,parents,a):null
+   const combined=registered?.assembly??a
+   const data={kind:'combined-assembly',id:a.id,name:body.name.trim(),sourceId:parents[0].project.id,sourceHash:parents[0].project.hash,parents:refs,assembly:combined,...(registered?{sceneRegistration:registered.reference}:{}),createdAt:new Date().toISOString()},origin={...data,hash:hash(data)}
    const nonRepairable=parents.flatMap((r,i)=>r.snapshot.nonRepairable.map(key=>{const ids=JSON.parse(key),map=new Map(a.modules[i].pieces.map(p=>[p.sourceId,p.id]));return JSON.stringify(ids.map(id=>map.get(id)).sort())})).sort()
-   const snapshot={assembly:a,photoOrigin:{origin,assemblyRaw:serializeAssembly3D(a)},nonRepairable}
+   const snapshot={assembly:combined,photoOrigin:{origin,assemblyRaw:serializeAssembly3D(combined),...(registered?{cameraView:registered.cameraView}:{})},nonRepairable}
    return dispatch('POST','save',{snapshot,expectedHash:null},origin)
   }
   if(method==='POST'&&route==='save-editor'){

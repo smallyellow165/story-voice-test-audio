@@ -1,5 +1,6 @@
 import {assertImageMetadata,assertImageEvidence,sourceImages} from '../src/magnetic-tiles/intake/image-set.ts'
 import {createAssemblyLibrary} from './magnetic-assemblies.mjs'
+import {createSceneRegistration} from './magnetic-scene-registration.mjs'
 import {createMagneticGallery} from './magnetic-gallery.mjs'
 import {createVisible3DWorkflow} from './magnetic-visible3d.mjs'
 import {inspectDiagnosticConflicts} from '../src/magnetic-tiles/intake/candidate-conflicts.ts'
@@ -29,7 +30,8 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
  const library=createMagneticImageLibrary(libraryDirectory)
  const selectedSnapshots=createSelectedSnapshots(directory,{read})
  const visible3D=createVisible3DWorkflow(path.join(directory,"visible3d"),{readSource:id=>read("sources",id),readImage:view,readImages:sourceViews,getRegistry:()=>registry.get()})
- const assemblies=createAssemblyLibrary(path.join(directory,'assembly3d'),{readOrigin:visible3D.originSnapshot,selectedOrigin:visible3D.selectedOrigin,getProfiles:async()=>(await registry.get()).profiles})
+ const assemblies=createAssemblyLibrary(path.join(directory,'assembly3d'),{readOrigin:visible3D.originSnapshot,selectedOrigin:visible3D.selectedOrigin,getProfiles:async()=>(await registry.get()).profiles,applyRegistration:(...args)=>registrations.adopt(...args)})
+ const registrations=createSceneRegistration(path.join(directory,'scene-registrations'),{readAssembly:assemblies.read,selectedOrigin:visible3D.selectedOrigin,lineage:visible3D.lineage,readSource:id=>read('sources',id),readImages:sourceViews})
  const gallery=createMagneticGallery(path.join(directory,'gallery'),{readAssembly:assemblies.read})
  const file=(kind,id)=>path.join(directory,kind,validId(id)+'.json')
  async function put(kind,value,{replace=false}={}){
@@ -62,6 +64,7 @@ export function createMagneticIntake(directory,{libraryDirectory}={}){
  async function history(){const out={warnings:[]};for(const kind of kinds){out[kind]=[];const fs=await readdir(path.join(directory,kind)).catch(e=>{if(e.code==='ENOENT')return [];throw e});for(const f of fs.filter(f=>f.endsWith('.json'))){try{const r=await read(kind,f.slice(0,-5));if(kind==='analyses'){const {request,response,rawResponseBody,rawOutput,...summary}=r;out[kind].push(summary)}else if(kind==='reconstructions'){const {trace,diagnosticCandidates,...summary}=r;out[kind].push({...summary,traceAvailable:!!trace,diagnosticCount:diagnosticCandidates?.length??0})}else out[kind].push(r)}catch{out.warnings.push(kind+'/'+f+' 无法读取')}}out[kind].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}out.selectedSnapshots=(await Promise.all(out.sources.map(s=>selectedSnapshots.getSource(s.id)))).flat();return out}
  return {read,result,async dispatch(method,route,body={}){
   if(route.startsWith('gallery/'))return gallery.dispatch(method,route.slice(8),body)
+  if(route.startsWith('scene-registration/'))return registrations.dispatch(method,route.slice(19),body)
   if(route.startsWith('assembly3d/'))return assemblies.dispatch(method,route.slice(11),body)
   if(route.startsWith("visible3d/"))return visible3D.dispatch(method,route.slice(10),body)
   if(method==='GET'&&route==='profiles')return registry.get()

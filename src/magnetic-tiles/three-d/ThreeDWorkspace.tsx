@@ -253,10 +253,10 @@ export default function ThreeDWorkspace() {
   const modulePivotPose=useMemo(()=>{if(!editing||selectOnly||!moduleToolOpen||!selectedGroup||selectedGroup.id!==moduleTool.moving||!current.modules||modulePreview||symmetryOpen||repairSearching||currentRepair||(operation!=='move'&&operation!=='rotate'))return undefined;try{return modulePivot(current,moduleTool.moving,moduleTool.space,moduleTool.face||current.modules.find(m=>m.id===moduleTool.moving)?.pieces[0].id)}catch{return undefined}},[current,editing,selectOnly,moduleToolOpen,selectedGroup,moduleTool,modulePreview,symmetryOpen,repairSearching,currentRepair,operation])
   function applyModule(preview:ModulePreview){try{const next=confirmModulePreview(historyRef.current.current,preview);accept(actions.commit(historyRef.current,()=>next));setError('');setSaveNotice('模块操作已应用；内部连接保持不变，几何诊断保持真实显示。');return true}catch(e){setModuleLive(null);setModulePreview(null);setError(String(e));return false}}
   const moduleGizmo=modulePivotPose?{pose:modulePivotPose,mode:moduleTool.mode,onCancel:()=>setModuleLive(null),onChange:(target:Pose3D,commit:boolean)=>{try{const next=transformModule(current,moduleTool.moving,pivotDelta(modulePivotPose,target));if(commit)applyModule(previewModuleTransform(current,next));else setModuleLive(next)}catch(e){setModuleLive(null);setError(String(e))}}}:undefined
-  async function createCombined(name:string,ids:string[]){
+  async function createCombined(name:string,ids:string[],registration?:{id:string;hash:string}){
     if(operationBusy||!allowReplace())return
     setAssemblyIO(true)
-    try{await protectSavedWorking();const parents=ids.map(id=>{const a=savedAssemblies.find(a=>a.id===id);if(!a)throw Error('请选择当前 Project 已保存的作品');return a});const r=await intakeApi<SavedAssembly>('assembly3d/combine',{name,parents:parents.map(a=>({id:a.id,hash:a.hash,version:a.version}))});if(scope?.mode==='create')rememberSavedAssembly(storage,{id:r.assembly.id,version:r.version,hash:r.hash});await openSavedAssembly(r.assembly.id,true)}finally{setAssemblyIO(false);await refreshAssemblies()}
+    try{await protectSavedWorking();const parents=ids.map(id=>{const a=savedAssemblies.find(a=>a.id===id);if(!a)throw Error('请选择当前 Project 已保存的作品');return a});const r=await intakeApi<SavedAssembly>('assembly3d/combine',{name,parents:parents.map(a=>({id:a.id,hash:a.hash,version:a.version})),...(registration?{registration}:{})});if(scope?.mode==='create')rememberSavedAssembly(storage,{id:r.assembly.id,version:r.version,hash:r.hash});await openSavedAssembly(r.assembly.id,true)}finally{setAssemblyIO(false);await refreshAssemblies()}
   }
   const repairCollision=useMemo(()=>{if(!currentRepair)return undefined;const issue=currentRepair.candidate.geometry.issues.find(i=>i.code==='intersection');if(!issue)return undefined;const evidence=inspectAssemblyCollisions(currentRepair.candidate.assembly,{...currentRepair.candidate.geometry,issues:[issue]})[0];return evidence?collisionVisual(evidence,'repair-preview:'+currentRepair.candidate.id):undefined},[currentRepair])
   async function applyConstraintRepair(result:RepairResult,candidate:RepairCandidate){
@@ -466,8 +466,6 @@ export default function ThreeDWorkspace() {
     {hosts.assemblies&&createPortal(<section hidden={viewMode!=='3d'} className="assembly-selector" aria-label="Assembly Selector">
       <div className="assembly-list-heading">Assembly / 当前作品 <InfoHint label="Assembly 显示与编辑"><p>勾选只控制显示；点击作品名称切换当前编辑对象。其他作品只读，显示偏移不是对齐或合并。切换时恢复已保存的完整 Draft。</p></InfoHint></div>
       {!savedAssemblies.length&&!inProject&&<small>当前 Project 尚无已保存作品。</small>}
-      <button hidden={scope?.mode==='edit'} disabled={operationBusy||savedAssemblies.length<2} aria-expanded={createCombinedOpen} onClick={()=>setCreateCombinedOpen(v=>!v)}>新建 Combined Assembly</button>
-      {createCombinedOpen&&<CreateCombinedPanel key={'create-'+current.id} currentId={current.id} saved={savedAssemblies} visible={visibility} busy={operationBusy} onCreate={createCombined}/>}
       <ul className="assembly-list" aria-label="Project Assemblies">
         {inProject&&!savedAssemblies.some(a=>a.id===current.id)&&<li data-assembly-row={current.id} aria-current="true"><input type="checkbox" aria-label={'显示作品 '+current.id} checked={activeVisible} disabled={operationBusy} onChange={e=>setAssemblyVisible(current.id,e.target.checked)}/><span>{String((photoOrigin!.origin.reconstructionScope as {groupName?:string})?.groupName??'Group')} · {current.pieces.length} Tiles · Draft <b>编辑中</b></span></li>}
         {savedAssemblies.map(a=>{const isCurrent=inProject&&a.id===current.id;return <li key={a.id} data-assembly-row={a.id} aria-current={isCurrent?'true':undefined}>
@@ -487,6 +485,7 @@ export default function ThreeDWorkspace() {
             <button disabled={!editing||operationBusy||!!boot.error} onClick={save}>保存 3D Draft</button>
             <button disabled={operationBusy} onClick={()=>void revalidate()}>Revalidate Geometry</button>
             <button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.assemblyRaw:loaded.source,loaded.name)}}>重新加载来源</button>
+            <button hidden={scope?.mode==='edit'} disabled={operationBusy||savedAssemblies.length<2} aria-expanded={createCombinedOpen} onClick={()=>setCreateCombinedOpen(v=>!v)}>新建 Combined Assembly</button>
           </div>
           <div className="assembly-status-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?'Geometry Valid':'Geometry Invalid'}</span><span> · {dirty?'未保存':'Draft'}</span><span> · 碰撞 {collisionIssues.length}</span>{current.modules&&<span> · {current.modules.length} Groups</span>}{boot.recovery&&dirty&&<span data-testid="workspace-recovery-status"> · 已恢复未保存修改</span>}</p>
             <label className="assembly-tile-ids"><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>
@@ -496,6 +495,7 @@ export default function ThreeDWorkspace() {
             onCopy={()=>{if(selected)apply(h=>{const result=actions.duplicatePieceAction(h,selected);setSelection({kind:'piece',id:result.newId});return result.history})}}
             onDelete={()=>{if(selected)apply(h=>{setSelection({kind:'none'});return actions.deletePieceAction(h,selected)})}}/>
         </section>
+      {createCombinedOpen&&<CreateCombinedPanel key={'create-'+current.id} currentId={current.id} saved={savedAssemblies} visible={visibility} busy={operationBusy} onCreate={createCombined}/>}
         {profileError&&<p role="alert" className="magnetic-3d-blocker">{profileError}</p>}
         {(readOnlyAssemblies.length>0||!activeVisible)&&<div className="assembly-display-summary" data-testid="multi-assembly-display" data-displayed-assemblies={JSON.stringify([...(activeVisible?[{id:current.id,tiles:current.pieces.length,offset:[0,0,0],active:true}]:[]),...readOnlyAssemblies.map(a=>({id:a.id,tiles:a.pieces.length,offset:a.offset,snapshotHash:a.snapshotHash,active:false}))])}>
           <span>{activeVisible?`${String((photoOrigin?.origin.reconstructionScope as {groupName?:string})?.groupName??current.id)} · 编辑中`:'当前编辑作品已隐藏'}</span>{readOnlyAssemblies.map(a=><span key={a.id}>{a.name} · {a.pieces.length} Tiles · 只读</span>)}<small>并列显示，尚未对齐</small>

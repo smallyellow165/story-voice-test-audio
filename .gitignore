@@ -19,6 +19,7 @@ generated/
 
 # Local experiment output, reports, and screenshots.
 /output/
+/work/
 
 # Local voice-test recordings; do not commit private audio.
 public/audio/**/*.wav
