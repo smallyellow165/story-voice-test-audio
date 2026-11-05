@@ -8,6 +8,10 @@
 .studio-column{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;background:#fffdf7;height:100%;padding:16px}
 .studio-workspace{background:#f9fbf5}.studio-column-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}.studio-column-heading h2{margin:0}.eyebrow{font-size:11px;letter-spacing:.15em;font-weight:750;color:#5d7167;margin-bottom:6px}
 .studio-workflow header h1{display:flex;align-items:center;gap:4px;margin-bottom:6px}
+.studio-workflow .studio-history{min-width:0;max-width:100%;white-space:nowrap}
+.studio-workflow .studio-history>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-workflow .studio-history select{display:block;width:100%;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.studio-workflow .studio-history option{white-space:nowrap}
 .studio nav{display:grid;gap:2px;position:sticky;top:-16px;background:#fffdf7;padding:4px 0;z-index:2;margin-bottom:8px}
 .studio-stage-row{display:flex;align-items:center;min-width:0;border-radius:3px}
 .studio-stage-row[data-active=true]{background:#e4eee4;box-shadow:inset 3px 0 #28654f}

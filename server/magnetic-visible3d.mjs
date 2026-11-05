@@ -290,7 +290,7 @@ export function createVisible3DWorkflow(directory,options){
   }
   if(method==='POST'&&route==='selected')return selectResult(body)
   if(method==='GET'&&route.startsWith('selected-origin/'))return selectedOrigin(route.slice(16))
-  if(method==='GET'&&route==='status')return {models:modelOptions('reverse'),planningModels:modelOptions('design'),providers:providerStatus(),prompt:await visiblePromptStatus()}
+  if(method==='GET'&&route==='status')return {models:modelOptions('reverse'),planningModels:modelOptions('design'),providers:providerStatus(),prompt:await visiblePromptStatus(),displayTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}
   if(method==='GET'&&route==='requests'){const files=await readdir(path.join(directory,'requests')).catch(e=>{if(e.code==='ENOENT')return [];throw e});return (await Promise.all(files.filter(f=>/^[a-f0-9-]+\.json$/.test(f)).map(async f=>{
    const r=JSON.parse(await readFile(path.join(directory,'requests',f),'utf8')),b=r.trace?.background
    // Presentation only: an interrupted submit cannot be called "running"
