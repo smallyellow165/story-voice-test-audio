@@ -112,7 +112,11 @@
 
 .visible3d-refinement-list{max-height:360px;overflow:auto;min-width:0}
 .review-module-controls{display:flex;gap:4px;align-items:center;flex-wrap:wrap;flex:0 1 auto;width:max-content;max-width:100%;min-width:0;font-size:12px}
-.review-module-controls>select{width:150px;max-width:40vw;margin:0;padding:4px;font-size:12px}.review-module-controls>button{margin:0;flex:none;white-space:nowrap}
+.review-module-controls>select{width:150px;max-width:40vw;margin:0;padding:4px;font-size:12px}.review-module-controls button{margin:0;flex:none;white-space:nowrap}
+.review-disabled-action{display:inline-flex;flex:none;border-radius:4px}
+.review-disabled-action:focus-visible{outline:2px solid #2e7562;outline-offset:2px}
+.review-disabled-action>button:disabled{pointer-events:none}
+.review-disabled-reason{position:fixed;inset:auto;margin:0;box-sizing:border-box;width:max-content;max-width:min(320px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;padding:8px 10px;border:1px solid #c6d4ce;border-radius:6px;background:#fffefa;color:#a12626;box-shadow:0 4px 16px #152d2933;font:12px/1.5 system-ui,sans-serif;white-space:normal;overflow-wrap:anywhere}
 .review-module-notice{font-size:11px;overflow-wrap:anywhere}
 .review-module-cell{max-width:120px;overflow-wrap:anywhere}
 

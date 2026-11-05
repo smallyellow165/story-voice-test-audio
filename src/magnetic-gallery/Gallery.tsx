@@ -4,7 +4,11 @@ import type {Assembly3D} from '../magnetic-tiles/three-d/assembly.ts'
 import type {SavedAssembly} from '../magnetic-tiles/three-d/assembly-library.ts'
 import type {CameraView3D} from '../magnetic-tiles/three-d/camera-view.ts'
 import {MagnetScene3D} from '../magnetic-tiles/three-d/vendor/components/MagnetScene3D.tsx'
-import {magneticGalleryUrl,openGalleryItemUrl,createMagneticWorkspaceUrl,editMagneticWorkspaceUrl} from './links.ts'
+import {magneticGalleryUrl,openGalleryItemUrl,createMagneticWorkspaceUrl,editMagneticWorkspaceUrl,continueMagneticWorkspaceUrl} from './links.ts'
+import {listDraftProjects,migrateDraftProjects} from '../magnetic-tiles/draft-projects.ts'
+import type {DraftProject,MigrationReport} from '../magnetic-tiles/draft-projects.ts'
+import {migrateLegacyWorkflow} from '../magnetic-tiles/three-d/reconstruction/workflow-draft.ts'
+import {workflowTerms} from '../magnetic-tiles/studio-terms.ts'
 import type {AssemblyReference} from './links.ts'
 import '../brick-gallery/gallery.css'
 import '../magnetic-tiles/three-d/viewer.css'
@@ -20,6 +24,24 @@ export function MagneticGallery(){
  const [opened,setOpened]=useState<OpenItem|null>(null),[source,setSource]=useState<FixedAssembly|null>(null)
  const [description,setDescription]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('')
  const publishing=useRef(false)
+ const [drafts,setDrafts]=useState<DraftProject[]>([]),[draftWarnings,setDraftWarnings]=useState<string[]>([]),[migration,setMigration]=useState<MigrationReport|null>(null)
+ useEffect(()=>{
+  if(adding||id)return
+  let alive=true
+  const migrate=()=>migrateDraftProjects(localStorage,async(id,storage)=>{
+   await navigator.locks.request('magnetic-workspace:create:'+id,{ifAvailable:true},async lock=>{if(!lock)throw Error('旧工作区正在其他页面使用，未改动原数据');await migrateLegacyWorkflow(id,storage,intakeApi)})
+  })
+  const migration=navigator.locks?navigator.locks.request('magnetic-draft-projects-migration',migrate):Promise.reject(Error('无法安全迁移：浏览器不支持工作区锁'))
+  void migration.then(report=>{if(alive)setMigration(report)}).catch(e=>{if(alive)setDraftWarnings([String(e)])})
+  return()=>{alive=false}
+ },[id,adding])
+ useEffect(()=>{
+  if(adding||id)return
+  const update=()=>{try{const result=listDraftProjects(localStorage,items);setDrafts(result.projects);setDraftWarnings(result.warnings)}catch(e){setDraftWarnings([String(e)])}}
+  update()
+  window.addEventListener('storage',update);window.addEventListener('focus',update)
+  return()=>{window.removeEventListener('storage',update);window.removeEventListener('focus',update)}
+ },[id,adding,items,migration])
  useEffect(()=>{
   let alive=true
   void(async()=>{
@@ -61,6 +83,13 @@ export function MagneticGallery(){
   </section>}
   {!loading&&!adding&&!id&&<>
    <div className="gallery-intro"><span>一起动手，一起发现</span><h1>今天想看哪个作品？</h1><p>从 Studio 保存 Assembly 后，点击 Add to Gallery，把作品留在这里。</p></div>
+   <section className="magnetic-draft-projects" aria-label="继续制作 / Draft Projects">
+    <h2>继续制作 / Draft Projects</h2><p>此浏览器自动保留的未完成作品。</p>
+    {drafts.length?<ul>{drafts.map(p=><li key={p.workspaceId} data-draft-project={p.workspaceId}><div><strong>{p.name}</strong><small> · {p.workspaceId.slice(0,8)}</small><p>{workflowTerms[p.stage].label} · 最近修改 <time dateTime={p.updatedAt}>{new Date(p.updatedAt).toLocaleString()}</time></p></div><a href={continueMagneticWorkspaceUrl(p.workspaceId,p.stage)} aria-label={'Continue Editing：'+p.name}>Continue Editing · 继续制作 →</a></li>)}</ul>:<p>还没有未完成作品。点击 Create New 即可开始，进度会自动保留。</p>}
+    {draftWarnings.map((message,i)=><p className="gallery-error" role="alert" key={i}>{message}</p>)}
+    {migration&&(migration.migrated.length>0||migration.skipped.length>0)&&<details><summary>旧工作区恢复：已迁移 {migration.migrated.length}，跳过 {migration.skipped.length}</summary>{migration.migrated.map(id=><p key={id}>已迁移 {id}</p>)}{migration.skipped.map(s=><p key={s.id}>{s.id}：{s.reason}；原数据保留。</p>)}</details>}
+   </section>
+   <h2>已发布作品 / Gallery Items</h2>
    <div className="gallery-grid">{items.map(item=><article className="gallery-card magnetic-gallery-card" key={item.id}>
     <div><p className="magnetic-gallery-description">{item.description}</p><p>固定版本 v{item.assemblyRef.version}</p><a className="magnetic-gallery-open" href={openGalleryItemUrl(item.id)} aria-label={'打开作品：'+item.description}>Open Assembly · 打开作品 →</a><p><a href={editMagneticWorkspaceUrl(item.id,item.assemblyRef)} aria-label={'Edit 作品：'+item.description}>Edit · 编辑作品 →</a></p></div>
    </article>)}</div>

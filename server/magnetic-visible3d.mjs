@@ -164,7 +164,15 @@ export function createVisible3DWorkflow(directory,options){
  async function moduleHead(reviewId){try{return JSON.parse(await readFile(filename('module-heads',reviewId),'utf8'))}catch(e){if(e.code==='ENOENT')return {revision:0,recordId:null,recordHash:null,modulePlanId:null};throw e}}
  async function moduleState(reviewId){
   const l=await lineage('reviews',identifier(reviewId)),h=await moduleHead(l.review.id),history=[]
-  for(const f of await readdir(path.join(directory,'module-plans')).catch(e=>{if(e.code==='ENOENT')return [];throw e})){if(!/^[a-f0-9-]+\.json$/.test(f))continue;const r=await read('module-plans',f.slice(0,-5));if(r.reviewId===l.review.id){await lineage('module-plans',r.id);history.push(r)}}
+  for(const f of await readdir(path.join(directory,'module-plans')).catch(e=>{if(e.code==='ENOENT')return [];throw e})){
+   if(!/^[a-f0-9-]+\.json$/.test(f))continue
+   // The directory is shared by all Projects. Select candidates by the exact
+   // Review before strict read() applies this request's Project/Hash checks.
+   const id=f.slice(0,-5),candidate=JSON.parse(await readFile(filename('module-plans',id),'utf8'))
+   if(candidate.reviewId!==l.review.id)continue
+   const r=await read('module-plans',id)
+   await lineage('module-plans',r.id);history.push(r)
+  }
   history.sort((a,b)=>b.revision-a.revision||b.createdAt.localeCompare(a.createdAt))
   const record=h.recordId?history.find(r=>r.id===h.recordId):null
   if(h.recordId&&(!record||record.hash!==h.recordHash||record.revision!==h.revision||record.modulePlanId!==h.modulePlanId))fail('Module Plan Head / Hash 不一致',409)

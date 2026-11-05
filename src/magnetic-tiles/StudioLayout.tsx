@@ -1,4 +1,5 @@
 import {currentWorkspace,studioStorage} from './workspace-context.ts'
+import {readDraftProject,touchDraftProject} from './draft-projects.ts'
 import {loadPhotoOrigin} from './three-d/reconstruction/adopt-draft.ts'
 import {loadStudioMode,saveStudioMode} from './studio-mode.ts'
 import type {StudioMode} from './studio-mode.ts'
@@ -53,6 +54,11 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
   const readPreferences=()=>{try{return {saved:JSON.parse(storage.getItem(PANEL_PREFERENCES_KEY)||'{}'),warning:''}}catch{return {saved:{},warning:'右栏 UI 偏好无法读取；工作快照和草稿未修改。'}}}
   const [boot]=useState(()=>{const p=readPreferences();return {...resolvePanelState(request.href,p.saved,profiles),storageWarning:p.warning}})
   const [stage,setStage]=useState<Stage>(boot.stage),[rightTab,setRightTab]=useState<RightTab>(boot.rightTab),[catalogProfile,setCatalogProfile]=useState(boot.catalogProfile)
+  useEffect(()=>{
+    if(scope?.mode!=='create')return
+    try{if(readDraftProject(localStorage,scope.id)?.stage!==stage)touchDraftProject(localStorage,scope.id,{stage})}
+    catch(e){setStorageWarning('制作阶段无法自动保存：'+String(e))}
+  },[stage])
   const [appliedRequest,setAppliedRequest]=useState(request),[warnings,setWarnings]=useState(boot.warnings),[storageWarning,setStorageWarning]=useState(boot.storageWarning)
   const rightColumn=useRef<HTMLElement>(null),scrollOffsets=useRef({inspector:0,catalog:0})
   useEffect(()=>{const p=readPreferences(),state=resolvePanelState(request.href,p.saved,profiles);setStage(state.stage);setRightTab(state.rightTab);setCatalogProfile(state.catalogProfile);setWarnings(state.warnings);setStorageWarning(p.warning);setAppliedRequest(request);setMobileColumn(state.rightTab==='catalog'?'inspector':'workspace')},[request])
@@ -80,7 +86,7 @@ export function StudioLayout({children,dragging}:{children:ReactNode;dragging:bo
     <Group className="studio-panels" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <Panel id="workflow" className="studio-panel studio-panel-workflow" defaultSize="18%" minSize="180px">
       <aside className="studio-column studio-workflow" aria-label="Workflow">
-        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1>{scope&&<p data-testid="studio-workspace-context">{scope.mode==='create'?'Create · 新建作品':`Edit · 发布基线 v${scope.version}`}<small> · {scope.id.slice(0,12)}</small></p>}<a href={magneticGalleryUrl()} target="_blank" rel="noreferrer">我的作品集 ↗</a></header>
+        <header><p className="eyebrow">MAGNETIC TILES</p><h1>Studio <InfoHint label="Studio">图片到作品，一片一片搭。</InfoHint></h1>{scope&&<p data-testid="studio-workspace-context">{scope.mode==='create'?'Create · 新建作品':`Edit · 发布基线 v${scope.version}`}<small> · {scope.id.slice(0,12)}</small></p>}<a href={magneticGalleryUrl()}>我的作品集</a></header>
         <nav aria-label="工作阶段">{stages.map((s,i)=><div className="studio-stage-row" key={s.id} data-active={stage===s.id}><button data-stage={s.id} aria-current={stage===s.id?'step':undefined} disabled={dragging||scope?.mode==='edit'&&imageStages.includes(s.id)} onClick={()=>navigate(s.id)}><span title={s.label}>{i+1} · {s.label}</span></button><InfoHint label={s.label}>{s.detail}</InfoHint></div>)}</nav>
         <div hidden={!!scope} className="studio-mode-switch" role="group" aria-label="Studio 工作模式"><span>工作模式</span><div>
           <button aria-pressed={mode==='2d'} disabled={dragging} onClick={()=>switchMode('2d')}>2D</button>

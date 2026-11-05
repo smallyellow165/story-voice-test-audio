@@ -2,7 +2,11 @@ import {currentWorkspace,studioStorage,workspaceHistory,rememberWorkspaceResult,
 export async function intakeApi<T>(route: string, body?: unknown): Promise<T> {
   const context=currentWorkspace(),storage=context?studioStorage():null
   const projectScoped=context?.mode==='create'&&route.startsWith('visible3d/')
-  if(projectScoped)route='visible3d/project/'+context.id+'/'+route.slice(10)
+  if(projectScoped){
+    const prefix='visible3d/project/'+context.id+'/'
+    if(route.startsWith('visible3d/project/')){if(!route.startsWith(prefix))throw Error('请求跨 Workspace Project，未执行')}
+    else route=prefix+route.slice(10)
+  }
   if(storage&&body&&typeof body==='object'&&'requestId' in body)rememberWorkspaceResult(storage,null,(body as {requestId:unknown}).requestId)
   const response = await fetch('/api/magnetic-intake/'+route, body === undefined ? undefined : { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body) })
   let data

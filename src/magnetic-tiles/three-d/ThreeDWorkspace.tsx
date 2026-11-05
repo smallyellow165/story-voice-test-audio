@@ -1,5 +1,6 @@
 import {currentWorkspace,ownAssemblyReferences,rememberSavedAssembly,WORKING_DRAFT_KEY,WORKSPACE_RECORD_KEY,WORKSPACE_HEAD_KEY} from '../workspace-context.ts'
 import {studioStorage} from '../workspace-context.ts'
+import {touchDraftProject} from '../draft-projects.ts'
 import {normalizeModuleSnapSelection,validSnapPort} from './module-snap-selection.ts'
 import type {ModuleSnapSelection,SnapPicker,SnapViewport} from './module-snap-selection.ts'
 import {GroupSpatialInspection} from './GroupSpatialInspection.tsx'
@@ -187,10 +188,10 @@ export default function ThreeDWorkspace() {
     try{
       if(storage.getItem(WORKING_DRAFT_KEY)!==expectedRecovery.current)throw Error('本作品草稿已被其他页面更新；本页未覆盖，请导出当前内容后重新打开')
       const raw=JSON.stringify({baseRaw:expectedRaw.current,assembly:current,nonRepairable,photoOrigin,...(editorCamera?{cameraView:editorCamera}:{})})
-      storage.setItem(WORKING_DRAFT_KEY,raw);expectedRecovery.current=raw
+      if(raw!==expectedRecovery.current){storage.setItem(WORKING_DRAFT_KEY,raw);expectedRecovery.current=raw;if(scope.mode==='create')touchDraftProject(localStorage,scope.id)}
     }catch(e){recoveryBlocked.current=true;setError(String(e))}
   },[current,photoOrigin,clean,cleanPolicy,editorCamera])
-  useEffect(()=>{if(!scope)return;const warn=(e:BeforeUnloadEvent)=>{if(dirty||operationBusy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[dirty,operationBusy])
+  useEffect(()=>{if(!scope)return;const warn=(e:BeforeUnloadEvent)=>{if(recoveryBlocked.current||operationBusy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[operationBusy])
 
   const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
   const snapshotKey=useMemo(()=>`${loaded.sequence}:${serializeAssembly3D(assembly)}`,[loaded.sequence,assembly])

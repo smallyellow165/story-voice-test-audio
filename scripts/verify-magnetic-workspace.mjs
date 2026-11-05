@@ -88,9 +88,9 @@ try{
  await page.goto(base+'magnetic-gallery.html');await page.getByRole('link',{name:'Edit 作品：A 小房子',exact:true}).click();await ready()
  assert.deepEqual(await exported(),front.snapshot.assembly)
  const aUrl=page.url();await editColor('#123abc');const aDraft=await exported();assert.notDeepEqual(aDraft,front.snapshot.assembly)
- page.removeAllListeners('dialog');let declined=false;page.once('dialog',async d=>{declined=true;await d.dismiss()})
- await assert.rejects(page.goto(editUrl(b)),/ERR_ABORTED/);assert.equal(declined,true);assert.equal(page.url(),aUrl);assert.deepEqual(await exported(),aDraft)
- page.on('dialog',d=>d.accept())
+ // Successful autosave permits normal navigation without a leave-page gate.
+ await page.goto(editUrl(b));await ready();assert.deepEqual(await exported(),back.snapshot.assembly)
+ await page.goto(aUrl);await ready();assert.deepEqual(await exported(),aDraft)
 
  await page.reload();await ready();assert.deepEqual(await exported(),aDraft)
  await page.getByTestId('workspace-recovery-status').filter({hasText:'已恢复本作品未保存修改'}).waitFor()

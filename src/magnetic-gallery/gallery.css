@@ -4,3 +4,9 @@
 .magnetic-gallery-open { color:#286553; font-weight:700; }
 .magnetic-gallery .magnetic-3d-camera-state { display:none; }
 .magnetic-gallery .magnetic-3d-camera-tools { flex-wrap:wrap; }
+.magnetic-draft-projects{margin:24px 0 36px;padding:20px;border:1px solid #c6d4ce;border-radius:12px;background:#fffefa}
+.magnetic-draft-projects ul{list-style:none;margin:12px 0 0;padding:0}
+.magnetic-draft-projects li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-top:1px solid #dce5df;overflow-wrap:anywhere}
+.magnetic-draft-projects li p{margin:6px 0 0;font-size:13px;color:#52695e}
+.magnetic-draft-projects a{color:#286553;font-weight:600;flex-shrink:0}
+@media(max-width:680px){.magnetic-draft-projects li{align-items:flex-start;flex-direction:column}}
