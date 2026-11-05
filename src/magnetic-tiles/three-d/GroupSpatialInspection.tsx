@@ -10,10 +10,10 @@ export function spatialNumber(value:number){
  return String(Number(value.toFixed(4)))
 }
 
-export function GroupSpatialInspection({assembly,groupId,preview=false}:{assembly:Assembly3D;groupId:string;preview?:boolean}){
+export function GroupSpatialInspection({assembly,groupId,preview=false,defaultOpen=true}:{assembly:Assembly3D;groupId:string;preview?:boolean;defaultOpen?:boolean}){
  const box=useMemo(()=>moduleBounds(assembly,groupId),[assembly,groupId])
  const center=box.getCenter(new Vector3()),size=box.getSize(new Vector3())
- return <details open className="group-spatial-inspection">
+ return <details open={defaultOpen} className="group-spatial-inspection">
   <summary>Spatial Inspection · 世界坐标</summary>
   <small>+Y 竖直向上 · 单位同 Move · Center 为实体包围盒中心{preview?' · 预览位置，尚未应用':''}</small>
   <table aria-label="Group World Bounds" data-group-id={groupId} data-preview={preview}>

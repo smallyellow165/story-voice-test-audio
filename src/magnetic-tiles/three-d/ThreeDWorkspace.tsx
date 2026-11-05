@@ -3,7 +3,7 @@ import {studioStorage} from '../workspace-context.ts'
 import {touchDraftProject} from '../draft-projects.ts'
 import {normalizeModuleSnapSelection,validSnapPort} from './module-snap-selection.ts'
 import type {ModuleSnapSelection,SnapPicker,SnapViewport} from './module-snap-selection.ts'
-import {GroupSpatialInspection} from './GroupSpatialInspection.tsx'
+import {TileSelectionDetails,GroupSelectionDetails} from './AssemblySelectionDetails.tsx'
 import {ModuleTransformPanel,CreateCombinedPanel} from './ModuleTransformPanel.tsx'
 import type {AssemblyOperation,ModuleTool} from './ModuleTransformPanel.tsx'
 import {modulePivot,pivotDelta,transformModule,confirmModulePreview,previewModuleTransform} from './module-transform.ts'
@@ -25,7 +25,7 @@ import { StudioSlot, useStudio } from '../StudioLayout.tsx'
 import {assertCanonicalProfiles} from './canonical-geometry.ts'
 import { parseAssembly3D, serializeAssembly3D } from './assembly.ts'
 import { validateAssembly3D,inspectAssemblyCollisions } from './engine-adapter.ts'
-import { componentCount, createViewerModel, rotationDegrees } from './viewer-model.ts'
+import { componentCount, createViewerModel } from './viewer-model.ts'
 import { MagnetScene3D, ViewerErrorBoundary } from './vendor/components/MagnetScene3D.tsx'
 import { useProfileRegistry } from '../ProfileRegistry.tsx'
 import { canonical } from '../build-plan.ts'
@@ -540,42 +540,36 @@ export default function ThreeDWorkspace() {
           <p>连接使用当前 Assembly 中的索引 # 作为身份；两端表格按钮指向同一条连接。标签被其他零件遮挡时隐藏，选中标签仍保留并使用虚线；标签不拦截鼠标。</p>
           <p>几何校验不代表真实磁力或物理稳定性保证。Invalid Draft 可继续编辑、保存和展示；教程仍显示真实几何诊断。</p>
         </InfoHint></header>
-        {editing&&<section className="assembly-edit-toolbar" aria-label="Assembly 编辑工具">
-          <div className="button-row" role="group" aria-label="Selection 模式">{current.modules?(['group','tile'] as const).map(mode=><button key={mode} disabled={operationBusy} aria-pressed={selectionMode===mode} onClick={()=>setSelectionMode(mode)}>{mode==='group'?'Group':'Tile'}</button>):<b>Tile</b>}</div>
-          {moduleToolOpen?<label>当前 Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>:<p>{chosen?`Tile · ${chosen.id}`:'点击 Viewer 或表格选择 Tile'}</p>}
-          {moduleToolOpen&&selectedGroup&&<p data-testid="selected-assembly-group" data-group-id={selectedGroup.id}>{selectedGroup.name} · {selectedGroup.pieces.length} Tiles · Combined 内独立 Group</p>}
-
-          {moduleToolOpen&&!selectOnly&&!symmetryOpen&&<ModuleTransformPanel key={current.id} orientationTarget={snapOrientationTargets[moduleTool.moving]} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} snapSelection={effectiveSnap} setSnapSelection={s=>{setSnapSelection(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/>}
-        </section>}
-        {!editing&&moduleToolOpen&&selectedGroup&&<GroupSpatialInspection assembly={current} groupId={selectedGroup.id}/>}
-        {editing&&!moduleToolOpen&&!selectOnly&&operation==='snap'&&!symmetryOpen&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}
-        <EditorInspector editing={editing&&!moduleToolOpen&&!symmetryOpen} operation={selectOnly?'select':operation} selectionInfo={<>
-        {moduleToolOpen&&selectedGroup?<p>{selectedGroup.name} · {selectedGroup.pieces.length} Tiles；操作作用于整个 Group。</p>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
+        <EditorInspector editing={editing&&!moduleToolOpen&&!symmetryOpen} operation={selectOnly?'select':operation}
+          currentToolLabel={!editing?'View':symmetryOpen?'Symmetry Fill':selectOnly?'Select':`${moduleToolOpen?'Group · ':''}${({move:'Move',rotate:'Rotate',orient:'Orient',snap:'Snap'})[operation]}`}
+          currentToolPanel={<>
+            {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
+            {editing&&moduleToolOpen&&!selectOnly&&!symmetryOpen&&<div hidden={!selectedGroup}><ModuleTransformPanel showSpatialInspection={false} key={current.id} orientationTarget={snapOrientationTargets[moduleTool.moving]} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} snapSelection={effectiveSnap} setSnapSelection={s=>{setSnapSelection(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/></div>}
+            {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}
+          </>}
+          toolControls={editing&&!moduleToolOpen&&!selectOnly&&operation==='snap'&&!symmetryOpen&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}
+          selectionTitle={moduleToolOpen&&selectedGroup?<span data-testid="selected-assembly-group" data-group-id={selectedGroup.id}>{selectedGroup.name}</span>:chosen?.id??(selectedConnection&&selection.kind==='connection'?`Connection #${selection.index}`:'')}
+          selectionControls={editing&&current.modules&&<div className="assembly-selection-controls">
+            <div className="button-row" role="group" aria-label="Selection 模式">{(['group','tile'] as const).map(mode=><button key={mode} disabled={operationBusy} aria-pressed={selectionMode===mode} onClick={()=>setSelectionMode(mode)}>{mode==='group'?'Group':'Tile'}</button>)}</div>
+            {moduleToolOpen&&<label>Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>}
+          </div>}
+          selectionInfo={<>
+        {moduleToolOpen&&selectedGroup?<GroupSelectionDetails assembly={moduleLive??modulePreview?.assembly??current} groupId={selectedGroup.id} format={format} preview={!!moduleLive||!!modulePreview}/>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
           <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className="magnetic-3d-blocker">Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
           <p>{collisionLocality(selectedCollision.evidence.locality)} · Revision {assembly.revision} · 当前完整快照</p>
           <p className="hint">{selectedCollision.reason}</p>
           <dl><dt>交集中心</dt><dd>{selectedCollision.center?.map(format).join(', ')??'不可用'}</dd><dt>交集体积</dt><dd>{selectedCollision.kind==='volume'?selectedCollision.volume.toExponential(6):'未可靠构造'}</dd></dl>
           <details><summary>当前碰撞完整证据 / Raw</summary><pre>{JSON.stringify(selectedCollision.evidence,null,2)}</pre></details>
-        </div>:chosen ? <div className="magnetic-3d-piece-info" data-selected-3d-piece={chosen.id}>
-          <h4>{chosen.id}</h4><dl><dt>Profile</dt><dd>{chosen.shape.id} · {chosen.profile.profile.name}</dd>
-            <dt>颜色</dt><dd><span className="magnetic-3d-swatch" style={{ background: chosen.color }}/>{chosen.color}{!chosen.piece.color && '（默认）'}</dd>
-            <dt>厚度</dt><dd>{format(chosen.shape.thickness)}（世界单位）</dd></dl>
-          <details><summary>保存的 Pose / Profile 规格</summary><dl>
-            <dt>位置 XYZ</dt><dd data-3d-position={JSON.stringify(chosen.piece.pose.position)}>{chosen.piece.pose.position.map(format).join(', ')}</dd>
-            <dt>旋转 XYZ（度）</dt><dd>{rotationDegrees(chosen.piece.pose.quaternion).map(format).join(', ')}</dd>
-            <dt>四元数 XYZW</dt><dd data-3d-quaternion={JSON.stringify(chosen.piece.pose.quaternion)}>{chosen.piece.pose.quaternion.map(format).join(', ')}</dd>
-            <dt>边长</dt><dd>{chosen.shape.edges.map(e => format(e.length)).join(' / ')}</dd>
-            <dt>Profile 缩放</dt><dd>{chosen.profile.scale ?? 1}</dd></dl></details>
-        </div> : selectedConnection ? <div data-selected-3d-connection={selection.kind==='connection'?selection.index:''}><h4>Connection #{selection.kind==='connection'?selection.index:''}</h4><dl>
+        </div>:chosen ? <TileSelectionDetails piece={chosen} assembly={assembly} format={format} busy={operationBusy} onConnection={index=>setSelection({kind:'connection',index})} onColor={editing&&!moduleToolOpen&&!symmetryOpen?color=>apply(h=>actions.setPieceColorAction(h,chosen.id,color)):undefined}/> : selectedConnection ? <div data-selected-3d-connection={selection.kind==='connection'?selection.index:''}><dl>
           <dt>A / Port</dt><dd>{selectedConnection.pieceA} · {selectedConnection.portA}</dd><dt>B / Port</dt><dd>{selectedConnection.pieceB} · {selectedConnection.portB}</dd>
           <dt>Dihedral / Flip</dt><dd>{selectedConnection.dihedralDeg}° · {String(selectedConnection.flip??false)}</dd>
         </dl></div> : <p className="hint">点击画布或表格选择 Tile / Connection。</p>}
-        {!moduleToolOpen&&chosen&&<div className="magnetic-3d-related-connections">{assembly.connections.map((c,i)=>c.pieceA===chosen.id||c.pieceB===chosen.id?<button key={i} disabled={operationBusy} onClick={()=>setSelection({kind:'connection',index:i})}>连接 #{i} · {c.pieceA} ↔ {c.pieceB}</button>:null)}</div>}
+
         </>} globalTools={<div className="button-row"><button hidden={!!scope} disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button><button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button></div>}
           assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
           setOwnPort={setOwnPort} apply={apply} select={setSelection} busy={operationBusy} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>
 
-        {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
+
         <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
           <p role="status"><b className={!validation.valid?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
           {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
@@ -600,7 +594,7 @@ export default function ThreeDWorkspace() {
             {!!collisionDetails.length&&<details><summary>碰撞空间证据 / Raw</summary><pre>{JSON.stringify(collisionDetails,null,2)}</pre></details>}
           </details>
         </section>
-        {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}
+
         <div className="magnetic-3d-draft-tools">
           {editing && <><button disabled={operationBusy || !history.past.length} onClick={() => { apply(actions.undo); setSelection({ kind: 'none' }) }}>3D Undo</button>
             <button disabled={operationBusy || !history.future.length} onClick={() => { apply(actions.redo); setSelection({ kind: 'none' }) }}>3D Redo</button></>}

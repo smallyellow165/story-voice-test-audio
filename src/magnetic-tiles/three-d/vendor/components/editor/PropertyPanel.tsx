@@ -10,8 +10,11 @@ const colorLabels: Record<string,string> = Object.fromEntries(ALL_COLORS.map(c=>
 const colorSwatch = (c: string) => c
 let fieldIdCounter = 0
 const nextFieldId = () => `magnetic-pf-${++fieldIdCounter}`
+export function PieceColorPalette({color,onChange}:{color:string;onChange:(color:string)=>void}){
+ return <div className="piece-color-palette" role="group" aria-label="颜色预设">{ALL_COLORS.map(c=><button key={c} onClick={()=>onChange(c)} aria-pressed={color===c} aria-label={colorLabels[c]} style={{background:colorSwatch(c)}} title={colorLabels[c]}/>)}</div>
+}
 interface Props {
-  operation?:AssemblyOperation|'select';showPieceActions?:boolean; project: EditorProject; selection: Selection
+  operation?:AssemblyOperation|'select';showPieceActions?:boolean;showPieceColor?:boolean; project: EditorProject; selection: Selection
   onSetPieceColor: (id: string, color: string) => void
   onDuplicatePiece: () => void; onDeleteSelected: () => void
   onUpdateConnection: (index: number, patch: {dihedralDeg?:number;flip?:boolean}) => void
@@ -113,22 +116,7 @@ function PieceProps(props: Props) {
 
   return (
     <div className="p-3 space-y-3">
-      <div>
-        <span id="piece-color-label" className="text-xs text-gray-500">颜色</span>
-        <div className="grid grid-cols-6 gap-1 mt-1" role="group" aria-labelledby="piece-color-label">
-          {ALL_COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => onSetPieceColor(piece.id, c)}
-              aria-pressed={part.color === c}
-              aria-label={colorLabels[c]}
-              className={`w-7 h-7 rounded border-2 ${part.color === c ? 'border-blue-500' : 'border-gray-200'}`}
-              style={{ background: colorSwatch(c) }}
-              title={colorLabels[c]}
-            />
-          ))}
-        </div>
-      </div>
+      {props.showPieceColor!==false&&<PieceColorPalette color={part.color} onChange={c=>onSetPieceColor(piece.id,c)}/>}
       {/* 位置 */}
       {(!props.operation||props.operation==='move')&&<fieldset>
         <legend className="text-xs text-gray-500 mb-1">位置 (X / Y / Z)</legend>
