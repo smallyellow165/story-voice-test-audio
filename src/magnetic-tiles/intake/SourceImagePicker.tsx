@@ -42,6 +42,7 @@ export function SourceImagePicker({sourceType,onSourceTypeChange,currentSource,o
  const [folder,setFolder]=useState(''),[folders,setFolders]=useState<string[]>([])
  const [libraryRevision,setLibraryRevision]=useState(0)
  const entries=sourceImages(currentSource),blocked=disabled||loading,activeSourceType=sourceType||'server'
+ const finalCount=entries.filter(e=>e.role==='Final').length
  const contents=libraryContents(library,folders,folder,query),crumbs=folder?folder.split('/').map((name,i,parts)=>({name,path:parts.slice(0,i+1).join('/')})):[]
  async function action(work:()=>Promise<void>){if(lock.current)return;lock.current=true;setLoading(true);onPendingChange(true);setError('');try{await work()}catch(e){setError(String(e))}finally{lock.current=false;setLoading(false);onPendingChange(false)}}
  async function refreshLibrary(){clearLibraryImageCache();const r=await intakeApi<{images:LibraryImage[];folders?:string[]}>('library');setLibrary(r.images);setFolders(r.folders??[]);setFolder(current=>(r.folders??[]).includes(current)?current:'');setLibraryRevision(n=>n+1)}
@@ -69,6 +70,7 @@ export function SourceImagePicker({sourceType,onSourceTypeChange,currentSource,o
 
   <div className="source-set-heading"><b>本次 Analysis · {entries.length}/4</b><small>最多 4 张 · 可跨文件夹</small></div>
   {!!entries.length&&<p className="source-set-hint">首张 Final 为主图，否则使用第一张；元数据可留空。</p>}
+  {finalCount>1&&<p className="source-set-hint source-role-warning" role="status"><span aria-hidden="true">⚠</span> {finalCount} Final images — 请确认图片角色</p>}
   {!!entries.length&&<div className="source-set-table-scroll" role="region" aria-label="本次 Analysis 图片列表" tabIndex={0}>
    <table className="source-set-table" aria-label="本次 Analysis 图片">
     <colgroup><col className="source-image-column"/><col className="source-role-column"/><col className="source-direction-column"/><col className="source-note-column"/><col className="source-actions-column"/></colgroup>

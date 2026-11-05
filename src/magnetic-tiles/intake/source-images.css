@@ -2,6 +2,7 @@
 .source-frame-strip{flex-shrink:0}.source-frame-strip small{display:block}
 
 .source-set-hint{font-size:11px;color:#5e7068;margin:.3rem 0}
+.source-role-warning{color:#a47700}
 .source-set-table-scroll{max-width:100%;overflow-x:auto;margin:.35rem 0 .6rem}
 .source-set-table{width:100%;min-width:400px;table-layout:fixed;border-collapse:collapse;font-size:11px}
 .source-set-table .source-image-column{width:auto}
