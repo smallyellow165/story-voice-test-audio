@@ -281,3 +281,9 @@
 .module-snap-parameters .snap-side-heading{flex-wrap:wrap}
 .module-snap-parameters .snap-object-kind{flex:0 0 66px;width:66px}
 .module-snap-parameters .snap-object-group{flex:1;width:0;min-width:80px}
+
+.magnetic-move-controls fieldset{border:0;padding:0;margin:0;min-width:0}
+.magnetic-move-controls .move-grid-toggle{display:flex;align-items:center;gap:5px}
+.magnetic-move-controls .move-grid-toggle input{width:auto;margin:0}
+.magnetic-move-controls output{display:block;font-size:11px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;margin-top:4px}
+.magnetic-move-controls .hint{margin:4px 0 7px}

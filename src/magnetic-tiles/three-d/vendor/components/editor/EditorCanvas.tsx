@@ -1,3 +1,5 @@
+import {moveGizmoOptions,moveGridSize,cancelMoveCameraGesture} from '../../../move-controls.ts'
+import type {MoveControlsSettings} from '../../../move-controls.ts'
 import {SnapViewportPicker} from '../../../SnapViewportPicker.tsx'
 import type {SnapViewport} from '../../../module-snap-selection.ts'
 import {WorldOrientationGizmo,WorldOrientationCaption} from '../../../WorldOrientationGizmo.tsx'
@@ -39,6 +41,7 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
+  moveSettings?:MoveControlsSettings;
   snapViewport?:SnapViewport;
   moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;groupSelectedIds?:string[];
   /** Display only: does not replace focus, Gizmo selection or camera targets. */
@@ -88,7 +91,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,snapTooltip,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,snapTooltip,
 }: {
   snapTooltip:React.RefObject<HTMLOutputElement|null>;
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
@@ -155,7 +158,8 @@ function SceneContent({
   const lockedRef=useRef(interactionLocked);lockedRef.current=interactionLocked||!activeVisible||moduleMode;
   const controlsRef = useRef<any>(null);
   const transformControlsRef = useRef<any>(null);
-  const { camera, size } = useThree();
+  const { camera, size, gl } = useThree();
+  const dragPointerId=useRef<number|undefined>(undefined);
   const [hoveredPiece, setHoveredPiece] = useState<string | null>(null);
   const [snapPreview, setSnapPreview] = useState<{ position: [number, number, number]; quaternion: [number, number, number, number] } | null>(null);
   const dragStateRef = useRef<{ pieceId: string; startPos: THREE.Vector3; startQuat: THREE.Quaternion; committed: boolean } | null>(null);
@@ -543,20 +547,26 @@ function SceneContent({
     setSnapPreview(null);
   }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
 
+  // Keep cancellation registered through live parent renders, including the parent's Esc rollback.
+  const cancelOptions=useRef({onMovePieceCancel,toolMode});cancelOptions.current={onMovePieceCancel,toolMode};
   // Cancellation is rollback, never an implicit mouse-up/connection commit.
   useEffect(() => {
-    const cancel=()=>{
+    const rememberPointer=(e:PointerEvent)=>{dragPointerId.current=e.pointerId};
+    gl.domElement.addEventListener('pointerdown',rememberPointer,true);
+    const cancel=(event?:Event)=>{
       const drag=dragStateRef.current;
       if(!drag&&!keyboardDragStateRef.current)return;
-      if(drag&&transformControlsRef.current?.object){transformControlsRef.current.object.position.copy(drag.startPos);transformControlsRef.current.object.quaternion.copy(drag.startQuat)}
       if(drag)drag.committed=true;dragStateRef.current=null;keyboardDragStateRef.current=null;
+      if(drag&&cancelOptions.current.toolMode==='move'&&transformControlsRef.current){transformControlsRef.current.dragging=false;transformControlsRef.current.axis=null}
+      if(drag&&transformControlsRef.current?.object){transformControlsRef.current.object.position.copy(drag.startPos);transformControlsRef.current.object.quaternion.copy(drag.startQuat)}
       if(keyboardCommitTimerRef.current)clearTimeout(keyboardCommitTimerRef.current);keyboardCommitTimerRef.current=null;
-      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;onMovePieceCancel?.();
+      if(drag&&cancelOptions.current.toolMode==='move'&&event?.type!=='pointercancel')cancelMoveCameraGesture(controlsRef.current,dragPointerId.current);
+      setSnapPreview(null);if(controlsRef.current)controlsRef.current.enabled=true;cancelOptions.current.onMovePieceCancel?.();
     };
-    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel()};
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')cancel(e)};
     window.addEventListener('pointercancel',cancel);window.addEventListener('lostpointercapture',cancel);window.addEventListener('keydown',key);
-    return()=>{window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
-  },[onMovePieceCancel]);
+    return()=>{gl.domElement.removeEventListener('pointerdown',rememberPointer,true);window.removeEventListener('pointercancel',cancel);window.removeEventListener('lostpointercapture',cancel);window.removeEventListener('keydown',key)};
+  },[gl.domElement]);
 
   // TransformControls 事件
   useEffect(() => {
@@ -602,7 +612,7 @@ function SceneContent({
   return (
     <>
       <SceneLighting shadowScale={20} shadowOpacity={0}>
-        <gridHelper args={[20, 20, '#cbd5e1', '#e2e8f0']} position={[0, -0.01, 0]} />
+        <gridHelper args={[...(moveSettings?.grid?moveGridSize(moveSettings.spacing):[20,20] as [number,number]), '#cbd5e1', '#e2e8f0']} position={[0, -0.01, 0]} />
 
         {/* P0-二.2: TransformControls 附着的 dummyObj 必须真实存在于 scene graph,
             否则会抛出 "The attached 3D object must be a part of the scene graph"。
@@ -729,6 +739,8 @@ function SceneContent({
       {activeVisible && !moduleMode && !interactionLocked && selectedPieceId && toolMode !== 'select' && (
         <TransformControls
           ref={transformControlsRef}
+          {...(toolMode==='move'&&moveSettings?moveGizmoOptions(moveSettings):{translationSnap:null,showX:true,showY:true,showZ:true})}
+          space={toolMode==='move'&&moveSettings?.space==='local'?'local':'world'}
           object={dummyObj}
           mode={toolMode === 'rotate' ? 'rotate' : 'translate'}
           size={0.8}
@@ -753,7 +765,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,
 }: Props) {
   const snapTooltip=useRef<HTMLOutputElement>(null);
   const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
@@ -773,7 +785,7 @@ export function EditorCanvas({
   const fitSelection = () => fitSelectionRef.current?.();
 
   return (
-    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" tabIndex={0} role="region" aria-label="3D 编辑画布">
+    <div className="magnetic-3d-editor-canvas" data-testid="magnetic-3d-editor-canvas" data-tool-mode={toolMode} data-selected-tile={selection.kind==='piece'?selection.id:undefined} tabIndex={0} role="region" aria-label="3D 编辑画布">
       <Canvas
         orthographic
         camera={{ position: [5, 5, 5], zoom: 50, near: 0.001, far: 100 }}
@@ -784,7 +796,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          project={project} snapViewport={snapViewport} snapTooltip={snapTooltip} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} selectionHighlightIds={selectionHighlightIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          moveSettings={moveSettings} project={project} snapViewport={snapViewport} snapTooltip={snapTooltip} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} selectionHighlightIds={selectionHighlightIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}

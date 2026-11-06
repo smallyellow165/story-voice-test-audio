@@ -29,8 +29,8 @@ export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showS
    {showSpatialInspection&&selectedGroupId&&<GroupSpatialInspection key={selectedGroupId} assembly={inspectionAssembly} groupId={selectedGroupId} preview={inspectionAssembly!==assembly}/>}
    <fieldset disabled={busy||!!preview||!moving} className="module-operation-fields">
    {(operation==='move'||operation==='rotate')&&<><div className="module-fields">
-   <label>坐标<select aria-label="模块坐标系" value={tool.space} onChange={e=>setTool({...tool,space:e.target.value as ModuleSpace})}><option value="global">Global</option><option value="local">Local</option><option value="face">Face</option></select></label>
-   <label>轴<select aria-label="模块轴" value={axis} onChange={e=>setAxis(e.target.value as typeof axis)}>{['x','y','z'].map(a=><option key={a}>{a}</option>)}</select></label>
+   {operation==='rotate'&&<label>坐标<select aria-label="模块坐标系" value={tool.space} onChange={e=>setTool({...tool,space:e.target.value as ModuleSpace})}><option value="global">Global</option><option value="local">Local</option><option value="face">Face</option></select></label>}
+   <label>{operation==='move'?'数值轴':'轴'}<select aria-label="模块轴" value={axis} onChange={e=>setAxis(e.target.value as typeof axis)}>{['x','y','z'].map(a=><option key={a}>{a}</option>)}</select></label>
    {operation==='move'?<><label>位移<input aria-label="模块位移" type="number" value={distance} onChange={e=>setDistance(e.target.value)}/></label><button disabled={!distance.trim()} onClick={()=>step('translate',Number(distance))}>移动 Group</button></>:<><label>角度 °<input aria-label="模块旋转角度" type="number" value={angle} onChange={e=>setAngle(e.target.value)}/></label><button disabled={!angle.trim()} onClick={()=>step('rotate',Number(angle))}>旋转 Group</button></>}
    </div>{operation==='rotate'&&<div className="button-row">{[-90,-15,15,90].map(deg=><button key={deg} onClick={()=>step('rotate',deg)}>{deg>0?'+':''}{deg}°</button>)}</div>}
    <small>数值为增量；中心为 Group 几何中心。Global 世界轴；Local Group 轴；Face 参考片轴。</small></>}
