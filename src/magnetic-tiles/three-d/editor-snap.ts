@@ -10,7 +10,9 @@ import {editorProject} from './editor-project.ts';
 import {validateAssembly3D} from './engine-adapter.ts';
 import {parentModule} from './combined-editing.ts';
 
-export type EdgeSnapPreview={sourceRaw:string;connection:Connection;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>};
+/** Session-only Snap policy; never changes Assembly or Validator data. */
+export type EdgeSnapMode='strict'|'less-strict';
+export type EdgeSnapPreview={mode:EdgeSnapMode;sourceRaw:string;connection:Connection;assembly:Assembly3D;geometry:ReturnType<typeof validateAssembly3D>};
 /** Shared exact Port compatibility/alignment, also used by connection-aware repair.
  * This computes a target only; it never edits a linked piece or grants validity. */
 export function edgeSnapTransform(assembly:Assembly3D,c:Connection){
@@ -26,7 +28,8 @@ export function edgeSnapTransform(assembly:Assembly3D,c:Connection){
  return tf;
 }
 /** Use upstream port math; change only B, never solve/reposition its neighbours. */
-export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeSnapPreview{
+export function previewEdgeSnap(assembly:Assembly3D,connection:Connection,mode:EdgeSnapMode='strict'):EdgeSnapPreview{
+ if(mode!=='strict'&&mode!=='less-strict')throw Error('无效的 Snap 验证模式');
  if(parentModule(assembly,connection.pieceB))throw Error('固定 Parent 成员不能单片吸附移动；请选择自由 Tile 为源 B，或使用 Group Snap');
  const sourceRaw=serializeAssembly3D(assembly),c=structuredClone(connection),b=assembly.pieces.find(p=>p.id===c.pieceB)!;
  const tf=edgeSnapTransform(assembly,c);
@@ -38,6 +41,7 @@ export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeS
  const pair=(i:typeof geometry.issues[number])=>i.relatedPieceIds?.slice().sort().join('|');
  const added=geometry.issues.filter(i=>i.severity==='error').filter(i=>{
   if(i.code==='intersection'){
+   if(mode==='less-strict')return false;
    // SAT minimum-axis depth alone cannot measure worsening overlap (e.g. two
    // parallel plates always have the same thickness depth). A moved source
    // must be collision-free under the existing strict Validator.
@@ -45,15 +49,19 @@ export function previewEdgeSnap(assembly:Assembly3D,connection:Connection):EdgeS
    const prior=before.issues.find(p=>p.severity==='error'&&p.code==='intersection'&&pair(p)===pair(i));
    return !prior||(i.penetrationDepth??Infinity)>(prior.penetrationDepth??0)+1e-7;
   }
+  // Less Strict relaxes collisions only, including when the starting Draft
+  // already has a non-collision error. It never authorizes invalid constraints.
+  if(mode==='less-strict')return true;
   return !before.issues.some(p=>p.severity==='error'&&key(p)===key(i));
  });
- if(added.length)throw Error('吸附被严格验证拒绝，原 Draft 保留：'+added.map(i=>i.message).join('；'));
- return {sourceRaw,connection:c,assembly:next,geometry};
+ if(added.length)throw Error((mode==='strict'?'吸附被严格验证拒绝':'吸附约束验证失败')+'，原 Draft 保留：'+added.map(i=>i.message).join('；'));
+ return {mode,sourceRaw,connection:c,assembly:next,geometry};
 }
-export function confirmEdgeSnap(history:EditorHistory,preview:EdgeSnapPreview):EditorHistory{
+export function confirmEdgeSnap(history:EditorHistory,preview:EdgeSnapPreview,mode:EdgeSnapMode='strict'):EditorHistory{
+ if(preview.mode!==mode)throw Error('Snap 模式已变化，请重新预览；原 Draft 保留');
  if(serializeAssembly3D(history.current)!==preview.sourceRaw)throw Error('吸附预览已过期，请重新预览；原 Draft 保留');
  // Do not trust the preview object or a prior validation result at commit time.
- const checked=previewEdgeSnap(history.current,preview.connection);
+ const checked=previewEdgeSnap(history.current,preview.connection,mode);
  return commit(history,()=>checked.assembly);
 }
 export function disconnectPieceForSnap(history:EditorHistory,id:string):EditorHistory{

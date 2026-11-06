@@ -58,7 +58,8 @@ import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 import {PHOTO_ORIGIN_3D_KEY,adoptReconstructionDraft,loadPhotoOrigin} from './reconstruction/adopt-draft.ts'
 import {previewEdgeSnap,confirmEdgeSnap} from './editor-snap.ts'
-import type {EdgeSnapPreview} from './editor-snap.ts'
+import type {EdgeSnapPreview,EdgeSnapMode} from './editor-snap.ts'
+import {TileSnapPreview} from './TileSnapPreview.tsx'
 import type {Connection} from './vendor/engine/types.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
@@ -109,6 +110,7 @@ export default function ThreeDWorkspace() {
   const [editing, setEditing] = useState(true), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
   const [repairSearching,setRepairSearching]=useState(false),[repairPreview,setRepairPreview]=useState<RepairPreview|null>(null),[repairTargets,setRepairTargets]=useState<string[]>([])
+  const [snapValidationMode,setSnapValidationMode]=useState<EdgeSnapMode>('strict')
   const [pendingSnap,setPendingSnap]=useState<EdgeSnapPreview|null>(null)
   const [symmetryOpen,setSymmetryOpen]=useState(false),[symmetrySources,setSymmetrySources]=useState<string[]>([]),[symmetryPreview,setSymmetryPreview]=useState<SymmetryFillPreview|null>(null)
   const symmetryPieces=useMemo(()=>symmetryPreview?createViewerModel(symmetryPreview.assembly).filter(p=>symmetryPreview.addedIds.includes(p.id)):undefined,[symmetryPreview])
@@ -205,6 +207,8 @@ export default function ThreeDWorkspace() {
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const selectedConnection=selection.kind==='connection'?assembly.connections[selection.index]:undefined
   const geometryErrors=validation.issues.filter(i=>i.severity==='error')
+  const collisionWarnings=snapValidationMode==='less-strict'&&!moduleToolOpen&&!symmetryOpen
+  const geometryBlockingErrors=geometryErrors.filter(i=>!collisionWarnings||i.code!=='intersection')
   const collisionIssues=useMemo(()=>validation.issues.filter(i=>i.severity==='error'&&i.code==='intersection'),[validation])
   const selectedCollision=useMemo(()=>{
     if(!active||operationBusy||selection.kind!=='collision'||selection.sourceKey!==snapshotKey)return undefined
@@ -239,6 +243,8 @@ export default function ThreeDWorkspace() {
   const effectiveTileSnap={fixedTile:tileFixedId,fixedPort:validSnapPort(items,tileFixedId,tileSnap.fixedPort)||firstPort(tileFixedId)}
   const effectiveTilePort=validSnapPort(items,tileMovingId,ownPort)||firstPort(tileMovingId)
   useEffect(()=>{setTileSnap({fixedTile:'',fixedPort:''})},[current.id])
+  useEffect(()=>setSnapValidationMode('strict'),[current.id])
+  useEffect(()=>{setPendingSnap(null)},[current.id,current.revision,tileMovingId,tileFixedId,effectiveTileSnap.fixedPort,ownPort,snapSettings.dihedralDeg,snapSettings.flip,snapValidationMode,snapMode,selectionMode,operation,selectOnly])
   useEffect(()=>{setTileSnap(s=>{const fixedTile=tileFixedMembers.includes(s.fixedTile)?s.fixedTile:tileFixedMembers[0]??'',fixedPort=validSnapPort(items,fixedTile,s.fixedPort);return s.fixedTile===fixedTile&&s.fixedPort===fixedPort?s:{fixedTile,fixedPort}});setOwnPort(p=>validSnapPort(items,tileMovingId,p)||firstPort(tileMovingId))},[items,tileMovingId,tileFixedId])
   useEffect(()=>setSnapPicker(null),[operation,selectionMode,current.id,current.revision,moduleTool.fixed,moduleTool.moving,selectedGroup?.id,tileMovingId,tileFixedId,tileSnap.fixedPort,ownPort,editing,active,activeVisible,selectOnly,symmetryOpen,operationBusy])
   function toggleSnapPicker(kind:SnapPicker){setSnapPicker(p=>p===kind?null:kind);if(snapPicker!==kind)showWorkspace()}
@@ -322,13 +328,14 @@ export default function ThreeDWorkspace() {
     }
     window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut)
   }, [active, editing, operationBusy])
+  function clearSnapPreview(){setPendingSnap(null);setLive(null);setError('')}
   function prepareSnap(connection:Connection){
     setLive(null);setPendingSnap(null);
-    try{setPendingSnap(previewEdgeSnap(historyRef.current.current,connection));setError('')}catch(e){setError(String(e))}
+    try{setPendingSnap(previewEdgeSnap(historyRef.current.current,connection,snapValidationMode));setError('')}catch(e){setError(String(e))}
   }
   function confirmSnap(){
     if(!pendingSnap)return;
-    try{accept(confirmEdgeSnap(historyRef.current,pendingSnap));setError('');setSaveNotice('吸附已确认：仅更新源零件 Pose 和真实连接；仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
+    try{accept(confirmEdgeSnap(historyRef.current,pendingSnap,snapValidationMode));setError('');setSaveNotice(snapValidationMode==='less-strict'?'Less Strict 吸附已确认；实际碰撞仍保留在 Geometry Diagnostics，请保存 Draft。':'吸附已确认：仅更新源零件 Pose 和真实连接；仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
   }
   function confirmFill(){
     if(!symmetryPreview||!editing)return
@@ -452,7 +459,7 @@ export default function ThreeDWorkspace() {
       assertCanonicalProfiles(target.profiles,profiles)
       const report=validateAssembly3D(target)
       setSaveNotice(`Revalidate Geometry：revision ${target.revision} · ${report.valid?'Geometry Valid':'Geometry Invalid；可继续编辑、保存和展示'}`)
-      setError(report.valid?'':'几何诊断：'+report.issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'))
+      setError(report.valid||collisionWarnings&&!report.issues.some(i=>i.severity==='error'&&i.code!=='intersection')?'':'几何诊断：'+report.issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'))
     }catch(e){setError(String(e))}
   }
   function reloadSaved() {
@@ -510,7 +517,7 @@ export default function ThreeDWorkspace() {
             <button disabled={operationBusy} onClick={()=>{fileRequest.current++;load(photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.assemblyRaw:loaded.source,loaded.name)}}>重新加载来源</button>
             <button hidden={scope?.mode==='edit'} disabled={operationBusy||savedAssemblies.length<2} aria-expanded={createCombinedOpen} onClick={()=>setCreateCombinedOpen(v=>!v)}>新建 Combined Assembly</button>
           </div>
-          <div className="assembly-status-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={!validation.valid?'magnetic-3d-blocker':undefined}>{validation.valid?'Geometry Valid':'Geometry Invalid'}</span><span> · {dirty?'未保存':'Draft'}</span><span> · 碰撞 {collisionIssues.length}</span>{current.modules&&<span> · {current.modules.length} Groups</span>}{boot.recovery&&dirty&&<span data-testid="workspace-recovery-status"> · 已恢复未保存修改</span>}</p>
+          <div className="assembly-status-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={geometryBlockingErrors.length?'magnetic-3d-blocker':undefined}>{validation.valid?'Geometry Valid':'Geometry Invalid'}</span><span> · {dirty?'未保存':'Draft'}</span><span> · 碰撞 {collisionIssues.length}</span>{current.modules&&<span> · {current.modules.length} Groups</span>}{boot.recovery&&dirty&&<span data-testid="workspace-recovery-status"> · 已恢复未保存修改</span>}</p>
             <label className="assembly-tile-ids"><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>
           </div>
           <AssemblyEditorToolbar selectionControls={editing&&current.modules&&<div className="assembly-selection-modes" role="group" aria-label="Selection 模式">{(['group','tile'] as const).map(mode=><button key={mode} disabled={operationBusy} aria-pressed={selectionMode===mode} onClick={()=>setSelectionMode(mode)}>{mode==='group'?'Group':'Tile'}</button>)}</div>} operation={operation} selectOnly={selectOnly} symmetryOpen={symmetryOpen} disabledReason={toolbarDisabled} transformReason={transformDisabled} copyReason={copyDisabled} deleteReason={deleteDisabled} symmetryReason={symmetryDisabled}
@@ -568,9 +575,12 @@ export default function ThreeDWorkspace() {
           currentToolPanel={<>
             {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
             {editing&&moduleToolOpen&&!selectOnly&&!symmetryOpen&&<div hidden={!selectedGroup}><ModuleTransformPanel showSpatialInspection={false} key={current.id} orientationTarget={snapOrientationTargets[moduleTool.moving]} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} snapSelection={effectiveSnap} setSnapSelection={s=>{setSnapSelection(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/></div>}
-            {pendingSnap&&<section className="magnetic-3d-snap-preview" aria-label="3D 吸附预览"><h4>吸附预览 · 尚未修改 Draft</h4><p>{pendingSnap.connection.pieceB}:{pendingSnap.connection.portB} → {pendingSnap.connection.pieceA}:{pendingSnap.connection.portA}<br/>{pendingSnap.connection.dihedralDeg}° · flip {String(pendingSnap.connection.flip??false)}</p><p>仅移动源零件 B；不修改其他零件或原连接。{pendingSnap.geometry.valid?'预览几何校验通过。':'现有 Invalid 问题仍保留，不能作为正式有效作品。'}</p><button onClick={confirmSnap}>确认吸附</button><button onClick={()=>{setPendingSnap(null);setLive(null)}}>取消吸附</button></section>}
+            {pendingSnap&&<TileSnapPreview preview={pendingSnap} onConfirm={confirmSnap} onCancel={clearSnapPreview}/>}
           </>}
-          toolControls={editing&&!moduleToolOpen&&!selectOnly&&operation==='snap'&&!symmetryOpen&&<label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy} onChange={e=>{const mode=e.target.value as 'drag'|'click';setPendingSnap(null);setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>}
+          toolControls={editing&&!moduleToolOpen&&!selectOnly&&operation==='snap'&&!symmetryOpen&&<div className="magnetic-3d-snap-controls">
+            <label>验证模式<select aria-label="Tile Snap 验证模式" value={snapValidationMode} disabled={operationBusy&&!pendingSnap} onChange={e=>{clearSnapPreview();setSnapValidationMode(e.target.value as EdgeSnapMode)}}><option value="strict">Strict</option><option value="less-strict">Less Strict</option></select></label>
+            <label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy&&!pendingSnap} onChange={e=>{const mode=e.target.value as 'drag'|'click';clearSnapPreview();setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>
+          </div>}
           selectionTitle={moduleToolOpen&&selectedGroup?<span data-testid="selected-assembly-group" data-group-id={selectedGroup.id}>{selectedGroup.name}</span>:chosen?.id??(selectedConnection&&selection.kind==='connection'?`Connection #${selection.index}`:'')}
           selectionControls={editing&&current.modules&&<div className="assembly-selection-controls">
             {moduleToolOpen&&<label>Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>}
@@ -578,7 +588,7 @@ export default function ThreeDWorkspace() {
           selectionInfo={<>
         {current.modules&&chosen&&!parentTile&&<small data-testid="combined-free-tile">自由 Tile · 当前 Combined 自有，不属于固定 Parent Group</small>}
         {moduleToolOpen&&selectedGroup?<GroupSelectionDetails assembly={moduleLive??modulePreview?.assembly??current} groupId={selectedGroup.id} format={format} preview={!!moduleLive||!!modulePreview}/>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
-          <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className="magnetic-3d-blocker">Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
+          <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className={collisionWarnings?undefined:"magnetic-3d-blocker"}>{collisionWarnings?'Warning · ':''}Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
           <p>{collisionLocality(selectedCollision.evidence.locality)} · Revision {assembly.revision} · 当前完整快照</p>
           <p className="hint">{selectedCollision.reason}</p>
           <dl><dt>交集中心</dt><dd>{selectedCollision.center?.map(format).join(', ')??'不可用'}</dd><dt>交集体积</dt><dd>{selectedCollision.kind==='volume'?selectedCollision.volume.toExponential(6):'未可靠构造'}</dd></dl>
@@ -590,13 +600,13 @@ export default function ThreeDWorkspace() {
 
         </>} globalTools={<div className="button-row"><button hidden={!!scope} disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button><button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button></div>}
           assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
-          tileSnap={effectiveTileSnap} setTileSnap={s=>{setTileSnap(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} setOwnPort={id=>{setOwnPort(id);setSnapPicker(null)}} apply={apply} select={setSelection} busy={operationBusy} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={setSnapSettings}/>
+          hasSnapPreview={!!pendingSnap} tileSnap={effectiveTileSnap} setTileSnap={s=>{clearSnapPreview();setTileSnap(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} setOwnPort={id=>{clearSnapPreview();setOwnPort(id);setSnapPicker(null)}} apply={apply} select={s=>{clearSnapPreview();setSelection(s)}} busy={operationBusy} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={s=>{clearSnapPreview();setSnapSettings(s)}}/>
 
 
         <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
-          <p role="status"><b className={!validation.valid?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
-          {!!geometryErrors.length&&<p className="magnetic-3d-blocker">{geometryErrors.length} 个错误 · {geometryErrors[0].message}</p>}
-          <section className="magnetic-3d-collision-review" aria-label="Collision Diagnostics"><div className="magnetic-3d-collision-heading"><h4>Collision Diagnostics · {collisionIssues.length}</h4></div>
+          <p role="status"><b className={geometryBlockingErrors.length?'magnetic-3d-blocker':undefined}>{!validation.valid?'Geometry Invalid':'Geometry Valid'}</b><br/>Revision {assembly.revision} · {assembly.pieces.length} 片 · {assembly.connections.length} 条连接</p>
+          {!!geometryErrors.length&&<p className={geometryBlockingErrors.length?'magnetic-3d-blocker':undefined}>{geometryBlockingErrors.length?`${geometryErrors.length} 个错误 · ${geometryBlockingErrors[0].message}`:`Warning · ${collisionIssues.length} 项实体碰撞；Geometry Invalid，仍可保存 Draft。`}</p>}
+          <section className="magnetic-3d-collision-review" aria-label="Collision Diagnostics"><div className="magnetic-3d-collision-heading"><h4>Collision Diagnostics · {collisionIssues.length}{collisionWarnings&&collisionIssues.length>0?' · Warning':''}</h4></div>
             {!collisionIssues.length?<p className="hint">当前严格 Validator 未报告实体碰撞。</p>:<table className="magnetic-3d-collision-table"><colgroup><col/><col style={{width:'18%'}}/><col style={{width:'13%'}}/><col style={{width:'19%'}}/></colgroup><thead><tr><th>Tile Pair</th><th>Depth</th><th>修复</th><th title="Non-repairable：不作为优化目标或评分收益，仍完整验证且不得加重">不可修复</th></tr></thead><tbody>{collisionIssues.map((issue,index)=>{
               const key=collisionPairKey(issue.relatedPieceIds??[]),selected=selectedCollision?.key===key,select=()=>{if(!operationBusy){setSelection(selected?{kind:'none'}:{kind:'collision',key,sourceKey:snapshotKey});setCollisionFocus(null)}}
               return <tr key={index} data-collision-key={key} aria-selected={selected} title={issue.message} onClick={select}>
@@ -613,7 +623,7 @@ export default function ThreeDWorkspace() {
           <AutoConstraintRepairPanel assembly={current} hints={angleHints} editing={editing} disabled={operationBusy} nonRepairable={nonRepairable} excludedCount={collisionIssues.filter(i=>nonRepairable.includes(collisionPairKey(i.relatedPieceIds??[]))).length} targets={repairTargets} highlighted={selectedCollision?.key} collisionCount={collisionIssues.length} onBusy={setRepairSearching} onPreview={setRepairPreview} onApply={applyConstraintRepair}/>
           <details onToggle={e=>setShowGeometryDetails(e.currentTarget.open)}><summary>详细几何 / Collision Diagnostic · {validation.issues.length}</summary>
             <p>{assembly.id} · revision {assembly.revision}</p>
-            {validation.issues.length?<ul>{validation.issues.map((issue,i)=><li key={i} className={issue.severity==='error'?'magnetic-3d-blocker':undefined}><button className={issue.severity==='error'?'magnetic-3d-blocker':undefined} disabled={operationBusy} onClick={()=>locateGeometryError(issue)}>{issue.message}</button></li>)}</ul>:<p>保存位姿满足当前连接与碰撞检查。</p>}
+            {validation.issues.length?<ul>{validation.issues.map((issue,i)=><li key={i} className={issue.severity==='error'&&(!collisionWarnings||issue.code!=='intersection')?'magnetic-3d-blocker':undefined}><button className={issue.severity==='error'&&(!collisionWarnings||issue.code!=='intersection')?'magnetic-3d-blocker':undefined} disabled={operationBusy} onClick={()=>locateGeometryError(issue)}>{issue.message}</button></li>)}</ul>:<p>保存位姿满足当前连接与碰撞检查。</p>}
             {!!collisionDetails.length&&<details><summary>碰撞空间证据 / Raw</summary><pre>{JSON.stringify(collisionDetails,null,2)}</pre></details>}
           </details>
         </section>
