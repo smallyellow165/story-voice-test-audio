@@ -12,6 +12,7 @@ export function MoveControlsPanel({settings,onChange,space,onSpace,group,positio
     <label>坐标<select aria-label={group?'模块坐标系':'Move 坐标系'} value={space} onChange={e=>onSpace(e.target.value as ModuleSpace)}><option value="global">Global · 世界</option><option value="local">Local · 局部</option>{group&&<option value="face">Face · 参考片</option>}</select></label>
     <label>拖拽约束<select aria-label="Move 拖拽约束" value={settings.constraint} onChange={e=>onChange({...settings,constraint:e.target.value as MoveConstraint})}>{(['XYZ','X','Y','Z','XY','XZ','YZ'] as const).map(a=><option key={a} value={a}>{a==='XYZ'?'全部轴 / 平面':a}</option>)}</select></label>
     <label className="move-grid-toggle"><input type="checkbox" aria-label="Move Grid Snap" checked={settings.grid} onChange={e=>onChange({...settings,grid:e.target.checked})}/>Grid Snap</label>
+    <label className="move-grid-toggle"><input type="checkbox" aria-label="Move Object Snap" checked={settings.object} onChange={e=>onChange({...settings,object:e.target.checked})}/>Object Snap</label>
     <label>网格间距<input type="number" aria-label="Move 网格间距" min="0" step="any" list="move-grid-spacing" value={spacing} onChange={e=>{setSpacing(e.target.value);const n=Number(e.target.value);if(e.target.value.trim()&&validMoveSpacing(n))onChange({...settings,spacing:n})}} onBlur={()=>{if(!valid)setSpacing(String(settings.spacing))}}/><datalist id="move-grid-spacing">{[.1,.25,.5,1].map(n=><option key={n} value={n}/>)}</datalist></label>
    </div>
   </fieldset>

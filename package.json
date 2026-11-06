@@ -74,6 +74,8 @@
     "test:magnetic-assembly-library": "node --experimental-strip-types --test test/magnetic-assembly-library.test.mjs",
     "test:magnetic-gallery": "node --experimental-strip-types --test test/magnetic-gallery.test.mjs",
     "test:magnetic-gallery:browser": "node --experimental-strip-types scripts/verify-magnetic-gallery.mjs",
+    "test:magnetic-move-object-snap": "node --experimental-strip-types --test test/magnetic-move-object-snap.test.mjs",
+    "test:magnetic-move-object-snap:browser": "node --experimental-strip-types scripts/verify-magnetic-move-object-snap.mjs",
     "test:magnetic-move-grid:browser": "node --experimental-strip-types scripts/verify-magnetic-move-grid.mjs",
     "test:magnetic-snap-session": "node --experimental-strip-types --test test/magnetic-snap-session.test.mjs",
     "test:magnetic-snap-session:browser": "node --experimental-strip-types scripts/verify-magnetic-snap-session.mjs",

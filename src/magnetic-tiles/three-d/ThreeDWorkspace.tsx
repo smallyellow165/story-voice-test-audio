@@ -1,3 +1,6 @@
+import {MoveObjectSnapPanel} from './MoveObjectSnapPanel.tsx'
+import {createMoveObjectSearch,objectCandidate,objectCollisions,confirmMoveObjectSnap,confirmObjectMoveFallback} from './move-object-snap.ts'
+import type {MoveObject,MoveObjectSession} from './move-object-snap.ts'
 import {MoveControlsPanel} from './MoveControlsPanel.tsx'
 import {DEFAULT_MOVE_CONTROLS} from './move-controls.ts'
 import type {MoveControlsSettings} from './move-controls.ts'
@@ -68,7 +71,7 @@ import type {SnapObjects,SnapRequest,SnapSessionPreview} from './snap-session.ts
 import {SnapPanel} from './SnapPanel.tsx'
 import type {EdgeSnapMode} from './editor-snap.ts'
 import type {Connection} from './vendor/engine/types.ts'
-import { Vector3 } from 'three'
+import { Quaternion,Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
 import cube from './examples/closed-cube.json' with { type: 'json' }
 import mixed from './examples/mixed-profiles.json' with { type: 'json' }
@@ -126,6 +129,8 @@ export default function ThreeDWorkspace() {
   const [selectionMode,setSelectionMode]=useState<'group'|'tile'>(boot.assembly?.modules?'group':'tile'),[operation,setOperation]=useState<AssemblyOperation>('move'),[createCombinedOpen,setCreateCombinedOpen]=useState(false)
   const [selectOnly,setSelectOnly]=useState(false)
   const [moveSettings,setMoveSettings]=useState<MoveControlsSettings>(DEFAULT_MOVE_CONTROLS)
+  const [objectMove,setObjectMove]=useState<MoveObjectSession|null>(null),objectMoveRef=useRef<MoveObjectSession|null>(null)
+  function putObjectMove(s:MoveObjectSession|null){objectMoveRef.current=s;setObjectMove(s)}
   const [snapObjects,setSnapObjects]=useState<SnapObjects>(()=>initialSnapObjects(history.current,history.current.modules?'group':'tile'))
   const snapActive=operation==='snap'&&!selectOnly&&!symmetryOpen
   const snapRequest:SnapRequest={...snapObjects,...snapSettings,mode:snapValidationMode}
@@ -166,7 +171,7 @@ export default function ThreeDWorkspace() {
   const nonRepairable=actions.currentNonRepairable(history)
   const angleHints=useAssemblyAngleHints(current,photoOrigin,active&&scope?.mode!=='edit')
   const currentRepair=repairPreview?.sourceRaw===serializeAssembly3D(current)?repairPreview:null
-  const operationBusy=!!rotationPreview||assemblyIO||!!moduleLive||!!modulePreview||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair
+  const operationBusy=!!objectMove?.released||!!rotationPreview||assemblyIO||!!moduleLive||!!modulePreview||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair
   const initialCameraView=photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.cameraView:undefined
   useEffect(() => setAssembly3D(current), [current, setAssembly3D])
   useEffect(()=>{setAssemblyOrigin3D(photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id?photoOrigin.origin:null)},[photoOrigin,current.id,setAssemblyOrigin3D])
@@ -210,7 +215,8 @@ export default function ThreeDWorkspace() {
   },[current,photoOrigin,clean,cleanPolicy,editorCamera])
   useEffect(()=>{if(!scope)return;const warn=(e:BeforeUnloadEvent)=>{if(recoveryBlocked.current||operationBusy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[operationBusy])
 
-  const assembly = useMemo(() => live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current, [current, live])
+  const visualObjectCandidate=objectCandidate(objectMove),visualObjectAssembly=visualObjectCandidate?.preview&&!visualObjectCandidate.error?visualObjectCandidate.preview.assembly:null
+  const assembly = useMemo(() => visualObjectAssembly??(live ? { ...current, pieces: current.pieces.map(p => p.id === live.pieceId ? { ...p, pose: live.tf } : p) } : current), [current, live,visualObjectAssembly])
   const snapshotKey=useMemo(()=>`${loaded.sequence}:${serializeAssembly3D(assembly)}`,[loaded.sequence,assembly])
   const selected = selection.kind === 'piece' ? selection.id : null
   const setSelected = (id: string | null) => { if (!operationBusy) setSelection(id ? { kind: 'piece', id } : { kind: 'none' }) }
@@ -218,7 +224,7 @@ export default function ThreeDWorkspace() {
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const selectedConnection=selection.kind==='connection'?assembly.connections[selection.index]:undefined
   const geometryErrors=validation.issues.filter(i=>i.severity==='error')
-  const collisionWarnings=snapValidationMode==='less-strict'&&(!moduleToolOpen||snapActive)&&!symmetryOpen
+  const collisionWarnings=snapValidationMode==='less-strict'&&(!moduleToolOpen||snapActive||operation==='move'&&moveSettings.object)&&!symmetryOpen
   const geometryBlockingErrors=geometryErrors.filter(i=>!collisionWarnings||i.code!=='intersection')
   const collisionIssues=useMemo(()=>validation.issues.filter(i=>i.severity==='error'&&i.code==='intersection'),[validation])
   const selectedCollision=useMemo(()=>{
@@ -241,6 +247,33 @@ export default function ThreeDWorkspace() {
   const parentTile=selection.kind==='piece'?parentModule(current,selection.id):undefined
   const internalConnection=selection.kind==='connection'&&!!current.connections[selection.index]&&parentInternalConnection(current,current.connections[selection.index])
   const parentReadOnly=!moduleToolOpen&&(parentTile?'Parent 成员保持固定；请切换 Group 进行整体变换，或插入自由 Tile 编辑。':internalConnection?'Parent 内部 Connection 保持固定；可以编辑自由 Tile 与 Group 的外部连接。':'')
+  const objectMoveEnabled=editing&&active&&operation==='move'&&!selectOnly&&!symmetryOpen&&moveSettings.object&&!parentReadOnly
+  const objectMoving:MoveObject|null=moduleToolOpen&&selectedGroup?{kind:'group',groupId:selectedGroup.id}:!moduleToolOpen&&selected?{kind:'tile',tileId:selected}:null
+  const objectSearch=useMemo(()=>objectMoveEnabled&&objectMoving?createMoveObjectSearch(current,objectMoving):null,[current,objectMoveEnabled,moduleToolOpen,selectedGroup?.id,selected])
+  function cancelObjectMove(){putObjectMove(null);setLive(null);setModuleLive(null)}
+  useEffect(()=>{cancelObjectMove()},[current.id,current.revision,selected,selectionMode,operation,selectOnly,symmetryOpen,editing,active,moveSettings.object])
+  const chosenObjectCandidate=objectCandidate(objectMove),objectVisual=chosenObjectCandidate?.preview&&!chosenObjectCandidate.error?chosenObjectCandidate.preview.assembly:null
+  const objectProject=useMemo(()=>objectVisual?{...editorProject(objectVisual,catalog),shapes}:null,[objectVisual,catalog,shapes])
+  function applyObjectMove(s:MoveObjectSession){try{if(objectCandidate(s)?.request.mode!==snapValidationMode)throw Error('验证模式已变化，请重新预览');accept(confirmMoveObjectSnap(historyRef.current,s));setError('');setSaveNotice('对象吸附已确认；仅移动 Moving，真实 Connection 与完整几何诊断已保留，请保存 Draft。')}catch(e){setError(String(e))}}
+  function objectMoveConstraint(){const pose=moduleToolOpen&&selectedGroup?modulePivot(current,selectedGroup.id,moduleTool.space,moduleTool.face):current.pieces.find(p=>p.id===selected)?.pose;if(!pose)return undefined;return {axes:moveSettings.constraint,origin:new Vector3(...pose.position),orientation:moduleToolOpen||moveSettings.space==='local'?new Quaternion(...pose.quaternion):new Quaternion()}}
+  function objectDrag(raw:Assembly3D,commit:boolean,dragged=raw){
+    if(!objectSearch||!objectMoving)return
+    const search=objectSearch(dragged,snapValidationMode,objectMoveConstraint()),state:MoveObjectSession={sourceRaw:serializeAssembly3D(current),moving:objectMoving,raw,dragged,search,selectedKey:search.automaticKey,released:commit}
+    putObjectMove(state)
+    if(commit){
+      if(!search.total){try{accept(confirmObjectMoveFallback(historyRef.current,state.sourceRaw,raw,objectMoving));setError('')}catch(e){cancelObjectMove();setError(String(e))}}
+      else{const c=objectCandidate(state);if(c?.preview&&!c.error&&!objectCollisions(c.preview).length)applyObjectMove(state)}
+    }
+  }
+  function tileObjectDrag(id:string,pose:Pose3D,commit:boolean,continuous=pose){
+    const a=historyRef.current.current,raw={...a,pieces:a.pieces.map(p=>p.id===id?{...p,pose}:p)}
+    setLive({pieceId:id,tf:pose});objectDrag(raw,commit,{...a,pieces:a.pieces.map(p=>p.id===id?{...p,pose:continuous}:p)})
+  }
+  function changeObjectMode(mode:EdgeSnapMode){
+    setSnapValidationMode(mode);const state=objectMoveRef.current
+    if(state?.released&&objectSearch){const search=objectSearch(state.dragged,mode,objectMoveConstraint()),old=objectCandidate(state),key=old?canonical({...old.request,mode}):search.automaticKey;putObjectMove({...state,search,selectedKey:search.candidates.some(c=>c.key===key)?key:search.automaticKey})}
+    else cancelObjectMove()
+  }
   const connectionRotationActive=editing&&!moduleToolOpen&&!parentReadOnly&&!selectOnly&&!symmetryOpen&&operation==='rotate'&&selection.kind==='piece'&&rotationAxis!==null&&!!current.connections[rotationAxis]&&[current.connections[rotationAxis].pieceA,current.connections[rotationAxis].pieceB].includes(selection.id)
   useEffect(()=>{setRotationPreview(null);setRotationAxis(null)},[current.id,selected,selectionMode,operation,selectOnly,editing,active])
   useEffect(()=>setRotationPreview(null),[current.revision])
@@ -281,7 +314,7 @@ export default function ThreeDWorkspace() {
   }
   const rotationJoint=connectionRotationActive?current.connections[rotationAxis!]:undefined
   const pickMembers=(side:'moving'|'fixed')=>current.pieces.filter(p=>(selectionMode==='group'?!!parentModule(current,p.id):side==='fixed'||!parentModule(current,p.id))&&(side!=='fixed'||!movingSnapIds.includes(p.id))).map(p=>p.id)
-  const snapViewport:SnapViewport|undefined=rotationJoint?{picker:null,fixed:{tileId:rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA,portId:rotationJoint.pieceA===selected?rotationJoint.portB:rotationJoint.portA,members:[rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA]},moving:{tileId:selected!,portId:rotationJoint.pieceA===selected?rotationJoint.portA:rotationJoint.portB,members:[selected!]},onPick:()=>{}}:editing&&active&&activeVisible&&snapActive&&!operationBusy&&(moduleToolOpen||snapPicker)?{
+  const snapViewport:SnapViewport|undefined=objectVisual&&chosenObjectCandidate?{picker:null,moving:{tileId:chosenObjectCandidate.request.moving.tileId,portId:chosenObjectCandidate.request.moving.portId,members:[]},fixed:{tileId:chosenObjectCandidate.request.fixed.tileId,portId:chosenObjectCandidate.request.fixed.portId,members:[]},onPick:()=>{}}:rotationJoint?{picker:null,fixed:{tileId:rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA,portId:rotationJoint.pieceA===selected?rotationJoint.portB:rotationJoint.portA,members:[rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA]},moving:{tileId:selected!,portId:rotationJoint.pieceA===selected?rotationJoint.portA:rotationJoint.portB,members:[selected!]},onPick:()=>{}}:editing&&active&&activeVisible&&snapActive&&!operationBusy&&(moduleToolOpen||snapPicker)?{
     picker:snapPicker,fixed:{tileId:snapObjects.fixed.tileId,portId:snapObjects.fixed.portId,members:pickMembers('fixed')},moving:{tileId:snapObjects.moving.tileId,portId:snapObjects.moving.portId,members:pickMembers('moving')},onPick:pickSnap
   }:undefined
   function chooseOperation(next:AssemblyOperation){if(next==='snap'&&!snapActive){
@@ -304,7 +337,7 @@ export default function ThreeDWorkspace() {
   const moduleProject=useMemo(()=>moduleLive||modulePreview?{...editorProject(moduleLive??modulePreview!.assembly,catalog),shapes}:null,[moduleLive,modulePreview,catalog,shapes])
   const modulePivotPose=useMemo(()=>{if(!editing||selectOnly||!moduleToolOpen||!selectedGroup||selectedGroup.id!==moduleTool.moving||!current.modules||modulePreview||symmetryOpen||repairSearching||currentRepair||(operation!=='move'&&operation!=='rotate'))return undefined;try{return modulePivot(current,moduleTool.moving,moduleTool.space,moduleTool.face||current.modules.find(m=>m.id===moduleTool.moving)?.pieces[0].id)}catch{return undefined}},[current,editing,selectOnly,moduleToolOpen,selectedGroup,moduleTool,modulePreview,symmetryOpen,repairSearching,currentRepair,operation])
   function applyModule(preview:ModulePreview){try{const next=confirmModulePreview(historyRef.current.current,preview);accept(actions.commit(historyRef.current,()=>next));setError('');setSaveNotice('模块操作已应用；内部连接保持不变，几何诊断保持真实显示。');return true}catch(e){setModuleLive(null);setModulePreview(null);setError(String(e));return false}}
-  const moduleGizmo=modulePivotPose?{pose:modulePivotPose,mode:moduleTool.mode,moveSettings:operation==='move'?moveSettings:undefined,onCancel:()=>setModuleLive(null),onChange:(target:Pose3D,commit:boolean)=>{try{const next=transformModule(current,moduleTool.moving,pivotDelta(modulePivotPose,target));if(commit)applyModule(previewModuleTransform(current,next));else setModuleLive(next)}catch(e){setModuleLive(null);setError(String(e))}}}:undefined
+  const moduleGizmo=modulePivotPose?{pose:modulePivotPose,mode:moduleTool.mode,moveSettings:operation==='move'?moveSettings:undefined,onCancel:()=>{setModuleLive(null);if(operation==='move')putObjectMove(null)},onChange:(target:Pose3D,commit:boolean,continuous=target)=>{try{const next=transformModule(current,moduleTool.moving,pivotDelta(modulePivotPose,target));if(objectMoveEnabled&&objectSearch&&operation==='move'){setModuleLive(next);objectDrag(next,commit,transformModule(current,moduleTool.moving,pivotDelta(modulePivotPose,continuous)))}else if(commit)applyModule(previewModuleTransform(current,next));else setModuleLive(next)}catch(e){setModuleLive(null);setError(String(e))}}}:undefined
   async function createCombined(name:string,ids:string[],registration?:{id:string;hash:string}){
     if(operationBusy||!allowReplace())return
     setAssemblyIO(true)
@@ -332,14 +365,14 @@ export default function ThreeDWorkspace() {
     else if(refs.pieceIds[0])setSelection({kind:'piece',id:refs.pieceIds[0]})
     if(refs.pieceIds[0])setErrorFocus({pieceId:refs.pieceIds[0],ts:Date.now()})
   }
-  function accept(next: EditorHistory) { setRotationPreview(null); const sameAssembly=next.current.id===historyRef.current.current.id;setModuleLive(null);setModulePreview(null); const geometryChanged=canonical(next.current)!==canonical(historyRef.current.current);setRepairPreview(null);setRepairTargets(ids=>geometryChanged?[]:ids.filter(id=>!actions.currentNonRepairable(next).includes(id))); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(open=>open&&sameAssembly);setSymmetrySources([]); setSelection(s=>geometryChanged&&s.kind==='collision'?{kind:'none'}:s);if(geometryChanged)setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
+  function accept(next: EditorHistory) { putObjectMove(null);setRotationPreview(null); const sameAssembly=next.current.id===historyRef.current.current.id;setModuleLive(null);setModulePreview(null); const geometryChanged=canonical(next.current)!==canonical(historyRef.current.current);setRepairPreview(null);setRepairTargets(ids=>geometryChanged?[]:ids.filter(id=>!actions.currentNonRepairable(next).includes(id))); setErrorFocus(null);setSymmetryPreview(null);setSymmetryOpen(open=>open&&sameAssembly);setSymmetrySources([]); setSelection(s=>geometryChanged&&s.kind==='collision'?{kind:'none'}:s);if(geometryChanged)setCollisionFocus(null);historyRef.current = next; setHistory(next); setLive(null);setPendingSnap(null); setSaveNotice('') }
   function apply(action: (h: EditorHistory) => EditorHistory) {
     if (!editing) return
     try { accept(action(historyRef.current)); setError('') } catch (e) { setError(String(e)); setLive(null) }
   }
   useEffect(() => { if(active)setEditing(true);else{setModuleLive(null);setModulePreview(null);setRepairPreview(null);setRepairSearching(false);setRepairTargets([]);setSymmetryPreview(null);setSymmetryOpen(false);setLive(null);setPendingSnap(null);setSelection(s=>s.kind==='collision'?{kind:'none'}:s);setCollisionFocus(null)} }, [active])
   useEffect(()=>{if(selection.kind==='collision'&&!selectedCollision){setSelection({kind:'none'});setCollisionFocus(null)}},[selection,selectedCollision])
-  useEffect(()=>{const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){setRotationPreview(null);setSnapPicker(null);setModuleLive(null);setModulePreview(null);setRepairPreview(null);setSymmetryPreview(null);setPendingSnap(null);setLive(null)}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[])
+  useEffect(()=>{const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){putObjectMove(null);setRotationPreview(null);setSnapPicker(null);setModuleLive(null);setModulePreview(null);setRepairPreview(null);setSymmetryPreview(null);setPendingSnap(null);setLive(null)}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[])
   useEffect(() => {
     if (selection.kind === 'piece' && !current.pieces.some(p => p.id === selection.id) || selection.kind === 'connection' && !current.connections[selection.index]) setSelection({ kind: 'none' })
   }, [current, selection])
@@ -569,15 +602,15 @@ export default function ThreeDWorkspace() {
         {(moduleLive||modulePreview)&&<p role="status" data-testid="module-viewer-preview">模块{modulePreview?(modulePreview.boundsAlignment?'边界对齐预览 · 尚未修改 Draft':'吸附预览 · 尚未修改 Draft'):'刚体拖动预览'} · 全部内部 Pose 联动；固定模块保持不动。</p>}
         {currentRepair&&<p className="magnetic-constraint-repair-banner" data-testid="repair-viewer-preview" data-repair-angles={JSON.stringify(currentRepair.candidate.angles)}>自动修复预览 · {currentRepair.candidate.id} · {currentRepair.candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 部分改善'} · {currentRepair.candidate.proposedConnection?'建议新增 Connection':'仅改善碰撞'} · 碰撞 {currentRepair.candidate.collisions.length} · 当前 Draft 尚未修改</p>}
         {rotationPreview&&<p role="status" data-testid="connection-rotation-preview" data-angle={rotationPreview.deltaDeg}>连接边旋转预览 · 尚未修改 Draft · {rotationPreview.canConfirm?'可确认':'验证阻断'} · {rotationPreview.geometry.valid?'Geometry Valid':'Geometry Invalid'}</p>}
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas moveSettings={operation==='move'&&!selectOnly&&!symmetryOpen?moveSettings:undefined} snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?(snapActive?movingSnapIds:selectedGroup?.pieces.map(p=>p.id)):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={rotationProject??snapProject??moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={connectionRotationActive||snapPicker||selectOnly||moduleToolOpen||!!parentReadOnly||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas onMoveDrag={objectMoveEnabled&&objectSearch?tileObjectDrag:undefined} controlTransform={objectVisual?live:null} moveSettings={operation==='move'&&!selectOnly&&!symmetryOpen?moveSettings:undefined} snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?(snapActive?movingSnapIds:selectedGroup?.pieces.map(p=>p.id)):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={objectProject??rotationProject??snapProject??moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={connectionRotationActive||snapPicker||selectOnly||moduleToolOpen||!!parentReadOnly||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
           onSelectPiece={id => {if(operationBusy||snapPicker)return;selectEditor({kind:'piece',id});if(symmetryOpen)setSymmetrySources(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}}
           onSelectConnection={index => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'connection', index }) }}
           onSelectPort={(id,portId)=>{if(operationBusy||snapPicker||symmetryOpen||moduleToolOpen)return;if(snapActive&&snapMode==='click'&&snapObjects.moving.tileId&&id!==snapObjects.moving.tileId){prepareSnap({pieceA:id,portA:portId,pieceB:snapObjects.moving.tileId,portB:snapObjects.moving.portId,...snapSettings});return}if(snapActive)updateSnapObjects({...snapObjects,moving:snapObject(current,selectionMode,id,portId)});else setSelection({kind:'piece',id})}}
           onClearSelection={() => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'none' }) }} focusRequest={errorFocus} fitRequest={moduleFit}
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
-          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={snapObjects.moving.portId} showSnapTargets={!snapPicker&&!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen&&!parentReadOnly} interactionLocked={connectionRotationActive||!!rotationPreview||!!snapPicker||!!parentReadOnly||!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap&&pendingSnap.request.moving.kind==='tile'?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
-          cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
+          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>{setLive(null);if(operation==='move')putObjectMove(null)}} snapCandidates={[snapSettings]} snapSourcePort={snapObjects.moving.portId} showSnapTargets={!snapPicker&&!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen&&!parentReadOnly} interactionLocked={!!objectMove?.released||connectionRotationActive||!!rotationPreview||!!snapPicker||!!parentReadOnly||!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap&&pendingSnap.request.moving.kind==='tile'?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
+          cameraTargetRef={cameraTargetRef} liveTransformOverride={objectVisual?null:live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
           : <MagnetScene3D key={loaded.sequence} assembly={assembly} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
         <details className="magnetic-3d-load"><summary>加载 / 导出 Assembly3D</summary>
@@ -591,7 +624,7 @@ export default function ThreeDWorkspace() {
                   if (request === fileRequest.current) load(source, file.name)
                 } catch (e) { if (request === fileRequest.current) setError(`读取失败：${String(e)}`) }
               }}/></label>
-            <button onClick={() => { const url = URL.createObjectURL(new Blob([serializeAssembly3D(assembly)], { type: 'application/json' }))
+            <button onClick={() => { const url = URL.createObjectURL(new Blob([serializeAssembly3D(objectMove?current:assembly)], { type: 'application/json' }))
               const link = document.createElement('a'); link.href = url; link.download = `${assembly.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
             }}>导出 Assembly3D</button></div>
           <p className="hint">加载只恢复保存的位姿，不自动求解、贴地或替换 Catalog 版本。需要刷新恢复时，请在 Edit 中保存 3D Draft；导出仍是同一 Assembly3D 格式。</p>
@@ -609,7 +642,8 @@ export default function ThreeDWorkspace() {
         <EditorInspector connectionRotationActive={connectionRotationActive} editing={editing&&!moduleToolOpen&&!symmetryOpen&&!parentReadOnly} canInsert={editing&&!symmetryOpen} onInserted={id=>{setSelectionMode('tile');setSelection({kind:'piece',id});chooseOperation('move')}} readOnlyReason={parentReadOnly||undefined} operation={selectOnly?'select':operation}
           currentToolLabel={!editing?'View':symmetryOpen?'Symmetry Fill':selectOnly?'Select':`${moduleToolOpen?'Group · ':''}${({move:'Move',rotate:'Rotate',orient:'Orient',snap:'Snap'})[operation]}`}
           currentToolPanel={<>
-            {editing&&!selectOnly&&!symmetryOpen&&!parentReadOnly&&operation==='move'&&<MoveControlsPanel settings={moveSettings} onChange={setMoveSettings} space={moduleToolOpen?moduleTool.space:moveSettings.space} onSpace={space=>moduleToolOpen?setModuleTool(t=>({...t,space})):setMoveSettings(s=>({...s,space:space==='global'?'global':'local'}))} group={moduleToolOpen} position={moduleToolOpen&&selectedGroup?moduleCenter(moduleLive??current,selectedGroup.id).toArray():chosen?.transform.position.toArray()} busy={operationBusy}/> }
+            {editing&&!selectOnly&&!symmetryOpen&&!parentReadOnly&&operation==='move'&&<MoveControlsPanel settings={moveSettings} onChange={setMoveSettings} space={moduleToolOpen?moduleTool.space:moveSettings.space} onSpace={space=>moduleToolOpen?setModuleTool(t=>({...t,space})):setMoveSettings(s=>({...s,space:space==='global'?'global':'local'}))} group={moduleToolOpen} position={moduleToolOpen&&selectedGroup?moduleCenter(objectVisual??moduleLive??current,selectedGroup.id).toArray():objectVisual&&selected?objectVisual.pieces.find(p=>p.id===selected)?.pose.position:chosen?.transform.position.toArray()} busy={operationBusy}/> }
+            {objectMoveEnabled&&<MoveObjectSnapPanel session={objectMove} mode={snapValidationMode} onMode={changeObjectMode} onSelect={key=>{const state=objectMoveRef.current;if(state?.released)putObjectMove({...state,selectedKey:key||null})}} onConfirm={()=>{const state=objectMoveRef.current;if(state)applyObjectMove(state)}} onCancel={cancelObjectMove}/>}
             {editing&&!moduleToolOpen&&!selectOnly&&!symmetryOpen&&!parentReadOnly&&operation==='rotate'&&selected&&<ConnectionRotatePanel key={`${current.id}:${current.revision}:${selected}`} assembly={current} pieceId={selected} axisIndex={rotationAxis} setAxisIndex={i=>{setRotationPreview(null);setLive(null);setRotationAxis(i);setError('')}} mode={snapValidationMode} setMode={m=>{setRotationPreview(null);setSnapValidationMode(m);setError('')}} preview={rotationPreview} setPreview={setRotationPreview} onConfirm={confirmRotation} busy={!!(assemblyIO||moduleLive||modulePreview||live||pendingSnap||symmetryPreview||repairSearching||currentRepair)}/>}
             {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
             {editing&&moduleToolOpen&&!selectOnly&&!symmetryOpen&&!snapActive&&<div hidden={!selectedGroup}><ModuleTransformPanel showSpatialInspection={false} key={current.id} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/></div>}

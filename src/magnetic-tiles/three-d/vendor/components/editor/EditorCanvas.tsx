@@ -1,4 +1,4 @@
-import {moveGizmoOptions,moveGridSize,cancelMoveCameraGesture} from '../../../move-controls.ts'
+import {moveGizmoOptions,moveGridSize,cancelMoveCameraGesture,continuousMovePose} from '../../../move-controls.ts'
 import type {MoveControlsSettings} from '../../../move-controls.ts'
 import {SnapViewportPicker} from '../../../SnapViewportPicker.tsx'
 import type {SnapViewport} from '../../../module-snap-selection.ts'
@@ -41,6 +41,8 @@ export interface EditorView {
 }
 
 type SnapInteractionProps = CollisionDisplayProps & MultiAssemblyDisplayProps & {
+  onMoveDrag?:(pieceId:string,pose:SerializableTransform,commit:boolean,continuous?:SerializableTransform)=>void;
+  controlTransform?:{pieceId:string;tf:SerializableTransform}|null;
   moveSettings?:MoveControlsSettings;
   snapViewport?:SnapViewport;
   moduleGizmo?:ModuleGizmoProps;moduleMode?:boolean;groupSelectedIds?:string[];
@@ -91,7 +93,7 @@ function SceneContent({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, focusRequest, fitRequest,
   onMovePiece, onMovePieceCommit, onCreateConnection, defaultCameraStateRef, resetViewRef,
   fitAllRef, fitSelectionRef, setViewRef, cameraTargetRef, liveTransformOverride, getCurrentViewRef,
-  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,snapTooltip,
+  onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,labelElements,collision,collisionFocus,collisionLabel,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,onMoveDrag,controlTransform,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,snapTooltip,
 }: {
   snapTooltip:React.RefObject<HTMLOutputElement|null>;
   labelElements:TileLabelElements;collisionLabel:React.RefObject<HTMLOutputElement|null>;previewPieces?:ViewerPiece[];
@@ -162,7 +164,7 @@ function SceneContent({
   const dragPointerId=useRef<number|undefined>(undefined);
   const [hoveredPiece, setHoveredPiece] = useState<string | null>(null);
   const [snapPreview, setSnapPreview] = useState<{ position: [number, number, number]; quaternion: [number, number, number, number] } | null>(null);
-  const dragStateRef = useRef<{ pieceId: string; startPos: THREE.Vector3; startQuat: THREE.Quaternion; committed: boolean } | null>(null);
+  const dragStateRef = useRef<{ pieceId: string; startPos: THREE.Vector3; startQuat: THREE.Quaternion; committed: boolean;moved?:boolean } | null>(null);
   // P0-四.7: 跟踪最新 transforms,供防抖 commit 的 setTimeout 回调读取(避免闭包陈旧值)
   const transformsRef = useRef(transforms);
   transformsRef.current = transforms;
@@ -477,11 +479,10 @@ function SceneContent({
     if (interactionLocked || !dragStateRef.current || dragStateRef.current.committed || !selectedPieceId || !transformControlsRef.current) return;
     const obj = transformControlsRef.current.object;
     if (!obj) return;
+    dragStateRef.current.moved=true;
     // 拖拽中实时更新视觉(不提交历史)
-    onMovePiece(selectedPieceId, {
-      position: [obj.position.x, obj.position.y, obj.position.z],
-      quaternion: [obj.quaternion.x, obj.quaternion.y, obj.quaternion.z, obj.quaternion.w],
-    });
+    const pose={position:obj.position.toArray(),quaternion:obj.quaternion.toArray()} as SerializableTransform;
+    if(toolMode==='move'&&onMoveDrag)onMoveDrag(selectedPieceId,pose,false,moveSettings?.grid?continuousMovePose(transformControlsRef.current):undefined);else onMovePiece(selectedPieceId,pose);
 
     // 磁吸模式:检测吸附候选
     if (toolMode === 'snap') {
@@ -512,7 +513,7 @@ function SceneContent({
         setSnapPreview(null);
       }
     }
-  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked]);
+  }, [selectedPieceId, project, toolMode, transforms, camera, size, onMovePiece,snapCandidates,interactionLocked,onMoveDrag,moveSettings?.grid]);
 
   const onTransformMouseUp = useCallback(() => {
     const drag = dragStateRef.current;
@@ -522,6 +523,8 @@ function SceneContent({
       setSnapPreview(null);
       return;
     }
+
+    if(toolMode==='move'&&onMoveDrag&&!drag.moved){drag.committed=true;dragStateRef.current=null;onMovePieceCancel?.();return}
 
     // Host confirmation path: mouse-up proposes only; the Draft stays exact.
     if (toolMode === 'snap' && selectedPieceId) {
@@ -537,15 +540,13 @@ function SceneContent({
     // 普通模式:提交最终位置(单次撤销记录)
     if (selectedPieceId && transformControlsRef.current?.object) {
       const obj = transformControlsRef.current.object;
-      onMovePieceCommit(selectedPieceId, {
-        position: [obj.position.x, obj.position.y, obj.position.z],
-        quaternion: [obj.quaternion.x, obj.quaternion.y, obj.quaternion.z, obj.quaternion.w],
-      });
+      const pose={position:obj.position.toArray(),quaternion:obj.quaternion.toArray()} as SerializableTransform;
+      if(toolMode==='move'&&onMoveDrag)onMoveDrag(selectedPieceId,pose,true,moveSettings?.grid?continuousMovePose(transformControlsRef.current):undefined);else onMovePieceCommit(selectedPieceId,pose);
     }
     drag.committed = true;
     dragStateRef.current = null;
     setSnapPreview(null);
-  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size]);
+  }, [toolMode, selectedPieceId, project, onMovePieceCommit, onCreateConnection,onSnapProposal,onMovePieceCancel,snapCandidates,camera,size,onMoveDrag,moveSettings?.grid]);
 
   // Keep cancellation registered through live parent renders, including the parent's Esc rollback.
   const cancelOptions=useRef({onMovePieceCancel,toolMode});cancelOptions.current={onMovePieceCancel,toolMode};
@@ -594,10 +595,10 @@ function SceneContent({
   useEffect(() => {
     if (selectedPieceId && transforms[selectedPieceId]) {
       const tf = transforms[selectedPieceId];
-      dummyObj.position.copy(tf.position);
-      dummyObj.quaternion.copy(tf.quaternion);
+      if(controlTransform?.pieceId===selectedPieceId){dummyObj.position.fromArray(controlTransform.tf.position);dummyObj.quaternion.fromArray(controlTransform.tf.quaternion)}
+      else{dummyObj.position.copy(tf.position);dummyObj.quaternion.copy(tf.quaternion)}
     }
-  }, [selectedPieceId, transforms, dummyObj]);
+  }, [selectedPieceId, transforms, dummyObj,controlTransform]);
 
   const annotationPieces=project.pieces.flatMap(p=>{const shape=project.shapes.get(partMap[p.partId]?.shape),transform=transforms[p.id];return shape&&transform?[{id:p.id,shape,transform}]:[]});
   const selectedConnection=selection.kind==='connection'?project.connections[selection.index]:undefined;
@@ -765,7 +766,7 @@ function worldToScreen(worldPos: THREE.Vector3, camera: THREE.Camera, size: { wi
 export function EditorCanvas({
   project, selection, toolMode, onSelectPiece, onSelectConnection, onSelectPort, onClearSelection,
   focusRequest, fitRequest, onMovePiece, onMovePieceCommit, onCreateConnection, cameraTargetRef,
-  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,
+  liveTransformOverride, getCurrentViewRef, onViewChange,initialCameraView,onCameraViewChange,onSnapProposal,onMovePieceCancel,snapCandidates,snapSourcePort,showSnapTargets,snapGhost,interactionLocked,showTileIds,collision,collisionFocus,previewPieces,readOnlyAssemblies=EMPTY_ASSEMBLY_DISPLAYS,activeVisible=true,onInspectAssemblyPiece,readOnlySelection,onMoveDrag,controlTransform,moveSettings,moduleGizmo,moduleMode,groupSelectedIds,selectionHighlightIds,snapViewport,
 }: Props) {
   const snapTooltip=useRef<HTMLOutputElement>(null);
   const otherAnnotations=useMemo(()=>displayAnnotationPieces(readOnlyAssemblies),[readOnlyAssemblies]);
@@ -796,7 +797,7 @@ export function EditorCanvas({
         onPointerMissed={onClearSelection}
       >
         <SceneContent
-          moveSettings={moveSettings} project={project} snapViewport={snapViewport} snapTooltip={snapTooltip} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} selectionHighlightIds={selectionHighlightIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
+          onMoveDrag={onMoveDrag} controlTransform={controlTransform} moveSettings={moveSettings} project={project} snapViewport={snapViewport} snapTooltip={snapTooltip} moduleGizmo={moduleGizmo} moduleMode={moduleMode} groupSelectedIds={groupSelectedIds} selectionHighlightIds={selectionHighlightIds} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={onInspectAssemblyPiece} readOnlySelection={readOnlySelection} previewPieces={previewPieces} labelElements={labelElements} collision={collision} collisionFocus={collisionFocus} collisionLabel={collisionLabel}
           selection={selection}
           toolMode={toolMode}
           onSelectPiece={onSelectPiece}
