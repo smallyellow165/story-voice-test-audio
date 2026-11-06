@@ -1,26 +1,20 @@
-import {SnapSelector} from './SnapSelector.tsx'
-import type {ModuleSnapSelection,SnapPicker} from './module-snap-selection.ts'
 import {useEffect,useMemo,useState} from 'react'
 import type {Assembly3D} from './assembly.ts'
-import {createViewerModel} from './viewer-model.ts'
-import {moduleStep,alignModuleFace,previewModuleSnap,previewModuleTransform,moduleBoundsAlignment,previewModuleBoundsAlign} from './module-transform.ts'
+import {moduleStep,alignModuleFace,previewModuleTransform,moduleBoundsAlignment,previewModuleBoundsAlign} from './module-transform.ts'
 import type {ModulePreview,ModuleSpace,BoundsAxis,BoundsMode} from './module-transform.ts'
 import {validateAssembly3D} from './engine-adapter.ts'
-import type {Connection} from './vendor/engine/types.ts'
 import {GroupSpatialInspection,spatialNumber} from './GroupSpatialInspection.tsx'
-import {ModuleSnapDiagnostics} from './ModuleSnapDiagnostics.tsx'
 import {faceWorldNormal,orientationAxis} from './module-snap-diagnostics.ts'
 import type {SnapOrientationTarget} from './module-snap-diagnostics.ts'
 export type AssemblyOperation='move'|'rotate'|'orient'|'snap'
 export type ModuleTool={moving:string;fixed:string;space:ModuleSpace;face:string;mode:'translate'|'rotate'}
-export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showSpatialInspection=true,selectedGroupId,snapSelection,setSnapSelection,picker,togglePicker,tool,setTool,busy,preview,onPreview,onApply,operation,orientationTarget,onOrientationTarget}:{assembly:Assembly3D;inspectionAssembly?:Assembly3D;showSpatialInspection?:boolean;selectedGroupId?:string;snapSelection:ModuleSnapSelection;setSnapSelection:(s:ModuleSnapSelection)=>void;picker:SnapPicker|null;togglePicker:(p:SnapPicker)=>void;tool:ModuleTool;setTool:(v:ModuleTool)=>void;busy:boolean;preview:ModulePreview|null;onPreview:(p:ModulePreview|null)=>void;onApply:(p:ModulePreview)=>boolean;operation:AssemblyOperation;orientationTarget?:SnapOrientationTarget;onOrientationTarget:(target:SnapOrientationTarget)=>void}){
- const [error,setError]=useState(''),[axis,setAxis]=useState<'x'|'y'|'z'>('x'),[distance,setDistance]=useState('1'),[angle,setAngle]=useState('90'),[dihedral,setDihedral]=useState('0'),[flip,setFlip]=useState(true)
+export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showSpatialInspection=true,selectedGroupId,tool,setTool,busy,preview,onPreview,onApply,operation,onOrientationTarget}:{assembly:Assembly3D;inspectionAssembly?:Assembly3D;showSpatialInspection?:boolean;selectedGroupId?:string;tool:ModuleTool;setTool:(v:ModuleTool)=>void;busy:boolean;preview:ModulePreview|null;onPreview:(p:ModulePreview|null)=>void;onApply:(p:ModulePreview)=>boolean;operation:AssemblyOperation;onOrientationTarget:(target:SnapOrientationTarget)=>void}){
+ const [error,setError]=useState(''),[axis,setAxis]=useState<'x'|'y'|'z'>('x'),[distance,setDistance]=useState('1'),[angle,setAngle]=useState('90')
  const [referenceId,setReferenceId]=useState(''),[alignAxis,setAlignAxis]=useState<BoundsAxis>('y'),[alignMode,setAlignMode]=useState<BoundsMode>('min')
- const modules=assembly.modules??[],moving=modules.find(m=>m.id===tool.moving),fixed=modules.find(m=>m.id===tool.fixed),models=useMemo(()=>createViewerModel(assembly),[assembly])
- useEffect(()=>{if(!assembly.modules)return;const f=assembly.modules[0],m=assembly.modules[1],c=[...assembly.connections].reverse().find(c=>f.pieces.some(p=>p.id===c.pieceA)&&m.pieces.some(p=>p.id===c.pieceB));if(c){setDihedral(String(c.dihedralDeg));setFlip(c.flip??false)}},[assembly.id])
+ const modules=assembly.modules??[],moving=modules.find(m=>m.id===tool.moving)
  const reference=modules.find(m=>m.id===referenceId&&m.id!==tool.moving)
  const alignment=useMemo(()=>reference&&selectedGroupId===tool.moving?moduleBoundsAlignment(assembly,tool.moving,reference.id,alignAxis,alignMode):null,[assembly,tool.moving,reference?.id,selectedGroupId,alignAxis,alignMode])
- const face=moving?.pieces.find(p=>p.id===tool.face)?.id??moving?.pieces[0]?.id??'',target=fixed?.pieces.find(p=>p.id===snapSelection.fixedTile)?.id??fixed?.pieces[0]?.id??''
+ const face=moving?.pieces.find(p=>p.id===tool.face)?.id??moving?.pieces[0]?.id??''
  function run(fn:()=>void){try{setError('');fn()}catch(e){setError(String(e))}}
  function orient(direction:'up'|'front'){run(()=>{
   // Reasserting an already aligned explicit goal is selection state only.
@@ -30,8 +24,6 @@ export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showS
  function step(kind:'translate'|'rotate',value:number){run(()=>onApply(previewModuleTransform(assembly,moduleStep(assembly,tool.moving,kind,axis,value,tool.space,face))))}
  useEffect(()=>setError(''),[operation,tool.moving])
  const before=useMemo(()=>validateAssembly3D(assembly),[assembly])
- const ports=(id:string)=>models.find(p=>p.id===id)?.shape.ports??[]
- const effectivePortA=ports(target).find(p=>p.portId===snapSelection.fixedPort),effectivePortB=ports(face).find(p=>p.portId===snapSelection.movingPort)
  const hard=preview?.geometry.issues.filter(i=>i.severity==='error'&&i.code!=='intersection')??[],collisions=(a:ModulePreview['geometry'])=>a.issues.filter(i=>i.code==='intersection'&&i.severity==='error')
  return <section className="module-transform-panel" aria-label="Module Transform / Snap">
    {showSpatialInspection&&selectedGroupId&&<GroupSpatialInspection key={selectedGroupId} assembly={inspectionAssembly} groupId={selectedGroupId} preview={inspectionAssembly!==assembly}/>}
@@ -52,22 +44,8 @@ export function ModuleTransformPanel({assembly,inspectionAssembly=assembly,showS
    </details>}
    {operation!=='snap'&&(operation==='orient'||tool.space==='face')&&<label>参考面 Tile<select aria-label="模块参考 Tile" value={face} onChange={e=>setTool({...tool,face:e.target.value})}>{moving?.pieces.map(p=><option key={p.id} value={p.id}>{p.sourceId}</option>)}</select></label>}
    {operation==='orient'&&<><p>在 Viewer 点击成员 Tile 或选择参考面，整体定向当前 Group；Snap 记住本次会话的方向参考。</p><div className="button-row">{(['up','front'] as const).map(d=><button key={d} disabled={!face} onClick={()=>orient(d)}>{d==='up'?'所选面朝上':'所选面朝前'}</button>)}</div></>}
-   {operation==='snap'&&<div className="module-snap-parameters" aria-label="Module Snap 参数">
-    <div className="snap-side-heading snap-moving"><b>Moving</b><small>整组移动</small></div>
-    <div className="snap-fields-row">
-     <label>Moving Tile<div className="snap-select-field"><select aria-label="模块参考 Tile" title={moving?.pieces.find(p=>p.id===face)?.sourceId} value={face} onChange={e=>{const id=e.target.value;setTool({...tool,face:id});setSnapSelection({...snapSelection,movingPort:ports(id).some(p=>p.portId===snapSelection.movingPort)?snapSelection.movingPort:''})}}>{moving?.pieces.map(p=><option key={p.id} value={p.id}>{p.sourceId}</option>)}</select><SnapSelector kind="moving-tile" active={picker} toggle={togglePicker} disabled={!face}/></div></label>
-     <label>Moving Port<div className="snap-select-field"><select aria-label="模块 Snap 移动 Port" value={effectivePortB?.portId??''} onChange={e=>setSnapSelection({...snapSelection,movingPort:e.target.value})}><option value="">选择 Port</option>{ports(face).map(p=><option key={p.portId} value={p.portId}>{p.portId}</option>)}</select><SnapSelector kind="moving-port" active={picker} toggle={togglePicker} disabled={!face}/></div></label>
-    </div>
-    <div className="snap-side-heading snap-fixed"><b>Fixed</b><label>Group<select aria-label="固定 Group" title={fixed?.name} value={tool.fixed} onChange={e=>setTool({...tool,fixed:e.target.value})}>{modules.filter(m=>m.id!==tool.moving).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><small>不动</small></div>
-    <div className="snap-fields-row">
-     <label>Fixed Tile<div className="snap-select-field"><select aria-label="模块 Snap 固定 Tile" title={fixed?.pieces.find(p=>p.id===target)?.sourceId} value={target} onChange={e=>{const id=e.target.value;setSnapSelection({...snapSelection,fixedTile:id,fixedPort:ports(id).some(p=>p.portId===snapSelection.fixedPort)?snapSelection.fixedPort:''})}}>{fixed?.pieces.map(p=><option key={p.id} value={p.id}>{p.sourceId}</option>)}</select><SnapSelector kind="fixed-tile" active={picker} toggle={togglePicker} disabled={!target}/></div></label>
-     <label>Fixed Port<div className="snap-select-field"><select aria-label="模块 Snap 固定 Port" value={effectivePortA?.portId??''} onChange={e=>setSnapSelection({...snapSelection,fixedPort:e.target.value})}><option value="">选择 Port</option>{ports(target).map(p=><option key={p.portId} value={p.portId}>{p.portId}</option>)}</select><SnapSelector kind="fixed-port" active={picker} toggle={togglePicker} disabled={!target}/></div></label>
-    </div>
-    <div className="snap-options"><label>Dihedral °<input aria-label="模块 Snap 二面角" type="number" min="-180" max="180" value={dihedral} onChange={e=>setDihedral(e.target.value)}/></label><label><input type="checkbox" aria-label="模块 Snap Flip" checked={flip} onChange={e=>setFlip(e.target.checked)}/>Flip</label><button disabled={!face||!target||!effectivePortA||!effectivePortB||tool.moving===tool.fixed||!dihedral.trim()} onClick={()=>run(()=>onPreview(previewModuleSnap(assembly,tool.moving,tool.fixed,{pieceA:target,portA:effectivePortA!.portId,pieceB:face,portB:effectivePortB!.portId,dihedralDeg:Number(dihedral),flip} as Connection)))}>预览模块吸附</button></div>
-    {picker&&<small className="snap-picker-hint">Viewer：{picker.replace('-',' ')} · Esc 取消</small>}
-   </div>}
    </fieldset>
-   {preview&&<div data-testid={preview.boundsAlignment?'module-align-preview':'module-snap-preview'}><b>{preview.boundsAlignment?'Bounds Align ':''}预览 · Draft 尚未修改 · Geometry {preview.geometry.valid?'Valid':'Invalid'}</b><p>{preview.boundsAlignment&&`${moving?.name} → ${modules.find(m=>m.id===preview.boundsAlignment!.referenceId)?.name} · World ${preview.boundsAlignment.axis.toUpperCase()} ${preview.boundsAlignment.mode} · Δ ${spatialNumber(preview.boundsAlignment.delta)}`}{preview.connection&&`${preview.connection.pieceB}:${preview.connection.portB} → ${preview.connection.pieceA}:${preview.connection.portA} · ${preview.connection.dihedralDeg}° · Flip ${preview.connection.flip}`}<br/>碰撞 {collisions(before).length} → {collisions(preview.geometry).length} · 最大深度 {Math.max(0,...collisions(preview.geometry).map(i=>i.penetrationDepth??0)).toPrecision(4)} · 连接错误 {hard.length}</p>{preview.connection&&<ModuleSnapDiagnostics assembly={assembly} preview={preview} movingId={tool.moving} fixedId={tool.fixed} target={orientationTarget} beforeReport={before}/>}<details><summary>Validator Diagnostics</summary><ul>{preview.geometry.issues.map((i,n)=><li key={n} className={i.severity==='error'?'magnetic-3d-blocker':undefined}>{i.code} · {i.message}</li>)}</ul></details><button disabled={busy||!!hard.length} onClick={()=>run(()=>onApply(preview))}>{preview.boundsAlignment?'应用对齐':`确认模块吸附${preview.geometry.valid?'':'（Geometry Invalid）'}`}</button><button disabled={busy} onClick={()=>onPreview(null)}>{preview.boundsAlignment?'取消对齐预览':'取消模块预览'}</button></div>}
+   {preview&&<div data-testid={preview.boundsAlignment?'module-align-preview':'module-snap-preview'}><b>{preview.boundsAlignment?'Bounds Align ':''}预览 · Draft 尚未修改 · Geometry {preview.geometry.valid?'Valid':'Invalid'}</b><p>{preview.boundsAlignment&&`${moving?.name} → ${modules.find(m=>m.id===preview.boundsAlignment!.referenceId)?.name} · World ${preview.boundsAlignment.axis.toUpperCase()} ${preview.boundsAlignment.mode} · Δ ${spatialNumber(preview.boundsAlignment.delta)}`}{preview.connection&&`${preview.connection.pieceB}:${preview.connection.portB} → ${preview.connection.pieceA}:${preview.connection.portA} · ${preview.connection.dihedralDeg}° · Flip ${preview.connection.flip}`}<br/>碰撞 {collisions(before).length} → {collisions(preview.geometry).length} · 最大深度 {Math.max(0,...collisions(preview.geometry).map(i=>i.penetrationDepth??0)).toPrecision(4)} · 连接错误 {hard.length}</p><details><summary>Validator Diagnostics</summary><ul>{preview.geometry.issues.map((i,n)=><li key={n} className={i.severity==='error'?'magnetic-3d-blocker':undefined}>{i.code} · {i.message}</li>)}</ul></details><button disabled={busy||!!hard.length} onClick={()=>run(()=>onApply(preview))}>{preview.boundsAlignment?'应用对齐':`确认模块吸附${preview.geometry.valid?'':'（Geometry Invalid）'}`}</button><button disabled={busy} onClick={()=>onPreview(null)}>{preview.boundsAlignment?'取消对齐预览':'取消模块预览'}</button></div>}
   {error&&<p role="alert">{operation==='snap'?'当前参数未生成可用预览：':''}{error}</p>}
  </section>
 }

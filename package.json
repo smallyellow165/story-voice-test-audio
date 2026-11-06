@@ -74,6 +74,8 @@
     "test:magnetic-assembly-library": "node --experimental-strip-types --test test/magnetic-assembly-library.test.mjs",
     "test:magnetic-gallery": "node --experimental-strip-types --test test/magnetic-gallery.test.mjs",
     "test:magnetic-gallery:browser": "node --experimental-strip-types scripts/verify-magnetic-gallery.mjs",
+    "test:magnetic-snap-session": "node --experimental-strip-types --test test/magnetic-snap-session.test.mjs",
+    "test:magnetic-snap-session:browser": "node --experimental-strip-types scripts/verify-magnetic-snap-session.mjs",
     "test:magnetic-connection-rotate": "node --experimental-strip-types --test test/magnetic-connection-rotate.test.mjs",
     "test:magnetic-connection-rotate:browser": "node --experimental-strip-types scripts/verify-magnetic-connection-rotate.mjs",
     "test:magnetic-less-strict-snap": "node --experimental-strip-types --test test/magnetic-less-strict-snap.test.mjs",

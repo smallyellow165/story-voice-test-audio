@@ -1,6 +1,3 @@
-import {SnapSelector} from './SnapSelector.tsx'
-import type {SnapPicker} from './module-snap-selection.ts'
-import {parentModule} from './combined-editing.ts'
 import { useEffect, useState } from 'react'
 import type {ReactNode} from 'react'
 import type { Profile } from '../geometry.ts'
@@ -11,8 +8,6 @@ import * as actions from './vendor/editor/state.ts'
 import {canonicalProfileSnapshot} from './canonical-geometry.ts'
 import { profileKey3D } from './profile-adapter.ts'
 import { PropertyPanel } from './vendor/components/editor/PropertyPanel.tsx'
-import { findCompatibleTargets, portsCompatible } from './vendor/editor/snap.ts'
-import { portPairKey } from './vendor/engine/port-compatibility.ts'
 import type { Connection } from './vendor/engine/types.ts'
 import {disconnectPieceForSnap} from './editor-snap.ts'
 import {combinedSolveReason} from './combined-editing.ts'
@@ -22,32 +17,14 @@ type Props = {
   connectionRotationActive:boolean;editing:boolean;canInsert:boolean;onInserted:(id:string)=>void;readOnlyReason?:string;selectionInfo:ReactNode;globalTools:ReactNode;
   currentToolLabel:string;currentToolPanel:ReactNode;toolControls:ReactNode;selectionTitle:ReactNode;selectionControls:ReactNode
   assembly: Assembly3D; project: EditorProject; profiles: readonly Profile[]; selection: Selection
-  hasSnapPreview:boolean;tileSnap:{fixedTile:string;fixedPort:string};setTileSnap:(s:{fixedTile:string;fixedPort:string})=>void;picker:SnapPicker|null;togglePicker:(kind:SnapPicker)=>void
-  ownPort: string; setOwnPort: (id: string) => void
   apply: (action: (h: EditorHistory) => EditorHistory) => void
   select: (s: Selection) => void; busy: boolean; operation:AssemblyOperation|'select'
-  onPreviewSnap:(connection:Connection)=>void;snapSettings:{dihedralDeg:number;flip:boolean};setSnapSettings:(settings:{dihedralDeg:number;flip:boolean})=>void
 }
-export function EditorInspector({ connectionRotationActive,editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection,hasSnapPreview,tileSnap,setTileSnap,picker,togglePicker, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
+export function EditorInspector({ connectionRotationActive,editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection, apply, select, busy, operation }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
   const [color, setColor] = useState('#55b8ac')
-  const {fixedTile:baseId,fixedPort:basePort}=tileSnap
-  const setBaseId=(id:string)=>setTileSnap({fixedTile:id,fixedPort:''}),setBasePort=(port:string)=>setTileSnap({...tileSnap,fixedPort:port})
-  const [angle,setAngleText]=useState(()=>Number.isFinite(snapSettings.dihedralDeg)?String(snapSettings.dihedralDeg):'')
-  const flip=snapSettings.flip
-  const setAngle=(angle:string)=>{setAngleText(angle);setSnapSettings({...snapSettings,dihedralDeg:angle.trim()?Number(angle):NaN})},setFlip=(flip:boolean)=>setSnapSettings({...snapSettings,flip})
   const selectedId = selection.kind === 'piece' ? selection.id : ''
   const piece = assembly.pieces.find(p => p.id === selectedId)
-  const ownShape = piece ? project.shapes.get(profileKey3D({ id: piece.profileId, version: piece.profileVersion })) : undefined
-  const base = assembly.pieces.find(p => p.id === baseId && p.id !== selectedId) ?? assembly.pieces.find(p => p.id !== selectedId)
-  const baseShape = base ? project.shapes.get(profileKey3D({ id: base.profileId, version: base.profileVersion })) : undefined
-  const effectiveOwn = ownShape?.ports.find(p => p.portId === ownPort) ?? ownShape?.ports[0]
-  const effectiveBase = baseShape?.ports.find(p => p.portId === basePort) ?? baseShape?.ports[0]
-  const compatible = selectedId && effectiveOwn ? findCompatibleTargets({ pieceId: selectedId, portId: effectiveOwn.portId }, project) : []
-  const canSnap = !!(base && effectiveOwn && effectiveBase && portsCompatible(effectiveOwn, effectiveBase) &&
-    !assembly.connections.some(c=>portPairKey(c)===portPairKey({pieceA:base.id,portA:effectiveBase.portId,pieceB:selectedId,portB:effectiveOwn.portId})))
-  const connection = (): Connection => ({ pieceA: base!.id, portA: effectiveBase!.portId,
-    pieceB: selectedId, portB: effectiveOwn!.portId, dihedralDeg: Number(angle), flip })
   function add() {
     apply(h => {
       const profile = profiles.find(p => profileKey3D(p) === profileKey)!
@@ -62,7 +39,7 @@ export function EditorInspector({ connectionRotationActive,editing,canInsert,onI
     <section className="assembly-current-tool" aria-label="Current Tool"><h4>Current Tool <span>· {currentToolLabel}</span></h4>
     {currentToolPanel}{toolControls}
     {readOnlyReason&&<small>{readOnlyReason}</small>}
-    {editing && (selection.kind==='piece'&&operation!=='select'||selection.kind==='connection') && <fieldset className="magnetic-3d-edit-inspector" disabled={busy&&!(hasSnapPreview&&piece&&operation==='snap')}><legend className="sr-only">当前选择编辑</legend>
+    {editing && (selection.kind==='piece'&&operation!=='select'&&operation!=='snap'||selection.kind==='connection') && <fieldset className="magnetic-3d-edit-inspector" disabled={busy}><legend className="sr-only">当前选择编辑</legend>
     {!connectionRotationActive&&<PropertyPanel operation={operation} showPieceActions={false} showPieceColor={false} project={project} selection={selection}
       onSetPieceTransform={(id, pose) => apply(h => actions.setPieceTransformAction(h, id, pose))}
       onSetPieceColor={(id, c) => apply(h => actions.setPieceColorAction(h, id, c))}
@@ -70,32 +47,6 @@ export function EditorInspector({ connectionRotationActive,editing,canInsert,onI
       onDeleteSelected={() => apply(h => { select({ kind: 'none' }); return actions.deletePieceAction(h, selectedId) })}
       onUpdateConnection={(i, patch) => apply(h => actions.updateConnectionAction(h, i, patch))}
       onRemoveConnection={i => apply(h => { select({ kind: 'none' }); return actions.removeConnectionAction(h, i) })}/>}
-    {piece && <>
-      {operation==='snap'&&<div className="module-snap-parameters" aria-label="Tile Snap 参数">
-        <div className="snap-side-heading snap-moving"><b>Moving</b><small>仅移动此 Tile</small></div>
-        <div className="snap-fields-row">
-          <label>Moving Tile<div className="snap-select-field"><select aria-label="3D 移动零件 B" value={selectedId} onChange={e=>select({kind:'piece',id:e.target.value})}>
-            {assembly.pieces.filter(p=>!parentModule(assembly,p.id)).map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><SnapSelector kind="moving-tile" active={picker} toggle={togglePicker} disabled={hasSnapPreview||!piece}/></div></label>
-          <label>Moving Port<div className="snap-select-field"><select aria-label="3D 自身端口 B" value={effectiveOwn?.portId??''} onChange={e=>setOwnPort(e.target.value)}>
-            {ownShape?.ports.map(p=><option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select><SnapSelector kind="moving-port" active={picker} toggle={togglePicker} disabled={hasSnapPreview||!effectiveOwn}/></div></label>
-        </div>
-        <div className="snap-side-heading snap-fixed"><b>Fixed</b><small>不动 · 可选 Group 成员</small></div>
-        <div className="snap-fields-row">
-          <label>Fixed Tile<div className="snap-select-field"><select aria-label="3D 目标零件 A" value={base?.id??''} onChange={e=>setBaseId(e.target.value)}>
-            {assembly.pieces.filter(p=>p.id!==selectedId).map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><SnapSelector kind="fixed-tile" active={picker} toggle={togglePicker} disabled={hasSnapPreview||!base}/></div></label>
-          <label>Fixed Port<div className="snap-select-field"><select aria-label="3D 目标端口 A" value={effectiveBase?.portId??''} onChange={e=>setBasePort(e.target.value)}>
-            {baseShape?.ports.map(p=><option key={p.portId} value={p.portId}>{p.portId} · 长 {p.length.toFixed(4)}</option>)}</select><SnapSelector kind="fixed-port" active={picker} toggle={togglePicker} disabled={hasSnapPreview||!effectiveBase}/></div></label>
-        </div>
-        <div className="snap-options">
-          <label>Dihedral °<input aria-label="新连接二面角" type="number" min="-180" max="180" value={angle} onChange={e=>setAngle(e.target.value)}/></label>
-          <label><input aria-label="新连接 flip" type="checkbox" checked={flip} onChange={e=>setFlip(e.target.checked)}/>Flip</label>
-          <button disabled={hasSnapPreview||!!picker||!canSnap||!angle.trim()} onClick={()=>onPreviewSnap(connection())}>预览吸附</button>
-        </div>
-        {picker&&<small className="snap-picker-hint">Viewer：{picker.replace('-',' ')} · Esc 取消</small>}
-        <p className="hint">{compatible.length} 个空闲兼容目标。预览后确认；也可直接点击目标兼容边。仅建立约束不调整 Pose，不匹配会显示 Invalid。</p>
-        <button disabled={hasSnapPreview||!!picker||!base||!effectiveOwn||!effectiveBase||!angle.trim()} onClick={()=>apply(h=>actions.createConnectionAction(h,connection(),false))}>仅建立约束（不移动）</button>
-      </div>}
-    </>}
     {selection.kind === 'connection' && <>
       <button onClick={()=>select({kind:'piece',id:assembly.connections[selection.index].pieceB})}>重新吸附 B（先解除相关连接）</button>
       <p className="hint">修改角度只更新约束；需要移动结构时，使用下面的显式求解。闭环不一致仍会显示 Diagnostic。</p>

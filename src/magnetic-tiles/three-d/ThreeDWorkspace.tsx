@@ -4,8 +4,8 @@ import type {ConnectionRotationPreview} from './connection-rotate.ts'
 import {currentWorkspace,ownAssemblyReferences,rememberSavedAssembly,WORKING_DRAFT_KEY,WORKSPACE_RECORD_KEY,WORKSPACE_HEAD_KEY} from '../workspace-context.ts'
 import {studioStorage} from '../workspace-context.ts'
 import {touchDraftProject} from '../draft-projects.ts'
-import {normalizeModuleSnapSelection,validSnapPort} from './module-snap-selection.ts'
-import type {ModuleSnapSelection,SnapPicker,SnapViewport} from './module-snap-selection.ts'
+import {validSnapPort} from './module-snap-selection.ts'
+import type {SnapPicker,SnapViewport} from './module-snap-selection.ts'
 import {TileSelectionDetails,GroupSelectionDetails} from './AssemblySelectionDetails.tsx'
 import {ModuleTransformPanel,CreateCombinedPanel} from './ModuleTransformPanel.tsx'
 import type {AssemblyOperation,ModuleTool} from './ModuleTransformPanel.tsx'
@@ -60,9 +60,10 @@ import { DRAFT_3D_KEY,DRAFT_COLLISION_POLICY_KEY,loadDraftCollisionPolicy,loadDr
 import type {CameraView3D} from './camera-view.ts'
 import type {PhotoOrigin3D} from './reconstruction/adopt-draft.ts'
 import {PHOTO_ORIGIN_3D_KEY,adoptReconstructionDraft,loadPhotoOrigin} from './reconstruction/adopt-draft.ts'
-import {previewEdgeSnap,confirmEdgeSnap} from './editor-snap.ts'
-import type {EdgeSnapPreview,EdgeSnapMode} from './editor-snap.ts'
-import {TileSnapPreview} from './TileSnapPreview.tsx'
+import {initialSnapObjects,snapObject,snapConnection,sameSnapRequest,previewSnapSession,confirmSnapSession} from './snap-session.ts'
+import type {SnapObjects,SnapRequest,SnapSessionPreview} from './snap-session.ts'
+import {SnapPanel} from './SnapPanel.tsx'
+import type {EdgeSnapMode} from './editor-snap.ts'
 import type {Connection} from './vendor/engine/types.ts'
 import { Vector3 } from 'three'
 import rightAngle from './examples/right-angle.json' with { type: 'json' }
@@ -110,24 +111,26 @@ export default function ThreeDWorkspace() {
   const [displayPreferences,setDisplayPreferences]=useState<{projectId:string;values:AssemblyVisibility}>({projectId:'',values:{}}),[displayError,setDisplayError]=useState('')
   const [displaySnapshots,setDisplaySnapshots]=useState<{projectId:string;records:SavedAssembly[]}>({projectId:'',records:[]}),[readOnlySelection,setReadOnlySelection]=useState<ReadOnlyPieceSelection>(null)
   const archiveQueue=useRef<Promise<unknown>>(Promise.resolve()),projectRef=useRef(project3D);projectRef.current=project3D
-  const [editing, setEditing] = useState(true), [tool, setTool] = useState<ToolMode>('snap'), [ownPort, setOwnPort] = useState('e0-p0')
+  const [editing, setEditing] = useState(true), [tool, setTool] = useState<ToolMode>('snap')
   const [snapMode,setSnapMode]=useState<'drag'|'click'>('drag'),[snapSettings,setSnapSettings]=useState({dihedralDeg:90,flip:false})
   const [repairSearching,setRepairSearching]=useState(false),[repairPreview,setRepairPreview]=useState<RepairPreview|null>(null),[repairTargets,setRepairTargets]=useState<string[]>([])
   const [snapValidationMode,setSnapValidationMode]=useState<EdgeSnapMode>('strict')
   const [rotationAxis,setRotationAxis]=useState<number|null>(null),[rotationPreview,setRotationPreview]=useState<ConnectionRotationPreview|null>(null)
-  const [pendingSnap,setPendingSnap]=useState<EdgeSnapPreview|null>(null)
+  const [pendingSnap,setPendingSnap]=useState<SnapSessionPreview|null>(null)
   const [symmetryOpen,setSymmetryOpen]=useState(false),[symmetrySources,setSymmetrySources]=useState<string[]>([]),[symmetryPreview,setSymmetryPreview]=useState<SymmetryFillPreview|null>(null)
   const symmetryPieces=useMemo(()=>symmetryPreview?createViewerModel(symmetryPreview.assembly).filter(p=>symmetryPreview.addedIds.includes(p.id)):undefined,[symmetryPreview])
   const [moduleFit,setModuleFit]=useState<{ts:number}|null>(null)
   const [selectionMode,setSelectionMode]=useState<'group'|'tile'>(boot.assembly?.modules?'group':'tile'),[operation,setOperation]=useState<AssemblyOperation>('move'),[createCombinedOpen,setCreateCombinedOpen]=useState(false)
   const [selectOnly,setSelectOnly]=useState(false)
-  const moduleToolOpen=!!history.current.modules&&selectionMode==='group'
+  const [snapObjects,setSnapObjects]=useState<SnapObjects>(()=>initialSnapObjects(history.current,history.current.modules?'group':'tile'))
+  const snapActive=operation==='snap'&&!selectOnly&&!symmetryOpen
+  const snapRequest:SnapRequest={...snapObjects,...snapSettings,mode:snapValidationMode}
+  const moduleToolOpen=!!history.current.modules&&(snapActive?snapObjects.moving.kind==='group':selectionMode==='group')
   const [moduleTool,setModuleTool]=useState<ModuleTool>({fixed:'module-0',moving:'module-1',face:'',space:'global',mode:'translate'}),[moduleLive,setModuleLive]=useState<Assembly3D|null>(null),[modulePreview,setModulePreview]=useState<ModulePreview|null>(null)
   const [snapOrientationTargets,setSnapOrientationTargets]=useState<Record<string,SnapOrientationTarget>>({})
   useEffect(()=>setSaveConflict(null),[history.current.id])
   useEffect(()=>setSnapOrientationTargets({}),[history.current.id,loaded.sequence])
-  const [tileSnap,setTileSnap]=useState({fixedTile:'',fixedPort:''})
-  const [snapSelection,setSnapSelection]=useState<ModuleSnapSelection>({fixedTile:'',fixedPort:'',movingPort:''}),[snapPicker,setSnapPicker]=useState<SnapPicker|null>(null)
+  const [snapPicker,setSnapPicker]=useState<SnapPicker|null>(null)
   const [live, setLive] = useState<{ pieceId: string; tf: Pose3D } | null>(null)
   const [clean, setClean] = useState(() => boot.raw??serializeAssembly3D(history.current)), [saveNotice, setSaveNotice] = useState('')
   const [cleanPolicy,setCleanPolicy]=useState(()=>canonical(boot.nonRepairable))
@@ -211,7 +214,7 @@ export default function ThreeDWorkspace() {
   const validation = useMemo(() => validateAssembly3D(assembly), [assembly])
   const selectedConnection=selection.kind==='connection'?assembly.connections[selection.index]:undefined
   const geometryErrors=validation.issues.filter(i=>i.severity==='error')
-  const collisionWarnings=snapValidationMode==='less-strict'&&!moduleToolOpen&&!symmetryOpen
+  const collisionWarnings=snapValidationMode==='less-strict'&&(!moduleToolOpen||snapActive)&&!symmetryOpen
   const geometryBlockingErrors=geometryErrors.filter(i=>!collisionWarnings||i.code!=='intersection')
   const collisionIssues=useMemo(()=>validation.issues.filter(i=>i.severity==='error'&&i.code==='intersection'),[validation])
   const selectedCollision=useMemo(()=>{
@@ -229,7 +232,7 @@ export default function ThreeDWorkspace() {
   const shapes = useMemo(() => new Map([...catalog].map(([key, item]) => [key, item.shape])), [catalog])
   const project = useMemo(() => ({ ...editorProject(current, catalog), shapes }), [current, catalog, shapes])
   const repairProject=useMemo(()=>currentRepair?{...editorProject(currentRepair.candidate.assembly,catalog),shapes}:null,[currentRepair,catalog,shapes])
-  useEffect(()=>{setSelectionMode(current.modules?'group':'tile');setSelectOnly(false);setOperation('move');setTool('move');setCreateCombinedOpen(false);setModulePreview(null);setModuleLive(null);if(current.modules){const fixed=current.modules[0],moving=current.modules[1],joint=[...current.connections].reverse().find(c=>fixed.pieces.some(p=>p.id===c.pieceA)&&moving.pieces.some(p=>p.id===c.pieceB));setModuleTool({fixed:fixed.id,moving:moving.id,face:joint?.pieceB??moving.pieces[0].id,space:'global',mode:'translate'});setSnapSelection({fixedTile:joint?.pieceA??fixed.pieces[0].id,fixedPort:joint?.portA??'',movingPort:joint?.portB??''})}},[current.id])
+  useEffect(()=>{setSelectionMode(current.modules?'group':'tile');setSelectOnly(false);setOperation('move');setTool('move');setCreateCombinedOpen(false);setModulePreview(null);setModuleLive(null);setSnapObjects(initialSnapObjects(current,current.modules?'group':'tile'));if(current.modules?.length){const fixed=current.modules[0],moving=current.modules[1]??fixed;setModuleTool({fixed:fixed.id,moving:moving.id,face:moving.pieces[0].id,space:'global',mode:'translate'})}},[current.id])
   const selectedGroup=selection.kind==='piece'?current.modules?.find(m=>m.pieces.some(p=>p.id===selection.id)):undefined
   const parentTile=selection.kind==='piece'?parentModule(current,selection.id):undefined
   const internalConnection=selection.kind==='connection'&&!!current.connections[selection.index]&&parentInternalConnection(current,current.connections[selection.index])
@@ -237,56 +240,63 @@ export default function ThreeDWorkspace() {
   const connectionRotationActive=editing&&!moduleToolOpen&&!parentReadOnly&&!selectOnly&&!symmetryOpen&&operation==='rotate'&&selection.kind==='piece'&&rotationAxis!==null&&!!current.connections[rotationAxis]&&[current.connections[rotationAxis].pieceA,current.connections[rotationAxis].pieceB].includes(selection.id)
   useEffect(()=>{setRotationPreview(null);setRotationAxis(null)},[current.id,selected,selectionMode,operation,selectOnly,editing,active])
   useEffect(()=>setRotationPreview(null),[current.revision])
-  useEffect(()=>{if(current.modules&&(selection.kind==='connection'||selection.kind==='piece'&&!parentTile))setSelectionMode('tile')},[current.id,selection,parentTile?.id])
+  useEffect(()=>{if(!snapActive&&current.modules&&(selection.kind==='connection'||selection.kind==='piece'&&!parentTile))setSelectionMode('tile')},[current.id,selection,parentTile?.id,snapActive])
   useEffect(()=>{if(!selectedGroup||selection.kind!=='piece')return;setModuleTool(t=>({...t,moving:selectedGroup.id,face:selection.id,fixed:t.fixed!==selectedGroup.id?t.fixed:current.modules!.find(m=>m.id!==selectedGroup.id)!.id}))},[selectedGroup?.id,selection.kind==='piece'?selection.id:''])
-  const snapFixedMembers=current.modules?.find(m=>m.id===moduleTool.fixed)?.pieces.map(p=>p.id)??[]
-  const effectiveSnap=normalizeModuleSnapSelection(items,snapFixedMembers,moduleTool.face,snapSelection)
-  useEffect(()=>{if(!selectedGroup||!moduleTool.face)return;setSnapSelection(s=>{const next=normalizeModuleSnapSelection(items,snapFixedMembers,moduleTool.face,s);return s.fixedTile===next.fixedTile&&s.fixedPort===next.fixedPort&&s.movingPort===next.movingPort?s:next})},[items,moduleTool.fixed,moduleTool.face,selectedGroup?.id])
-  const tileMovingId=selection.kind==='piece'?selection.id:''
-  const tileMovingMembers=current.pieces.filter(p=>!parentModule(current,p.id)).map(p=>p.id)
-  const tileFixedMembers=current.pieces.filter(p=>p.id!==tileMovingId).map(p=>p.id)
-  const tileFixedId=tileFixedMembers.includes(tileSnap.fixedTile)?tileSnap.fixedTile:tileFixedMembers[0]??''
-  const firstPort=(id:string)=>items.find(p=>p.id===id)?.shape.ports[0]?.portId??''
-  const effectiveTileSnap={fixedTile:tileFixedId,fixedPort:validSnapPort(items,tileFixedId,tileSnap.fixedPort)||firstPort(tileFixedId)}
-  const effectiveTilePort=validSnapPort(items,tileMovingId,ownPort)||firstPort(tileMovingId)
-  useEffect(()=>{setTileSnap({fixedTile:'',fixedPort:''})},[current.id])
   useEffect(()=>setSnapValidationMode('strict'),[current.id])
-  useEffect(()=>{setPendingSnap(null)},[current.id,current.revision,tileMovingId,tileFixedId,effectiveTileSnap.fixedPort,ownPort,snapSettings.dihedralDeg,snapSettings.flip,snapValidationMode,snapMode,selectionMode,operation,selectOnly])
-  useEffect(()=>{setTileSnap(s=>{const fixedTile=tileFixedMembers.includes(s.fixedTile)?s.fixedTile:tileFixedMembers[0]??'',fixedPort=validSnapPort(items,fixedTile,s.fixedPort);return s.fixedTile===fixedTile&&s.fixedPort===fixedPort?s:{fixedTile,fixedPort}});setOwnPort(p=>validSnapPort(items,tileMovingId,p)||firstPort(tileMovingId))},[items,tileMovingId,tileFixedId])
-  useEffect(()=>setSnapPicker(null),[operation,selectionMode,current.id,current.revision,moduleTool.fixed,moduleTool.moving,selectedGroup?.id,tileMovingId,tileFixedId,tileSnap.fixedPort,ownPort,editing,active,activeVisible,selectOnly,symmetryOpen,operationBusy])
+  useEffect(()=>{setPendingSnap(p=>p&&(!snapActive||!sameSnapRequest(p.request,snapRequest)||p.sourceRaw!==serializeAssembly3D(current))?null:p)},[current,snapObjects,snapSettings,snapValidationMode,snapActive])
+  // The Viewer pick grain is intentionally absent: a Snap session survives Group / Tile switches.
+  useEffect(()=>setSnapPicker(null),[operation,current.id,current.revision,editing,active,activeVisible,selectOnly,symmetryOpen])
+  function updateSnapObjects(objects:SnapObjects){clearSnapPreview();setSnapPicker(null);setSnapObjects(objects);if(objects.moving.tileId!==snapObjects.moving.tileId||objects.moving.kind!==snapObjects.moving.kind)setSelection({kind:'piece',id:objects.moving.tileId})}
+  function selectEditor(next:Selection){
+    if(operationBusy)return
+    setSnapPicker(null)
+    if(snapActive&&next.kind==='piece'){
+      const parent=parentModule(current,next.id)
+      if(selectionMode==='group'&&!parent){setError('当前选择粒度为 Group；独立 Free Tile 请切换 Tile 后选择');return}
+      if(selectionMode==='tile'&&parent){setSelection(next);setError('固定 Parent 成员不能单片移动；请选择 Group 或独立 Free Tile');return}
+      updateSnapObjects({...snapObjects,moving:snapObject(current,selectionMode,next.id,snapObjects.moving.portId)})
+    }
+    setSelection(next)
+  }
   function toggleSnapPicker(kind:SnapPicker){setSnapPicker(p=>p===kind?null:kind);if(snapPicker!==kind)showWorkspace()}
+  const movingSnapIds=snapObjects.moving.kind==='group'?current.modules?.find(m=>m.id===snapObjects.moving.groupId)?.pieces.map(p=>p.id)??[]:[snapObjects.moving.tileId]
   function pickSnap(tileId:string,portId?:string){
     if(!snapPicker||operationBusy)return
-    const fixed=snapPicker.startsWith('fixed'),members=moduleToolOpen?(fixed?snapFixedMembers:current.modules?.find(m=>m.id===moduleTool.moving)?.pieces.map(p=>p.id)??[]):(fixed?tileFixedMembers:tileMovingMembers)
-    if(!members.includes(tileId))return
-    if(!moduleToolOpen){
-      if(snapPicker.endsWith('port')){
-        if(tileId!==(fixed?effectiveTileSnap.fixedTile:tileMovingId)||!portId||!validSnapPort(items,tileId,portId))return
-        if(fixed)setTileSnap({...effectiveTileSnap,fixedPort:portId});else setOwnPort(portId)
-      }else if(fixed)setTileSnap({fixedTile:tileId,fixedPort:validSnapPort(items,tileId,tileSnap.fixedPort)})
-      else{setSelection({kind:'piece',id:tileId});setOwnPort(validSnapPort(items,tileId,ownPort))}
-    }else if(snapPicker.endsWith('port')){
-      if(tileId!==(fixed?effectiveSnap.fixedTile:moduleTool.face)||!portId||!validSnapPort(items,tileId,portId))return
-      setSnapSelection({...effectiveSnap,[fixed?'fixedPort':'movingPort']:portId})
-    }else if(fixed)setSnapSelection({...effectiveSnap,fixedTile:tileId,fixedPort:validSnapPort(items,tileId,effectiveSnap.fixedPort)})
-    else{setModuleTool(t=>({...t,face:tileId}));setSelection({kind:'piece',id:tileId});setSnapSelection({...effectiveSnap,movingPort:validSnapPort(items,tileId,effectiveSnap.movingPort)})}
-    setSnapPicker(null)
+    const side=snapPicker.startsWith('fixed')?'fixed':'moving',end=snapObjects[side]
+    if(!current.pieces.some(p=>p.id===tileId)||side==='fixed'&&movingSnapIds.includes(tileId))return
+    let next=end
+    if(snapPicker.endsWith('port')){
+      if(tileId!==end.tileId||!portId||!validSnapPort(items,tileId,portId))return
+      next={...end,portId}
+    }else{
+      if(selectionMode==='group'&&!parentModule(current,tileId))return
+      if(side==='moving'&&selectionMode==='tile'&&parentModule(current,tileId)){setError('固定 Parent 成员不能单片移动；请选择 Group 或独立 Free Tile');return}
+      next=snapObject(current,selectionMode,tileId,end.portId)
+    }
+    updateSnapObjects({...snapObjects,[side]:next})
   }
   const rotationJoint=connectionRotationActive?current.connections[rotationAxis!]:undefined
-  const snapViewport:SnapViewport|undefined=rotationJoint?{picker:null,fixed:{tileId:rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA,portId:rotationJoint.pieceA===selected?rotationJoint.portB:rotationJoint.portA,members:[rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA]},moving:{tileId:selected!,portId:rotationJoint.pieceA===selected?rotationJoint.portA:rotationJoint.portB,members:[selected!]},onPick:()=>{}}:editing&&active&&activeVisible&&!selectOnly&&!symmetryOpen&&operation==='snap'&&!operationBusy?(moduleToolOpen?(selectedGroup?{
-    picker:snapPicker,fixed:{tileId:effectiveSnap.fixedTile,portId:effectiveSnap.fixedPort,members:snapFixedMembers},moving:{tileId:moduleTool.face,portId:effectiveSnap.movingPort,members:selectedGroup.pieces.map(p=>p.id)},onPick:pickSnap
-  }:undefined):snapPicker&&!parentReadOnly&&tileMovingId?{
-    picker:snapPicker,fixed:{tileId:effectiveTileSnap.fixedTile,portId:effectiveTileSnap.fixedPort,members:tileFixedMembers},moving:{tileId:tileMovingId,portId:effectiveTilePort,members:tileMovingMembers},onPick:pickSnap
-  }:undefined):undefined
-  function chooseOperation(next:AssemblyOperation){setSelectOnly(false);setSymmetryOpen(false);setSymmetrySources([]);setOperation(next);setTool(next==='snap'?(snapMode==='drag'?'snap':'select'):next==='move'||next==='rotate'?next:'select');setModuleTool(t=>({...t,mode:next==='rotate'?'rotate':'translate'}));showInspector()}
+  const pickMembers=(side:'moving'|'fixed')=>current.pieces.filter(p=>(selectionMode==='group'?!!parentModule(current,p.id):side==='fixed'||!parentModule(current,p.id))&&(side!=='fixed'||!movingSnapIds.includes(p.id))).map(p=>p.id)
+  const snapViewport:SnapViewport|undefined=rotationJoint?{picker:null,fixed:{tileId:rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA,portId:rotationJoint.pieceA===selected?rotationJoint.portB:rotationJoint.portA,members:[rotationJoint.pieceA===selected?rotationJoint.pieceB:rotationJoint.pieceA]},moving:{tileId:selected!,portId:rotationJoint.pieceA===selected?rotationJoint.portA:rotationJoint.portB,members:[selected!]},onPick:()=>{}}:editing&&active&&activeVisible&&snapActive&&!operationBusy&&(moduleToolOpen||snapPicker)?{
+    picker:snapPicker,fixed:{tileId:snapObjects.fixed.tileId,portId:snapObjects.fixed.portId,members:pickMembers('fixed')},moving:{tileId:snapObjects.moving.tileId,portId:snapObjects.moving.portId,members:pickMembers('moving')},onPick:pickSnap
+  }:undefined
+  function chooseOperation(next:AssemblyOperation){if(next==='snap'&&!snapActive){
+    let objects=initialSnapObjects(current,selectionMode,selected??'',moduleTool.moving,moduleTool.fixed)
+    const ids=objects.moving.kind==='group'?current.modules?.find(m=>m.id===objects.moving.groupId)?.pieces.map(p=>p.id)??[]:[objects.moving.tileId]
+    const joint=[...current.connections].reverse().find(c=>ids.includes(c.pieceB)&&!ids.includes(c.pieceA))
+    if(joint){objects={moving:snapObject(current,selectionMode,joint.pieceB,joint.portB),fixed:snapObject(current,parentModule(current,joint.pieceA)?'group':'tile',joint.pieceA,joint.portA)};setSnapSettings({dihedralDeg:joint.dihedralDeg,flip:joint.flip??false})}
+    else if(selectionMode==='group')setSnapSettings({dihedralDeg:0,flip:true})
+    setSnapObjects(objects)
+  }setSelectOnly(false);setSymmetryOpen(false);setSymmetrySources([]);setOperation(next);setTool(next==='snap'?(snapMode==='drag'?'snap':'select'):next==='move'||next==='rotate'?next:'select');setModuleTool(t=>({...t,mode:next==='rotate'?'rotate':'translate'}));showInspector()}
   function chooseSelect(){setSelectOnly(true);setSnapPicker(null);setSymmetryOpen(false);setSymmetrySources([]);setTool('select')}
   function toggleSymmetry(){if(!symmetryOpen)showInspector();setSymmetryOpen(v=>!v);setSymmetrySources(!symmetryOpen&&selection.kind==='piece'?[selection.id]:[]);setSymmetryPreview(null);setSelection({kind:'none'})}
   const toolbarDisabled=!editing?'请切换到 Edit Draft':operationBusy?'请先完成或取消当前操作':!activeVisible?'请先显示当前作品':''
-  const transformDisabled=moduleToolOpen?!selectedGroup?'请先选择 Group':'':parentReadOnly||(!chosen?'请先选择 Tile':'')
+  const transformDisabled=snapActive?(parentReadOnly||(snapObjects.moving.tileId?'':'请先选择 Moving 对象')):moduleToolOpen?!selectedGroup?'请先选择 Group':'':parentReadOnly||(!chosen?'请先选择 Tile':'')
   const copyDisabled=symmetryOpen?'请先关闭对称补全':moduleToolOpen?'Group 不支持复制，请切换 Tile 模式':!chosen?'请先选择 Tile':''
   const deleteDisabled=copyDisabled||(current.modules?.some(m=>m.pieces.some(p=>p.id===selected))?'Combined Parent 成员不可删除；请在来源作品中编辑':'')
   const symmetryDisabled=moduleToolOpen?'Group 不支持镜像复制，请切换 Tile 模式':!current.pieces.length?'请先添加 Tile':''
   const rotationProject=useMemo(()=>rotationPreview?{...editorProject(rotationPreview.assembly,catalog),shapes}:null,[rotationPreview,catalog,shapes])
+  const snapProject=useMemo(()=>pendingSnap?.request.moving.kind==='group'?{...editorProject(pendingSnap.assembly,catalog),shapes}:null,[pendingSnap,catalog,shapes])
   const moduleProject=useMemo(()=>moduleLive||modulePreview?{...editorProject(moduleLive??modulePreview!.assembly,catalog),shapes}:null,[moduleLive,modulePreview,catalog,shapes])
   const modulePivotPose=useMemo(()=>{if(!editing||selectOnly||!moduleToolOpen||!selectedGroup||selectedGroup.id!==moduleTool.moving||!current.modules||modulePreview||symmetryOpen||repairSearching||currentRepair||(operation!=='move'&&operation!=='rotate'))return undefined;try{return modulePivot(current,moduleTool.moving,moduleTool.space,moduleTool.face||current.modules.find(m=>m.id===moduleTool.moving)?.pieces[0].id)}catch{return undefined}},[current,editing,selectOnly,moduleToolOpen,selectedGroup,moduleTool,modulePreview,symmetryOpen,repairSearching,currentRepair,operation])
   function applyModule(preview:ModulePreview){try{const next=confirmModulePreview(historyRef.current.current,preview);accept(actions.commit(historyRef.current,()=>next));setError('');setSaveNotice('模块操作已应用；内部连接保持不变，几何诊断保持真实显示。');return true}catch(e){setModuleLive(null);setModulePreview(null);setError(String(e));return false}}
@@ -338,13 +348,19 @@ export default function ThreeDWorkspace() {
     window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut)
   }, [active, editing, operationBusy])
   function clearSnapPreview(){setPendingSnap(null);setLive(null);setError('')}
-  function prepareSnap(connection:Connection){
+  function prepareSnap(connection:Connection=snapConnection(snapRequest)){
     setLive(null);setPendingSnap(null);
-    try{setPendingSnap(previewEdgeSnap(historyRef.current.current,connection,snapValidationMode));setError('')}catch(e){setError(String(e))}
+    try{
+      if(connection.pieceB!==snapObjects.moving.tileId)throw Error('Moving 对象已变化，请重新选择 Snap 来源')
+      const fixed=connection.pieceA===snapObjects.fixed.tileId?{...snapObjects.fixed,portId:connection.portA}:snapObject(current,'tile',connection.pieceA,connection.portA)
+      const request:SnapRequest={...snapRequest,fixed,moving:{...snapObjects.moving,portId:connection.portB},dihedralDeg:connection.dihedralDeg,flip:connection.flip??false}
+      setSnapObjects({moving:request.moving,fixed:request.fixed});setSnapSettings({dihedralDeg:request.dihedralDeg,flip:request.flip});setSnapPicker(null)
+      setPendingSnap(previewSnapSession(historyRef.current.current,request));setError('')
+    }catch(e){setError(String(e))}
   }
   function confirmSnap(){
     if(!pendingSnap)return;
-    try{accept(confirmEdgeSnap(historyRef.current,pendingSnap,snapValidationMode));setError('');setSaveNotice(snapValidationMode==='less-strict'?'Less Strict 吸附已确认；实际碰撞仍保留在 Geometry Diagnostics，请保存 Draft。':'吸附已确认：仅更新源零件 Pose 和真实连接；仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
+    try{accept(confirmSnapSession(historyRef.current,pendingSnap,snapRequest));setError('');setSaveNotice(snapValidationMode==='less-strict'?'Less Strict 吸附已确认；实际碰撞仍保留在 Geometry Diagnostics，请保存 Draft。':'吸附已确认；Fixed 保持不动，仍使用严格几何验证。')}catch(e){setPendingSnap(null);setLive(null);setError(String(e))}
   }
   function confirmRotation(p:ConnectionRotationPreview){
     try{
@@ -535,7 +551,7 @@ export default function ThreeDWorkspace() {
           <div className="assembly-status-row"><p className="magnetic-3d-summary" role="status"><span>{assembly.pieces.length} 片 · {assembly.connections.length} 条连接 · </span><span className={geometryBlockingErrors.length?'magnetic-3d-blocker':undefined}>{validation.valid?'Geometry Valid':'Geometry Invalid'}</span><span> · {dirty?'未保存':'Draft'}</span><span> · 碰撞 {collisionIssues.length}</span>{current.modules&&<span> · {current.modules.length} Groups</span>}{boot.recovery&&dirty&&<span data-testid="workspace-recovery-status"> · 已恢复未保存修改</span>}</p>
             <label className="assembly-tile-ids"><input type="checkbox" checked={showTileIds} onChange={e=>setShowTileIds(e.target.checked)}/>显示 Tile ID</label>
           </div>
-          <AssemblyEditorToolbar selectionControls={editing&&current.modules&&<div className="assembly-selection-modes" role="group" aria-label="Selection 模式">{(['group','tile'] as const).map(mode=><button key={mode} disabled={operationBusy} aria-pressed={selectionMode===mode} onClick={()=>setSelectionMode(mode)}>{mode==='group'?'Group':'Tile'}</button>)}</div>} operation={operation} selectOnly={selectOnly} symmetryOpen={symmetryOpen} disabledReason={toolbarDisabled} transformReason={transformDisabled} copyReason={copyDisabled} deleteReason={deleteDisabled} symmetryReason={symmetryDisabled}
+          <AssemblyEditorToolbar selectionControls={editing&&current.modules&&<div className="assembly-selection-modes" role="group" aria-label="Selection 模式">{(['group','tile'] as const).map(mode=><button key={mode} disabled={operationBusy&&!pendingSnap} aria-pressed={selectionMode===mode} onClick={()=>setSelectionMode(mode)}>{mode==='group'?'Group':'Tile'}</button>)}</div>} operation={operation} selectOnly={selectOnly} symmetryOpen={symmetryOpen} disabledReason={toolbarDisabled} transformReason={transformDisabled} copyReason={copyDisabled} deleteReason={deleteDisabled} symmetryReason={symmetryDisabled}
             onSelect={chooseSelect} onOperation={chooseOperation} onSymmetry={toggleSymmetry}
             onCopy={()=>{if(selected)apply(h=>{const result=actions.duplicatePieceAction(h,selected);setSelection({kind:'piece',id:result.newId});return result.history})}}
             onDelete={()=>{if(selected)apply(h=>{setSelection({kind:'none'});return actions.deletePieceAction(h,selected)})}}/>
@@ -549,14 +565,14 @@ export default function ThreeDWorkspace() {
         {(moduleLive||modulePreview)&&<p role="status" data-testid="module-viewer-preview">模块{modulePreview?(modulePreview.boundsAlignment?'边界对齐预览 · 尚未修改 Draft':'吸附预览 · 尚未修改 Draft'):'刚体拖动预览'} · 全部内部 Pose 联动；固定模块保持不动。</p>}
         {currentRepair&&<p className="magnetic-constraint-repair-banner" data-testid="repair-viewer-preview" data-repair-angles={JSON.stringify(currentRepair.candidate.angles)}>自动修复预览 · {currentRepair.candidate.id} · {currentRepair.candidate.geometry.valid?'Geometry Valid':'Geometry Invalid · 部分改善'} · {currentRepair.candidate.proposedConnection?'建议新增 Connection':'仅改善碰撞'} · 碰撞 {currentRepair.candidate.collisions.length} · 当前 Draft 尚未修改</p>}
         {rotationPreview&&<p role="status" data-testid="connection-rotation-preview" data-angle={rotationPreview.deltaDeg}>连接边旋转预览 · 尚未修改 Draft · {rotationPreview.canConfirm?'可确认':'验证阻断'} · {rotationPreview.geometry.valid?'Geometry Valid':'Geometry Invalid'}</p>}
-        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?selectedGroup?.pieces.map(p=>p.id):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={rotationProject??moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={connectionRotationActive||snapPicker||selectOnly||moduleToolOpen||!!parentReadOnly||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
-          onSelectPiece={id => {if(operationBusy||snapPicker)return;setSelection({kind:'piece',id});if(symmetryOpen)setSymmetrySources(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}}
+        {active && (editing ? <ViewerErrorBoundary key={`edit-${loaded.sequence}`}><EditorCanvas snapViewport={snapViewport} selectionHighlightIds={symmetryOpen?symmetrySources:undefined} groupSelectedIds={moduleToolOpen?(snapActive?movingSnapIds:selectedGroup?.pieces.map(p=>p.id)):undefined} moduleGizmo={moduleGizmo} moduleMode={moduleToolOpen} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} project={rotationProject??snapProject??moduleProject??repairProject??project} previewPieces={symmetryPieces} selection={currentRepair?.candidate.proposedConnection?{kind:'connection',index:currentRepair.candidate.assembly.connections.length-1}:selection} toolMode={connectionRotationActive||snapPicker||selectOnly||moduleToolOpen||!!parentReadOnly||symmetryOpen||repairSearching||currentRepair?'select':tool} showTileIds={showTileIds} collision={repairCollision??selectedCollision} collisionFocus={currentRepair?null:collisionFocus}
+          onSelectPiece={id => {if(operationBusy||snapPicker)return;selectEditor({kind:'piece',id});if(symmetryOpen)setSymmetrySources(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}}
           onSelectConnection={index => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'connection', index }) }}
-          onSelectPort={(id,portId)=>{if(operationBusy||snapPicker||symmetryOpen||moduleToolOpen)return;if(!selectOnly&&operation==='snap'&&snapMode==='click'&&selected&&id!==selected){prepareSnap({pieceA:id,portA:portId,pieceB:selected,portB:ownPort,...snapSettings});return}setSelection({kind:'piece',id});setOwnPort(portId)}}
+          onSelectPort={(id,portId)=>{if(operationBusy||snapPicker||symmetryOpen||moduleToolOpen)return;if(snapActive&&snapMode==='click'&&snapObjects.moving.tileId&&id!==snapObjects.moving.tileId){prepareSnap({pieceA:id,portA:portId,pieceB:snapObjects.moving.tileId,portB:snapObjects.moving.portId,...snapSettings});return}if(snapActive)updateSnapObjects({...snapObjects,moving:snapObject(current,selectionMode,id,portId)});else setSelection({kind:'piece',id})}}
           onClearSelection={() => { if (!operationBusy&&!snapPicker) setSelection({ kind: 'none' }) }} focusRequest={errorFocus} fitRequest={moduleFit}
           onMovePiece={(pieceId, tf) => setLive({ pieceId, tf })}
           onMovePieceCommit={(id, tf) => apply(h => actions.setPieceTransformAction(h, id, tf))}
-          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={ownPort} showSnapTargets={!snapPicker&&!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen&&!parentReadOnly} interactionLocked={connectionRotationActive||!!rotationPreview||!!snapPicker||!!parentReadOnly||!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
+          onCreateConnection={prepareSnap} onSnapProposal={prepareSnap} onMovePieceCancel={()=>setLive(null)} snapCandidates={[snapSettings]} snapSourcePort={snapObjects.moving.portId} showSnapTargets={!snapPicker&&!selectOnly&&operation==='snap'&&snapMode==='click'&&!symmetryOpen&&!moduleToolOpen&&!parentReadOnly} interactionLocked={connectionRotationActive||!!rotationPreview||!!snapPicker||!!parentReadOnly||!!pendingSnap||symmetryOpen||repairSearching||!!currentRepair} snapGhost={pendingSnap&&pendingSnap.request.moving.kind==='tile'?{pieceId:pendingSnap.connection.pieceB,tf:pendingSnap.assembly.pieces.find(p=>p.id===pendingSnap.connection.pieceB)!.pose}:null}
           cameraTargetRef={cameraTargetRef} liveTransformOverride={live} initialCameraView={initialCameraView} onCameraViewChange={setEditorCamera}/></ViewerErrorBoundary>
           : <MagnetScene3D key={loaded.sequence} assembly={assembly} readOnlyAssemblies={readOnlyAssemblies} activeVisible={activeVisible} onInspectAssemblyPiece={inspectReadOnly} readOnlySelection={readOnlySelection} selected={selected} onSelect={setSelected} showTileIds={showTileIds} selectedConnection={selectedConnection} collision={selectedCollision} collisionFocus={collisionFocus} initialCameraView={initialCameraView}/>)}
         {editing&&<details><summary>相机状态</summary><output aria-label="3D Editor 相机状态">{JSON.stringify(editorCamera)}</output></details>}
@@ -591,20 +607,17 @@ export default function ThreeDWorkspace() {
           currentToolPanel={<>
             {editing&&!moduleToolOpen&&!selectOnly&&!symmetryOpen&&!parentReadOnly&&operation==='rotate'&&selected&&<ConnectionRotatePanel key={`${current.id}:${current.revision}:${selected}`} assembly={current} pieceId={selected} axisIndex={rotationAxis} setAxisIndex={i=>{setRotationPreview(null);setLive(null);setRotationAxis(i);setError('')}} mode={snapValidationMode} setMode={m=>{setRotationPreview(null);setSnapValidationMode(m);setError('')}} preview={rotationPreview} setPreview={setRotationPreview} onConfirm={confirmRotation} busy={!!(assemblyIO||moduleLive||modulePreview||live||pendingSnap||symmetryPreview||repairSearching||currentRepair)}/>}
             {editing&&symmetryOpen&&<SymmetryFillPanel assembly={current} sourceIds={symmetrySources} preview={symmetryPreview} setPreview={setSymmetryPreview} confirmPreview={confirmFill} close={()=>{setSymmetryOpen(false);setSymmetrySources([]);setSymmetryPreview(null)}}/>}
-            {editing&&moduleToolOpen&&!selectOnly&&!symmetryOpen&&<div hidden={!selectedGroup}><ModuleTransformPanel showSpatialInspection={false} key={current.id} orientationTarget={snapOrientationTargets[moduleTool.moving]} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} snapSelection={effectiveSnap} setSnapSelection={s=>{setSnapSelection(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/></div>}
-            {pendingSnap&&<TileSnapPreview preview={pendingSnap} onConfirm={confirmSnap} onCancel={clearSnapPreview}/>}
+            {editing&&moduleToolOpen&&!selectOnly&&!symmetryOpen&&!snapActive&&<div hidden={!selectedGroup}><ModuleTransformPanel showSpatialInspection={false} key={current.id} onOrientationTarget={target=>setSnapOrientationTargets(ts=>({...ts,[target.groupId]:target}))} assembly={current} inspectionAssembly={moduleLive??modulePreview?.assembly??current} selectedGroupId={selectedGroup?.id} operation={operation} tool={moduleTool} setTool={t=>{setModuleTool(t);if(t.face!==moduleTool.face)setSelection({kind:'piece',id:t.face})}} busy={assemblyIO||!!moduleLive||!!live||!!pendingSnap||!!symmetryPreview||repairSearching||!!currentRepair||!selectedGroup||symmetryOpen} preview={modulePreview} onPreview={p=>{setModulePreview(p);setModuleFit({ts:Date.now()})}} onApply={applyModule}/></div>}
+            {editing&&snapActive&&<SnapPanel assembly={current} request={snapRequest} onObjects={updateSnapObjects} onSettings={s=>{clearSnapPreview();setSnapSettings(s)}} onMode={m=>{clearSnapPreview();setSnapValidationMode(m)}} pickGrain={selectionMode} picker={snapPicker} togglePicker={toggleSnapPicker} preview={pendingSnap} onPreview={()=>prepareSnap()} onConfirm={confirmSnap} onCancel={clearSnapPreview} onConstraint={()=>apply(h=>actions.createConnectionAction(h,snapConnection(snapRequest),false))} interaction={snapMode} onInteraction={mode=>{clearSnapPreview();setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}} busy={operationBusy&&!pendingSnap} orientationTarget={snapOrientationTargets[snapObjects.moving.groupId]}/> }
           </>}
-          toolControls={editing&&!moduleToolOpen&&!selectOnly&&operation==='snap'&&!symmetryOpen&&<div className="magnetic-3d-snap-controls">
-            <label>验证模式<select aria-label="Tile Snap 验证模式" value={snapValidationMode} disabled={operationBusy&&!pendingSnap} onChange={e=>{clearSnapPreview();setSnapValidationMode(e.target.value as EdgeSnapMode)}}><option value="strict">Strict</option><option value="less-strict">Less Strict</option></select></label>
-            <label className="magnetic-3d-snap-switch">吸附方式<select aria-label="3D 吸附方式" value={snapMode} disabled={operationBusy&&!pendingSnap} onChange={e=>{const mode=e.target.value as 'drag'|'click';clearSnapPreview();setSnapMode(mode);setTool(mode==='drag'?'snap':'select')}}><option value="drag">拖动吸附</option><option value="click">点击吸附</option></select></label>
-          </div>}
+          toolControls={null}
           selectionTitle={moduleToolOpen&&selectedGroup?<span data-testid="selected-assembly-group" data-group-id={selectedGroup.id}>{selectedGroup.name}</span>:chosen?.id??(selectedConnection&&selection.kind==='connection'?`Connection #${selection.index}`:'')}
           selectionControls={editing&&current.modules&&<div className="assembly-selection-controls">
-            {moduleToolOpen&&<label>Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>}
+            {moduleToolOpen&&<label>Group<select aria-label="当前 Group" disabled={operationBusy} value={selectedGroup?.id??''} onChange={e=>{const m=current.modules!.find(m=>m.id===e.target.value);setSelection(m?{kind:'piece',id:m.pieces[0].id}:{kind:'none'});if(snapActive&&m)updateSnapObjects({...snapObjects,moving:snapObject(current,'group',m.pieces[0].id,'',m.id)})}}><option value="">点击 Viewer 选择 Group</option>{current.modules!.map(m=><option key={m.id} value={m.id}>{m.name} · {m.pieces.length} Tiles</option>)}</select></label>}
           </div>}
           selectionInfo={<>
         {current.modules&&chosen&&!parentTile&&<small data-testid="combined-free-tile">自由 Tile · 当前 Combined 自有，不属于固定 Parent Group</small>}
-        {moduleToolOpen&&selectedGroup?<GroupSelectionDetails assembly={moduleLive??modulePreview?.assembly??current} groupId={selectedGroup.id} format={format} preview={!!moduleLive||!!modulePreview}/>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
+        {moduleToolOpen&&selectedGroup?<GroupSelectionDetails assembly={moduleLive??modulePreview?.assembly??(snapActive?pendingSnap?.assembly:undefined)??current} groupId={selectedGroup.id} format={format} preview={!!moduleLive||!!modulePreview||snapActive&&!!pendingSnap}/>:selectedCollision?<div className="magnetic-3d-collision-detail" data-selected-collision={selectedCollision.key} data-collision-revision={assembly.revision}>
           <h4>{selectedCollision.evidence.pieceIds.join(' / ')}</h4><p className={collisionWarnings?undefined:"magnetic-3d-blocker"}>{collisionWarnings?'Warning · ':''}Solid Collision Invalid · depth {depthFormat(selectedCollision.evidence.penetrationDepth)}</p>
           <p>{collisionLocality(selectedCollision.evidence.locality)} · Revision {assembly.revision} · 当前完整快照</p>
           <p className="hint">{selectedCollision.reason}</p>
@@ -616,8 +629,7 @@ export default function ThreeDWorkspace() {
         </dl></div> : <p className="hint">点击画布或表格选择 Tile / Connection。</p>}
 
         </>} globalTools={<div className="button-row"><button hidden={!!scope} disabled={operationBusy} onClick={blank}>新建空白 3D Draft</button><button disabled={operationBusy} onClick={reloadSaved}>重新加载已保存 Draft</button></div>}
-          assembly={current} project={project} profiles={profiles} selection={selection} ownPort={ownPort}
-          hasSnapPreview={!!pendingSnap} tileSnap={effectiveTileSnap} setTileSnap={s=>{clearSnapPreview();setTileSnap(s);setSnapPicker(null)}} picker={snapPicker} togglePicker={toggleSnapPicker} setOwnPort={id=>{clearSnapPreview();setOwnPort(id);setSnapPicker(null)}} apply={apply} select={s=>{clearSnapPreview();setSelection(s)}} busy={operationBusy} onPreviewSnap={prepareSnap} snapSettings={snapSettings} setSnapSettings={s=>{clearSnapPreview();setSnapSettings(s)}}/>
+          assembly={current} project={project} profiles={profiles} selection={selection} apply={apply} select={s=>{clearSnapPreview();setSelection(s)}} busy={operationBusy}/>
 
 
         <section className="magnetic-3d-geometry-check" aria-label="Geometry Check"><h4>Geometry Check</h4>
@@ -653,7 +665,7 @@ export default function ThreeDWorkspace() {
         {saveNotice && <p className="magnetic-3d-save-notice" role="status">{saveNotice}</p>}
         {error && <div><p role="alert">{error.length>200?error.slice(0,200)+'…':error}</p>{error.length>200&&<details><summary>操作错误详情</summary><p>{error}</p></details>}</div>}
         {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&Array.isArray(photoOrigin.origin.pendingObservations)&&<PendingObservations assembly={current} values={photoOrigin.origin.pendingObservations as PendingObservation[]} disabled={!editing||operationBusy} onPlace={(p,pose)=>apply(h=>{const next=placePendingObservation(h,p,pose);setSelection({kind:'piece',id:p.id});return next})}/>}
-        <AssemblySelectionTable angleHints={<AssemblyAngleHints report={validation} assembly={assembly} state={angleHints} selection={selection} select={setSelection} busy={operationBusy}/>} symmetrySources={editing&&symmetryOpen?symmetrySources:undefined} onSymmetrySource={(id,checked)=>{setSymmetryPreview(null);setSymmetrySources(ids=>checked?[...ids,id]:ids.filter(x=>x!==id))}} collisionIds={selectedCollision?.evidence.pieceIds} assembly={assembly} selection={selection} select={setSelection} busy={operationBusy}/>
+        <AssemblySelectionTable angleHints={<AssemblyAngleHints report={validation} assembly={assembly} state={angleHints} selection={selection} select={selectEditor} busy={operationBusy}/>} symmetrySources={editing&&symmetryOpen?symmetrySources:undefined} onSymmetrySource={(id,checked)=>{setSymmetryPreview(null);setSymmetrySources(ids=>checked?[...ids,id]:ids.filter(x=>x!==id))}} collisionIds={selectedCollision?.evidence.pieceIds} assembly={assembly} selection={selection} select={selectEditor} busy={operationBusy}/>
         {photoOrigin&&JSON.parse(photoOrigin.assemblyRaw).id===current.id&&<details className="visible3d-origin"><summary>{photoOrigin.origin.kind==='editor-created'?'Editor 起点与快照':'照片来源与快照'}</summary><p>Source {photoOrigin.origin.sourceId as string} · {photoOrigin.assemblyRaw===serializeAssembly3D(current)?'起点快照一致':photoOrigin.origin.kind==='editor-created'?'已编辑，保留独立 Editor 起点':'已编辑，原照片关联仅供追溯'}</p><p>{photoOrigin.origin.kind==='editor-created'?'Editor 直接创建；没有照片或重建历史。':'Geometry Valid 与照片匹配独立；'}来源记录 {photoOrigin.origin.id as string}</p><pre>{JSON.stringify(photoOrigin.origin,null,2)}</pre>{!!photoOrigin.symmetryFills?.length&&<details><summary>编辑器对称假设来源（非照片观察）</summary><pre>{JSON.stringify(photoOrigin.symmetryFills,null,2)}</pre></details>}</details>}
         <details hidden={!!scope} className="magnetic-3d-examples-debug"><summary>Examples / Debug</summary><p className="hint">开发示例；加载会替换当前查看内容，不属于正式 Tiles Catalog。当前来源：{loaded.name}</p><div className="magnetic-3d-examples" role="group" aria-label="3D 示例">{examples.map(example=><button key={example.id} disabled={operationBusy} data-3d-example={example.id} aria-pressed={assembly.id===example.id} onClick={()=>{fileRequest.current++;load(JSON.stringify(example.data,null,2),example.name)}}>{example.name}</button>)}</div><p>{componentCount(assembly)} 个组件 · revision {assembly.revision}</p></details>
       </section>
