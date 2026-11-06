@@ -19,7 +19,7 @@ import {combinedSolveReason} from './combined-editing.ts'
 import type {AssemblyOperation} from './ModuleTransformPanel.tsx'
 
 type Props = {
-  editing:boolean;canInsert:boolean;onInserted:(id:string)=>void;readOnlyReason?:string;selectionInfo:ReactNode;globalTools:ReactNode;
+  connectionRotationActive:boolean;editing:boolean;canInsert:boolean;onInserted:(id:string)=>void;readOnlyReason?:string;selectionInfo:ReactNode;globalTools:ReactNode;
   currentToolLabel:string;currentToolPanel:ReactNode;toolControls:ReactNode;selectionTitle:ReactNode;selectionControls:ReactNode
   assembly: Assembly3D; project: EditorProject; profiles: readonly Profile[]; selection: Selection
   hasSnapPreview:boolean;tileSnap:{fixedTile:string;fixedPort:string};setTileSnap:(s:{fixedTile:string;fixedPort:string})=>void;picker:SnapPicker|null;togglePicker:(kind:SnapPicker)=>void
@@ -28,7 +28,7 @@ type Props = {
   select: (s: Selection) => void; busy: boolean; operation:AssemblyOperation|'select'
   onPreviewSnap:(connection:Connection)=>void;snapSettings:{dihedralDeg:number;flip:boolean};setSnapSettings:(settings:{dihedralDeg:number;flip:boolean})=>void
 }
-export function EditorInspector({ editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection,hasSnapPreview,tileSnap,setTileSnap,picker,togglePicker, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
+export function EditorInspector({ connectionRotationActive,editing,canInsert,onInserted,readOnlyReason,selectionInfo,globalTools,currentToolLabel,currentToolPanel,toolControls,selectionTitle,selectionControls,assembly, project, profiles, selection,hasSnapPreview,tileSnap,setTileSnap,picker,togglePicker, ownPort, setOwnPort, apply, select, busy, operation,onPreviewSnap,snapSettings,setSnapSettings }: Props) {
   const [profileKey, setProfileKey] = useState(profileKey3D(profiles[0]))
   const [color, setColor] = useState('#55b8ac')
   const {fixedTile:baseId,fixedPort:basePort}=tileSnap
@@ -63,13 +63,13 @@ export function EditorInspector({ editing,canInsert,onInserted,readOnlyReason,se
     {currentToolPanel}{toolControls}
     {readOnlyReason&&<small>{readOnlyReason}</small>}
     {editing && (selection.kind==='piece'&&operation!=='select'||selection.kind==='connection') && <fieldset className="magnetic-3d-edit-inspector" disabled={busy&&!(hasSnapPreview&&piece&&operation==='snap')}><legend className="sr-only">当前选择编辑</legend>
-    <PropertyPanel operation={operation} showPieceActions={false} showPieceColor={false} project={project} selection={selection}
+    {!connectionRotationActive&&<PropertyPanel operation={operation} showPieceActions={false} showPieceColor={false} project={project} selection={selection}
       onSetPieceTransform={(id, pose) => apply(h => actions.setPieceTransformAction(h, id, pose))}
       onSetPieceColor={(id, c) => apply(h => actions.setPieceColorAction(h, id, c))}
       onDuplicatePiece={() => apply(h => { const result = actions.duplicatePieceAction(h, selectedId); select({ kind: 'piece', id: result.newId }); return result.history })}
       onDeleteSelected={() => apply(h => { select({ kind: 'none' }); return actions.deletePieceAction(h, selectedId) })}
       onUpdateConnection={(i, patch) => apply(h => actions.updateConnectionAction(h, i, patch))}
-      onRemoveConnection={i => apply(h => { select({ kind: 'none' }); return actions.removeConnectionAction(h, i) })}/>
+      onRemoveConnection={i => apply(h => { select({ kind: 'none' }); return actions.removeConnectionAction(h, i) })}/>}
     {piece && <>
       {operation==='snap'&&<div className="module-snap-parameters" aria-label="Tile Snap 参数">
         <div className="snap-side-heading snap-moving"><b>Moving</b><small>仅移动此 Tile</small></div>

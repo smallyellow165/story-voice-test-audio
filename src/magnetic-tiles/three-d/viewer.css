@@ -269,3 +269,10 @@
 .magnetic-3d-snap-warning{color:#435b55;font-size:11px;overflow-wrap:anywhere}
 .magnetic-3d-snap-warning ul{padding-left:16px;margin:5px 0}
 .magnetic-3d-snap-warning p{margin:5px 0}
+
+.connection-rotate-panel{font-size:11px;overflow-wrap:anywhere;margin:6px 0}
+.connection-rotate-panel p{margin:5px 0}
+.connection-rotate-panel input,.connection-rotate-panel select{min-width:0;padding:4px}
+.connection-rotate-step{display:flex;align-items:end;gap:4px;flex-wrap:wrap}
+.connection-rotate-step label{width:100px;margin:0}
+.connection-rotate-panel ul{padding-left:16px}
