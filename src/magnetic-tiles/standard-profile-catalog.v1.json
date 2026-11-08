@@ -1,0 +1,860 @@
+{
+  "catalogId": "magnetic-standard-profile-catalog",
+  "schemaVersion": 1,
+  "registryRevision": 9,
+  "registryHash": "30cf2824cfd870d16727d26b371e2845f62daa22fb11789628a1ba446128567c",
+  "standardThickness": 0.06,
+  "unitEdgeDescription": "1.0 world unit = 1 standard square magnetic tile edge (~7.5 cm)",
+  "activeStandardProfileKeys": [
+    "square@1",
+    "equilateral-triangle@1",
+    "right-triangle@1",
+    "isosceles-triangle@1",
+    "rect-half@1",
+    "large-square@1",
+    "rectangle-2x1@1",
+    "rectangle-3x1@1",
+    "rectangle-4x1@1",
+    "large-equilateral-triangle@2",
+    "tall-right-triangle@2"
+  ],
+  "profiles": [
+    {
+      "id": "square",
+      "version": 1,
+      "name": "正方形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "id": "right-triangle",
+      "version": 1,
+      "name": "等腰直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "equilateral-triangle",
+      "version": 1,
+      "name": "等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          0.8660254037844386
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "id": "large-equilateral-triangle",
+      "version": 1,
+      "name": "大型等边三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          1.7320508075688772
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。边长约 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "tall-right-triangle",
+      "version": 1,
+      "name": "细长直角三角形",
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "V1 Estimated Geometry · 项目指定估计规格；标准正方形边长 = 1。直角边约 7.5 × 15 cm，不是 CONNETIX 官方精确规格。"
+      }
+    },
+    {
+      "id": "narrow-isosceles-triangle",
+      "name": "细长等腰三角形",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          1.8660254
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "isosceles-triangle",
+        "dimensions": {
+          "base": 1,
+          "height": 1.8660254
+        }
+      },
+      "geometrySource": "项目 V1 估计几何规格，非官方实测",
+      "sizeEvidence": {
+        "status": "estimated",
+        "source": "项目 V1 估计几何规格，非官方实测"
+      }
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e3",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "large-square",
+      "name": "大正方形（2 × 2）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "parametric": {
+        "shape": "square",
+        "dimensions": {
+          "side": 2
+        }
+      },
+      "geometrySource": "用户指定基础片型：标准正方形边长 = 1 的相对尺寸；Port 为现有单位边几何接合区间，不代表实测磁铁数量、位置或极性。厚度沿用项目标准正方形的 Canonical 设置，非实测厚度。"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e3",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "rectangle-2x1",
+      "name": "长方形（2 × 1）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "parametric": {
+        "shape": "rectangle",
+        "dimensions": {
+          "width": 2,
+          "height": 1
+        }
+      },
+      "geometrySource": "用户指定基础片型：标准正方形边长 = 1 的相对尺寸；Port 为现有单位边几何接合区间，不代表实测磁铁数量、位置或极性。厚度沿用项目标准正方形的 Canonical 设置，非实测厚度。"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                0.3333333333333333
+              ],
+              [
+                0.3333333333333333,
+                0.6666666666666666
+              ],
+              [
+                0.6666666666666666,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.3333333333333333
+              ],
+              [
+                0.3333333333333333,
+                0.6666666666666666
+              ],
+              [
+                0.6666666666666666,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e3",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "rectangle-3x1",
+      "name": "长方形（3 × 1）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "parametric": {
+        "shape": "rectangle",
+        "dimensions": {
+          "width": 3,
+          "height": 1
+        }
+      },
+      "geometrySource": "用户指定基础片型：标准正方形边长 = 1 的相对尺寸；Port 为现有单位边几何接合区间，不代表实测磁铁数量、位置或极性。厚度沿用项目标准正方形的 Canonical 设置，非实测厚度。"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                0.25
+              ],
+              [
+                0.25,
+                0.5
+              ],
+              [
+                0.5,
+                0.75
+              ],
+              [
+                0.75,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.25
+              ],
+              [
+                0.25,
+                0.5
+              ],
+              [
+                0.5,
+                0.75
+              ],
+              [
+                0.75,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e3",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "rectangle-4x1",
+      "name": "长方形（4 × 1）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "parametric": {
+        "shape": "rectangle",
+        "dimensions": {
+          "width": 4,
+          "height": 1
+        }
+      },
+      "geometrySource": "用户指定基础片型：标准正方形边长 = 1 的相对尺寸；Port 为现有单位边几何接合区间，不代表实测磁铁数量、位置或极性。厚度沿用项目标准正方形的 Canonical 设置，非实测厚度。"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "isosceles-triangle",
+      "name": "长等腰三角形（底 1 · 腰 2）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0.5,
+          1.9364916731037085
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "isosceles-triangle",
+        "dimensions": {
+          "base": 1,
+          "height": 1.9364916731037085
+        }
+      },
+      "geometrySource": "共享标准磁力片规格库 Canonical Profile Catalog V1（标准正方形边长 = 1，标准厚度 = 0.06）"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e3",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "rect-half",
+      "name": "半高长方形（1 × 0.5）",
+      "version": 1,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          0.5
+        ],
+        [
+          0,
+          0.5
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "parametric": {
+        "shape": "rectangle",
+        "dimensions": {
+          "width": 1,
+          "height": 0.5
+        }
+      },
+      "geometrySource": "共享标准磁力片规格库 Canonical Profile Catalog V1（标准正方形边长 = 1，标准厚度 = 0.06）"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "large-equilateral-triangle",
+      "name": "大型等边三角形（2 × 2 × 2 · 分段 Port）",
+      "version": 2,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          1.7320508075688772
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "equilateral-triangle",
+        "dimensions": {
+          "side": 2
+        }
+      },
+      "geometrySource": "共享标准磁力片规格库 Canonical Profile Catalog V1（标准正方形边长 = 1，标准厚度 = 0.06）"
+    },
+    {
+      "solid3d": {
+        "thickness": 0.06,
+        "ports": [
+          {
+            "edgeId": "e0",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e1",
+            "ranges": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "edgeId": "e2",
+            "ranges": [
+              [
+                0,
+                0.5
+              ],
+              [
+                0.5,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "tall-right-triangle",
+      "name": "细长直角三角形（1 × 2 · 分段 Port）",
+      "version": 2,
+      "vertices": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "connectableEdges": [
+        "e0",
+        "e1",
+        "e2"
+      ],
+      "parametric": {
+        "shape": "right-triangle",
+        "dimensions": {
+          "legA": 1,
+          "legB": 2
+        }
+      },
+      "geometrySource": "共享标准磁力片规格库 Canonical Profile Catalog V1（标准正方形边长 = 1，标准厚度 = 0.06）"
+    }
+  ]
+}
