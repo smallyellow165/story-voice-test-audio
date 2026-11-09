@@ -1,7 +1,7 @@
 import catalogData from './standard-profile-catalog.v1.json' with { type: 'json' };
-import type { ProfileDefinition } from './profiles';
+import type { Profile } from './geometry.ts';
 import { canonicalProfileSnapshot } from './three-d/canonical-geometry';
-import type { ProfileSnapshot3D } from './three-d/assembly';
+import type { ProfileSnapshot3D } from './three-d/profile-adapter.ts';
 
 export interface StandardProfileCatalogV1 {
   catalogId: 'magnetic-standard-profile-catalog';
@@ -11,14 +11,14 @@ export interface StandardProfileCatalogV1 {
   standardThickness: number;
   unitEdgeDescription: string;
   activeStandardProfileKeys: string[];
-  profiles: ProfileDefinition[];
+  profiles: Profile[];
 }
 
 export const standardProfileCatalog = catalogData as unknown as StandardProfileCatalogV1;
 
-export const standardCatalogProfiles: ProfileDefinition[] = standardProfileCatalog.profiles;
+export const standardCatalogProfiles: Profile[] = standardProfileCatalog.profiles;
 
-const profileByKey = new Map<string, ProfileDefinition>();
+const profileByKey = new Map<string, Profile>();
 const snapshotByKey = new Map<string, ProfileSnapshot3D>();
 
 for (const profile of standardCatalogProfiles) {
@@ -27,15 +27,15 @@ for (const profile of standardCatalogProfiles) {
   snapshotByKey.set(key, canonicalProfileSnapshot(profile));
 }
 
-export const activeStandardProfiles: ProfileDefinition[] =
+export const activeStandardProfiles: Profile[] =
   standardProfileCatalog.activeStandardProfileKeys
     .map((key) => profileByKey.get(key))
-    .filter((profile): profile is ProfileDefinition => Boolean(profile));
+    .filter((profile): profile is Profile => Boolean(profile));
 
 export function getStandardProfileDefinition(
   id: string,
   version?: number,
-): ProfileDefinition | undefined {
+): Profile | undefined {
   if (typeof version === 'number') {
     return profileByKey.get(`${id}@${version}`);
   }
